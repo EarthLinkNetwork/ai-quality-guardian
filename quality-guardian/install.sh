@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.2.16"
+# version: "1.2.17"
 
 set -e
 
@@ -66,8 +66,14 @@ echo "🚀 Quality Guardian インストール開始"
 echo "対象プロジェクト: $PROJECT_DIR"
 if [ "$INSTALL_MODE" = "personal" ]; then
     echo "🔒 インストールモード: Personal (他の開発者に影響なし)"
+    echo "   - Git hooks有効（ローカルのみ）"
+    echo "   - package.json変更なし"
+    echo "   - GitHub Actions workflowなし"
 else
-    echo "👥 インストールモード: Team (Git hooks/CI統合)"
+    echo "👥 インストールモード: Team (フルCI/CD統合)"
+    echo "   - Git hooks有効"
+    echo "   - package.json変更"
+    echo "   - GitHub Actions workflow作成"
 fi
 if [ -d "$PROJECT_DIR/.claude" ]; then
     echo "💡 Claude Code実行ディレクトリを検出しました"
@@ -83,7 +89,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.2.16"
+CURRENT_VERSION="1.2.17"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -274,7 +280,7 @@ if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.16",
+  "version": "1.2.17",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -376,8 +382,8 @@ elif [ "$INSTALL_MODE" = "personal" ]; then
     echo "⏭️  package.json の変更をスキップ (Personal Mode)"
 fi
 
-# Git hooks設定（Team Modeのみ）
-if [ "$INSTALL_MODE" = "team" ] && [ -d ".git" ]; then
+# Git hooks設定（Personal/Team Mode共通）
+if [ -d ".git" ]; then
     echo "🔗 Git hooks を設定..."
 
     # pre-commit hook
@@ -400,8 +406,6 @@ EOF
 
     chmod +x .git/hooks/pre-commit
     echo "✅ Git pre-commit hook を設定しました"
-elif [ "$INSTALL_MODE" = "personal" ]; then
-    echo "⏭️  Git hooks の設定をスキップ (Personal Mode)"
 fi
 
 # GitHub Actions workflow生成（Team Modeのみ）
@@ -628,8 +632,9 @@ $([ -n "$BUILD_COMMAND" ] && echo "# ビルド: $BUILD_COMMAND")
 📌 回答まとめ：
 Personal Modeの特徴：
 - ✅ 自分だけが使える
-- ❌ Git hooksなし
+- ✅ Git hooks有効（ローカルのみ）
 - ❌ package.json変更なし
+- ❌ GitHub Actions workflowなし
 \`\`\`
 
 ## 🎯 AI開発の必須ルール（厳守）
@@ -880,8 +885,9 @@ $([ -n "$BUILD_COMMAND" ] && echo "# ビルド: $BUILD_COMMAND")
 📌 回答まとめ：
 Personal Modeの特徴：
 - ✅ 自分だけが使える
-- ❌ Git hooksなし
+- ✅ Git hooks有効（ローカルのみ）
 - ❌ package.json変更なし
+- ❌ GitHub Actions workflowなし
 \`\`\`
 
 ## 🎯 AI開発の必須ルール（厳守）
