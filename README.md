@@ -60,11 +60,28 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ GitHub Actions workflow 作成（CI/CDに統合）
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新（AIへの指示追加）
+- ✅ **サブエージェント設定インストール（v1.2.7+）** - 6つの専門エージェント
 
 **使用例:**
 - チーム全体で品質を担保したい場合
 - CI/CDに統合したい場合
 - 既にチームで合意が取れている場合
+
+### サブエージェント設定（v1.2.7+）
+
+Team Modeでインストールすると、以下の専門エージェント設定が自動的にインストールされます：
+
+#### 🌟 必須エージェント（⭐⭐⭐⭐⭐/⭐⭐⭐⭐）
+- **rule-advisor** - タスク開始時に適切なルールを選択、AIの実行精度を最大化
+- **quality-fixer** - 品質チェック・修正を完全自己完結で実行
+- **task-executor** - 個別タスクを着実に実行、TDD準拠で確実な実装
+
+#### 🟢 有用エージェント（⭐⭐⭐⭐/⭐⭐⭐）
+- **requirement-analyzer** - 要件分析と作業規模判定
+- **technical-designer** - Design Doc・ADR作成
+- **code-reviewer** - Design Doc準拠検証、第三者視点でレビュー
+
+詳細は `/Users/masa/dev/ai/scripts/quality-guardian/README.md` の「サブエージェント設定」セクションを参照してください。
 
 ### インストール後の手順
 

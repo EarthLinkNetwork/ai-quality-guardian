@@ -244,9 +244,74 @@ quality-guardian/
 │   ├── invariant-checker.js # 不変式チェック
 │   ├── deep-quality-analyzer.js # 深層品質分析
 │   └── pr-reviewer.js      # PR分析
+├── agents/                 # サブエージェント設定
+│   ├── rule-advisor.md     # ルール選択専門
+│   ├── quality-fixer.md    # 品質修正専門
+│   ├── task-executor.md    # タスク実行専門
+│   ├── requirement-analyzer.md # 要件分析専門
+│   ├── technical-designer.md   # 技術設計専門
+│   └── code-reviewer.md    # コードレビュー専門
 ├── install.sh              # インストーラー
 └── README.md               # このファイル
 ```
+
+## サブエージェント設定（v1.2.7+）
+
+Team Modeでインストールすると、専門的なサブエージェント設定が自動的にインストールされます。
+
+### 含まれるエージェント
+
+#### 🌟 必須エージェント
+
+1. **rule-advisor** ⭐⭐⭐⭐⭐
+   - **役割**: タスク開始時に適切なルールを選択
+   - **タイミング**: MUST BE USED PROACTIVELY - 全タスク開始時
+   - **効果**: AIの実行精度を最大化、メタ認知を支援
+
+2. **quality-fixer** ⭐⭐⭐⭐⭐
+   - **役割**: 品質チェック・修正を完全自己完結で実行
+   - **タイミング**: コード変更後、品質関連キーワード出現時
+   - **効果**: テスト・ビルド・型チェックをゼロエラーまで修正
+
+3. **task-executor** ⭐⭐⭐⭐
+   - **役割**: 個別タスクを着実に実行
+   - **タイミング**: 実装フェーズ
+   - **効果**: TDD準拠で確実な実装、進捗を3箇所同期更新
+
+#### 🟢 有用エージェント
+
+4. **requirement-analyzer** ⭐⭐⭐⭐
+   - **役割**: 要件分析と作業規模判定
+   - **タイミング**: プロジェクト開始時
+   - **効果**: PRD/Design Doc必要性を判定、適切なアプローチ提案
+
+5. **technical-designer** ⭐⭐⭐
+   - **役割**: Design Doc・ADR作成
+   - **タイミング**: 中〜大規模機能開発
+   - **効果**: 技術設計を構造化、実装前の設計整合性確保
+
+6. **code-reviewer** ⭐⭐⭐
+   - **役割**: Design Doc準拠検証
+   - **タイミング**: 実装完了時
+   - **効果**: 第三者視点でレビュー、受入条件充足確認
+
+### 使用方法
+
+エージェントはClaude Codeの Task ツールから呼び出されます。Team Modeでインストールすると、`.claude/agents/` ディレクトリに設定が配置され、自動的に利用可能になります。
+
+```
+プロジェクト/.claude/agents/
+├── rule-advisor.md
+├── quality-fixer.md
+├── task-executor.md
+├── requirement-analyzer.md
+├── technical-designer.md
+└── code-reviewer.md
+```
+
+### Personal Modeでの使用
+
+Personal Modeではエージェント設定はインストールされません。必要に応じて手動で追加できます。
 
 ## 他のツールとの統合
 

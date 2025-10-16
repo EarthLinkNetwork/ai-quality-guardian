@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.2.6"
+# version: "1.2.7"
 
 set -e
 
@@ -83,7 +83,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.2.6"
+CURRENT_VERSION="1.2.7"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -274,7 +274,7 @@ if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.6",
+  "version": "1.2.7",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -483,6 +483,50 @@ EOF
     echo "✅ GitHub Actions workflow を作成しました"
 elif [ "$INSTALL_MODE" = "personal" ]; then
     echo "⏭️  GitHub Actions workflow の生成をスキップ (Personal Mode)"
+fi
+
+# エージェント設定のインストール（Team Modeのみ）
+if [ "$INSTALL_MODE" = "team" ] && [ -d "$SCRIPT_DIR/agents" ]; then
+    echo ""
+    echo "🤖 サブエージェント設定をインストール中..."
+
+    # .claude/agentsディレクトリを作成
+    mkdir -p .claude/agents
+
+    # エージェント設定をコピー
+    if [ -f "$SCRIPT_DIR/agents/rule-advisor.md" ]; then
+        cp "$SCRIPT_DIR/agents/rule-advisor.md" .claude/agents/
+        echo "✅ rule-advisor (必須⭐⭐⭐⭐⭐) をインストール"
+    fi
+
+    if [ -f "$SCRIPT_DIR/agents/quality-fixer.md" ]; then
+        cp "$SCRIPT_DIR/agents/quality-fixer.md" .claude/agents/
+        echo "✅ quality-fixer (必須⭐⭐⭐⭐⭐) をインストール"
+    fi
+
+    if [ -f "$SCRIPT_DIR/agents/task-executor.md" ]; then
+        cp "$SCRIPT_DIR/agents/task-executor.md" .claude/agents/
+        echo "✅ task-executor (必須⭐⭐⭐⭐) をインストール"
+    fi
+
+    if [ -f "$SCRIPT_DIR/agents/requirement-analyzer.md" ]; then
+        cp "$SCRIPT_DIR/agents/requirement-analyzer.md" .claude/agents/
+        echo "✅ requirement-analyzer (有用⭐⭐⭐⭐) をインストール"
+    fi
+
+    if [ -f "$SCRIPT_DIR/agents/technical-designer.md" ]; then
+        cp "$SCRIPT_DIR/agents/technical-designer.md" .claude/agents/
+        echo "✅ technical-designer (有用⭐⭐⭐) をインストール"
+    fi
+
+    if [ -f "$SCRIPT_DIR/agents/code-reviewer.md" ]; then
+        cp "$SCRIPT_DIR/agents/code-reviewer.md" .claude/agents/
+        echo "✅ code-reviewer (有用⭐⭐⭐) をインストール"
+    fi
+
+    echo "✅ サブエージェント設定をインストールしました"
+elif [ "$INSTALL_MODE" = "personal" ]; then
+    echo "⏭️  サブエージェント設定のインストールをスキップ (Personal Mode)"
 fi
 
 # CLAUDE.md安全更新（Team Modeのみ）
