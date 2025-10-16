@@ -1,6 +1,103 @@
-# 🛡️ AI Quality Enforcer - 汎用品質強制システム
+# 🛡️ AI Development Scripts
+
+Claude Codeで開発する際に使用する品質管理ツール集です。
+
+## 📦 Quality Guardian - 統合品質管理システム
+
+AI（Claude Code）による開発の品質を多角的に検証し、「AIのズル」を検出して品質劣化を防ぐシステムです。
+
+---
+
+## 🤖 AI（Claude Code）向けインストールガイド
+
+**このセクションはAIアシスタントが読むための詳細な手順です。**
+
+### インストール前の確認事項
+
+1. **ユーザーに必ず質問すること:**
+   - 「Personal Mode（自分だけ）とTeam Mode（チーム全体）のどちらでインストールしますか？」
+   - Personal Modeの場合、他の開発者には影響しません
+   - Team Modeの場合、Git hooks/CI/package.json等を変更します
+
+2. **インストール先の確認:**
+   - 現在のディレクトリがプロジェクトルートか確認
+   - `.claude`ディレクトリの存在を確認（Claude Code実行ディレクトリ）
+
+### Personal Mode インストール（他の開発者に影響なし）
+
+```bash
+bash ~/dev/ai/scripts/quality-guardian/install.sh --personal
+```
+
+**実行される処理:**
+- ✅ `.quality-guardian/` モジュールのインストール
+- ✅ `quality-guardian` 実行スクリプト作成
+- ✅ `.quality-guardian.json` 設定ファイル作成
+- ✅ `.gitignore` に追加（ログファイル除外のみ）
+
+**実行されない処理:**
+- ❌ Git pre-commit hook の設定
+- ❌ GitHub Actions workflow の作成
+- ❌ package.json の変更
+- ❌ .claude/CLAUDE.md の変更
+
+**使用例:**
+- ユーザーが個人的に試したい場合
+- チームメンバーに影響を与えたくない場合
+- まず自分だけで使ってみたい場合
+
+### Team Mode インストール（チーム全体で品質管理）
+
+```bash
+bash ~/dev/ai/scripts/quality-guardian/install.sh --team
+# または単に
+bash ~/dev/ai/scripts/quality-guardian/install.sh
+```
+
+**実行される処理:**
+- ✅ Personal Modeの全機能
+- ✅ Git pre-commit hook 設定（全員のコミット時に品質チェック）
+- ✅ GitHub Actions workflow 作成（CI/CDに統合）
+- ✅ package.json に npm scripts 追加
+- ✅ .claude/CLAUDE.md 更新（AIへの指示追加）
+
+**使用例:**
+- チーム全体で品質を担保したい場合
+- CI/CDに統合したい場合
+- 既にチームで合意が取れている場合
+
+### インストール後の手順
+
+1. **初期ベースライン記録（推奨）:**
+   ```bash
+   ./quality-guardian baseline
+   ```
+
+2. **使用方法をユーザーに伝える:**
+   ```bash
+   ./quality-guardian check     # 品質チェック
+   ./quality-guardian pr main   # PR分析
+   ./quality-guardian fix       # 自動修復
+   ```
+
+3. **詳細ドキュメントの場所:**
+   - `/Users/masa/dev/ai/scripts/quality-guardian/README.md`
+   - `/Users/masa/dev/ai/scripts/quality-guardian/INTEGRATION.md`
+
+### 重要な注意事項
+
+- **必ずユーザーに確認してからインストールすること**
+- **Personal ModeとTeam Modeの違いを説明すること**
+- **Team Modeは他の開発者に影響することを明確に伝えること**
+- **インストール後は必ず動作確認を行うこと**
+
+---
+
+## 🛡️ Legacy: AI Quality Enforcer（旧バージョン）
 
 Claude Codeで開発する全プロジェクトの品質を技術的に強制するシステムです。
+
+**注意: 現在はQuality Guardianへの移行を推奨しています。**
 
 ## 🚀 クイックスタート
 

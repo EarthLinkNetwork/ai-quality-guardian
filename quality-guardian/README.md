@@ -18,14 +18,47 @@ Quality Guardianは、AIによるコード変更の品質を多角的に検証�
 
 ### 新しいプロジェクトに導入
 
+#### Personal Mode（個人用 - 他の開発者に影響なし）
+
 ```bash
-# Quality Guardianをプロジェクトにインストール
-bash ~/dev/ai/scripts/quality-guardian/install.sh /path/to/your/project
+# Personal Mode: Git hooks/CI統合なし、自分だけが使える
+bash ~/dev/ai/scripts/quality-guardian/install.sh --personal
 
 # またはカレントディレクトリに
 cd your-project
+bash ~/dev/ai/scripts/quality-guardian/install.sh --personal
+```
+
+**Personal Modeの特徴:**
+- ✅ `.quality-guardian/` モジュールのインストール
+- ✅ `quality-guardian` 実行スクリプト作成
+- ✅ `.quality-guardian.json` 設定ファイル作成
+- ✅ `.gitignore` に追加（ログファイル除外）
+- ❌ Git pre-commit hook の設定なし
+- ❌ GitHub Actions workflow の作成なし
+- ❌ package.json の変更なし
+- ❌ .claude/CLAUDE.md の変更なし
+
+**他の開発者への影響: なし** - 自分だけが `./quality-guardian` コマンドを実行できます
+
+#### Team Mode（チーム用 - 全員で品質管理）
+
+```bash
+# Team Mode: Git hooks/CI統合あり、チーム全体で品質管理
+bash ~/dev/ai/scripts/quality-guardian/install.sh --team
+
+# または単に（デフォルトはTeam Mode）
 bash ~/dev/ai/scripts/quality-guardian/install.sh
 ```
+
+**Team Modeの特徴:**
+- ✅ Personal Modeの全機能
+- ✅ Git pre-commit hook 設定
+- ✅ GitHub Actions workflow 作成
+- ✅ package.json に npm scripts 追加
+- ✅ .claude/CLAUDE.md 更新
+
+**v1.2.3の新機能**: Personal Mode追加 - 他の開発者に影響なくインストール可能
 
 **v1.2.2の新機能**: Claude Code実行ディレクトリの自動検出
 

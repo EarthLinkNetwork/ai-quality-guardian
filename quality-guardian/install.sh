@@ -2,11 +2,29 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
+# version: "1.2.3"
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CURRENT_DIR="$(pwd)"
+
+# インストールモード: personal または team
+INSTALL_MODE="team"
+
+# 引数解析
+for arg in "$@"; do
+    case $arg in
+        --personal|--mode=personal)
+            INSTALL_MODE="personal"
+            shift
+            ;;
+        --team|--mode=team)
+            INSTALL_MODE="team"
+            shift
+            ;;
+    esac
+done
 
 # Claude Codeの実行ディレクトリを検出
 # .claudeディレクトリが現在のディレクトリにあればここにインストール
@@ -41,6 +59,11 @@ PROJECT_DIR="$(detect_installation_target "$1")"
 
 echo "🚀 Quality Guardian インストール開始"
 echo "対象プロジェクト: $PROJECT_DIR"
+if [ "$INSTALL_MODE" = "personal" ]; then
+    echo "🔒 インストールモード: Personal (他の開発者に影響なし)"
+else
+    echo "👥 インストールモード: Team (Git hooks/CI統合)"
+fi
 if [ -d "$PROJECT_DIR/.claude" ]; then
     echo "💡 Claude Code実行ディレクトリを検出しました"
 fi
@@ -197,7 +220,7 @@ echo "⚙️ 設定ファイルを生成..."
 if [ ! -f ".quality-guardian.json" ]; then
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.2",
+  "version": "1.2.3",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -259,8 +282,8 @@ if [ -f ".gitignore" ]; then
     fi
 fi
 
-# package.jsonにスクリプト追加
-if [ -f "package.json" ] && command -v jq &> /dev/null; then
+# package.jsonにスクリプト追加（Team Modeのみ）
+if [ "$INSTALL_MODE" = "team" ] && [ -f "package.json" ] && command -v jq &> /dev/null; then
     echo "📝 package.json にスクリプトを追加..."
 
     # jqを使ってスクリプトを追加
@@ -273,10 +296,12 @@ if [ -f "package.json" ] && command -v jq &> /dev/null; then
     }' package.json > package.json.tmp && mv package.json.tmp package.json
 
     echo "✅ npm scripts を追加しました"
+elif [ "$INSTALL_MODE" = "personal" ]; then
+    echo "⏭️  package.json の変更をスキップ (Personal Mode)"
 fi
 
-# Git hooks設定
-if [ -d ".git" ]; then
+# Git hooks設定（Team Modeのみ）
+if [ "$INSTALL_MODE" = "team" ] && [ -d ".git" ]; then
     echo "🔗 Git hooks を設定..."
 
     # pre-commit hook
@@ -299,10 +324,12 @@ EOF
 
     chmod +x .git/hooks/pre-commit
     echo "✅ Git pre-commit hook を設定しました"
+elif [ "$INSTALL_MODE" = "personal" ]; then
+    echo "⏭️  Git hooks の設定をスキップ (Personal Mode)"
 fi
 
-# GitHub Actions workflow生成
-if [ ! -f ".github/workflows/quality-guardian.yml" ]; then
+# GitHub Actions workflow生成（Team Modeのみ）
+if [ "$INSTALL_MODE" = "team" ] && [ ! -f ".github/workflows/quality-guardian.yml" ]; then
     echo "🔄 GitHub Actions workflow を生成..."
     mkdir -p .github/workflows
 
@@ -378,14 +405,17 @@ jobs:
 EOF
 
     echo "✅ GitHub Actions workflow を作成しました"
+elif [ "$INSTALL_MODE" = "personal" ]; then
+    echo "⏭️  GitHub Actions workflow の生成をスキップ (Personal Mode)"
 fi
 
-# CLAUDE.md安全更新（setup-quality-workflow.shから統合）
-echo ""
-echo "📝 CLAUDE.mdを更新中..."
+# CLAUDE.md安全更新（Team Modeのみ）
+if [ "$INSTALL_MODE" = "team" ]; then
+    echo ""
+    echo "📝 CLAUDE.mdを更新中..."
 
-# .claudeディレクトリの作成
-mkdir -p .claude
+    # .claudeディレクトリの作成
+    mkdir -p .claude
 
 # CLAUDE.mdの安全な更新
 if [ -f .claude/CLAUDE.md ]; then
@@ -470,6 +500,9 @@ $([ -n "$BUILD_COMMAND" ] && echo "# ビルド: $BUILD_COMMAND")
 EOF
     echo "✅ CLAUDE.mdを作成しました"
 fi
+elif [ "$INSTALL_MODE" = "personal" ]; then
+    echo "⏭️  CLAUDE.md の更新をスキップ (Personal Mode)"
+fi
 
 # 初期ベースライン記録
 echo ""
@@ -484,15 +517,21 @@ fi
 echo ""
 echo "✨ Quality Guardian のインストールが完了しました！"
 echo ""
+if [ "$INSTALL_MODE" = "personal" ]; then
+    echo "🔒 Personal Mode: 他の開発者に影響なくインストールされました"
+    echo ""
+fi
 echo "使用方法:"
 echo "  ./quality-guardian baseline  # ベースライン記録"
 echo "  ./quality-guardian check     # 品質チェック"
 echo "  ./quality-guardian pr        # PR分析"
 echo "  ./quality-guardian fix       # 自動修復"
 echo ""
-echo "または npm scripts:"
-echo "  npm run quality:check"
-echo "  npm run quality:baseline"
-echo ""
+if [ "$INSTALL_MODE" = "team" ]; then
+    echo "または npm scripts:"
+    echo "  npm run quality:check"
+    echo "  npm run quality:baseline"
+    echo ""
+fi
 echo "設定ファイル: .quality-guardian.json"
 echo "詳細: $SCRIPT_DIR/README.md"
