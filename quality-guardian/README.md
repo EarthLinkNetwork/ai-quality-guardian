@@ -58,6 +58,8 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
 
+**v1.2.5の新機能**: 自動バージョン確認・アップデート機能 - 既存インストールを検出して賢くアップデート
+
 **v1.2.4の新機能**: AI回答表示ルール追加 - ツール実行ログで回答が流れても最後に再表示
 
 **v1.2.3の新機能**: Personal Mode追加 - 他の開発者に影響なくインストール可能
@@ -344,13 +346,69 @@ Personal Modeでは`.claude/CLAUDE.md`が変更されないため、この機能
 cat .quality-guardian/quality-guardian.log
 ```
 
-## 更新方法
+## 更新方法（v1.2.5+）
+
+Quality Guardianは既存インストールを自動検出し、賢くアップデートします。
+
+### 自動アップデート
 
 ```bash
-# 最新版をダウンロード
+# 通常の更新（既存インストールを検出して自動アップデート）
 bash ~/dev/ai/scripts/quality-guardian/install.sh
+```
 
-# 設定を保持したまま更新
+**動作:**
+1. 既存インストールを検出
+2. 現在のバージョンと最新バージョンを比較
+3. アップデートが必要な場合:
+   - ✅ モジュールを最新版に更新
+   - ✅ バージョン番号のみ更新
+   - ✅ **ユーザー設定を保持**（.quality-guardian.jsonのカスタム設定は維持）
+   - ✅ バックアップ自動作成（.quality-guardian.json.backup）
+
+### 強制再インストール
+
+```bash
+# 既に最新版の場合でも強制的に再インストール
+bash ~/dev/ai/scripts/quality-guardian/install.sh --force
+```
+
+### アップデート例
+
+```bash
+$ bash ~/dev/ai/scripts/quality-guardian/install.sh
+
+✅ Quality Guardian は既にインストール済みです
+   現在のバージョン: 1.2.4
+   最新バージョン: 1.2.5
+
+🔄 アップデートを実行します...
+   1.2.4 → 1.2.5
+
+📦 Quality Guardianモジュールをインストール...
+🔄 設定ファイルのバージョンを更新...
+✅ バージョンを更新しました (1.2.4 → 1.2.5)
+   バックアップ: .quality-guardian.json.backup
+```
+
+### 既に最新版の場合
+
+```bash
+$ bash ~/dev/ai/scripts/quality-guardian/install.sh
+
+✅ Quality Guardian は既にインストール済みです
+   現在のバージョン: 1.2.5
+   最新バージョン: 1.2.5
+
+✨ 既に最新バージョンです
+
+次のアクション：
+1. そのまま使用 - 現在の設定で問題なければ、特に作業不要
+2. Team Modeに変更 - 現在Personal Modeの場合、--teamで再インストール
+3. Personal Modeに変更 - 現在Team Modeの場合、--personalで再インストール
+4. 強制再インストール - --forceオプションで再インストール
+
+再インストールする場合は --force オプションを追加してください
 ```
 
 ## 🚨 重要：ソースコード変更時の確認義務

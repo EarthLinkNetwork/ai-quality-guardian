@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.2.4"
+# version: "1.2.5"
 
 set -e
 
@@ -11,6 +11,7 @@ CURRENT_DIR="$(pwd)"
 
 # インストールモード: personal または team
 INSTALL_MODE="team"
+FORCE_INSTALL=false
 
 # 引数解析
 for arg in "$@"; do
@@ -21,6 +22,10 @@ for arg in "$@"; do
             ;;
         --team|--mode=team)
             INSTALL_MODE="team"
+            shift
+            ;;
+        --force)
+            FORCE_INSTALL=true
             shift
             ;;
     esac
@@ -76,6 +81,54 @@ if [ ! -d "$PROJECT_DIR" ]; then
 fi
 
 cd "$PROJECT_DIR"
+
+# 既存インストールの確認とバージョンチェック
+CURRENT_VERSION="1.2.5"
+INSTALLED_VERSION=""
+IS_INSTALLED=false
+
+if [ -f ".quality-guardian.json" ]; then
+    IS_INSTALLED=true
+    # jqがあればJSONから、なければgrepでバージョンを取得
+    if command -v jq &> /dev/null; then
+        INSTALLED_VERSION=$(jq -r '.version // "unknown"' .quality-guardian.json 2>/dev/null || echo "unknown")
+    else
+        INSTALLED_VERSION=$(grep -oP '"version"\s*:\s*"\K[^"]+' .quality-guardian.json 2>/dev/null || echo "unknown")
+    fi
+
+    echo "✅ Quality Guardian は既にインストール済みです"
+    echo "   現在のバージョン: $INSTALLED_VERSION"
+    echo "   最新バージョン: $CURRENT_VERSION"
+    echo ""
+
+    # バージョン比較
+    if [ "$INSTALLED_VERSION" = "$CURRENT_VERSION" ]; then
+        echo "✨ 既に最新バージョンです"
+        echo ""
+        echo "次のアクション："
+        echo "1. そのまま使用 - 現在の設定で問題なければ、特に作業不要"
+        echo "2. Team Modeに変更 - 現在Personal Modeの場合、--teamで再インストール"
+        echo "3. Personal Modeに変更 - 現在Team Modeの場合、--personalで再インストール"
+        echo "4. 強制再インストール - --forceオプションで再インストール"
+        echo ""
+
+        # --forceオプションがない場合は終了
+        if [ "$FORCE_INSTALL" = false ]; then
+            echo "再インストールする場合は --force オプションを追加してください"
+            echo ""
+            echo "例："
+            echo "  bash ~/dev/ai/scripts/quality-guardian/install.sh --force"
+            exit 0
+        else
+            echo "🔄 強制再インストールを実行します..."
+            echo ""
+        fi
+    else
+        echo "🔄 アップデートを実行します..."
+        echo "   $INSTALLED_VERSION → $CURRENT_VERSION"
+        echo ""
+    fi
+fi
 
 # プロジェクト種別の自動検出（setup-quality-workflow.shから統合）
 PROJECT_TYPE="Unknown"
@@ -218,9 +271,10 @@ fi
 echo "⚙️ 設定ファイルを生成..."
 
 if [ ! -f ".quality-guardian.json" ]; then
+    # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.4",
+  "version": "1.2.5",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -269,6 +323,28 @@ if [ ! -f ".quality-guardian.json" ]; then
 }
 EOF
     echo "✅ .quality-guardian.json を作成しました"
+else
+    # アップデート時：バージョンのみ更新（ユーザー設定を保持）
+    if [ "$IS_INSTALLED" = true ] && [ "$INSTALLED_VERSION" != "$CURRENT_VERSION" ]; then
+        echo "🔄 設定ファイルのバージョンを更新..."
+
+        # バックアップ作成
+        cp .quality-guardian.json .quality-guardian.json.backup
+
+        # jqがあればJSONとして処理
+        if command -v jq &> /dev/null; then
+            jq ".version = \"$CURRENT_VERSION\"" .quality-guardian.json > .quality-guardian.json.tmp && \
+            mv .quality-guardian.json.tmp .quality-guardian.json
+            echo "✅ バージョンを更新しました ($INSTALLED_VERSION → $CURRENT_VERSION)"
+            echo "   バックアップ: .quality-guardian.json.backup"
+        else
+            # jqがない場合はsedで置換
+            sed -i.backup "s/\"version\": \"$INSTALLED_VERSION\"/\"version\": \"$CURRENT_VERSION\"/" .quality-guardian.json
+            echo "✅ バージョンを更新しました ($INSTALLED_VERSION → $CURRENT_VERSION)"
+        fi
+    else
+        echo "✅ 設定ファイルは既に存在します（保持）"
+    fi
 fi
 
 # .gitignoreに追加
