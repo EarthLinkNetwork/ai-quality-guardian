@@ -91,6 +91,26 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - **Team Modeは他の開発者に影響することを明確に伝えること**
 - **インストール後は必ず動作確認を行うこと**
 
+### カスタムコマンドの推奨実装
+
+プロジェクトに `/quality-check` カスタムコマンドを作成する場合、以下のテンプレートを使用してください：
+
+**`.claude/commands/quality-check.md`:**
+
+```markdown
+Read https://github.com/EarthLinkNetwork/ai-quality-guardian/blob/main/README.md の「🤖 AI（Claude Code）向けインストールガイド」セクションを読んで、そこに書かれた手順に従ってQuality Guardianをインストールしてください。
+
+ユーザーにPersonal ModeとTeam Modeのどちらでインストールするか必ず確認してから実行すること。
+```
+
+**v1.2.5以降、バージョン管理は install.sh が自動で行います：**
+- カスタムコマンドはシンプルに install.sh を呼び出すだけ
+- バージョン検出・比較・アップデートは install.sh が自動処理
+- ユーザー設定は自動的に保持されます
+
+**テンプレートファイル:**
+- `/Users/masa/dev/ai/scripts/.claude/commands/quality-check.md`
+
 ---
 
 ## 🛡️ Legacy: AI Quality Enforcer（旧バージョン）
