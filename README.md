@@ -118,25 +118,40 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - **Team Modeは他の開発者に影響することを明確に伝えること**
 - **インストール後は必ず動作確認を行うこと**
 
-### カスタムコマンドの推奨実装
+### カスタムコマンドの管理（v1.2.13+）
 
-プロジェクトに `/quality-check` カスタムコマンドを作成する場合、以下のテンプレートを使用してください：
+`/quality-check` カスタムコマンドは2つの場所に存在します：
 
-**`.claude/commands/quality-check.md`:**
+#### 1. グローバル（全プロジェクト共通）
+**場所**: `~/.claude/commands/quality-check.md`
 
-```markdown
-Read https://github.com/EarthLinkNetwork/ai-quality-guardian/blob/main/README.md の「🤖 AI（Claude Code）向けインストールガイド」セクションを読んで、そこに書かれた手順に従ってQuality Guardianをインストールしてください。
-
-ユーザーにPersonal ModeとTeam Modeのどちらでインストールするか必ず確認してから実行すること。
+**更新方法**:
+```bash
+cp ~/dev/ai/scripts/.claude/commands/quality-check.md ~/.claude/commands/
 ```
 
-**v1.2.5以降、バージョン管理は install.sh が自動で行います：**
-- カスタムコマンドはシンプルに install.sh を呼び出すだけ
-- バージョン検出・比較・アップデートは install.sh が自動処理
-- ユーザー設定は自動的に保持されます
+このグローバルコマンドは、まだQuality Guardianをインストールしていないプロジェクトで使用されます。
 
-**テンプレートファイル:**
-- `/Users/masa/dev/ai/scripts/.claude/commands/quality-check.md`
+#### 2. ローカル（プロジェクト個別）
+**場所**: `.claude/commands/quality-check.md`
+
+Team Modeでインストールすると自動的に作成されます。ローカルコマンドは**グローバルより優先**されます。
+
+#### カスタムコマンドの動作（v1.2.13+）
+
+**キャッシュを使わない設計**:
+1. ローカルの`/Users/masa/dev/ai/scripts/quality-guardian/VERSION`を直接読む
+2. プロジェクトの`.quality-guardian.json`と比較
+3. 必要に応じてアップデート実行
+
+**v1.2.5以降の改善**:
+- バージョン検出・比較・アップデートは install.sh が自動処理
+- ユーザー設定は自動的に保持
+- 同一セッション内でも最新バージョンを常に検知
+
+**テンプレートファイル**:
+- グローバル用: `~/dev/ai/scripts/.claude/commands/quality-check.md`
+- ローカル用: Team Modeインストール時に自動作成
 
 ---
 
