@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.2.7"
+# version: "1.2.8"
 
 set -e
 
@@ -83,7 +83,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.2.7"
+CURRENT_VERSION="1.2.8"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -274,7 +274,7 @@ if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.7",
+  "version": "1.2.8",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -524,7 +524,32 @@ if [ "$INSTALL_MODE" = "team" ] && [ -d "$SCRIPT_DIR/agents" ]; then
         echo "✅ code-reviewer (有用⭐⭐⭐) をインストール"
     fi
 
-    echo "✅ サブエージェント設定をインストールしました"
+    if [ -f "$SCRIPT_DIR/agents/work-planner.md" ]; then
+        cp "$SCRIPT_DIR/agents/work-planner.md" .claude/agents/
+        echo "✅ work-planner (状況による⭐⭐) をインストール"
+    fi
+
+    if [ -f "$SCRIPT_DIR/agents/task-decomposer.md" ]; then
+        cp "$SCRIPT_DIR/agents/task-decomposer.md" .claude/agents/
+        echo "✅ task-decomposer (状況による⭐⭐) をインストール"
+    fi
+
+    if [ -f "$SCRIPT_DIR/agents/document-reviewer.md" ]; then
+        cp "$SCRIPT_DIR/agents/document-reviewer.md" .claude/agents/
+        echo "✅ document-reviewer (状況による⭐⭐) をインストール"
+    fi
+
+    if [ -f "$SCRIPT_DIR/agents/prd-creator.md" ]; then
+        cp "$SCRIPT_DIR/agents/prd-creator.md" .claude/agents/
+        echo "✅ prd-creator (限定的⭐) をインストール"
+    fi
+
+    if [ -f "$SCRIPT_DIR/agents/e2e-test-generator.md" ]; then
+        cp "$SCRIPT_DIR/agents/e2e-test-generator.md" .claude/agents/
+        echo "✅ e2e-test-generator (限定的⭐) をインストール"
+    fi
+
+    echo "✅ サブエージェント設定（全11個）をインストールしました"
 elif [ "$INSTALL_MODE" = "personal" ]; then
     echo "⏭️  サブエージェント設定のインストールをスキップ (Personal Mode)"
 fi
