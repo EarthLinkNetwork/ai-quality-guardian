@@ -1,44 +1,68 @@
 # Quality Guardian Check Command
 
-This command ensures Quality Guardian is installed and up-to-date in the current project.
+**⚠️ キャッシュを使わず、毎回最新バージョンをチェックします**
 
-**⚠️ このファイルを変更した場合は、必ずバージョンを確認してください**
+## 実装手順（厳守）
 
-## Current Version
-- Command Version: 1.2.5 (must match Quality Guardian version)
-- Last Updated: 2025-10-17
+### 1. 最新バージョンの確認（毎回実行）
 
-## Usage
-Type `/quality-check` in Claude Code to run this command.
+Readツールで以下のファイルを読む（WebFetchは使わない）：
+```
+/Users/masa/dev/ai/scripts/quality-guardian/VERSION
+```
 
-## What This Command Does
+このファイルには最新バージョン番号が書かれています。
 
-1. **Checks if Quality Guardian is installed**
-   - If not installed: Runs install.sh automatically
-   - If installed: Checks version and updates if needed
+### 2. 現在インストール済みバージョンの確認
 
-2. **Version synchronization**
-   - Automatically syncs with the latest Quality Guardian version
-   - Uses VERSION file from ~/dev/ai/scripts/quality-guardian/
+プロジェクト内の `.quality-guardian.json` をReadツールで読んで、現在のバージョンを確認：
+```json
+{
+  "version": "1.2.x"
+}
+```
 
-3. **Smart installation**
-   - Detects if already installed
-   - Only updates if version mismatch
-   - Preserves user settings
+### 3. バージョン比較
 
-## Implementation
+- **未インストール**: インストール処理へ
+- **バージョンが古い**: アップデート処理へ
+- **最新版**: 「既に最新版です」と報告
 
-Read https://github.com/EarthLinkNetwork/ai-quality-guardian/blob/main/README.md の「🤖 AI（Claude Code）向けインストールガイド」セクションを読んで、そこに書かれた手順に従ってQuality Guardianをインストールしてください。
+### 4. インストール/アップデート実行
 
-**重要な確認事項：**
-1. 既にインストール済みかチェック
-2. バージョンを比較
-3. Personal Mode か Team Mode かユーザーに確認
-4. アップデートが必要な場合のみ実行
+Personal Mode か Team Mode かユーザーに確認してから、以下を実行：
 
-## Notes
+```bash
+bash /Users/masa/dev/ai/scripts/quality-guardian/install.sh --personal
+# または
+bash /Users/masa/dev/ai/scripts/quality-guardian/install.sh --team
+```
 
-- **v1.2.5+**: install.sh が自動的にバージョン検出・アップデートを行います
-- このカスタムコマンドは install.sh を呼び出すだけのシンプルな実装に変更
-- バージョン管理は install.sh 側で一元化
-- ユーザー設定は自動的に保持されます
+## 重要なルール
+
+1. **WebFetchは使わない** - キャッシュが効いて最新版を取得できない
+2. **毎回VERSIONファイルを直接読む** - Readツールを使用
+3. **バージョン比較は必ず実行** - スキップしない
+4. **ユーザーにモードを確認** - Personal/Teamの選択
+
+## 正しい実装例
+
+```
+1. Read /Users/masa/dev/ai/scripts/quality-guardian/VERSION
+   → 最新: 1.2.12
+
+2. Read .quality-guardian.json
+   → 現在: 1.2.8
+
+3. バージョン比較: 1.2.8 < 1.2.12 → アップデートが必要
+
+4. ユーザーに確認: Personal Mode か Team Mode か
+
+5. bash /Users/masa/dev/ai/scripts/quality-guardian/install.sh --personal
+```
+
+## 誤った実装例（やってはいけない）
+
+❌ WebFetch https://github.com/... を使う（キャッシュで古い情報）
+❌ 前回のバージョン情報を記憶して使う
+❌ バージョンチェックをスキップする

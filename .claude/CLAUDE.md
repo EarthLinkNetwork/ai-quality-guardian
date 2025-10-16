@@ -260,5 +260,5 @@ git commit -m "feat: Add new feature"
 
 ---
 
-**Current Version: 1.2.12**
+**Current Version: 1.2.13**
 **Last Updated: 2025-10-17**
