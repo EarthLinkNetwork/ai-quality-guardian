@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.2.17"
+# version: "1.2.18"
 
 set -e
 
@@ -89,7 +89,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.2.17"
+CURRENT_VERSION="1.2.18"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -280,7 +280,7 @@ if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.17",
+  "version": "1.2.18",
   "enabled": true,
   "modules": {
     "baseline": {
