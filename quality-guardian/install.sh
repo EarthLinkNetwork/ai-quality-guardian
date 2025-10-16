@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.2.18"
+# version: "1.2.19"
 
 set -e
 
@@ -12,6 +12,8 @@ CURRENT_DIR="$(pwd)"
 # インストールモード: personal または team
 INSTALL_MODE="team"
 FORCE_INSTALL=false
+CLAUDE_DIR=""
+GIT_PROJECT_DIR=""
 
 # 引数解析
 for arg in "$@"; do
@@ -31,36 +33,142 @@ for arg in "$@"; do
     esac
 done
 
-# Claude Codeの実行ディレクトリを検出
-# .claudeディレクトリが現在のディレクトリにあればここにインストール
-# なければ、引数で指定されたディレクトリまたは現在のディレクトリにインストール
-detect_installation_target() {
-    local target_dir="${1:-$CURRENT_DIR}"
+# Gitリポジトリを検索する関数
+find_git_repositories() {
+    local search_dir="${1:-.}"
+    local max_depth="${2:-3}"
 
-    # 現在のディレクトリに.claudeディレクトリがあるかチェック
-    if [ -d "$CURRENT_DIR/.claude" ]; then
-        echo "$CURRENT_DIR"
-        return
-    fi
-
-    # 引数で明示的に指定された場合はそれを優先
-    if [ -n "$1" ]; then
-        echo "$target_dir"
-        return
-    fi
-
-    # package.jsonがあればカレントディレクトリがプロジェクトルート
-    if [ -f "$CURRENT_DIR/package.json" ] || [ -f "$CURRENT_DIR/go.mod" ] || \
-       [ -f "$CURRENT_DIR/Cargo.toml" ] || [ -f "$CURRENT_DIR/pyproject.toml" ]; then
-        echo "$CURRENT_DIR"
-        return
-    fi
-
-    # それ以外はカレントディレクトリ
-    echo "$CURRENT_DIR"
+    # カレントディレクトリ配下のGitリポジトリを検索
+    find "$search_dir" -maxdepth "$max_depth" -type d -name ".git" 2>/dev/null | while read -r git_dir; do
+        dirname "$git_dir"
+    done
 }
 
-PROJECT_DIR="$(detect_installation_target "$1")"
+# Personal Mode: Gitリポジトリを選択
+select_git_repository_for_personal_mode() {
+    echo ""
+    echo "[Personal Mode] Gitリポジトリを選択してください"
+    echo ""
+
+    # Gitリポジトリを検索
+    local repos=()
+    while IFS= read -r repo; do
+        repos+=("$repo")
+    done < <(find_git_repositories "$CURRENT_DIR" 3)
+
+    # カレントディレクトリも選択肢に追加
+    local current_option="$CURRENT_DIR (カレントディレクトリ)"
+
+    if [ ${#repos[@]} -eq 0 ]; then
+        # Gitリポジトリが見つからない場合
+        echo "[警告] Gitリポジトリが見つかりませんでした"
+        echo ""
+        echo "選択肢:"
+        echo "1) $current_option"
+        echo "2) その他（手動入力）"
+        echo ""
+        read -p "選択 [1-2]: " choice
+
+        case $choice in
+            1)
+                echo "$CURRENT_DIR"
+                ;;
+            2)
+                read -p "インストール先のパスを入力: " manual_path
+                echo "$manual_path"
+                ;;
+            *)
+                echo "[エラー] 無効な選択です"
+                exit 1
+                ;;
+        esac
+    elif [ ${#repos[@]} -eq 1 ]; then
+        # Gitリポジトリが1つだけ見つかった場合
+        echo "検出されたGitリポジトリ: ${repos[0]}"
+        echo ""
+        echo "選択肢:"
+        echo "1) ${repos[0]}"
+        echo "2) $current_option"
+        echo "3) その他（手動入力）"
+        echo ""
+        read -p "選択 [1-3]: " choice
+
+        case $choice in
+            1)
+                echo "${repos[0]}"
+                ;;
+            2)
+                echo "$CURRENT_DIR"
+                ;;
+            3)
+                read -p "インストール先のパスを入力: " manual_path
+                echo "$manual_path"
+                ;;
+            *)
+                echo "[エラー] 無効な選択です"
+                exit 1
+                ;;
+        esac
+    else
+        # 複数のGitリポジトリが見つかった場合
+        echo "複数のGitリポジトリが見つかりました:"
+        echo ""
+
+        local i=1
+        for repo in "${repos[@]}"; do
+            echo "$i) $repo"
+            ((i++))
+        done
+        echo "$i) $current_option"
+        ((i++))
+        echo "$i) その他（手動入力）"
+        echo ""
+
+        local max_choice=$i
+        read -p "選択 [1-$max_choice]: " choice
+
+        if [ "$choice" -eq "${#repos[@]}" ] 2>/dev/null && [ "$choice" -le "${#repos[@]}" ]; then
+            echo "${repos[$((choice-1))]}"
+        elif [ "$choice" -eq "$((${#repos[@]}+1))" ]; then
+            echo "$CURRENT_DIR"
+        elif [ "$choice" -eq "$max_choice" ]; then
+            read -p "インストール先のパスを入力: " manual_path
+            echo "$manual_path"
+        else
+            echo "[エラー] 無効な選択です"
+            exit 1
+        fi
+    fi
+}
+
+# インストール先を決定
+if [ "$INSTALL_MODE" = "personal" ]; then
+    # Personal Mode: .claude/ はカレント、Quality Guardian本体はGitリポジトリへ
+    CLAUDE_DIR="$CURRENT_DIR"
+    GIT_PROJECT_DIR="$(select_git_repository_for_personal_mode)"
+
+    if [ -z "$GIT_PROJECT_DIR" ] || [ ! -d "$GIT_PROJECT_DIR" ]; then
+        echo "[エラー] 無効なディレクトリが選択されました: $GIT_PROJECT_DIR"
+        exit 1
+    fi
+
+    PROJECT_DIR="$GIT_PROJECT_DIR"
+else
+    # Team Mode: すべて同じディレクトリ（従来通り）
+    if [ -n "$1" ]; then
+        PROJECT_DIR="$1"
+    elif [ -d "$CURRENT_DIR/.claude" ]; then
+        PROJECT_DIR="$CURRENT_DIR"
+    elif [ -f "$CURRENT_DIR/package.json" ] || [ -f "$CURRENT_DIR/go.mod" ] || \
+         [ -f "$CURRENT_DIR/Cargo.toml" ] || [ -f "$CURRENT_DIR/pyproject.toml" ]; then
+        PROJECT_DIR="$CURRENT_DIR"
+    else
+        PROJECT_DIR="$CURRENT_DIR"
+    fi
+
+    CLAUDE_DIR="$PROJECT_DIR"
+    GIT_PROJECT_DIR="$PROJECT_DIR"
+fi
 
 echo "🚀 Quality Guardian インストール開始"
 echo "対象プロジェクト: $PROJECT_DIR"
@@ -89,7 +197,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.2.18"
+CURRENT_VERSION="1.2.19"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -280,7 +388,7 @@ if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.18",
+  "version": "1.2.19",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -494,91 +602,93 @@ if [ -d "$SCRIPT_DIR/agents" ]; then
     echo ""
     echo "🤖 サブエージェント設定をインストール中..."
 
-    # .claude/agentsディレクトリを作成
-    mkdir -p .claude/agents
+    # .claude/agentsディレクトリを作成（CLAUDE_DIRに配置）
+    mkdir -p "$CLAUDE_DIR/.claude/agents"
 
     # エージェント設定をコピー
     if [ -f "$SCRIPT_DIR/agents/rule-advisor.md" ]; then
-        cp "$SCRIPT_DIR/agents/rule-advisor.md" .claude/agents/
+        cp "$SCRIPT_DIR/agents/rule-advisor.md" "$CLAUDE_DIR/.claude/agents/"
         echo "✅ rule-advisor (必須⭐⭐⭐⭐⭐) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/quality-fixer.md" ]; then
-        cp "$SCRIPT_DIR/agents/quality-fixer.md" .claude/agents/
+        cp "$SCRIPT_DIR/agents/quality-fixer.md" "$CLAUDE_DIR/.claude/agents/"
         echo "✅ quality-fixer (必須⭐⭐⭐⭐⭐) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/task-executor.md" ]; then
-        cp "$SCRIPT_DIR/agents/task-executor.md" .claude/agents/
+        cp "$SCRIPT_DIR/agents/task-executor.md" "$CLAUDE_DIR/.claude/agents/"
         echo "✅ task-executor (必須⭐⭐⭐⭐) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/requirement-analyzer.md" ]; then
-        cp "$SCRIPT_DIR/agents/requirement-analyzer.md" .claude/agents/
+        cp "$SCRIPT_DIR/agents/requirement-analyzer.md" "$CLAUDE_DIR/.claude/agents/"
         echo "✅ requirement-analyzer (有用⭐⭐⭐⭐) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/technical-designer.md" ]; then
-        cp "$SCRIPT_DIR/agents/technical-designer.md" .claude/agents/
+        cp "$SCRIPT_DIR/agents/technical-designer.md" "$CLAUDE_DIR/.claude/agents/"
         echo "✅ technical-designer (有用⭐⭐⭐) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/code-reviewer.md" ]; then
-        cp "$SCRIPT_DIR/agents/code-reviewer.md" .claude/agents/
+        cp "$SCRIPT_DIR/agents/code-reviewer.md" "$CLAUDE_DIR/.claude/agents/"
         echo "✅ code-reviewer (有用⭐⭐⭐) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/work-planner.md" ]; then
-        cp "$SCRIPT_DIR/agents/work-planner.md" .claude/agents/
+        cp "$SCRIPT_DIR/agents/work-planner.md" "$CLAUDE_DIR/.claude/agents/"
         echo "✅ work-planner (状況による⭐⭐) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/task-decomposer.md" ]; then
-        cp "$SCRIPT_DIR/agents/task-decomposer.md" .claude/agents/
+        cp "$SCRIPT_DIR/agents/task-decomposer.md" "$CLAUDE_DIR/.claude/agents/"
         echo "✅ task-decomposer (状況による⭐⭐) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/document-reviewer.md" ]; then
-        cp "$SCRIPT_DIR/agents/document-reviewer.md" .claude/agents/
+        cp "$SCRIPT_DIR/agents/document-reviewer.md" "$CLAUDE_DIR/.claude/agents/"
         echo "✅ document-reviewer (状況による⭐⭐) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/prd-creator.md" ]; then
-        cp "$SCRIPT_DIR/agents/prd-creator.md" .claude/agents/
+        cp "$SCRIPT_DIR/agents/prd-creator.md" "$CLAUDE_DIR/.claude/agents/"
         echo "✅ prd-creator (限定的⭐) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/e2e-test-generator.md" ]; then
-        cp "$SCRIPT_DIR/agents/e2e-test-generator.md" .claude/agents/
+        cp "$SCRIPT_DIR/agents/e2e-test-generator.md" "$CLAUDE_DIR/.claude/agents/"
         echo "✅ e2e-test-generator (限定的⭐) をインストール"
     fi
 
     echo "✅ サブエージェント設定（全11個）をインストールしました"
+    if [ "$INSTALL_MODE" = "personal" ] && [ "$CLAUDE_DIR" != "$PROJECT_DIR" ]; then
+        echo "   配置先: $CLAUDE_DIR/.claude/agents/"
+    fi
 fi
 
 # CLAUDE.md安全更新（Personal/Team Mode共通）
-if [ -d "$PROJECT_DIR" ]; then
-    echo ""
-    echo "📝 CLAUDE.mdを更新中..."
+echo ""
+echo "📝 CLAUDE.mdを更新中..."
 
-    # .claudeディレクトリの作成
-    mkdir -p .claude
+# .claudeディレクトリの作成（CLAUDE_DIRに配置）
+mkdir -p "$CLAUDE_DIR/.claude"
 
 # CLAUDE.mdの安全な更新
-if [ -f .claude/CLAUDE.md ]; then
+if [ -f "$CLAUDE_DIR/.claude/CLAUDE.md" ]; then
     # Quality Guardian設定セクションが既に存在するかチェック
-    if grep -q "# Quality Guardian Configuration" .claude/CLAUDE.md; then
+    if grep -q "# Quality Guardian Configuration" "$CLAUDE_DIR/.claude/CLAUDE.md"; then
         echo "✅ Quality Guardian設定は既に存在します"
     else
         echo "⚠️ 既存CLAUDE.mdにQuality Guardian設定を追加します"
         # バックアップ作成
-        cp .claude/CLAUDE.md .claude/CLAUDE.md.backup
+        cp "$CLAUDE_DIR/.claude/CLAUDE.md" "$CLAUDE_DIR/.claude/CLAUDE.md.backup"
         # セパレーターと設定追加
-        echo "" >> .claude/CLAUDE.md
-        echo "# ================================================================" >> .claude/CLAUDE.md
-        echo "# Quality Guardian Configuration (Auto-generated)" >> .claude/CLAUDE.md
-        echo "# ================================================================" >> .claude/CLAUDE.md
-        cat >> .claude/CLAUDE.md << EOF
+        echo "" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
+        echo "# ================================================================" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
+        echo "# Quality Guardian Configuration (Auto-generated)" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
+        echo "# ================================================================" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
+        cat >> "$CLAUDE_DIR/.claude/CLAUDE.md" << EOF
 
 ## Quality Guardian 品質管理設定
 
@@ -830,7 +940,7 @@ EOF
     fi
 else
     echo "📄 新しいCLAUDE.mdを作成します"
-    cat > .claude/CLAUDE.md << EOF
+    cat > "$CLAUDE_DIR/.claude/CLAUDE.md" << EOF
 # Claude Code Quality Configuration
 
 ## Quality Guardian 品質管理設定

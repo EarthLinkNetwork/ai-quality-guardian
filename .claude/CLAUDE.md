@@ -300,5 +300,5 @@ fix: Fix bug
 
 ---
 
-**Current Version: 1.2.18**
+**Current Version: 1.2.19**
 **Last Updated: 2025-10-17**
