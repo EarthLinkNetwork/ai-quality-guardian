@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.2.20"
+# version: "1.2.21"
 
 set -e
 
@@ -12,6 +12,7 @@ CURRENT_DIR="$(pwd)"
 # インストールモード: personal または team
 INSTALL_MODE="team"
 FORCE_INSTALL=false
+NON_INTERACTIVE=false
 CLAUDE_DIR=""
 GIT_PROJECT_DIR=""
 
@@ -30,6 +31,10 @@ for arg in "$@"; do
             FORCE_INSTALL=true
             shift
             ;;
+        --non-interactive|--auto)
+            NON_INTERACTIVE=true
+            shift
+            ;;
     esac
 done
 
@@ -46,6 +51,12 @@ find_git_repositories() {
 
 # Personal Mode: Gitリポジトリを選択
 select_git_repository_for_personal_mode() {
+    # 非対話モードの場合はカレントディレクトリを返す
+    if [ "$NON_INTERACTIVE" = true ]; then
+        echo "$CURRENT_DIR"
+        return 0
+    fi
+
     echo ""
     echo "[Personal Mode] Gitリポジトリを選択してください"
     echo ""
@@ -197,7 +208,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.2.20"
+CURRENT_VERSION="1.2.21"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -294,7 +305,7 @@ fi
 
 echo "✅ 検出されたプロジェクト種別: $PROJECT_TYPE"
 
-if [ "$PROJECT_TYPE" = "Unknown" ]; then
+if [ "$PROJECT_TYPE" = "Unknown" ] && [ "$NON_INTERACTIVE" = false ]; then
     echo "⚠️ プロジェクト種別を自動検出できませんでした"
     read -p "続行しますか？ (y/n): " -n 1 -r
     echo
@@ -388,7 +399,7 @@ if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.20",
+  "version": "1.2.21",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -1264,13 +1275,18 @@ fi
 fi
 
 # 初期ベースライン記録
-echo ""
-echo "📊 初期ベースラインを記録しますか？"
-read -p "今の状態を基準として記録します (y/n): " -n 1 -r
-echo
+if [ "$NON_INTERACTIVE" = false ]; then
+    echo ""
+    echo "📊 初期ベースラインを記録しますか？"
+    read -p "今の状態を基準として記録します (y/n): " -n 1 -r
+    echo
 
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    ./quality-guardian baseline
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        ./quality-guardian baseline
+    fi
+else
+    echo ""
+    echo "📊 初期ベースライン記録をスキップ (非対話モード)"
 fi
 
 echo ""

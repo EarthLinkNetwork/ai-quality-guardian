@@ -30,12 +30,12 @@ curl -s https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/m
 
 ### 4. インストール/アップデート実行
 
-Personal Mode か Team Mode かユーザーに確認してから、以下を実行：
+Personal Mode か Team Mode かユーザーに確認してから、以下を実行（`--non-interactive`オプションを追加）：
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/main/quality-guardian/install.sh | bash -s -- --personal
+curl -sSL https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/main/quality-guardian/install.sh | bash -s -- --personal --non-interactive
 # または
-curl -sSL https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/main/quality-guardian/install.sh | bash -s -- --team
+curl -sSL https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/main/quality-guardian/install.sh | bash -s -- --team --non-interactive
 ```
 
 ## 重要なルール
@@ -58,7 +58,7 @@ curl -sSL https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian
 
 4. ユーザーに確認: Personal Mode か Team Mode か
 
-5. curl -sSL https://raw.githubusercontent.com/.../install.sh | bash -s -- --personal
+5. curl -sSL https://raw.githubusercontent.com/.../install.sh | bash -s -- --personal --non-interactive
 ```
 
 ## 誤った実装例（やってはいけない）

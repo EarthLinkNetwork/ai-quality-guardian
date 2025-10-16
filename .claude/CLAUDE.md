@@ -335,5 +335,5 @@ fix: Fix bug
 
 ---
 
-**Current Version: 1.2.20**
+**Current Version: 1.2.21**
 **Last Updated: 2025-10-17**
