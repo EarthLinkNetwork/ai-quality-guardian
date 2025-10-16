@@ -1,0 +1,28 @@
+{
+  "name": "quality-guardian",
+  "version": "1.2.19",
+  "description": "AI Quality Management System for Claude Code projects",
+  "main": "quality-guardian.js",
+  "bin": {
+    "quality-guardian": "./quality-guardian.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "quality",
+    "ai",
+    "claude",
+    "testing",
+    "code-quality"
+  ],
+  "author": "EarthLink Network",
+  "license": "MIT",
+  "dependencies": {
+    "glob": "^11.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EarthLinkNetwork/ai-quality-guardian.git"
+  }
+}
