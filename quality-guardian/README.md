@@ -34,10 +34,27 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh --personal
 - ✅ `quality-guardian` 実行スクリプト作成
 - ✅ `.quality-guardian.json` 設定ファイル作成
 - ✅ `.gitignore` に追加（ログファイル除外）
-- ❌ Git pre-commit hook の設定なし
+- ✅ Git pre-commit hook の設定（ローカルのみ）
+- ✅ `.claude/` 設定（エージェント・CLAUDE.md）のインストール
 - ❌ GitHub Actions workflow の作成なし
 - ❌ package.json の変更なし
-- ❌ .claude/CLAUDE.md の変更なし
+
+**v1.2.19+の標準ディレクトリ構造:**
+Personal Modeでは、`.claude/` と Gitリポジトリを別々のディレクトリに配置できます：
+```
+~/dev/workspace/          ← Claude Code実行ディレクトリ（.claude/を配置）
+└── my-project/           ← Gitリポジトリ（Quality Guardianを配置）
+    ├── .git/
+    ├── .quality-guardian/
+    └── quality-guardian
+```
+
+この構造により、`.gitignore` を変更せずに `.claude/` を使用できます。
+
+インストール時に自動的にGitリポジトリを検出し、選択できます：
+- 複数のGitリポジトリがある場合は選択可能
+- カレントディレクトリも選択肢に含まれる
+- 手動入力も可能
 
 **他の開発者への影響: なし** - 自分だけが `./quality-guardian` コマンドを実行できます
 
@@ -57,6 +74,8 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ GitHub Actions workflow 作成
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
+
+**v1.2.19の新機能**: Personal Mode標準ディレクトリ構造対応 - `.claude/` を親ディレクトリに配置可能
 
 **v1.2.5の新機能**: 自動バージョン確認・アップデート機能 - 既存インストールを検出して賢くアップデート
 
