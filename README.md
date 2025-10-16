@@ -34,12 +34,13 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh --personal
 - ✅ `quality-guardian` 実行スクリプト作成
 - ✅ `.quality-guardian.json` 設定ファイル作成
 - ✅ `.gitignore` に追加（ログファイル除外のみ）
+- ✅ **サブエージェント設定（.claude/agents/）** - 全11個のエージェント
+- ✅ **CLAUDE.md設定（.claude/CLAUDE.md）** - AI開発ルール
 
 **実行されない処理:**
 - ❌ Git pre-commit hook の設定
 - ❌ GitHub Actions workflow の作成
 - ❌ package.json の変更
-- ❌ .claude/CLAUDE.md の変更
 
 **使用例:**
 - ユーザーが個人的に試したい場合
@@ -55,21 +56,19 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 ```
 
 **実行される処理:**
-- ✅ Personal Modeの全機能
+- ✅ Personal Modeの全機能（サブエージェント・CLAUDE.md含む）
 - ✅ Git pre-commit hook 設定（全員のコミット時に品質チェック）
 - ✅ GitHub Actions workflow 作成（CI/CDに統合）
 - ✅ package.json に npm scripts 追加
-- ✅ .claude/CLAUDE.md 更新（AIへの指示追加）
-- ✅ **サブエージェント設定インストール（v1.2.8+）** - 全11個の専門エージェント
 
 **使用例:**
 - チーム全体で品質を担保したい場合
 - CI/CDに統合したい場合
 - 既にチームで合意が取れている場合
 
-### サブエージェント設定（v1.2.8+）
+### サブエージェント設定（v1.2.9+）
 
-Team Modeでインストールすると、以下の全11個の専門エージェント設定が自動的にインストールされます：
+**Personal ModeでもTeam Modeでも**、以下の全11個の専門エージェント設定が自動的にインストールされます：
 
 #### 🌟 必須エージェント（⭐⭐⭐⭐⭐/⭐⭐⭐⭐）
 - **rule-advisor** - タスク開始時に適切なルールを選択、AIの実行精度を最大化

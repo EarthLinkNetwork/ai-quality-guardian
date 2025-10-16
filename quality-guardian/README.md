@@ -350,7 +350,12 @@ Team Modeでインストールすると、専門的なサブエージェント�
 
 ### Personal Modeでの使用
 
-Personal Modeではエージェント設定はインストールされません。必要に応じて手動で追加できます。
+**v1.2.9以降**、Personal Modeでも全11個のエージェント設定とCLAUDE.mdが自動的にインストールされます。
+
+`.claude/`ディレクトリは個人設定なので、他の開発者に影響を与えません。Personal ModeとTeam Modeの違いは：
+
+- **Personal Mode**: `.claude/`設定 + 品質チェックツール（Git hooks/CI/package.json変更なし）
+- **Team Mode**: Personal Modeの全機能 + Git hooks + GitHub Actions + package.json scripts
 
 ## 他のツールとの統合
 
@@ -422,7 +427,7 @@ Quality Guardianは、インストール時に`.claude/CLAUDE.md`に以下のル
 
 ### Personal Modeでの使用
 
-Personal Modeでは`.claude/CLAUDE.md`が変更されないため、この機能は含まれません。手動で追加することは可能です。
+**v1.2.9以降**、Personal Modeでも`.claude/CLAUDE.md`が自動的に作成/更新されます。この機能は自動的に適用されます。
 
 ## トラブルシューティング
 

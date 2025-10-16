@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.2.8"
+# version: "1.2.9"
 
 set -e
 
@@ -83,7 +83,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.2.8"
+CURRENT_VERSION="1.2.9"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -274,7 +274,7 @@ if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.8",
+  "version": "1.2.9",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -485,8 +485,8 @@ elif [ "$INSTALL_MODE" = "personal" ]; then
     echo "⏭️  GitHub Actions workflow の生成をスキップ (Personal Mode)"
 fi
 
-# エージェント設定のインストール（Team Modeのみ）
-if [ "$INSTALL_MODE" = "team" ] && [ -d "$SCRIPT_DIR/agents" ]; then
+# エージェント設定のインストール（Personal/Team Mode共通）
+if [ -d "$SCRIPT_DIR/agents" ]; then
     echo ""
     echo "🤖 サブエージェント設定をインストール中..."
 
@@ -550,12 +550,10 @@ if [ "$INSTALL_MODE" = "team" ] && [ -d "$SCRIPT_DIR/agents" ]; then
     fi
 
     echo "✅ サブエージェント設定（全11個）をインストールしました"
-elif [ "$INSTALL_MODE" = "personal" ]; then
-    echo "⏭️  サブエージェント設定のインストールをスキップ (Personal Mode)"
 fi
 
-# CLAUDE.md安全更新（Team Modeのみ）
-if [ "$INSTALL_MODE" = "team" ]; then
+# CLAUDE.md安全更新（Personal/Team Mode共通）
+if [ -d "$PROJECT_DIR" ]; then
     echo ""
     echo "📝 CLAUDE.mdを更新中..."
 
@@ -789,8 +787,6 @@ Personal Modeの特徴：
 EOF
     echo "✅ CLAUDE.mdを作成しました"
 fi
-elif [ "$INSTALL_MODE" = "personal" ]; then
-    echo "⏭️  CLAUDE.md の更新をスキップ (Personal Mode)"
 fi
 
 # 初期ベースライン記録

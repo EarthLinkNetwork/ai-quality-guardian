@@ -149,5 +149,5 @@
 
 ---
 
-**Current Version: 1.2.8**
+**Current Version: 1.2.9**
 **Last Updated: 2025-10-17**
