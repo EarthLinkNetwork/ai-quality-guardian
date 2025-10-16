@@ -1,6 +1,6 @@
 {
   "name": "quality-guardian",
-  "version": "1.2.19",
+  "version": "1.2.20",
   "description": "AI Quality Management System for Claude Code projects",
   "main": "quality-guardian.js",
   "bin": {
