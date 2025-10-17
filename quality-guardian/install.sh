@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.2.27"
+# version: "1.2.28"
 
 set -e
 
@@ -208,7 +208,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.2.27"
+CURRENT_VERSION="1.2.28"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -399,7 +399,7 @@ if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.27",
+  "version": "1.2.28",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -786,7 +786,6 @@ else
         echo "❌ エラー: テンプレートファイルが見つかりません: $SCRIPT_DIR/.claude-template.md"
         exit 1
     fi
-fi
 fi
 
 # 初期ベースライン記録
