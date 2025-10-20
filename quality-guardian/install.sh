@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.2.36"
+# version: "1.2.37"
 
 set -e
 
@@ -181,34 +181,34 @@ else
     GIT_PROJECT_DIR="$PROJECT_DIR"
 fi
 
-echo "🚀 Quality Guardian インストール開始"
+echo "Quality Guardian インストール開始"
 echo "対象プロジェクト: $PROJECT_DIR"
 if [ "$INSTALL_MODE" = "personal" ]; then
-    echo "🔒 インストールモード: Personal (他の開発者に影響なし)"
+    echo "インストールモード: Personal (他の開発者に影響なし)"
     echo "   - Git hooks有効（ローカルのみ）"
     echo "   - package.json変更なし"
     echo "   - GitHub Actions workflowなし"
 else
-    echo "👥 インストールモード: Team (フルCI/CD統合)"
+    echo "インストールモード: Team (フルCI/CD統合)"
     echo "   - Git hooks有効"
     echo "   - package.json変更"
     echo "   - GitHub Actions workflow作成"
 fi
 if [ -d "$PROJECT_DIR/.claude" ]; then
-    echo "💡 Claude Code実行ディレクトリを検出しました"
+    echo "Claude Code実行ディレクトリを検出しました"
 fi
 echo ""
 
 # プロジェクトディレクトリ確認
 if [ ! -d "$PROJECT_DIR" ]; then
-    echo "❌ エラー: ディレクトリが存在しません: $PROJECT_DIR"
+    echo "エラー: ディレクトリが存在しません: $PROJECT_DIR"
     exit 1
 fi
 
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.2.36"
+CURRENT_VERSION="1.2.37"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -221,14 +221,14 @@ if [ -f ".quality-guardian.json" ]; then
         INSTALLED_VERSION=$(grep -oP '"version"\s*:\s*"\K[^"]+' .quality-guardian.json 2>/dev/null || echo "unknown")
     fi
 
-    echo "✅ Quality Guardian は既にインストール済みです"
+    echo "Quality Guardian は既にインストール済みです"
     echo "   現在のバージョン: $INSTALLED_VERSION"
     echo "   最新バージョン: $CURRENT_VERSION"
     echo ""
 
     # バージョン比較
     if [ "$INSTALLED_VERSION" = "$CURRENT_VERSION" ]; then
-        echo "✨ 既に最新バージョンです"
+        echo "既に最新バージョンです"
         echo ""
         echo "次のアクション："
         echo "1. そのまま使用 - 現在の設定で問題なければ、特に作業不要"
@@ -245,11 +245,11 @@ if [ -f ".quality-guardian.json" ]; then
             echo "  bash ~/dev/ai/scripts/quality-guardian/install.sh --force"
             exit 0
         else
-            echo "🔄 強制再インストールを実行します..."
+            echo "強制再インストールを実行します..."
             echo ""
         fi
     else
-        echo "🔄 アップデートを実行します..."
+        echo "アップデートを実行します..."
         echo "   $INSTALLED_VERSION → $CURRENT_VERSION"
         echo ""
     fi
@@ -262,7 +262,7 @@ LINT_COMMAND=""
 TYPE_CHECK_COMMAND=""
 BUILD_COMMAND=""
 
-echo "🔍 プロジェクト種別を検出中..."
+echo "プロジェクト種別を検出中..."
 
 if [ -f "package.json" ]; then
     # パッケージマネージャー検出
@@ -303,10 +303,10 @@ elif [ -f "Cargo.toml" ]; then
     BUILD_COMMAND="cargo build"
 fi
 
-echo "✅ 検出されたプロジェクト種別: $PROJECT_TYPE"
+echo "検出されたプロジェクト種別: $PROJECT_TYPE"
 
 if [ "$PROJECT_TYPE" = "Unknown" ] && [ "$NON_INTERACTIVE" = false ]; then
-    echo "⚠️ プロジェクト種別を自動検出できませんでした"
+    echo "プロジェクト種別を自動検出できませんでした"
     read -p "続行しますか？ (y/n): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -315,14 +315,39 @@ if [ "$PROJECT_TYPE" = "Unknown" ] && [ "$NON_INTERACTIVE" = false ]; then
 fi
 
 # Quality Guardianディレクトリをプロジェクトにコピー
-echo "📦 Quality Guardianモジュールをインストール..."
+echo "Quality Guardianモジュールをインストール..."
 
 # .quality-guardianディレクトリ作成
 mkdir -p .quality-guardian
+mkdir -p .quality-guardian/modules
 
-# モジュールコピー
-cp -r "$SCRIPT_DIR/modules" .quality-guardian/
-cp "$SCRIPT_DIR/quality-guardian.js" .quality-guardian/
+# curlから実行されているかチェック（modulesディレクトリの存在確認）
+if [ -d "$SCRIPT_DIR/modules" ] && [ -f "$SCRIPT_DIR/quality-guardian.js" ]; then
+    # ローカル実行の場合
+    echo "ローカルファイルからコピー中..."
+    cp -r "$SCRIPT_DIR/modules/"* .quality-guardian/modules/
+    cp "$SCRIPT_DIR/quality-guardian.js" .quality-guardian/
+else
+    # curlから実行されている場合、GitHubからダウンロード
+    echo "GitHubから最新版をダウンロード中..."
+
+    GITHUB_BASE="https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/main/quality-guardian"
+
+    # メインスクリプト
+    curl -sSL -o .quality-guardian/quality-guardian.js "$GITHUB_BASE/quality-guardian.js" || {
+        echo "エラー: quality-guardian.jsのダウンロードに失敗しました"
+        exit 1
+    }
+
+    # 各モジュールをダウンロード
+    curl -sSL -o .quality-guardian/modules/baseline-monitor.js "$GITHUB_BASE/modules/baseline-monitor.js" || echo "警告: baseline-monitor.jsのダウンロードに失敗"
+    curl -sSL -o .quality-guardian/modules/context-analyzer.js "$GITHUB_BASE/modules/context-analyzer.js" || echo "警告: context-analyzer.jsのダウンロードに失敗"
+    curl -sSL -o .quality-guardian/modules/deep-quality-analyzer.js "$GITHUB_BASE/modules/deep-quality-analyzer.js" || echo "警告: deep-quality-analyzer.jsのダウンロードに失敗"
+    curl -sSL -o .quality-guardian/modules/invariant-checker.js "$GITHUB_BASE/modules/invariant-checker.js" || echo "警告: invariant-checker.jsのダウンロードに失敗"
+    curl -sSL -o .quality-guardian/modules/pr-reviewer.js "$GITHUB_BASE/modules/pr-reviewer.js" || echo "警告: pr-reviewer.jsのダウンロードに失敗"
+
+    echo "GitHubからのダウンロード完了"
+fi
 
 # ESモジュールプロジェクトの場合、CommonJSとして動作させるため
 # .quality-guardianディレクトリにpackage.jsonを作成
@@ -388,18 +413,18 @@ if [ -f "package.json" ]; then
         echo "npm を使用して依存関係をインストール..."
         npm install --save-dev $REQUIRED_PACKAGES
     else
-        echo "⚠️ パッケージマネージャーが見つかりません"
+        echo "パッケージマネージャーが見つかりません"
     fi
 fi
 
 # 設定ファイル生成
-echo "⚙️ 設定ファイルを生成..."
+echo "設定ファイルを生成..."
 
 if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.36",
+  "version": "1.2.37",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -447,11 +472,11 @@ if [ ! -f ".quality-guardian.json" ]; then
   }
 }
 EOF
-    echo "✅ .quality-guardian.json を作成しました"
+    echo ".quality-guardian.json を作成しました"
 else
     # アップデート時：バージョンのみ更新（ユーザー設定を保持）
     if [ "$IS_INSTALLED" = true ] && [ "$INSTALLED_VERSION" != "$CURRENT_VERSION" ]; then
-        echo "🔄 設定ファイルのバージョンを更新..."
+        echo "設定ファイルのバージョンを更新..."
 
         # バックアップ作成
         cp .quality-guardian.json .quality-guardian.json.backup
@@ -460,15 +485,15 @@ else
         if command -v jq &> /dev/null; then
             jq ".version = \"$CURRENT_VERSION\"" .quality-guardian.json > .quality-guardian.json.tmp && \
             mv .quality-guardian.json.tmp .quality-guardian.json
-            echo "✅ バージョンを更新しました ($INSTALLED_VERSION → $CURRENT_VERSION)"
+            echo "バージョンを更新しました ($INSTALLED_VERSION → $CURRENT_VERSION)"
             echo "   バックアップ: .quality-guardian.json.backup"
         else
             # jqがない場合はsedで置換
             sed -i.backup "s/\"version\": \"$INSTALLED_VERSION\"/\"version\": \"$CURRENT_VERSION\"/" .quality-guardian.json
-            echo "✅ バージョンを更新しました ($INSTALLED_VERSION → $CURRENT_VERSION)"
+            echo "バージョンを更新しました ($INSTALLED_VERSION → $CURRENT_VERSION)"
         fi
     else
-        echo "✅ 設定ファイルは既に存在します（保持）"
+        echo "設定ファイルは既に存在します（保持）"
     fi
 fi
 
@@ -479,13 +504,13 @@ if [ -f ".gitignore" ]; then
         echo "# Quality Guardian" >> .gitignore
         echo ".quality-baseline.json" >> .gitignore
         echo ".quality-guardian/*.log" >> .gitignore
-        echo "✅ .gitignore を更新しました"
+        echo ".gitignore を更新しました"
     fi
 fi
 
 # package.jsonにスクリプト追加（Team Modeのみ）
 if [ "$INSTALL_MODE" = "team" ] && [ -f "package.json" ] && command -v jq &> /dev/null; then
-    echo "📝 package.json にスクリプトを追加..."
+    echo "package.json にスクリプトを追加..."
 
     # jqを使ってスクリプトを追加
     jq '.scripts += {
@@ -496,14 +521,14 @@ if [ "$INSTALL_MODE" = "team" ] && [ -f "package.json" ] && command -v jq &> /de
         "quality:fix": "./quality-guardian fix"
     }' package.json > package.json.tmp && mv package.json.tmp package.json
 
-    echo "✅ npm scripts を追加しました"
+    echo "npm scripts を追加しました"
 elif [ "$INSTALL_MODE" = "personal" ]; then
-    echo "⏭️  package.json の変更をスキップ (Personal Mode)"
+    echo " package.json の変更をスキップ (Personal Mode)"
 fi
 
 # Git hooks設定（Personal/Team Mode共通）
 if [ -d ".git" ]; then
-    echo "🔗 Git hooks を設定..."
+    echo "Git hooks を設定..."
 
     # Hook管理ツールの検出
     HOOK_MANAGER_DETECTED=false
@@ -530,7 +555,7 @@ if [ -d ".git" ]; then
     fi
 
     if [ "$HOOK_MANAGER_DETECTED" = true ]; then
-        echo "⚠️  Hook管理ツールを検出: $HOOK_MANAGER_NAME"
+        echo " Hook管理ツールを検出: $HOOK_MANAGER_NAME"
         echo ""
         echo "Quality Guardianを$HOOK_MANAGER_NAME に統合する方法:"
         echo ""
@@ -566,16 +591,16 @@ if [ -d ".git" ]; then
                 ;;
         esac
 
-        echo "✅ Git hooks のインストールをスキップしました"
+        echo "Git hooks のインストールをスキップしました"
         echo "   ($HOOK_MANAGER_NAME を使用してください)"
 
     elif [ "$EXISTING_HOOK" = true ]; then
-        echo "⚠️  既存の pre-commit hook を検出しました"
+        echo " 既存の pre-commit hook を検出しました"
         echo ""
 
         # バックアップ作成
         cp .git/hooks/pre-commit .git/hooks/pre-commit.backup
-        echo "✅ バックアップ作成: .git/hooks/pre-commit.backup"
+        echo "バックアップ作成: .git/hooks/pre-commit.backup"
 
         if [ "$NON_INTERACTIVE" = false ]; then
             echo ""
@@ -591,17 +616,17 @@ if [ -d ".git" ]; then
                     echo "" >> .git/hooks/pre-commit
                     echo "# Quality Guardian (Added by installer)" >> .git/hooks/pre-commit
                     echo 'if [ -x "./quality-guardian" ]; then' >> .git/hooks/pre-commit
-                    echo '    echo "🔍 Quality Guardian チェック実行中..."' >> .git/hooks/pre-commit
+                    echo '    echo "Quality Guardian チェック実行中..."' >> .git/hooks/pre-commit
                     echo '    ./quality-guardian check --quick' >> .git/hooks/pre-commit
                     echo '    if [ $? -ne 0 ]; then' >> .git/hooks/pre-commit
-                    echo '        echo "❌ 品質チェックに失敗しました"' >> .git/hooks/pre-commit
+                    echo '        echo "品質チェックに失敗しました"' >> .git/hooks/pre-commit
                     echo '        echo "修正するには: ./quality-guardian fix"' >> .git/hooks/pre-commit
                     echo '        exit 1' >> .git/hooks/pre-commit
                     echo '    fi' >> .git/hooks/pre-commit
                     echo 'fi' >> .git/hooks/pre-commit
 
                     chmod +x .git/hooks/pre-commit
-                    echo "✅ 既存hookに Quality Guardian を追加しました"
+                    echo "既存hookに Quality Guardian を追加しました"
                     ;;
                 2)
                     # 上書き
@@ -611,22 +636,22 @@ if [ -d ".git" ]; then
 
 # 品質チェックを実行
 if [ -x "./quality-guardian" ]; then
-    echo "🔍 Quality Guardian チェック実行中..."
+    echo "Quality Guardian チェック実行中..."
     ./quality-guardian check --quick
 
     if [ $? -ne 0 ]; then
-        echo "❌ 品質チェックに失敗しました"
+        echo "品質チェックに失敗しました"
         echo "修正するには: ./quality-guardian fix"
         exit 1
     fi
 fi
 EOF
                     chmod +x .git/hooks/pre-commit
-                    echo "✅ Git pre-commit hook を上書きしました"
+                    echo "Git pre-commit hook を上書きしました"
                     echo "   元のhook: .git/hooks/pre-commit.backup"
                     ;;
                 3)
-                    echo "⏭️  Git hooks のインストールをスキップしました"
+                    echo " Git hooks のインストールをスキップしました"
                     echo ""
                     echo "手動で以下を .git/hooks/pre-commit に追加してください:"
                     echo ""
@@ -634,7 +659,7 @@ EOF
                     echo "./quality-guardian check --quick || exit 1"
                     ;;
                 *)
-                    echo "⏭️  無効な選択です。スキップします。"
+                    echo " 無効な選択です。スキップします。"
                     ;;
             esac
         else
@@ -646,7 +671,7 @@ EOF
             echo 'fi' >> .git/hooks/pre-commit
 
             chmod +x .git/hooks/pre-commit
-            echo "✅ 既存hookに Quality Guardian を追加しました"
+            echo "既存hookに Quality Guardian を追加しました"
         fi
 
     else
@@ -657,11 +682,11 @@ EOF
 
 # 品質チェックを実行
 if [ -x "./quality-guardian" ]; then
-    echo "🔍 Quality Guardian チェック実行中..."
+    echo "Quality Guardian チェック実行中..."
     ./quality-guardian check --quick
 
     if [ $? -ne 0 ]; then
-        echo "❌ 品質チェックに失敗しました"
+        echo "品質チェックに失敗しました"
         echo "修正するには: ./quality-guardian fix"
         exit 1
     fi
@@ -669,13 +694,13 @@ fi
 EOF
 
         chmod +x .git/hooks/pre-commit
-        echo "✅ Git pre-commit hook を設定しました"
+        echo "Git pre-commit hook を設定しました"
     fi
 fi
 
 # GitHub Actions workflow生成（Team Modeのみ）
 if [ "$INSTALL_MODE" = "team" ] && [ ! -f ".github/workflows/quality-guardian.yml" ]; then
-    echo "🔄 GitHub Actions workflow を生成..."
+    echo "GitHub Actions workflow を生成..."
     mkdir -p .github/workflows
 
     cat > .github/workflows/quality-guardian.yml << 'EOF'
@@ -749,102 +774,139 @@ jobs:
           path: .quality-guardian/*.log
 EOF
 
-    echo "✅ GitHub Actions workflow を作成しました"
+    echo "GitHub Actions workflow を作成しました"
 elif [ "$INSTALL_MODE" = "personal" ]; then
-    echo "⏭️  GitHub Actions workflow の生成をスキップ (Personal Mode)"
+    echo " GitHub Actions workflow の生成をスキップ (Personal Mode)"
 fi
 
 # エージェント設定のインストール（Personal/Team Mode共通）
-if [ -d "$SCRIPT_DIR/agents" ]; then
-    echo ""
-    echo "🤖 サブエージェント設定をインストール中..."
+echo ""
+echo "サブエージェント設定をインストール中..."
 
-    # .claude/agentsディレクトリを作成（CLAUDE_DIRに配置）
-    mkdir -p "$CLAUDE_DIR/.claude/agents"
+# .claude/agentsディレクトリを作成（CLAUDE_DIRに配置）
+mkdir -p "$CLAUDE_DIR/.claude/agents"
+
+# ローカルまたはGitHubからのインストール
+if [ -d "$SCRIPT_DIR/agents" ]; then
+    # ローカル実行の場合
+    echo "ローカルファイルからコピー中..."
 
     # エージェント設定をコピー
     if [ -f "$SCRIPT_DIR/agents/rule-advisor.md" ]; then
         cp "$SCRIPT_DIR/agents/rule-advisor.md" "$CLAUDE_DIR/.claude/agents/"
-        echo "✅ rule-advisor (必須⭐⭐⭐⭐⭐) をインストール"
+        echo "rule-advisor (必須) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/quality-fixer.md" ]; then
         cp "$SCRIPT_DIR/agents/quality-fixer.md" "$CLAUDE_DIR/.claude/agents/"
-        echo "✅ quality-fixer (必須⭐⭐⭐⭐⭐) をインストール"
+        echo "quality-fixer (必須) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/task-executor.md" ]; then
         cp "$SCRIPT_DIR/agents/task-executor.md" "$CLAUDE_DIR/.claude/agents/"
-        echo "✅ task-executor (必須⭐⭐⭐⭐) をインストール"
+        echo "task-executor (必須) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/requirement-analyzer.md" ]; then
         cp "$SCRIPT_DIR/agents/requirement-analyzer.md" "$CLAUDE_DIR/.claude/agents/"
-        echo "✅ requirement-analyzer (有用⭐⭐⭐⭐) をインストール"
+        echo "requirement-analyzer (有用) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/technical-designer.md" ]; then
         cp "$SCRIPT_DIR/agents/technical-designer.md" "$CLAUDE_DIR/.claude/agents/"
-        echo "✅ technical-designer (有用⭐⭐⭐) をインストール"
+        echo "technical-designer (有用) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/code-reviewer.md" ]; then
         cp "$SCRIPT_DIR/agents/code-reviewer.md" "$CLAUDE_DIR/.claude/agents/"
-        echo "✅ code-reviewer (有用⭐⭐⭐) をインストール"
+        echo "code-reviewer (有用) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/work-planner.md" ]; then
         cp "$SCRIPT_DIR/agents/work-planner.md" "$CLAUDE_DIR/.claude/agents/"
-        echo "✅ work-planner (状況による⭐⭐) をインストール"
+        echo "work-planner (状況による) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/task-decomposer.md" ]; then
         cp "$SCRIPT_DIR/agents/task-decomposer.md" "$CLAUDE_DIR/.claude/agents/"
-        echo "✅ task-decomposer (状況による⭐⭐) をインストール"
+        echo "task-decomposer (状況による) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/document-reviewer.md" ]; then
         cp "$SCRIPT_DIR/agents/document-reviewer.md" "$CLAUDE_DIR/.claude/agents/"
-        echo "✅ document-reviewer (状況による⭐⭐) をインストール"
+        echo "document-reviewer (状況による) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/prd-creator.md" ]; then
         cp "$SCRIPT_DIR/agents/prd-creator.md" "$CLAUDE_DIR/.claude/agents/"
-        echo "✅ prd-creator (限定的⭐) をインストール"
+        echo "prd-creator (限定的) をインストール"
     fi
 
     if [ -f "$SCRIPT_DIR/agents/e2e-test-generator.md" ]; then
         cp "$SCRIPT_DIR/agents/e2e-test-generator.md" "$CLAUDE_DIR/.claude/agents/"
-        echo "✅ e2e-test-generator (限定的⭐) をインストール"
+        echo "e2e-test-generator (限定的) をインストール"
     fi
+else
+    # curlから実行されている場合、GitHubからダウンロード
+    echo "GitHubからダウンロード中..."
 
-    echo "✅ サブエージェント設定（全11個）をインストールしました"
-    if [ "$INSTALL_MODE" = "personal" ] && [ "$CLAUDE_DIR" != "$PROJECT_DIR" ]; then
-        echo "   配置先: $CLAUDE_DIR/.claude/agents/"
-    fi
+    GITHUB_AGENTS="https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/main/quality-guardian/agents"
+
+    # 各エージェントをダウンロード
+    curl -sSL -o "$CLAUDE_DIR/.claude/agents/rule-advisor.md" "$GITHUB_AGENTS/rule-advisor.md" && echo "rule-advisor (必須) をインストール" || echo "警告: rule-advisor.mdのダウンロードに失敗"
+    curl -sSL -o "$CLAUDE_DIR/.claude/agents/quality-fixer.md" "$GITHUB_AGENTS/quality-fixer.md" && echo "quality-fixer (必須) をインストール" || echo "警告: quality-fixer.mdのダウンロードに失敗"
+    curl -sSL -o "$CLAUDE_DIR/.claude/agents/task-executor.md" "$GITHUB_AGENTS/task-executor.md" && echo "task-executor (必須) をインストール" || echo "警告: task-executor.mdのダウンロードに失敗"
+    curl -sSL -o "$CLAUDE_DIR/.claude/agents/requirement-analyzer.md" "$GITHUB_AGENTS/requirement-analyzer.md" && echo "requirement-analyzer (有用) をインストール" || echo "警告: requirement-analyzer.mdのダウンロードに失敗"
+    curl -sSL -o "$CLAUDE_DIR/.claude/agents/technical-designer.md" "$GITHUB_AGENTS/technical-designer.md" && echo "technical-designer (有用) をインストール" || echo "警告: technical-designer.mdのダウンロードに失敗"
+    curl -sSL -o "$CLAUDE_DIR/.claude/agents/code-reviewer.md" "$GITHUB_AGENTS/code-reviewer.md" && echo "code-reviewer (有用) をインストール" || echo "警告: code-reviewer.mdのダウンロードに失敗"
+    curl -sSL -o "$CLAUDE_DIR/.claude/agents/work-planner.md" "$GITHUB_AGENTS/work-planner.md" && echo "work-planner (状況による) をインストール" || echo "警告: work-planner.mdのダウンロードに失敗"
+    curl -sSL -o "$CLAUDE_DIR/.claude/agents/task-decomposer.md" "$GITHUB_AGENTS/task-decomposer.md" && echo "task-decomposer (状況による) をインストール" || echo "警告: task-decomposer.mdのダウンロードに失敗"
+    curl -sSL -o "$CLAUDE_DIR/.claude/agents/document-reviewer.md" "$GITHUB_AGENTS/document-reviewer.md" && echo "document-reviewer (状況による) をインストール" || echo "警告: document-reviewer.mdのダウンロードに失敗"
+    curl -sSL -o "$CLAUDE_DIR/.claude/agents/prd-creator.md" "$GITHUB_AGENTS/prd-creator.md" && echo "prd-creator (限定的) をインストール" || echo "警告: prd-creator.mdのダウンロードに失敗"
+    curl -sSL -o "$CLAUDE_DIR/.claude/agents/e2e-test-generator.md" "$GITHUB_AGENTS/e2e-test-generator.md" && echo "e2e-test-generator (限定的) をインストール" || echo "警告: e2e-test-generator.mdのダウンロードに失敗"
+fi
+
+echo "サブエージェント設定（全11個）をインストールしました"
+if [ "$INSTALL_MODE" = "personal" ] && [ "$CLAUDE_DIR" != "$PROJECT_DIR" ]; then
+    echo "   配置先: $CLAUDE_DIR/.claude/agents/"
 fi
 
 # CLAUDE.md安全更新（Personal/Team Mode共通）
 echo ""
-echo "📝 CLAUDE.mdを更新中..."
+echo "CLAUDE.mdを更新中..."
 
 # .claudeディレクトリの作成（CLAUDE_DIRに配置）
 mkdir -p "$CLAUDE_DIR/.claude"
+
+# テンプレートファイルの取得（ローカルまたはGitHubから）
+TEMPLATE_FILE=""
+if [ -f "$SCRIPT_DIR/.claude-template.md" ]; then
+    # ローカルファイルを使用
+    TEMPLATE_FILE="$SCRIPT_DIR/.claude-template.md"
+else
+    # GitHubからダウンロード
+    echo "GitHubからテンプレートをダウンロード中..."
+    TEMPLATE_FILE="/tmp/claude-template-$$.md"
+    curl -sSL -o "$TEMPLATE_FILE" "https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/main/quality-guardian/.claude-template.md" || {
+        echo "警告: テンプレートのダウンロードに失敗しました"
+        TEMPLATE_FILE=""
+    }
+fi
 
 # CLAUDE.mdの安全な更新
 if [ -f "$CLAUDE_DIR/.claude/CLAUDE.md" ]; then
     # Quality Guardian設定セクションが既に存在するかチェック
     if grep -q "# Quality Guardian Configuration" "$CLAUDE_DIR/.claude/CLAUDE.md"; then
-        echo "✅ Quality Guardian設定は既に存在します"
+        echo "Quality Guardian設定は既に存在します"
     else
-        echo "⚠️ 既存CLAUDE.mdにQuality Guardian設定を追加します"
+        echo "既存CLAUDE.mdにQuality Guardian設定を追加します"
         # バックアップ作成
         cp "$CLAUDE_DIR/.claude/CLAUDE.md" "$CLAUDE_DIR/.claude/CLAUDE.md.backup"
 
         # テンプレートファイルを読み込んで既存ファイルに追記
-        if [ -f "$SCRIPT_DIR/.claude-template.md" ]; then
+        if [ -n "$TEMPLATE_FILE" ] && [ -f "$TEMPLATE_FILE" ]; then
             # プレースホルダーを置換
-            TEMPLATE_CONTENT=$(cat "$SCRIPT_DIR/.claude-template.md" | \
+            TEMPLATE_CONTENT=$(cat "$TEMPLATE_FILE" | \
                 sed "s|__PROJECT_TYPE__|$PROJECT_TYPE|g")
 
             # テストコマンドプレースホルダー置換
@@ -882,19 +944,18 @@ if [ -f "$CLAUDE_DIR/.claude/CLAUDE.md" ]; then
             echo "# ================================================================" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
             echo "$TEMPLATE_CONTENT" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
 
-            echo "✅ CLAUDE.mdを安全に更新しました（テンプレート使用）"
+            echo "CLAUDE.mdを安全に更新しました（テンプレート使用）"
         else
-            echo "❌ エラー: テンプレートファイルが見つかりません: $SCRIPT_DIR/.claude-template.md"
-            exit 1
+            echo "警告: テンプレートファイルが利用できません。CLAUDE.mdの更新をスキップします。"
         fi
     fi
 else
-    echo "📄 新しいCLAUDE.mdを作成します"
+    echo "新しいCLAUDE.mdを作成します"
 
     # テンプレートファイルを読み込んで新規作成
-    if [ -f "$SCRIPT_DIR/.claude-template.md" ]; then
+    if [ -n "$TEMPLATE_FILE" ] && [ -f "$TEMPLATE_FILE" ]; then
         # プレースホルダーを置換
-        TEMPLATE_CONTENT=$(cat "$SCRIPT_DIR/.claude-template.md" | \
+        TEMPLATE_CONTENT=$(cat "$TEMPLATE_FILE" | \
             sed "s|__PROJECT_TYPE__|$PROJECT_TYPE|g")
 
         # テストコマンドプレースホルダー置換
@@ -927,17 +988,21 @@ else
 
         # ファイルに書き込み
         echo "$TEMPLATE_CONTENT" > "$CLAUDE_DIR/.claude/CLAUDE.md"
-        echo "✅ CLAUDE.mdを作成しました（テンプレート使用）"
+        echo "CLAUDE.mdを作成しました（テンプレート使用）"
     else
-        echo "❌ エラー: テンプレートファイルが見つかりません: $SCRIPT_DIR/.claude-template.md"
-        exit 1
+        echo "警告: テンプレートファイルが利用できません。CLAUDE.mdの作成をスキップします。"
     fi
+fi
+
+# 一時ファイルのクリーンアップ
+if [ -f "/tmp/claude-template-$$.md" ]; then
+    rm -f "/tmp/claude-template-$$.md"
 fi
 
 # 初期ベースライン記録
 if [ "$NON_INTERACTIVE" = false ]; then
     echo ""
-    echo "📊 初期ベースラインを記録しますか？"
+    echo "初期ベースラインを記録しますか？"
     read -p "今の状態を基準として記録します (y/n): " -n 1 -r
     echo
 
@@ -946,14 +1011,14 @@ if [ "$NON_INTERACTIVE" = false ]; then
     fi
 else
     echo ""
-    echo "📊 初期ベースライン記録をスキップ (非対話モード)"
+    echo "初期ベースライン記録をスキップ (非対話モード)"
 fi
 
 echo ""
-echo "✨ Quality Guardian のインストールが完了しました！"
+echo "Quality Guardian のインストールが完了しました！"
 echo ""
 if [ "$INSTALL_MODE" = "personal" ]; then
-    echo "🔒 Personal Mode: 他の開発者に影響なくインストールされました"
+    echo "Personal Mode: 他の開発者に影響なくインストールされました"
     echo ""
 fi
 echo "使用方法:"

@@ -75,6 +75,10 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
 
+**v1.2.37の新機能**: curl経由インストールのバグ修正 - GitHubから直接実行時のファイルダウンロード対応
+
+**v1.2.36の新機能**: テンプレート強化と絵文字削除 - 日本語応答徹底と絵文字使用禁止
+
 **v1.2.19の新機能**: Personal Mode標準ディレクトリ構造対応 - `.claude/` を親ディレクトリに配置可能
 
 **v1.2.5の新機能**: 自動バージョン確認・アップデート機能 - 既存インストールを検出して賢くアップデート
