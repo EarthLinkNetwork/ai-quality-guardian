@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.2.34"
+# version: "1.2.35"
 
 set -e
 
@@ -208,7 +208,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.2.34"
+CURRENT_VERSION="1.2.35"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -399,7 +399,7 @@ if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.34",
+  "version": "1.2.35",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -505,8 +505,153 @@ fi
 if [ -d ".git" ]; then
     echo "🔗 Git hooks を設定..."
 
-    # pre-commit hook
-    cat > .git/hooks/pre-commit << 'EOF'
+    # Hook管理ツールの検出
+    HOOK_MANAGER_DETECTED=false
+    HOOK_MANAGER_NAME=""
+
+    if [ -f "lefthook.yml" ] || [ -f ".lefthook.yml" ] || [ -f "lefthook-local.yml" ]; then
+        HOOK_MANAGER_DETECTED=true
+        HOOK_MANAGER_NAME="lefthook"
+    elif [ -d ".husky" ] && [ -f ".husky/pre-commit" ]; then
+        HOOK_MANAGER_DETECTED=true
+        HOOK_MANAGER_NAME="husky"
+    elif [ -f ".pre-commit-config.yaml" ]; then
+        HOOK_MANAGER_DETECTED=true
+        HOOK_MANAGER_NAME="pre-commit (Python)"
+    fi
+
+    # 既存のpre-commit hookを検出
+    EXISTING_HOOK=false
+    if [ -f ".git/hooks/pre-commit" ]; then
+        # Quality Guardianのhookでない場合
+        if ! grep -q "Quality Guardian pre-commit hook" .git/hooks/pre-commit 2>/dev/null; then
+            EXISTING_HOOK=true
+        fi
+    fi
+
+    if [ "$HOOK_MANAGER_DETECTED" = true ]; then
+        echo "⚠️  Hook管理ツールを検出: $HOOK_MANAGER_NAME"
+        echo ""
+        echo "Quality Guardianを$HOOK_MANAGER_NAME に統合する方法:"
+        echo ""
+
+        case "$HOOK_MANAGER_NAME" in
+            "lefthook")
+                echo "lefthook.yml に以下を追加してください:"
+                echo ""
+                echo "pre-commit:"
+                echo "  commands:"
+                echo "    quality-guardian:"
+                echo "      run: ./quality-guardian check --quick"
+                echo ""
+                ;;
+            "husky")
+                echo ".husky/pre-commit に以下を追加してください:"
+                echo ""
+                echo "# Quality Guardian"
+                echo "./quality-guardian check --quick || exit 1"
+                echo ""
+                ;;
+            "pre-commit (Python)")
+                echo ".pre-commit-config.yaml に以下を追加してください:"
+                echo ""
+                echo "- repo: local"
+                echo "  hooks:"
+                echo "    - id: quality-guardian"
+                echo "      name: Quality Guardian"
+                echo "      entry: ./quality-guardian check --quick"
+                echo "      language: system"
+                echo "      pass_filenames: false"
+                echo ""
+                ;;
+        esac
+
+        echo "✅ Git hooks のインストールをスキップしました"
+        echo "   ($HOOK_MANAGER_NAME を使用してください)"
+
+    elif [ "$EXISTING_HOOK" = true ]; then
+        echo "⚠️  既存の pre-commit hook を検出しました"
+        echo ""
+
+        # バックアップ作成
+        cp .git/hooks/pre-commit .git/hooks/pre-commit.backup
+        echo "✅ バックアップ作成: .git/hooks/pre-commit.backup"
+
+        if [ "$NON_INTERACTIVE" = false ]; then
+            echo ""
+            echo "選択してください:"
+            echo "1) 既存hookの後に Quality Guardian を追加（推奨）"
+            echo "2) 既存hookを上書き（非推奨）"
+            echo "3) スキップ（手動で統合）"
+            read -p "選択 [1-3]: " hook_choice
+
+            case "$hook_choice" in
+                1)
+                    # 既存hookに追加
+                    echo "" >> .git/hooks/pre-commit
+                    echo "# Quality Guardian (Added by installer)" >> .git/hooks/pre-commit
+                    echo 'if [ -x "./quality-guardian" ]; then' >> .git/hooks/pre-commit
+                    echo '    echo "🔍 Quality Guardian チェック実行中..."' >> .git/hooks/pre-commit
+                    echo '    ./quality-guardian check --quick' >> .git/hooks/pre-commit
+                    echo '    if [ $? -ne 0 ]; then' >> .git/hooks/pre-commit
+                    echo '        echo "❌ 品質チェックに失敗しました"' >> .git/hooks/pre-commit
+                    echo '        echo "修正するには: ./quality-guardian fix"' >> .git/hooks/pre-commit
+                    echo '        exit 1' >> .git/hooks/pre-commit
+                    echo '    fi' >> .git/hooks/pre-commit
+                    echo 'fi' >> .git/hooks/pre-commit
+
+                    chmod +x .git/hooks/pre-commit
+                    echo "✅ 既存hookに Quality Guardian を追加しました"
+                    ;;
+                2)
+                    # 上書き
+                    cat > .git/hooks/pre-commit << 'EOF'
+#!/bin/sh
+# Quality Guardian pre-commit hook
+
+# 品質チェックを実行
+if [ -x "./quality-guardian" ]; then
+    echo "🔍 Quality Guardian チェック実行中..."
+    ./quality-guardian check --quick
+
+    if [ $? -ne 0 ]; then
+        echo "❌ 品質チェックに失敗しました"
+        echo "修正するには: ./quality-guardian fix"
+        exit 1
+    fi
+fi
+EOF
+                    chmod +x .git/hooks/pre-commit
+                    echo "✅ Git pre-commit hook を上書きしました"
+                    echo "   元のhook: .git/hooks/pre-commit.backup"
+                    ;;
+                3)
+                    echo "⏭️  Git hooks のインストールをスキップしました"
+                    echo ""
+                    echo "手動で以下を .git/hooks/pre-commit に追加してください:"
+                    echo ""
+                    echo "# Quality Guardian"
+                    echo "./quality-guardian check --quick || exit 1"
+                    ;;
+                *)
+                    echo "⏭️  無効な選択です。スキップします。"
+                    ;;
+            esac
+        else
+            # 非対話モードでは既存hookに追加
+            echo "" >> .git/hooks/pre-commit
+            echo "# Quality Guardian (Added by installer)" >> .git/hooks/pre-commit
+            echo 'if [ -x "./quality-guardian" ]; then' >> .git/hooks/pre-commit
+            echo '    ./quality-guardian check --quick || exit 1' >> .git/hooks/pre-commit
+            echo 'fi' >> .git/hooks/pre-commit
+
+            chmod +x .git/hooks/pre-commit
+            echo "✅ 既存hookに Quality Guardian を追加しました"
+        fi
+
+    else
+        # 既存hookがない場合は新規作成
+        cat > .git/hooks/pre-commit << 'EOF'
 #!/bin/sh
 # Quality Guardian pre-commit hook
 
@@ -523,8 +668,9 @@ if [ -x "./quality-guardian" ]; then
 fi
 EOF
 
-    chmod +x .git/hooks/pre-commit
-    echo "✅ Git pre-commit hook を設定しました"
+        chmod +x .git/hooks/pre-commit
+        echo "✅ Git pre-commit hook を設定しました"
+    fi
 fi
 
 # GitHub Actions workflow生成（Team Modeのみ）
