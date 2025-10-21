@@ -75,6 +75,8 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
 
+**v1.2.38の新機能**: テストスキップの絶対禁止ルール追加 - Test First原則の徹底と一時的スキップの禁止
+
 **v1.2.37の新機能**: curl経由インストールのバグ修正 - GitHubから直接実行時のファイルダウンロード対応
 
 **v1.2.36の新機能**: テンプレート強化と絵文字削除 - 日本語応答徹底と絵文字使用禁止
