@@ -75,6 +75,8 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
 
+**v1.2.41の新機能**: 包括的な確認時の抜け漏れ防止ルール追加 - 複数環境確認の義務化とチェックリスト明示
+
 **v1.2.40の新機能**: バックグラウンドプロセス管理ルール追加 - Claude Codeのバックグラウンドプロセス適切管理とリソース最適化
 
 **v1.2.39の新機能**: 日本語応答の最強化 - HTMLコメントとASCIIアートで絶対に見逃せない警告を追加
