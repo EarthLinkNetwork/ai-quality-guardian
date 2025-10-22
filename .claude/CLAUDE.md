@@ -595,6 +595,97 @@ Claude Codeのバックグラウンドプロセスは、**セッション終了�
 
 ---
 
+## 7. Playwrightで自己完結確認
+
+確認が必要な時は、**ユーザーに依頼するのではなく、自分でPlaywrightを使って確認する**。
+
+### 基本方針
+
+- **第一選択肢はPlaywright** - 画面の表示、console.log、Network、エラーを自分で確認
+- curlは軽量なので場合によっては使用可能だが、基本はPlaywright
+- ユーザーに「ブラウザで確認してください」と依頼しない
+
+### Playwrightで確認すべき内容
+
+1. **画面の表示**
+   ```typescript
+   await page.goto('http://example.com');
+   await page.screenshot({ path: 'screenshot.png' });
+   ```
+
+2. **console.log の確認**
+   ```typescript
+   page.on('console', msg => console.log('PAGE LOG:', msg.text()));
+   ```
+
+3. **エラーメッセージの確認**
+   ```typescript
+   page.on('pageerror', error => console.log('PAGE ERROR:', error));
+   ```
+
+4. **環境変数の確認**
+   ```typescript
+   const apiUrl = await page.evaluate(() => {
+     return (window as any).process?.env?.NEXT_PUBLIC_API_URL;
+   });
+   console.log('API URL:', apiUrl);
+   ```
+
+5. **Network リクエストの確認**
+   ```typescript
+   page.on('request', request => console.log('REQUEST:', request.url()));
+   page.on('response', response => console.log('RESPONSE:', response.url(), response.status()));
+   ```
+
+### curlを使う場合
+
+軽量な確認が必要な場合はcurlも可:
+```bash
+# APIエンドポイントの動作確認
+curl -I http://example.com/api/health
+
+# レスポンスの確認
+curl http://example.com/api/users
+```
+
+### 禁止事項
+
+```
+❌ 「ブラウザで http://example.com にアクセスして確認してください」
+❌ 「開発者ツール（F12）を開いて、Consoleタブを確認してください」
+❌ 「Networkタブでどのリクエストが失敗しているか確認してください」
+❌ 「以下をConsoleで実行してください: console.log(...)」
+```
+
+### 正しい対応
+
+```
+✅ Playwrightで確認します
+✅ 画面とconsole.logを確認します
+✅ Networkタブのリクエストを確認します
+✅ （軽量確認の場合）curlで確認します
+```
+
+### 過去の問題例
+
+**問題内容:**
+- デプロイ後の動作確認が必要な状況
+- AIが「ブラウザで http://10.200.8.9 にアクセスして、開発者ツール（F12）を開き、Console、Networkタブを確認してください」とユーザーに依頼
+- ユーザーが「playwrightなどで自分でも確認できますよね」と指摘
+
+**ユーザーの指摘:**
+「curlで確認するとかではなく、playwrightを第一選択肢にして、自分で画面やconsole.logを確認するようにしてほしい。場合によっては軽量なのでcurlもありだが、それはケースバイケースで、基本はplaywrightを使って自分で確認してほしい」
+
+**本来すべきだったこと:**
+1. Playwrightでページにアクセス
+2. console.logを監視
+3. Networkリクエストを監視
+4. スクリーンショットを撮影
+5. エラーがあれば内容を確認
+6. 結果をユーザーに報告
+
+---
+
 # MAY（推奨）
 
 以下のルールは**状況に応じて守ること**。守ると作業がスムーズになります。
@@ -737,5 +828,5 @@ Phase 4: データベース設定
 
 ---
 
-**Current Version: 1.2.42**
+**Current Version: 1.2.43**
 **Last Updated: 2025-10-23**
