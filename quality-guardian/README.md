@@ -75,6 +75,8 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
 
+**v1.2.47の新機能**: MUST Rule 11追加：危険なGit操作の禁止と事前確認 - git filter-branch --all等の複数ブランチに影響する操作を禁止、不可逆な操作の事前確認必須、影響範囲説明と代替手段提案、PR破壊を防ぐための根本的対策
+
 **v1.2.46の新機能**: MUST Rule 10追加：AIの透明性と誠実性 - 問題発生時に推測で回答したり責任転嫁してはいけない、git blameで事実確認してから説明、自分のミスは即座に認める、「嘘をつく」問題の根本的対策
 
 **v1.2.45の新機能**: MUST Rule 9とSHOULD Rule 8追加 - Git操作時の意図しないファイル混入禁止(git add .禁止、git statusとgit diff --cached必須)、ブラウザテスト(Chromatic/Playwright等)はheadlessモード厳守(ユーザーのUI操作を妨げない)
