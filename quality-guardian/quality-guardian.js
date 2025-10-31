@@ -44,7 +44,7 @@ class QualityGuardian {
    */
   getDefaultConfig() {
     return {
-      version: '1.2.49',
+      version: '1.2.50',
       enabled: true,
       modules: {
         baseline: { enabled: true, threshold: 0.95 },

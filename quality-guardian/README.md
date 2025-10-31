@@ -75,6 +75,8 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
 
+**v1.2.50の新機能**: MUST Rule 15追加 - 修正後の実行確認義務（型チェック通過 ≠ 完了の原則、型エラーゼロでも必ず実際にテスト・lint・ビルドを実行、「型チェックだけで完了」報告を禁止、完了報告の信頼性確保）
+
 **v1.2.49の新機能**: MUST Rule 14追加 - Copilot/AI提案の検証義務と動作コードの尊重（"If it ain't broke, don't fix it"原則、動いているコードは安易に変更しない、AI提案を無条件で採用せず必ず検証、TypeScript二段階キャストの理解、テストが通るコードを壊さない）
 
 **v1.2.48の新機能**: MUST Rule 12と13追加 - Breaking Change時のデータ移行とMigration必須（設計変更時に既存ユーザーデータの自動移行を実装、ユーザーデータの破壊防止）、実装前のメモリー・コメント・要求の整合性確認（会話履歴・コードコメント・繰り返し指摘された要件を確認してから実装、AIが要求を忘れる問題の根本的対策）
