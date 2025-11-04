@@ -335,9 +335,9 @@ git commit -m "feat: Add new feature"
 
 ---
 
-## 7. 不可逆な操作の事前確認
+## 7. 不可逆な操作・影響範囲の大きい操作の事前確認
 
-不可逆な操作（元に戻せない操作）を実行する前に、**必ずユーザーに確認を取り、影響範囲を説明する**。
+不可逆な操作（元に戻せない操作）や影響範囲の大きい操作を実行する前に、**必ずユーザーに確認を取り、影響範囲を説明する**。
 
 ### 不可逆な操作の例
 
@@ -348,6 +348,16 @@ git commit -m "feat: Add new feature"
 - **危険なGit操作**: git filter-branch --all、git push --force、git reset --hard、git rebase、git amend、タグ削除等（詳細はMUST Rule 11参照）
 - **クラウドリソースの削除**: AWS、GCP、Azure等のリソース削除
 - **課金が発生する操作**: 有料APIの呼び出し、クラウドリソースの作成等
+
+### 影響範囲の大きい操作の例
+
+- **環境変数の変更**: .env、.env.local、.env.production等のファイル変更
+- **データベース接続先の変更**: DATABASE_URL等の接続文字列変更（SQLite → MySQL、開発環境 → 本番環境等）
+- **API接続先の変更**: API_ENDPOINT、NEXT_PUBLIC_API_URL等の変更
+- **認証設定の変更**: AUTH_SECRET、JWT_SECRET、OAuth設定等の変更
+- **インフラ設定の変更**: Docker設定、docker-compose.yml、Kubernetes設定等
+- **CI/CD設定の変更**: GitHub Actions、Jenkins、CircleCI等のワークフロー変更
+- **スキーマファイルの変更**: Prisma schema、GraphQL schema等のデータベーススキーマ変更
 
 ### 必須の対応
 
@@ -377,10 +387,14 @@ git commit -m "feat: Add new feature"
 ❌ 影響範囲を確認せずに実行
 ❌ 「おそらく大丈夫」と推測で実行
 ❌ テスト環境と本番環境を混同して実行
+❌ 環境変数を確認なしに変更
+❌ データベース接続先を確認なしに変更
+❌ 設定ファイルの変更内容を説明せずに実行
 ```
 
 ### 正しい対応
 
+**例1: Slack通知**
 ```
 ユーザー: Slack通知してほしい
 
@@ -398,7 +412,31 @@ git commit -m "feat: Add new feature"
 ❌ 「通知します」とだけ言って送信
 ```
 
+**例2: 環境変数変更**
+```
+ユーザー: DATABASE_URLをMySQLに変更してください
+
+[正しい対応]
+「DATABASE_URLをMySQLに変更するには、以下のファイルを更新する必要があります：
+
+1. .env.local
+   - DATABASE_URLを sqlite → mysql (AWS RDS) に変更
+   - 影響: アプリケーションの接続先データベースが変わります
+
+2. prisma/schema.prisma
+   - provider を "sqlite" → "mysql" に変更
+   - 影響: データベーススキーマの形式が変わります
+
+これらのファイルを変更してよろしいですか？」
+
+[誤った対応]
+❌ 即座に .env.local と prisma/schema.prisma を変更（確認なし）
+❌ 「設定しておきます」とだけ言って変更
+```
+
 ### 過去の問題例
+
+**問題例1: Slack通知の無断送信**
 
 **問題内容:**
 - ユーザーから「Slack通知してほしい」という要望
@@ -414,6 +452,28 @@ git commit -m "feat: Add new feature"
 2. 手動送信の場合、削除できないことを事前に警告
 3. 影響範囲（誰に届くか）を説明
 4. ユーザーの明示的な承認を得てから実行
+
+**問題例2: 環境変数の無断変更**
+
+**問題内容:**
+- ユーザーから「DATABASE_URL="mysql://..." です。設定しておいてください」という指示
+- AIが確認なしに即座に以下を実行：
+  1. .env.local の DATABASE_URL を変更
+  2. prisma/schema.prisma の provider を "sqlite" → "mysql" に変更
+  3. Prisma Client 再生成
+  4. データベース接続テスト実行
+- アプリケーションの接続先データベースが変わった
+- 影響範囲の説明なし、確認なし
+
+**ユーザーの指摘:**
+「envの変更なのに、確認を挟まなかったです」
+
+**本来すべきだったこと:**
+1. 変更するファイルとその影響範囲を説明
+   - .env.local: データベース接続先が変わる
+   - prisma/schema.prisma: スキーマプロバイダーが変わる
+2. ユーザーに「これらのファイルを変更してよろしいですか？」と確認
+3. 承認を得てから変更を実行
 
 ### 不明な点がある場合の対応
 
