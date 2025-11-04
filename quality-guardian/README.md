@@ -75,6 +75,8 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
 
+**v1.2.56の新機能**: MUST Rule 2追加 - コミット署名の禁止（Pull RequestやCommit時にClaude作成を示す署名・マーカーを絶対に付加しない、Co-Authored-By、Generated with Claude Code等のマーカー禁止、ユーザー要求の「これはとても重要な事です」に対応、MUST Rule総数16→17個に増加）
+
 **v1.2.55の新機能**: MUST Rule 13強化 - 自分の過去の発言・説明内容の確認を追加（修正作業時は修正前の元の内容を必ず確認、「自分が説明した2つの具体例」等を正確に把握、「自分が言ったことを覚えていないの?」と言われる前に確認、PRコメント修正時の文脈喪失問題を防止、チェックリストに3項目追加）
 
 **v1.2.54の新機能**: MUST Rule 3大幅強化 - ユーザー指示の厳守を徹底（指示されたことだけを実行、指示以外の一切の作業を禁止、「良かれと思って」「ついでに」は全て確認必須、PR approve時の勝手なコメント追加等の過去の違反例を3つ追加、確認が必要な境界線を明確化）
