@@ -75,6 +75,8 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
 
+**v1.2.58の新機能**: MUST Rule 17強化 - 継続確認の技術的実装方法を追加（while/sleepを使った定期確認の実装パターン、次回確認時刻の明示が必須、完了条件チェックの実装、間違った実装例3パターンを追加、「1回だけ確認して終わり」を明確に禁止、ユーザーが動作を確認できる仕組みの実装を義務化）
+
 **v1.2.57の新機能**: MUST Rule 17追加 - 宣言した継続タスクの完遂義務（「定期的に確認します」等の宣言をしたら完了まで実行し続ける、時間がかかっても確認を止めない、確認を止める場合は事前承認必須、「次回確認は〜時」と言いながら確認しない問題を防止、宣言前・実行中のチェックリスト追加、MUST Rule総数17→18個に増加）
 
 **v1.2.56の新機能**: MUST Rule 2追加 - コミット署名の禁止（Pull RequestやCommit時にClaude作成を示す署名・マーカーを絶対に付加しない、Co-Authored-By、Generated with Claude Code等のマーカー禁止、ユーザー要求の「これはとても重要な事です」に対応、MUST Rule総数16→17個に増加）

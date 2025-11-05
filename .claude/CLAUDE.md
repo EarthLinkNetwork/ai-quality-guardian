@@ -2012,6 +2012,120 @@ async function verifyProductionFHIR() {
 ❌ 完了していないのに確認を止める
 ❌ 「次回確認は〜時です」と言いながら確認しない
 ❌ 確認を止める理由を説明せずに放置
+❌ 「定期的に確認します」と言っておいて、while/sleepを使わずに1回だけ確認
+```
+
+### 実装方法
+
+**継続確認の技術的実装:**
+
+「定期的に確認します」と宣言したら、**while ループと sleep を使って実際に継続的に確認し続けるスクリプトを実装すること**。
+
+**必須の実装パターン:**
+
+```bash
+#!/bin/bash
+
+# バックグラウンドタスクID
+bash_id="9a39d6"
+
+# 確認間隔（秒）
+interval=300  # 5分 = 300秒
+
+echo "5分ごとに進捗を確認します"
+
+while true; do
+  # 現在時刻を表示
+  current_time=$(date '+%Y-%m-%d %H:%M:%S')
+  echo ""
+  echo "[$current_time] 進捗を確認中..."
+
+  # バックグラウンドプロセスの状態確認
+  # BashOutputツールを使用
+  output=$(bash -c "echo 'BashOutput結果を取得'")  # 実際にはBashOutputツール使用
+
+  # 進捗を表示
+  echo "$output"
+
+  # 完了チェック
+  if echo "$output" | grep -q "完了\|completed\|finished"; then
+    echo "✓ タスク完了を確認しました"
+    break
+  fi
+
+  # 次回確認時刻を計算して表示
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    next_check=$(date -v+${interval}S '+%Y-%m-%d %H:%M:%S')
+  else
+    # Linux
+    next_check=$(date -d "+${interval} seconds" '+%Y-%m-%d %H:%M:%S')
+  fi
+
+  echo "次回確認: $next_check"
+
+  # 指定秒数待機
+  sleep $interval
+done
+
+echo "監視を終了します"
+```
+
+**表示例:**
+
+```
+5分ごとに進捗を確認します
+
+[2025-01-05 06:30:00] 進捗を確認中...
+現在の進捗: poc完了、production-facility-seijinhospital処理中（50%）
+次回確認: 2025-01-05 06:35:00
+
+[2025-01-05 06:35:00] 進捗を確認中...
+現在の進捗: production-facility-seijinhospital処理中（75%）
+次回確認: 2025-01-05 06:40:00
+
+[2025-01-05 06:40:00] 進捗を確認中...
+現在の進捗: 全て完了
+✓ タスク完了を確認しました
+監視を終了します
+```
+
+**重要なポイント:**
+
+1. **次回確認時刻を必ず表示**
+   - ユーザーが「動作しているか」を判断できる
+   - 表示形式: `次回確認: 2025-01-05 06:35:00`
+
+2. **完了条件を明確に**
+   - 無限ループを避けるため、完了チェックを必ず実装
+   - `break` で確実にループを抜ける
+
+3. **エラーハンドリング**
+   - BashOutputが失敗した場合の対応
+   - タイムアウト設定（最大確認回数等）
+
+**間違った実装（絶対禁止）:**
+
+```bash
+❌ 間違い1: 1回だけ確認して終わり
+echo "5分ごとに確認します"
+BashOutput "$bash_id"
+# → whileがないので1回で終わる
+
+❌ 間違い2: 次回確認時刻を表示しない
+while true; do
+  BashOutput "$bash_id"
+  sleep 300
+done
+# → ユーザーが動作を確認できない
+
+❌ 間違い3: 完了チェックがない
+while true; do
+  BashOutput "$bash_id"
+  echo "次回確認: ..."
+  sleep 300
+done
+# → 完了しても無限ループ
 ```
 
 ### 正しい対応
