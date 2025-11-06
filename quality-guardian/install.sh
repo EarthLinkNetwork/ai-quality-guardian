@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.2.59"
+# version: "1.2.60"
 
 set -e
 
@@ -208,7 +208,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.2.59"
+CURRENT_VERSION="1.2.60"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -424,7 +424,7 @@ if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.59",
+  "version": "1.2.60",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -997,6 +997,40 @@ fi
 # 一時ファイルのクリーンアップ
 if [ -f "/tmp/claude-template-$$.md" ]; then
     rm -f "/tmp/claude-template-$$.md"
+fi
+
+# Claude Code ルールのコピー
+echo ""
+echo "Claude Code ルールをプロジェクトにコピー..."
+
+if [ -f "$SCRIPT_DIR/../.claude/CLAUDE.md" ]; then
+    # プロジェクトの .claude ディレクトリを作成
+    mkdir -p "$PROJECT_DIR/.claude"
+
+    # CLAUDE.md をコピー
+    cp "$SCRIPT_DIR/../.claude/CLAUDE.md" "$PROJECT_DIR/.claude/CLAUDE.md"
+
+    if [ -f "$PROJECT_DIR/.claude/CLAUDE.md" ]; then
+        echo "✓ Claude Code ルール (CLAUDE.md) をコピーしました"
+        echo "  場所: .claude/CLAUDE.md"
+
+        if [ "$INSTALL_MODE" = "personal" ]; then
+            echo ""
+            echo "Note: Personal Mode では .claude/ 配下のみに設定を配置します"
+            echo "      他の開発者には影響しません"
+        else
+            echo ""
+            echo "Note: Team Mode では全ての開発者に適用されます"
+            echo "      .gitignore に .claude/ を追加しない限り、Git にコミットされます"
+        fi
+    else
+        echo "✗ CLAUDE.md のコピーに失敗しました"
+    fi
+else
+    echo "✗ CLAUDE.md が見つかりませんでした"
+    echo "  期待されるパス: $SCRIPT_DIR/../.claude/CLAUDE.md"
+    echo ""
+    echo "Note: CLAUDE.md はグローバルルール (~/.claude/CLAUDE.md) として利用可能です"
 fi
 
 # 初期ベースライン記録
