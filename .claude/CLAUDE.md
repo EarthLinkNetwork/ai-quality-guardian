@@ -897,6 +897,67 @@ git commit -m "test: add RepeatBlock component tests"
    - git blame、git log等で事実確認
    - 確認結果を示す
 
+### Git情報確認時の必須手順
+
+**マージ状況・ブランチ状態を確認する前に、必ず最新情報を取得する:**
+
+```bash
+# 必須: 最新情報を取得
+git fetch origin
+
+# ブランチ比較（最新情報で判断）
+git log origin/develop..feature/xxx --oneline
+
+# マージ状況確認
+git branch -r --contains feature/xxx | grep -E "origin/(main|master|develop)"
+
+# リモートブランチの最新コミット確認
+git log origin/develop --oneline -5
+```
+
+**禁止事項:**
+```
+❌ git fetch せずにマージ状況を判断
+❌ 古いローカル情報で「まだマージされていない」と回答
+❌ 推測で「マージされている/されていない」と回答
+❌ 複数のコマンドを試さずに1つの結果だけで判断
+❌ gh pr listがエラーになったら諦める
+```
+
+**正しい対応:**
+
+```
+ユーザー: このブランチはマージ済みですか？
+
+[誤った対応]
+❌ git fetch せずに確認
+❌ gh pr list がエラー → 「まだマージされていません」
+❌ 後で確認したら「既にマージ済みでした」と矛盾
+
+[正しい対応]
+✅ 対策1: git fetch origin で最新情報を取得
+✅ 対策2: git log origin/develop..feature/xxx で差分確認
+✅ 対策3: git log origin/develop で最新コミットを確認
+✅ 対策4: git branch -r --contains で確認
+✅ これらの結果を総合的に判断してから回答
+✅ 不明な場合は「確認中です」と伝えてから調査
+```
+
+**過去の問題例:**
+
+```
+問題: 「このブランチはマージ済みですか？」
+AI回答1: 「まだマージされていません」（古い情報で判断）
+AI回答2: 「既にマージ済みです」（後で確認して矛盾）
+ユーザー指摘: 「あなたは、まだマージしてないといいましたよね」
+
+本来すべきだったこと:
+1. git fetch origin で最新情報を取得
+2. 複数のコマンドで確認
+3. 証拠を揃えてから回答
+4. 推測で回答しない
+```
+
 ---
 
 ## 11. 危険なGit操作の禁止と事前確認
