@@ -75,6 +75,8 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
 
+**v1.2.62の新機能**: MUST Rule 20追加 - 重要ブランチへの直接変更禁止（main・master・develop・production・staging等への直接コミット・プッシュを絶対禁止、必ずfeatureブランチを作成してPR経由でマージ、「軽微な変更だから」「急いでいるから」の言い訳を禁止、作業前のブランチ名確認を義務化、誤ってpushした場合の対応手順を明記、ブランチ保護設定を推奨、MUST Rule総数20→21個に増加）
+
 **v1.2.61の新機能**: MUST Rule 19追加 - Git操作後のメッセージ表示と定期コミット義務（ブランチ作成・コミット・プッシュ後に必ず確認メッセージとコマンド案内を表示、コミット後はコミットハッシュとリセットコマンドを表示、作業ごとに定期的にコミット、いつでも戻れる状態を維持、コミットなしで次のタスクに進まない、1機能=1コミットの原則、MUST Rule総数19→20個に増加）
 
 **v1.2.60の新機能**: グローバルルール配布機能追加 - CLAUDE.mdを~/.claude/にコピーして全プロジェクトに適用、install.shでプロジェクトの.claude/にもCLAUDE.mdをコピー、Personal ModeとTeam Modeの両方で適用、Git経由での配布に対応、別のClaude Codeセッションでもルール違反を防止

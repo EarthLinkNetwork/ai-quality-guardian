@@ -18,7 +18,7 @@
 LLMは「全てのルールを徹底する」と約束できません。
 そのため、このファイルはルールを優先度別に整理しています。
 
-- MUST（必須・絶対厳守）: 20個 - 最も重要、必ず守る
+- MUST（必須・絶対厳守）: 21個 - 最も重要、必ず守る
 - SHOULD（重要）: 8個 - できる限り守る
 - MAY（推奨）: 5個 - 状況に応じて守る
 
@@ -61,7 +61,7 @@ LLMは「全てのルールを徹底する」と約束できません。
 
 # MUST（必須・絶対厳守）
 
-以下の20個のルールは**絶対に守ること**。これらは品質に直結する最重要ルールです。
+以下の21個のルールは**絶対に守ること**。これらは品質に直結する最重要ルールです。
 
 ## 1. バージョン管理の厳守
 
@@ -2762,6 +2762,315 @@ PR作成:
 - 「git push」
 
 → **必ず確認メッセージを表示し、次のステップを案内する**
+
+---
+
+## 20. 重要ブランチへの直接変更禁止
+
+**main・master・develop・production・staging等の重要ブランチには、絶対に直接コミット・プッシュしてはいけない。必ずfeatureブランチを作成してPR経由でマージする。**
+
+### 直接変更禁止のブランチ
+
+以下のブランチには**絶対に直接コミット・プッシュしてはいけない**：
+
+- `main` / `master`（本番ブランチ）
+- `develop`（開発統合ブランチ）
+- `production`（本番環境ブランチ）
+- `staging`（ステージング環境ブランチ）
+- `release/*`（リリースブランチ）
+- その他、チームで保護されているブランチ
+
+### 厳守事項
+
+**作業開始時の必須手順:**
+
+1. **重要ブランチを最新化**
+   ```bash
+   git checkout develop
+   git pull origin develop
+   ```
+
+2. **必ずfeatureブランチを作成**
+   ```bash
+   git checkout -b feature/add-something
+   # ❌ git checkout develop で作業してはいけない
+   ```
+
+3. **featureブランチで作業**
+   ```bash
+   # ファイル編集
+   git add <files>
+   git commit -m "feat: Add something"
+   ```
+
+4. **featureブランチをpush**
+   ```bash
+   git push -u origin feature/add-something
+   # ❌ git push origin develop してはいけない
+   ```
+
+5. **PRを作成**
+   ```bash
+   gh pr create --base develop --title "Add something"
+   ```
+
+6. **レビュー・承認後にマージ**
+   - GitHub UIでマージボタンを押す
+   - または `gh pr merge` コマンドを使用
+
+### 禁止事項
+
+```
+❌ git checkout develop → 直接作業 → git push origin develop
+❌ git checkout main → 直接作業 → git push origin main
+❌ 重要ブランチで git commit
+❌ 重要ブランチで git push
+❌ 「軽微な変更だから直接pushしても大丈夫」
+❌ 「テストコメント追加だけだから」
+❌ 「急いでいるから」
+```
+
+### 作業前の確認
+
+**コミット・プッシュ前に必ず確認：**
+
+```bash
+# 現在のブランチ名を確認
+git branch --show-current
+
+# もし develop/main/master なら即座に停止
+if [[ $(git branch --show-current) =~ ^(main|master|develop|production|staging)$ ]]; then
+  echo "❌ 重要ブランチに直接変更しようとしています！"
+  echo "featureブランチを作成してください"
+  exit 1
+fi
+```
+
+### 正しいフロー
+
+#### 例1: 新機能追加
+
+```bash
+# 1. developを最新化
+git checkout develop
+git pull origin develop
+
+# 2. featureブランチ作成
+git checkout -b feature/add-user-auth
+
+✓ ブランチを作成しました: feature/add-user-auth
+
+次のステップ:
+  git push -u origin feature/add-user-auth
+  gh pr create --base develop --title "Add user authentication"
+
+# 3. 作業
+# ファイル編集
+
+# 4. コミット
+git add src/auth/login.ts
+git commit -m "feat: Add user authentication"
+
+✓ コミット完了: a1b2c3d feat: Add user authentication
+
+# 5. プッシュ
+git push -u origin feature/add-user-auth
+
+✓ プッシュ完了: origin/feature/add-user-auth
+
+PR作成:
+  gh pr create --base develop --title "Add user authentication"
+
+# 6. PR作成
+gh pr create --base develop --title "Add user authentication"
+
+# 7. レビュー・承認後、GitHub UIでマージ
+```
+
+#### 例2: バグ修正
+
+```bash
+# 1. developを最新化
+git checkout develop
+git pull origin develop
+
+# 2. bugfixブランチ作成
+git checkout -b bugfix/fix-login-error
+
+# 3-7. 同様のフロー
+```
+
+### 間違ったフロー（絶対禁止）
+
+```bash
+# ❌ 間違った例1: developに直接コミット
+git checkout develop
+git pull origin develop
+# ファイル編集
+git add src/app/DashboardClient.test.tsx
+git commit -m "test: Add comment"
+git push origin develop  # ← これが重大な違反
+
+# ❌ 間違った例2: mainに直接コミット
+git checkout main
+git pull origin main
+# ファイル編集
+git add README.md
+git commit -m "docs: Update README"
+git push origin main  # ← これが重大な違反
+```
+
+### 緊急時の対応
+
+**もし誤って重要ブランチに直接pushしてしまった場合:**
+
+#### 対応1: まだ誰もpullしていない場合（推奨）
+
+```bash
+# ローカルで1つ前のコミットに戻す
+git reset --hard HEAD~1
+
+# リモートも巻き戻す（注意: 履歴書き換え）
+git push origin develop --force-with-lease
+
+# その後、正しいフローで作業し直す
+git checkout -b feature/correct-branch
+# 作業
+git push -u origin feature/correct-branch
+gh pr create --base develop
+```
+
+**注意**: この方法はMUST Rule 11「危険なGit操作の禁止」に該当するため、**必ずユーザーに確認を取る**。
+
+#### 対応2: 既に他の開発者がpullしている場合
+
+```bash
+# Revertコミットを作成（安全）
+git revert HEAD
+git push origin develop
+
+# その後、正しいフローで作業し直す
+git checkout -b feature/correct-implementation
+# 作業
+git push -u origin feature/correct-implementation
+gh pr create --base develop
+```
+
+### ブランチ保護の設定推奨
+
+**GitHub/GitLabでブランチ保護を設定：**
+
+```
+Settings → Branches → Branch protection rules
+
+main/master/develop ブランチの設定:
+✓ Require a pull request before merging
+✓ Require approvals (1+)
+✓ Require status checks to pass
+✓ Require branches to be up to date
+✓ Do not allow bypassing the above settings
+```
+
+これにより、直接pushが技術的に防止されます。
+
+### 過去の問題例
+
+**問題内容:**
+- ユーザーから「適当な修正をいれてpushしてください」という指示
+- AIが `git checkout develop` → 編集 → `git commit` → `git push origin develop`
+- developブランチに直接pushしてしまった
+- featureブランチを作成せず、PR経由でマージもしなかった
+
+**トランスクリプト:**
+```
+> そのために、適当な守勢をいれてpushしてください
+
+⏺ developブランチに修正をpushして、Infinibox対応の動作確認をします。
+⏺ Bash(git checkout develop)
+⏺ Bash(git pull origin develop)
+⏺ テストファイルにコメントを追加します。
+⏺ Bash(git add src/app/DashboardClient.test.tsx && git commit -m "test: Infinibox対応の動作確認用コメント追加")
+⏺ Bash(git push origin develop)  # ← 重大な違反
+
+> ブランチ名は?
+⏺ 現在のブランチは develop です。
+```
+
+**ユーザーの指摘:**
+```
+「とんでもないことが起きました
+developを直接変更しています
+問題はgitの重要なブランチを直接更新していることです。これはルール違反ではないですか?」
+```
+
+**本来すべきだったこと:**
+1. `git checkout develop` → `git pull origin develop`
+2. `git checkout -b feature/add-infinibox-verification-comment`
+3. ファイル編集
+4. `git add` → `git commit`
+5. `git push -u origin feature/add-infinibox-verification-comment`
+6. `gh pr create --base develop`
+7. PR経由でマージ
+
+**なぜこの違反が発生したか:**
+- ユーザーの指示「適当な修正をいれてpushしてください」を、「developに直接push」と誤解釈
+- MUST Rule 3違反: ユーザーの意図を確認せずに勝手に解釈
+- 重要ブランチへの直接push禁止ルールが存在しなかった
+
+### なぜこれがMUST Ruleなのか
+
+- **チーム開発の基本原則**（PR経由でのコードレビュー）
+- **品質保証**（レビューなしのコードがマージされる）
+- **変更履歴の透明性**（PRがないと変更の意図が不明）
+- **CI/CDの安全性**（チェックをスキップしてデプロイされる可能性）
+- **MUST Rule 3との関係**（ユーザー指示の正確な解釈）
+
+### ブランチ名の確認方法
+
+**作業前に必ず確認:**
+
+```bash
+# 現在のブランチ名を表示
+git branch --show-current
+
+# もし develop/main/master なら警告
+if [[ $(git branch --show-current) =~ ^(main|master|develop|production|staging)$ ]]; then
+  echo "⚠️  重要ブランチにいます: $(git branch --show-current)"
+  echo "❌ このブランチで作業してはいけません"
+  echo "✓  featureブランチを作成してください"
+fi
+```
+
+### チェックリスト
+
+**コミット前に必ず確認:**
+
+- [ ] **現在のブランチ名を確認した**（`git branch --show-current`）
+- [ ] **重要ブランチ（develop/main/master）ではない**
+- [ ] **featureブランチを作成した**
+- [ ] **featureブランチで作業している**
+- [ ] **commitする前にブランチ名を再確認した**
+
+**プッシュ前に必ず確認:**
+
+- [ ] **プッシュ先ブランチを確認した**
+- [ ] **develop/main/master に直接pushしようとしていない**
+- [ ] **featureブランチにpushしようとしている**
+- [ ] **プッシュ後にPRを作成する予定**
+
+### トリガーワード
+
+以下のワードを見たら、MUST Rule 20を思い出す：
+
+- 「push」
+- 「プッシュ」
+- 「git push」
+- 「developにpush」
+- 「mainにpush」
+- 「修正をpushして」
+- 「変更をpushして」
+
+→ **必ず現在のブランチを確認し、重要ブランチなら即座にfeatureブランチを作成する**
 
 ---
 
