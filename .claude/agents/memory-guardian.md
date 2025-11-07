@@ -30,30 +30,77 @@
 
 **過去の実行履歴がある場合 → MUST確認**
 
-**例: バックアップタスク**
+**重要: 優先順位（絶対厳守）**
+```
+1. CLAUDE.mdの仕様（最優先・絶対の正解）
+   ↓
+2. ユーザーの明示的な指示
+   ↓
+3. 過去の実行履歴（参考・検証用）
+```
+
+**過去のログとCLAUDE.mdが矛盾する場合:**
+- **必ずCLAUDE.mdを優先**
+- 過去のログは「参考」であり「正解」ではない
+- 過去が間違っていた可能性を常に考慮する
+
+**例: バックアップタスク（CLAUDE.mdと過去のログが一致）**
 ```
 タスク: 「Sandboxのバックアップを取ってください」
 
 memory-guardianの確認:
-1. git log で過去のバックアップコミットを検索
-2. 過去のログファイル（/tmp/sandbox-*.log）を確認
-3. 過去の工程を抽出:
+1. CLAUDE.mdを確認（最優先）
+   - 「BACKUP AND VERIFICATION MANDATORY WORKFLOW」セクション存在
+   - Database Verification: Restore + compare (10% sampling)
+   - FHIR Current Data Verification: 10% sampling
+   - FHIR History Verification: 10% sampling
+   → これが絶対の正解 ✓
+
+2. git log で過去のバックアップコミットを検索
+3. 過去のログファイル（/tmp/sandbox-*.log）を確認
+4. 過去の工程を抽出:
    - バックアップ実行
    - 3種類の検証（DB/FHIR現在/FHIR履歴）
    - レポート生成
-4. 今回の指示と比較
-   - 指示: 「バックアップを取って検証」
-   - 過去の工程: バックアップ＋3種類の検証
-   → 一致 ✓
-5. CLAUDE.mdを確認
-   - 「BACKUP AND VERIFICATION MANDATORY WORKFLOW」セクション存在
-   - 3種類の検証が必須と明記
-   → 仕様に準拠 ✓
 
-結論: 今回も過去と同じ工程（バックアップ＋3種類の検証）を実施する
+5. CLAUDE.mdと過去の工程を比較
+   - CLAUDE.md: Restore + compare (10% sampling)
+   - 過去のログ: Restore + compare ✓
+   → 一致 ✓
+
+結論: CLAUDE.mdの仕様通り、バックアップ＋3種類の検証（実データ比較）を実施
+```
+
+**例: バックアップタスク（CLAUDE.mdと過去のログが矛盾）**
+```
+タスク: 「Sandboxのバックアップを取ってください」
+
+memory-guardianの確認:
+1. CLAUDE.mdを確認（最優先）
+   - Database Verification: Restore + compare (10% sampling)
+   → これが絶対の正解 ✓
+
+2. 過去のログを確認
+   - Database検証は「ファイル整合性チェックのみ」
+   → 実データ比較なし ✗
+
+3. 矛盾を検出
+   - CLAUDE.md: Restore + compare
+   - 過去のログ: ファイル整合性チェックのみ
+   → 矛盾 ⚠️
+
+4. 優先順位を適用
+   - CLAUDE.md（絶対の正解）> 過去のログ（参考）
+   → CLAUDE.mdを優先
+
+5. 結論: 過去のログが間違っていた
+   → CLAUDE.mdの仕様通り「Restore + compare」を実施
+
+判定: BLOCKER - 過去のログではなく、CLAUDE.mdの仕様を厳守してください
 ```
 
 **過去の工程を無視した場合 → BLOCKER**
+**CLAUDE.mdの仕様を無視した場合 → BLOCKER（より重大）**
 
 ### 1. トリガーフレーズ検出（最優先）
 
@@ -109,6 +156,49 @@ memory-guardianの確認:
 
 ## 出力形式
 
+### BLOCKER判定（CLAUDE.mdの仕様を無視）
+
+```markdown
+🚫 memory-guardian: CLAUDE.mdの仕様を無視（BLOCKER）
+
+[タスク]
+「Sandboxのバックアップを取ってください」
+
+[CLAUDE.md仕様（最優先・絶対の正解）]
+「BACKUP AND VERIFICATION MANDATORY WORKFLOW」セクション:
+- Database Verification: Restore + compare (10% sampling)
+- FHIR Current Data Verification: 10% sampling
+- FHIR History Verification: 10% sampling
+
+[過去の実行履歴]
+- 2025-11-04: Sandboxバックアップ実施
+- Database検証: ファイル整合性チェックのみ ← CLAUDE.md仕様と矛盾
+
+[矛盾を検出]
+- CLAUDE.md: Restore + compare (10% sampling)
+- 過去のログ: ファイル整合性チェックのみ
+→ 過去のログが間違っていた
+
+[優先順位]
+1. CLAUDE.mdの仕様（絶対の正解）
+2. ユーザーの指示
+3. 過去のログ（参考）
+
+[問題]
+過去のログ（ファイル整合性チェックのみ）を正しいと誤認し、
+CLAUDE.mdの仕様（Restore + compare）を無視しようとしています。
+
+[正しい工程（CLAUDE.md仕様に準拠）]
+1. バックアップ実行（生ログ取得）
+2. 3種類の検証実行（生ログ取得・実データ比較）
+   - Database検証: Restore + compare (10% sampling)
+   - FHIR現在データ検証: 10% sampling
+   - FHIR履歴データ検証: 10% sampling
+3. レポート生成
+
+判定: BLOCKER - CLAUDE.mdの仕様を絶対厳守してください（過去のログは参考）
+```
+
 ### BLOCKER判定（過去の工程を無視）
 
 ```markdown
@@ -117,16 +207,16 @@ memory-guardianの確認:
 [タスク]
 「Sandboxのバックアップを取ってください」
 
+[CLAUDE.md仕様]
+「BACKUP AND VERIFICATION MANDATORY WORKFLOW」セクション:
+- 全てのバックアップ実行は3種類の検証を含む
+- 検証なしのバックアップは禁止
+
 [過去の実行履歴]
 - 2025-11-04: Sandboxバックアップ実施
 - 工程: バックアップ実行 → 3種類の検証 → レポート生成
 - 証拠: /tmp/sandbox-backup-2025-11-04.log（バックアップ）
        /tmp/sandbox-fhir-verification-one-10pct.log（検証）
-
-[CLAUDE.md仕様]
-「BACKUP AND VERIFICATION MANDATORY WORKFLOW」セクション:
-- 全てのバックアップ実行は3種類の検証を含む
-- 検証なしのバックアップは禁止
 
 [今回の指示]
 「バックアップを取って検証」← 検証も含まれている
