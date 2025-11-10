@@ -21,6 +21,127 @@
 
 ## チェック項目
 
+### 0. ブランチ作成時の命名規則確認（新規・最優先）
+
+**ブランチ作成前に、必ずプロジェクトの既存ブランチ命名規則を確認する。**
+
+```bash
+# 必須: 既存ブランチの命名パターンを確認
+git branch -r | grep -E "(bugfix|feature)" | head -20
+
+# パターンを分析:
+# - feature/fix-* が多い → 修正系は feature/fix-* を使う
+# - bugfix/* が多い → バグ修正は bugfix/* を使う
+# - プロジェクト固有のパターンがある → それに従う
+```
+
+**検出すべきパターン:**
+
+```
+⚠️ プロジェクト固有の命名規則を確認:
+
+例1: 修正系は feature/fix-* を使うプロジェクト
+- origin/feature/fix-coupon-storybook
+- origin/feature/fix-received-coupon-request-fixed
+- origin/feature/fix-redirect-url-1105
+→ このプロジェクトでは修正系も feature/fix-* を使う
+
+例2: バグ修正は bugfix/* を使うプロジェクト
+- origin/bugfix/JPP-38692
+- origin/bugfix/carousel-show-all-button
+- origin/bugfix/searchitems-404-handling
+→ このプロジェクトではバグ修正は bugfix/* を使う
+
+例3: チケット番号を含むプロジェクト
+- origin/feature/JPP-12345-add-new-feature
+- origin/bugfix/JPP-67890-fix-login-bug
+→ このプロジェクトではチケット番号を含める
+```
+
+**禁止事項:**
+```
+❌ 既存ブランチの命名規則を確認せずにブランチ作成
+❌ 「おそらくbugfix/だろう」と推測
+❌ 「一般的にはfeature/だから」と判断
+❌ プロジェクト固有のルールを無視
+```
+
+**必須手順:**
+
+1. **既存ブランチを確認**
+   ```bash
+   git branch -r | grep -E "(bugfix|feature)" | head -20
+   ```
+
+2. **パターンを分析**
+   - 修正系がどちらに分類されているか確認
+   - チケット番号の有無を確認
+   - プロジェクト固有のパターンを確認
+
+3. **分析結果を報告**
+   ```
+   「既存ブランチを確認しました。
+   このプロジェクトでは修正系も feature/fix-* を使うパターンです。
+   feature/fix-404-handling-for-detail-routes を作成します。」
+   ```
+
+4. **確認後にブランチ作成**
+   ```bash
+   git checkout -b feature/fix-404-handling-for-detail-routes
+   ```
+
+**出力例:**
+```markdown
+⚠️ git-operation-guardian: ブランチ命名規則の確認（必須）
+
+[既存ブランチの確認結果]
+git branch -r | grep -E "(bugfix|feature)" | head -20
+
+feature/fix-coupon-storybook
+feature/fix-received-coupon-request-fixed
+feature/fix-redirect-url-1105
+bugfix/JPP-38692
+bugfix/carousel-show-all-button
+
+[分析]
+修正系のブランチ:
+- feature/fix-* が3個
+- bugfix/* が2個（JPP番号付き）
+
+→ このプロジェクトでは修正系は feature/fix-* を使う傾向
+→ バグ修正でJPP番号がある場合は bugfix/JPP-* を使う
+
+[今回のタスク]
+404ハンドリングの修正（チケット番号なし）
+
+[推奨ブランチ名]
+feature/fix-404-handling-for-detail-routes
+
+[警告]
+bugfix/searchitems-404-handling は既存パターンと異なります。
+このプロジェクトでは修正系も feature/fix-* を使います。
+
+判定: feature/fix-404-handling-for-detail-routes を使用してください
+```
+
+**過去の問題例:**
+
+**問題内容:**
+- 既存パターン: `feature/fix-*`（修正系）
+- AI: `bugfix/searchitems-404-handling` を作成
+- 理由: 既存ブランチの命名規則を確認せずに、一般的な命名規則で判断
+
+**ユーザーの指摘:**
+```
+「今回のブランチ名もそうです、なぜfeatureではないですか?」
+```
+
+**本来すべきだったこと:**
+1. `git branch -r | grep -E "(bugfix|feature)"` で既存パターンを確認
+2. 修正系が `feature/fix-*` に分類されていることを発見
+3. プロジェクト固有のルールに従う
+4. `feature/fix-404-handling-for-detail-routes` を作成
+
 ### 1. 現在のブランチ名確認
 
 ```bash

@@ -100,6 +100,12 @@ tools: Read, Grep, LS
 - 「別の方法で」「代わりに」（既存の方法を変更）
 - ファイル名を含む実装宣言
 
+**「同じ」指示のキーワード（新規・MUST Rule 17）:**
+- 「〜と同じ」「〜と同じアーキテクチャー」
+- 「〜と同様に」「〜と同じように」
+- 「〜と揃える」「〜に合わせる」
+- 「前回と同じ」「いつもの」
+
 **タスクタイプ:**
 - 新しい機能・修正を実装する前
 - TodoWriteでタスクが作成された時
@@ -190,8 +196,13 @@ Task(
 
 **Git操作キーワード:**
 - `git add`、`git commit`、`git push`
-- `git checkout -b`（ブランチ作成）
+- `git checkout -b`（ブランチ作成） ← **MUST Rule 18: プロジェクト固有ルール確認**
 - `git filter-branch`、`git reset --hard`、`git rebase`
+
+**ブランチ作成時の追加トリガー（新規・MUST Rule 18）:**
+- 「ブランチを作成」「checkout -b」という発言
+- 「feature/」「bugfix/」を含むブランチ名の言及
+- ブランチ名を決定しようとしている発言
 
 **起動指示:**
 ```
@@ -202,9 +213,12 @@ Task(
 
 Git操作を検出しました。
 以下を確認してください：
-1. 現在のブランチ名を確認
-2. 重要ブランチ（main/develop等）への直接操作を検出
-3. 危険なGit操作（filter-branch --all等）を検出
+1. ブランチ作成の場合: 既存ブランチの命名規則を確認（MUST Rule 18）
+   - git branch -r | grep -E \"(bugfix|feature)\" で既存パターンを確認
+   - プロジェクト固有のルールに従う
+2. 現在のブランチ名を確認
+3. 重要ブランチ（main/develop等）への直接操作を検出
+4. 危険なGit操作（filter-branch --all等）を検出
 
 結果を報告してください（BLOCKER/WARNING/PASS）。
 操作後の確認メッセージも提示してください。"

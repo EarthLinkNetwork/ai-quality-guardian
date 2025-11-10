@@ -152,9 +152,99 @@ memory-guardianの確認:
   → 前回の内容を確認
 ```
 
-### 4. コメントと実装の整合性
+### 4. コメントと実装の整合性 + 「同じ」指示の全体確認
 
 **既存コードのコメントと、これから実装する内容が一致しているか確認**
+
+**「同じ」指示の全体確認（新規・重要）:**
+
+ユーザーが「Aと同じ」「Bと同じアーキテクチャー」と指示した場合、**AIは一部だけを確認して終わる傾向がある**。これを防ぐため、以下を厳格に検出:
+
+```
+⚠️ 「同じ」指示のトリガーフレーズ:
+
+- 「〜と同じ」
+- 「〜と同じアーキテクチャー」
+- 「〜と同様に」
+- 「〜と同じように」
+- 「〜と揃える」
+- 「〜に合わせる」
+```
+
+**検出した場合の必須手順:**
+
+1. **関連ファイルを全て洗い出す**
+   ```bash
+   # 例: 「detailCouponと同じ」の場合
+   find src -name "*DetailCoupon*" -o -name "*detailCoupon*"
+   find src -name "*Detail*Content.tsx"
+   ```
+
+2. **全てのファイルの該当箇所を確認**
+   ```bash
+   # 例: matchSearchItems の実装を確認
+   grep -n "matchSearchItems\|match.*searchItems" src/app/**/Detail*.tsx
+   ```
+
+3. **全てのファイルで一貫性を保つ**
+   - 1つのファイルだけ修正して終わらない
+   - 全てのファイルで同じ実装になっているか確認
+   - locale版、ルート版、類似ファイル全てをチェック
+
+**禁止事項:**
+```
+❌ 「〜と同じ」と言われて、1つのファイルだけ確認
+❌ 関連ファイルを洗い出さずに実装開始
+❌ 「おそらく全て同じはず」と推測
+❌ 一部のファイルだけ修正して終わる
+```
+
+**出力例:**
+```markdown
+⚠️ memory-guardian: 「同じ」指示を検出（全体確認必須）
+
+[検出されたフレーズ]
+「detailCouponと同じアーキテクチャー」
+
+[必須確認事項]
+1. 関連ファイルを全て洗い出す
+   → find src -name "*DetailCoupon*" -o -name "*detailCoupon*"
+
+2. 全てのファイルの該当箇所を確認
+   → grep -n "matchSearchItems" src/app/**/Detail*.tsx
+
+3. 全てのファイルで一貫性を確認
+   - src/app/detailCoupon/DetailCouponContent.tsx
+   - src/app/[locale]/detailCoupon/DetailCouponContent.tsx
+   - src/app/detail/CouponDetailContent.tsx
+   - src/app/[locale]/detail/CouponDetailContent.tsx
+
+[警告]
+「同じ」と言われた場合、1つのファイルだけ確認して終わってはいけません。
+関連する全てのファイルを洗い出し、全てで一貫性を保つ必要があります。
+
+判定: 全体確認を完了してから実装を開始してください
+```
+
+**過去の問題例:**
+
+**問題内容:**
+- ユーザー: 「detailCouponと同じアーキテクチャー」
+- AI: `src/app/detailCoupon/DetailCouponContent.tsx` だけ確認
+- 結果: locale版には searchItems 対応がなかった（不一致）
+
+**ユーザーの指摘:**
+```
+「なぜ detailCouponと同じといったのに、違う実装になっているのですか?
+どうしてこういうことがおるのですか?
+根本原因を対策しないと、今後も同様な事がおこります」
+```
+
+**本来すべきだったこと:**
+1. `find src -name "*DetailCoupon*"` で全てのファイルを洗い出す
+2. 全てのファイルの searchItems 対応を確認
+3. 不一致を発見（locale版には未対応）
+4. 全てのファイルで一貫性を保つように修正
 
 ### 5. 実行中の言い訳・ショートカット検出（新規・重要）
 
