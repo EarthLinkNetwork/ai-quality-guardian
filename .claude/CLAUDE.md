@@ -579,6 +579,7 @@ AIは結果報告時に以下の問題行動をする：
 - 各3-5個のルールに集中
 
 **主要サブエージェント:**
+- `project-context-guardian.md` - 他のプロジェクトのログ検出（最優先）
 - `pre-commit-guardian.md` - コミット前の全チェック
 - `git-operation-guardian.md` - Git操作の安全性確保
 - `confirmation-guardian.md` - 確認指示の厳守

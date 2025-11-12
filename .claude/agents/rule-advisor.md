@@ -21,14 +21,15 @@ tools: Read, Grep, LS
 1. **専門サブエージェントの自動起動判定（最優先・新規）**
    - タスク内容・状況を分析し、必要なサブエージェントを自動起動
    - パターンマッチングによる柔軟な検出（厳密なif文ではない）
-   - 以下の7個のガーディアンエージェントを適切に起動：
+   - 以下の8個のガーディアンエージェントを適切に起動：
+     - `project-context-guardian` - **他のプロジェクトのログ検出（最優先・新規）**
      - `memory-guardian` - 実装前のメモリー・要求確認、実行中の言い訳検出
      - `confirmation-guardian` - 確認指示の厳守
      - `production-guardian` - 本番環境での安全な操作
      - `git-operation-guardian` - Git操作の安全性確保
      - `pre-commit-guardian` - コミット前の全チェック
      - `context-guardian` - コンテキストスイッチ検出
-     - `verification-guardian` - 検証結果の正確性確認（新規・MUST Rule 10）
+     - `verification-guardian` - 検証結果の正確性確認（MUST Rule 10）
 
 2. **MUST Rule違反の自動検出**
    - タスク内容・説明文から**トリガーフレーズ**を検出
@@ -62,6 +63,66 @@ tools: Read, Grep, LS
 ## サブエージェント自動起動ロジック（v1.3.0新機能）
 
 **3層階層化ルールシステムの核心機能：タスク内容・状況を分析し、適切なサブエージェントを自動起動**
+
+### 0. project-context-guardian 起動判定（最優先・新規）
+
+**他のどのサブエージェントよりも先に実行。ユーザーの入力を見た瞬間に他のプロジェクトのログかを判定。**
+
+以下のパターンを検出したら `project-context-guardian` を起動：
+
+**他のプロジェクトのファイルパス:**
+- `/Users/masa/dev/ai/scripts` 以外のパス
+- 例: `src/views/`, `apps/orca/`, `lib/slack/`, `pages/`, `components/`
+
+**他のリポジトリ名:**
+- このリポジトリ: `ai/scripts`, `quality-guardian`
+- 他のリポジトリ: `coupon`, `reminder`, `XPSWOR`, `EarthLinkNetwork`等
+
+**Claude Codeの実行ログ:**
+- 「⏺」マーク
+- `Bash(...)`, `Update(...)`, `Read(...)`, `Edit(...)`等
+
+**ブランチ操作:**
+- `git branch`, `git push`, `git checkout -b`
+- ブランチ名: `bugfix/`, `feature/`（このプロジェクトにはブランチがない）
+
+**プルリクエスト:**
+- 「PRを作成」「プルリクエストを作成」
+- Bitbucket URL: `git.rakuten-it.com`
+- GitHub URL: `github.com/EarthLinkNetwork`等（このプロジェクト以外）
+
+**ビルド・デプロイ:**
+- `pnpm build`, `npm run`, `typecheck`
+- `Amplify`, `Vercel`等のデプロイログ
+
+**起動指示:**
+```
+Task(
+  subagent_type="project-context-guardian",
+  description="他のプロジェクトのログ検出",
+  prompt="ユーザーの入力を分析してください。
+
+チェック項目：
+1. これは他のプロジェクトのログか？
+2. ファイルパスは /Users/masa/dev/ai/scripts 以外か？
+3. リポジトリ名は ai/scripts, quality-guardian 以外か？
+4. Claude Codeの実行ログ（⏺マーク）が含まれているか？
+5. ブランチ操作・プルリクエストの言及があるか？
+
+他のプロジェクトのログを検出した場合:
+- Main AIに「問題を解決するな、AI guardianとして分析せよ」と警告
+- BLOCKER判定を返す
+
+正しいAI guardian対応:
+1. ログを分析
+2. ルール違反パターンを特定
+3. 既存ルールで防げなかった理由を分析
+4. 対策を実装
+5. このプロジェクト（quality-guardian）のルール・サブエージェントを強化"
+)
+```
+
+**重要:** このセクションは**最優先**で実行すること。他のサブエージェントよりも先に起動し、Main AIが他のプロジェクトの問題を解決しようとするのを即座にブロックする。
 
 ### 1. memory-guardian 起動判定
 
