@@ -32,6 +32,11 @@
    - 「タグをつけて」「いつでも戻れるように」
    - 「ブランチを切り替えて」
    - 「元に戻って」「さっきの作業に戻って」
+10. **実装完了後、動作確認をユーザーに依頼しようとした時（新規・最重要）**
+   - 「ブラウザで確認してください」
+   - 「開発者ツールで確認してください」
+   - 「実装は完了しました。動作確認をお願いします」
+   - 「http://localhost:... にアクセスして確認してください」
 
 ## チェック項目
 
@@ -746,6 +751,139 @@ git checkout v1.3.7-wip
 3. 不一致を発見（locale版には未対応）
 4. 全てのファイルで一貫性を保つように修正
 
+### 1.9. 動作確認の自己完結義務（新規・最重要）
+
+**「ブラウザで確認してください」等の動作確認をユーザーに依頼してはいけない。Playwrightで自分で確認すること。**
+
+```
+必須確認事項:
+□ 「ブラウザで確認してください」と言おうとしていないか？
+□ 「開発者ツールで確認してください」と言おうとしていないか？
+□ 「実装は完了しました。動作確認をお願いします」と言おうとしていないか？
+□ Playwrightで自分で確認する計画があるか？
+```
+
+#### 検出すべきパターン（絶対禁止）
+
+```
+❌ 「ブラウザで http://... にアクセスして確認してください」
+❌ 「開発者ツール（F12）を開いて、Consoleタブを確認してください」
+❌ 「Networkタブでリクエストを確認してください」
+❌ 「以下をConsoleで実行してください: console.log(...)」
+❌ 「実際の動作確認をお願いします」
+❌ 「実装は完了しました。動作確認をお願いします」
+❌ 「http://localhost:... にアクセスして、以下を確認してください」
+❌ 「画面を開いて〜を確認してください」
+❌ 「ボタンをクリックして確認してください」
+```
+
+**検出した場合 → BLOCKER**
+
+#### 正しい対応
+
+```
+✅ 「Playwrightで確認します」
+✅ 「画面とconsole.logを確認します」
+✅ 「Networkタブのリクエストを確認します」
+✅ （軽量確認の場合）「curlで確認します」
+```
+
+#### Playwrightで確認すべき内容
+
+1. **画面の表示**
+   ```typescript
+   await page.goto('http://example.com');
+   await page.screenshot({ path: 'screenshot.png' });
+   ```
+
+2. **console.logの確認**
+   ```typescript
+   page.on('console', msg => console.log('PAGE LOG:', msg.text()));
+   ```
+
+3. **エラーメッセージの確認**
+   ```typescript
+   page.on('pageerror', error => console.log('PAGE ERROR:', error));
+   ```
+
+4. **環境変数の確認**
+   ```typescript
+   const apiUrl = await page.evaluate(() => {
+     return (window as any).process?.env?.NEXT_PUBLIC_API_URL;
+   });
+   console.log('API URL:', apiUrl);
+   ```
+
+5. **Networkリクエストの確認**
+   ```typescript
+   page.on('request', request => console.log('REQUEST:', request.url()));
+   page.on('response', response => console.log('RESPONSE:', response.url(), response.status()));
+   ```
+
+#### curlを使う場合
+
+軽量な確認が必要な場合はcurlも可:
+```bash
+# APIエンドポイントの動作確認
+curl -I http://example.com/api/health
+
+# レスポンスの確認
+curl http://example.com/api/users
+```
+
+#### 過去の問題例
+
+**問題内容: MasterMakerのバージョン履歴機能実装後の動作確認依頼**
+
+```
+AIの誤った対応:
+「ブラウザで http://localhost:3501 にアクセスして、以下を確認してください：
+
+1. MasterMaker画面を開く
+2. Toolbarの「履歴」ボタンをクリック
+3. バージョン履歴ダイアログが表示されることを確認
+4. バージョンを選択して「このバージョンを読み込む」ボタンをクリック
+5. 選択したバージョンの画面定義が読み込まれることを確認
+
+実装は完了しました。実際の動作確認をお願いします。」
+
+問題点:
+❌ ユーザーに動作確認を丸投げ
+❌ Playwrightで自分で確認していない
+❌ console.log、Network、エラーを確認していない
+❌ 「実装は完了しました」と言いながら動作確認していない
+```
+
+**本来すべきだったこと:**
+
+```
+1. Playwrightでページにアクセス
+   await page.goto('http://localhost:3501');
+
+2. console.logを監視
+   page.on('console', msg => console.log('PAGE LOG:', msg.text()));
+
+3. Networkリクエストを監視
+   page.on('request', request => console.log('REQUEST:', request.url()));
+   page.on('response', response => console.log('RESPONSE:', response.url(), response.status()));
+
+4. 画面操作を実行
+   await page.click('button[aria-label="履歴"]');
+   await page.waitForSelector('.version-history-dialog');
+
+5. スクリーンショットを撮影
+   await page.screenshot({ path: 'version-history.png' });
+
+6. エラーがあれば内容を確認
+   page.on('pageerror', error => console.log('PAGE ERROR:', error));
+
+7. 結果をユーザーに報告
+   「Playwrightで確認しました。バージョン履歴ダイアログが正常に表示され、
+   バージョン選択と読み込みが動作しています。」
+```
+
+**検出した場合 → BLOCKER**
+
 ### 5. 実行中の言い訳・ショートカット検出（新規・重要）
 
 **実装中・実行中のAIの発言から、必須作業をスキップしようとする兆候を検出:**
@@ -836,6 +974,17 @@ git checkout v1.3.7-wip
 ❌ 記録を確認せずに戻ろうとする
 ❌ 戻った後に「動かない」状態になる
 ❌ 「おそらく〜ブランチだろう」（推測で戻る）
+
+## 動作確認のユーザー依頼（新規・最重要）
+❌ 「ブラウザで http://... にアクセスして確認してください」
+❌ 「開発者ツール（F12）を開いて、Consoleタブを確認してください」
+❌ 「Networkタブでリクエストを確認してください」
+❌ 「以下をConsoleで実行してください」
+❌ 「実際の動作確認をお願いします」
+❌ 「実装は完了しました。動作確認をお願いします」
+❌ 「http://localhost:... にアクセスして、以下を確認してください」
+❌ 「画面を開いて〜を確認してください」
+❌ 「ボタンをクリックして確認してください」
 ```
 
 **検出した場合の対応:**
