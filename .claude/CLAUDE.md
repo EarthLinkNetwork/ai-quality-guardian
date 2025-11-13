@@ -17,7 +17,7 @@
 
 このファイルは階層化されたルールシステムの最上位層です。
 
-- Layer 1（このファイル）: 9個の核心ルール - Main AIが常に意識
+- Layer 1（このファイル）: 12個の核心ルール - Main AIが常に意識
 - Layer 2（.claude/agents/）: 専門サブエージェント - 自動起動
 - Layer 3（.claude/rules/）: 詳細ルール - サブエージェントが参照
 
@@ -60,9 +60,9 @@
 
 ---
 
-# 🚨 MUST Rules（Main AI - 11個）
+# 🚨 MUST Rules（Main AI - 12個）
 
-以下の11個のルールは**絶対に守ること**。詳細なルールはサブエージェントが担当します。
+以下の12個のルールは**絶対に守ること**。詳細なルールはサブエージェントが担当します。
 
 ## 0. プロジェクトコンテキスト確認義務（最優先・新規）
 
@@ -577,6 +577,110 @@ AIは結果報告時に以下の問題行動をする：
 
 ---
 
+## 11. 動作確認の自己完結義務（新規・最重要）
+
+**実装完了後、動作確認をユーザーに依頼してはいけない。Playwrightで自分で確認すること。**
+
+### 基本原則
+
+AIは実装完了時に以下の問題行動をする：
+- **「ブラウザで確認してください」とユーザーに依頼**（自己確認の放棄）
+- **「実装は完了しました。動作確認をお願いします」**（検証の丸投げ）
+- **Playwrightで確認できるのに確認しない**（怠慢）
+
+### 厳守事項
+
+**実装完了時の必須手順：**
+
+1. **Playwrightで動作確認を実施**
+   ```typescript
+   // 1. ページにアクセス
+   await page.goto('http://localhost:3501');
+
+   // 2. console.logを監視
+   page.on('console', msg => console.log('PAGE LOG:', msg.text()));
+
+   // 3. エラーを監視
+   page.on('pageerror', error => console.log('PAGE ERROR:', error));
+
+   // 4. Networkを監視
+   page.on('request', request => console.log('REQUEST:', request.url()));
+   page.on('response', response => console.log('RESPONSE:', response.url(), response.status()));
+
+   // 5. 画面操作を実行
+   await page.click('button[aria-label="履歴"]');
+   await page.waitForSelector('.version-history-dialog');
+
+   // 6. スクリーンショット撮影
+   await page.screenshot({ path: 'screenshot.png' });
+   ```
+
+2. **確認結果をユーザーに報告**
+   ```
+   「Playwrightで動作確認しました。
+   - 画面表示: 正常
+   - console.log: エラーなし
+   - Network: 全てのAPIリクエスト成功
+   - 機能動作: バージョン履歴ダイアログが正常に表示され、動作しています」
+   ```
+
+3. **問題があれば原因を調査して修正**
+   - エラーメッセージを確認
+   - ログを確認
+   - 修正してから再確認
+
+### 禁止事項
+
+```
+❌ 「ブラウザで http://... にアクセスして確認してください」
+❌ 「開発者ツール（F12）を開いて、Consoleタブを確認してください」
+❌ 「Networkタブでリクエストを確認してください」
+❌ 「実装は完了しました。動作確認をお願いします」
+❌ 「http://localhost:... にアクセスして、以下を確認してください」
+❌ 「画面を開いて〜を確認してください」
+❌ 「ボタンをクリックして確認してください」
+❌ 「確認をお願いします」
+```
+
+### curlを使う場合
+
+軽量なAPIエンドポイントの確認はcurlでも可：
+```bash
+# APIエンドポイントの動作確認
+curl -I http://localhost:3502/api/health
+
+# レスポンスの確認
+curl http://localhost:3502/api/users
+```
+
+### なぜこれがMUST Ruleなのか
+
+**過去の問題例（v1.3.9直後）：**
+```
+v1.3.9でmemory-guardianに動作確認の自己完結義務を追加
+↓
+しかし効果なし
+↓
+AIが「http://localhost:3501/admin/mastermaker にアクセスして、以下を確認してください」と依頼
+↓
+ユーザー：「変わりません、また自分で確認しません」
+```
+
+**なぜv1.3.9が機能しなかったか：**
+- memory-guardianはLayer 2（サブエージェント）
+- Main AIが実装完了報告を出す時点では、memory-guardianは起動されていない
+- Main AIが先に「確認をお願いします」と出力してしまう
+
+**Layer 1（MUST Rule）に配置する理由：**
+- Main AIが直接参照できる
+- 実装完了時に必ず確認
+- v1.3.6でMUST Rule 0を追加したのと同じ理由（サブエージェントでは間に合わない）
+
+### 詳細ルール
+詳細は `.claude/agents/memory-guardian.md` の Section 1.9 を参照
+
+---
+
 # 日本語応答と絵文字禁止（SHOULD）
 
 ## 日本語で応答すること
@@ -664,13 +768,13 @@ AIは結果報告時に以下の問題行動をする：
 このプロジェクト自体が「AI開発の品質を守る」ツールなので、
 **開発者（AI）自身がルールを厳守すること**が極めて重要です。
 
-- 11個の核心ルールを常に意識（特にMUST Rule 0とMUST Rule 4）
+- 12個の核心ルールを常に意識（特にMUST Rule 0、MUST Rule 4、MUST Rule 11）
 - サブエージェントを積極的に活用
 - 詳細ルールはサブエージェントに任せる
 - 不明な点は必ずユーザーに確認
 
 ---
 
-**Current Version: 1.3.6**
-**Last Updated: 2025-01-13**
+**Current Version: 1.3.10**
+**Last Updated: 2025-01-14**
 **Architecture: 3-Layer Hierarchical Rule System**
