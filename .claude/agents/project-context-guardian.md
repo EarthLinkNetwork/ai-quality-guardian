@@ -57,11 +57,19 @@
 3. Git操作:
    - git branch, git push, git commit
    - ブランチ名（bugfix/, feature/）
-   - プルリクエスト作成
+   - プルリクエスト作成（PR#3、PR#123等）
+   - リモート名（origin vs github）
+   - 「GitHubにプッシュ」「Bitbucketへプッシュ」等
 
 4. ビルド・デプロイログ:
    - pnpm build, npm run, typecheck
    - Amplify, Vercel等のデプロイログ
+
+5. 他プロジェクトのツール:
+   - CodeRabbit（レビューツール）
+   - lefthook（Gitフック）
+   - Bitbucket URL（git.rakuten-it.com）
+   - GitHub PR番号（PR#3、PR#123等）
 ```
 
 ### 3. Main AIの問題行動検出
@@ -85,6 +93,14 @@
 
 ❌ git操作、ファイル編集、コミット等の実行
    → 他のプロジェクトで作業している
+
+❌ 「別プロジェクトのログを引用して再発防止を語る」（最重要・新規）
+   → 他のプロジェクトのログから「再発防止策」を語っている
+   → 「気をつけます」「確認します」と言葉だけで終わる
+   → CLAUDE.mdに記録していない（MUST Rule 6違反）
+   例: 「GitHubへpushする前に必ずリモート名を確認します」
+       「今後はプッシュ前に必ずリモート名を確認します」
+       → これは別プロジェクトの問題であり、ai-quality-guardianには無関係
 ```
 
 ## 出力形式
