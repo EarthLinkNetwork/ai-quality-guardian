@@ -17,7 +17,7 @@
 
 このファイルは階層化されたルールシステムの最上位層です。
 
-- Layer 1（このファイル）: 13個の核心ルール - Main AIが常に意識
+- Layer 1（このファイル）: 14個の核心ルール - Main AIが常に意識
 - Layer 2（.claude/agents/）: 専門サブエージェント - 自動起動
 - Layer 3（.claude/rules/）: 詳細ルール - サブエージェントが参照
 
@@ -152,9 +152,9 @@ git commit -m "feat: Add new feature"
 
 ---
 
-# 🚨 MUST Rules（Main AI - 13個）
+# 🚨 MUST Rules（Main AI - 14個）
 
-以下の13個のルールは**絶対に守ること**。詳細なルールはサブエージェントが担当します。
+以下の14個のルールは**絶対に守ること**。詳細なルールはサブエージェントが担当します。
 
 ## 0. プロジェクトコンテキスト確認義務（最優先・新規）
 
@@ -962,6 +962,114 @@ AIの誤った対応:
 
 ---
 
+## 13. Git Worktree必須化（新規・最重要）
+
+**新しい修正・機能追加は必ずgit worktreeを使用すること。git checkout -bでのブランチ作成は禁止。**
+
+### 基本原則
+
+**複数ブランチ対応時の問題:**
+- `git checkout -b` でブランチ作成 → working directoryが同じ
+- 別ターミナルのClaude Codeセッションと競合
+- ファイル編集が互いに上書きされる
+- 予期しない動作が発生
+
+**解決策: git worktreeの必須化:**
+- 各ブランチを別ディレクトリで管理
+- セッション間で競合しない
+- 安全に並行作業が可能
+
+### 必須手順
+
+**新しいブランチで作業する場合:**
+
+```bash
+# 1. worktree用ディレクトリを作成（初回のみ）
+mkdir -p /Users/masa/dev/ai/scripts-worktrees
+
+# 2. git worktreeで新しいブランチを作成
+git worktree add ../scripts-worktrees/feature-new-functionality -b feature/new-functionality
+
+# 3. worktree内で作業
+# ファイル編集時は worktree内のパスを使用:
+# /Users/masa/dev/ai/scripts-worktrees/feature-new-functionality/.claude/CLAUDE.md
+
+# 4. コミット（worktree内で）
+cd ../scripts-worktrees/feature-new-functionality
+git add .
+git commit -m "..."
+git push -u origin feature/new-functionality
+
+# 5. 作業完了後、worktreeを削除
+git worktree remove ../scripts-worktrees/feature-new-functionality
+```
+
+### worktree管理
+
+**既存worktreeの確認:**
+```bash
+git worktree list
+```
+
+**worktreeの削除:**
+```bash
+git worktree remove <path>
+```
+
+### 禁止事項
+
+```
+❌ git checkout -b feature/xxx（mainブランチ以外で新ブランチ作成）
+❌ ブランチ切り替え（git checkout）での並行作業
+❌ 同じworking directoryで複数ブランチ対応
+❌ 別ターミナルのセッションと同じディレクトリで作業
+```
+
+### 例外
+
+**以下の場合のみgit checkout -bを許可:**
+- mainブランチから最初のfeatureブランチを作成する場合のみ
+- worktree作成前の初期ブランチ作成
+
+### 過去の問題（想定）
+
+```
+問題パターン:
+1. ターミナルAでClaude Code起動
+   - feature/task-a ブランチで作業中
+2. ターミナルBでClaude Code起動
+   - 同じディレクトリ（/Users/masa/dev/ai/scripts）
+   - git checkout -b feature/task-b
+3. 競合発生:
+   - Aのファイル編集がBで上書きされる
+   - Bのファイル編集がAで上書きされる
+   - 予期しない動作
+
+正しい対応（git worktree使用）:
+1. ターミナルAでClaude Code起動
+   - /Users/masa/dev/ai/scripts (main)
+   - git worktree add ../scripts-worktrees/feature-task-a -b feature/task-a
+2. ターミナルBでClaude Code起動
+   - /Users/masa/dev/ai/scripts (main) ← 同じでOK
+   - git worktree add ../scripts-worktrees/feature-task-b -b feature/task-b
+3. 競合しない:
+   - Aは /Users/masa/dev/ai/scripts-worktrees/feature-task-a で作業
+   - Bは /Users/masa/dev/ai/scripts-worktrees/feature-task-b で作業
+   - 別ディレクトリなので競合しない
+```
+
+### なぜこれがMUST Ruleなのか
+
+- **セッション間の競合防止**（最重要）
+- **予期しない動作の回避**（ファイル上書き等）
+- **安全な並行作業**（複数タスクを同時進行）
+- **作業履歴の明確化**（各ブランチが独立）
+
+### 詳細ルール
+詳細は `.claude/agents/memory-guardian.md` の「Git Worktree必須確認」セクションを参照
+
+---
+
 # 日本語応答と絵文字禁止（SHOULD）
 
 ## 日本語で応答すること
@@ -1049,13 +1157,13 @@ AIの誤った対応:
 このプロジェクト自体が「AI開発の品質を守る」ツールなので、
 **開発者（AI）自身がルールを厳守すること**が極めて重要です。
 
-- 13個の核心ルールを常に意識（特にMUST Rule 0、MUST Rule 4、MUST Rule 11、MUST Rule 12）
+- 14個の核心ルールを常に意識（特にMUST Rule 0、MUST Rule 4、MUST Rule 11、MUST Rule 12、MUST Rule 13）
 - サブエージェントを積極的に活用
 - 詳細ルールはサブエージェントに任せる
 - 不明な点は必ずユーザーに確認
 
 ---
 
-**Current Version: 1.3.13**
+**Current Version: 1.3.14**
 **Last Updated: 2025-01-14**
 **Architecture: 3-Layer Hierarchical Rule System**
