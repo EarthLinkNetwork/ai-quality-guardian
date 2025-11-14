@@ -582,6 +582,40 @@ AIの誤った対応:
 - **project-context-guardianを強化する**
 - **別プロジェクトのログは即座に検出して無視する**
 
+---
+
+**問題内容2: CLAUDE.mdに書いてあるのに誤解が起きる**
+
+```
+状況:
+- ユーザーが別プロジェクト（couponシステム）のログを提示
+- ログ内容: 「GitHub PR#3」「Bitbucket」「origin vs github」等
+- AIがログから「GitHubでPRをマージする」ワークフローを推測
+
+AIの誤った対応:
+1. ログを見て「GitHubでPRをマージしてからBitbucketに反映」と誤解
+2. 質問：「どちらが正しいワークフローですか？」
+3. そのプロジェクトのCLAUDE.md (line 5-41) を確認していない
+4. CLAUDE.mdには正しいワークフローが記載されていた
+   「GitHubは一方通行でpushのみ、PRはマージせずにクローズ、
+    最終的な変更はメインリポジトリ（origin）のみ」
+
+ユーザーの指摘:
+「どうして、claude.mdに書いてあるのに誤解がおきるの??なんで??」
+
+本来すべきだったこと:
+1. 別プロジェクトのログを検出
+2. そのプロジェクトのCLAUDE.mdを確認（必須）
+3. CLAUDE.mdに書いてあることが正しい（ログの推測より優先）
+4. CLAUDE.mdを読めば誤解は起きなかった
+```
+
+**教訓:**
+- **ログから推測するのではなく、CLAUDE.mdを読む**
+- **CLAUDE.mdに書いてあることが正しい（最優先）**
+- **project-context-guardianは「CLAUDE.mdを確認せよ」と指示すべき**
+- **別プロジェクトのログを見た瞬間に、そのCLAUDE.mdを確認する**
+
 ### 詳細ルール
 詳細は `.claude/rules/documentation-rules.md` を参照
 
@@ -1235,6 +1269,6 @@ git worktree remove <path>
 
 ---
 
-**Current Version: 1.3.16**
+**Current Version: 1.3.17**
 **Last Updated: 2025-01-14**
 **Architecture: 3-Layer Hierarchical Rule System**
