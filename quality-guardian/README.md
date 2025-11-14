@@ -75,6 +75,8 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
 
+**v1.3.21の新機能**: MUST Rule 15追加 - PR内容の完全把握・まとめ義務（Pull Requestの実装内容をまとめる際、全ての実装項目を確認し漏れなく記載すること、「一部だけ記載」「重要と思う部分だけ記載」を絶対禁止、AIの構造的な問題「一部を忘れる」への対策、git logで全コミット確認→git diffで全変更ファイル確認→TodoWriteで全項目列挙→一つずつ確認してPR説明に記載→全て記載するまで継続、「重要度」で判断せず全ての実装を同等に扱う、pr-content-summary-guardianサブエージェントを追加、rule-advisorに自動起動条件を追加、ユーザーから「全然信用ならなくて、無駄な確認ばかり増える」を防ぐ、MUST Rule総数15→16個に増加）
+
 **v1.3.20の新機能**: MUST Rule 14追加 - PRレビュー指摘への完全対応義務（Pull Requestのレビュー指摘を受けた場合、全ての指摘に対応すること、一部だけ対応・一部を無視を禁止、AIの構造的な問題「一部だけ対応して終わる」への対策、gh pr viewで全指摘を取得→TodoWriteで追跡→一つずつ対応→全て完了するまで継続、「重要度」で判断せず全ての指摘を同等に扱う、pr-review-response-guardianサブエージェントを追加、rule-advisorに自動起動条件を追加、MUST Rule総数14→15個に増加）
 
 **v1.3.19の新機能**: Pre-push hook for project context checking - システム的強制の実装（別プロジェクトでのquality-guardian操作を自動的にブロックするpre-push hookを追加、project-context-check.jsモジュールを作成、install.shにlefthook/husky/pre-commit(Python)の設定例を追加、MUST Rule 6の構造的問題「AIがシステムプロンプトのルールを守らない」に対する技術的な解決策、v1.3.16-v1.3.18で文書化した問題への実装による対応）
