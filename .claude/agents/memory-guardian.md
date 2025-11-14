@@ -46,10 +46,10 @@
    - 「実装が完了しました」
    - 「〜が完了しました」
    - テスト・動作確認が完了しているか確認
-13. **git checkout -bを実行しようとした時（新規・最重要）**
-   - `git checkout -b` コマンドを実行する前
-   - git worktree addを使用すべきか確認
-   - mainブランチからの初回作成以外は禁止
+13. **新しいタスクを受けた時（新規・最重要）**
+   - 新しいタスクを受けた直後
+   - AIが自動的にgit worktree addを実行すべき
+   - git checkout -bは絶対禁止（mainブランチからの初回作成以外）
 
 ## チェック項目
 
@@ -1193,16 +1193,53 @@ memory-guardianは、「完了しました」フレーズを検出した時に�
 
 **検出した場合 → BLOCKER**
 
-### 1.12. Git Worktree必須確認（新規・最重要）
+### 1.12. Git Worktree自動作成確認（新規・最重要）
 
-**新しいブランチで作業する際、git checkout -bではなくgit worktreeを使用しているか確認すること。**
+**新しいタスクを受けた時、AIが自動的にgit worktreeを作成して作業しているか確認すること。**
 
 ```
 必須確認事項:
-□ git worktree addを使用しているか？
+□ 新しいタスクを受けたら、AIが自動的にworktreeを作成したか？
 □ git checkout -bを使おうとしていないか？
-□ 別ターミナルのセッションと競合しないか確認したか？
+□ worktree内のパスを使用してファイル編集しているか？
 □ worktree用ディレクトリ（../scripts-worktrees/）を使用しているか？
+```
+
+#### AIの自動実行フロー
+
+**新しいタスクを受けた時、AIが自動的に以下を実行:**
+
+```bash
+# 1. 現在のブランチを確認
+git branch --show-current
+# → mainブランチにいることを確認
+
+# 2. worktree用ディレクトリを作成（初回のみ）
+mkdir -p /Users/masa/dev/ai/scripts-worktrees
+
+# 3. ブランチ名を決定
+# 例: feature/add-new-functionality
+
+# 4. git worktreeで新しいブランチを自動作成
+git worktree add ../scripts-worktrees/feature-add-new-functionality -b feature/add-new-functionality
+
+# 5. worktree内のパスを使用して作業
+# 例: /Users/masa/dev/ai/scripts-worktrees/feature-add-new-functionality/.claude/CLAUDE.md
+
+# 6. コミット（worktree内で）
+cd ../scripts-worktrees/feature-add-new-functionality
+git add .
+git commit -m "..."
+
+# 7. push（ユーザーに確認後）
+git push -u origin feature/add-new-functionality
+
+# 8. mainブランチにマージ
+git checkout main
+git merge feature/add-new-functionality --no-ff
+
+# 9. 作業完了後、worktreeを自動削除
+git worktree remove ../scripts-worktrees/feature-add-new-functionality
 ```
 
 #### 検出すべきパターン（絶対禁止）
@@ -1214,38 +1251,34 @@ memory-guardianは、「完了しました」フレーズを検出した時に�
 ❌ ブランチ切り替えでの並行作業
 ❌ 同じworking directoryで複数ブランチ対応
 ❌ 別ターミナルのセッションと同じディレクトリで作業
+❌ 手動でworktreeを作成するようユーザーに指示
 ```
 
 **検出した場合 → BLOCKER**
 
 #### 正しい対応
 
-**新しいブランチで作業する場合:**
+**新しいタスクを受けた時:**
 
-```bash
-# 1. worktree用ディレクトリを作成（初回のみ）
-mkdir -p /Users/masa/dev/ai/scripts-worktrees
+1. **AIが自動的にブランチ名を決定**
+   - タスク内容から適切なブランチ名を生成
+   - 命名規則: `feature/xxx`
 
-# 2. git worktreeで新しいブランチを作成
-git worktree add ../scripts-worktrees/feature-new-functionality -b feature/new-functionality
+2. **AIが自動的にworktreeを作成**
+   ```bash
+   git worktree add ../scripts-worktrees/feature-xxx -b feature/xxx
+   ```
 
-# 3. worktree内のファイルを編集
-# 例: /Users/masa/dev/ai/scripts-worktrees/feature-new-functionality/.claude/CLAUDE.md
+3. **AIが自動的にworktree内で作業**
+   - ファイル編集時は必ずworktree内のパスを使用
+   - 例: `/Users/masa/dev/ai/scripts-worktrees/feature-xxx/.claude/CLAUDE.md`
 
-# 4. コミット
-cd ../scripts-worktrees/feature-new-functionality
-git add .
-git commit -m "..."
-git push -u origin feature/new-functionality
-
-# 5. 作業完了後、worktreeを削除
-git worktree remove ../scripts-worktrees/feature-new-functionality
-```
+4. **AIが自動的にコミット・マージ・削除**
 
 #### 例外
 
 **以下の場合のみgit checkout -bを許可:**
-- mainブランチから最初のfeatureブランチを作成する場合のみ
+- mainブランチから最初のfeatureブランチを作成する場合のみ（worktree作成前）
 
 #### 過去の問題（想定）
 
@@ -1255,22 +1288,22 @@ git worktree remove ../scripts-worktrees/feature-new-functionality
 2. ターミナルBでClaude Code起動 → git checkout -b feature/task-b
 3. 競合発生: ファイル編集が互いに上書きされる
 
-正しい対応:
+正しい対応（AIが自動実行）:
 1. ターミナルAでClaude Code起動
-   → git worktree add ../scripts-worktrees/feature-task-a -b feature/task-a
+   → AIが自動的に: git worktree add ../scripts-worktrees/feature-task-a -b feature/task-a
 2. ターミナルBでClaude Code起動
-   → git worktree add ../scripts-worktrees/feature-task-b -b feature/task-b
+   → AIが自動的に: git worktree add ../scripts-worktrees/feature-task-b -b feature/task-b
 3. 競合しない: 別ディレクトリなので安全
 ```
 
 #### MUST Rule 13との関係
 
-このSection 1.12は、MUST Rule 13「Git Worktree必須化」を具体化したものです：
+このSection 1.12は、MUST Rule 13「Git Worktree自動作成」を具体化したものです：
 
-- **MUST Rule 13**: Git Worktree必須化（抽象的）
-- **Section 1.12**: git checkout -b検出とworktree使用の強制（具体的）
+- **MUST Rule 13**: Git Worktree自動作成（抽象的）
+- **Section 1.12**: AIの自動worktree作成フローの確認（具体的）
 
-memory-guardianは、git checkout -bコマンドを検出した時に自動起動され、このチェックを強制します。
+memory-guardianは、新しいタスクを受けた時に自動起動され、AIがworktreeを自動作成しているかチェックします。
 
 **検出した場合 → BLOCKER**
 
