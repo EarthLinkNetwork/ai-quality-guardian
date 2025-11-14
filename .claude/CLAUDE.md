@@ -60,6 +60,98 @@
 
 ---
 
+# このプロジェクトでの開発ルール
+
+## ブランチ戦略
+
+### ブランチ命名規則（厳守）
+
+**全ての機能開発・修正は `feature/xxx` で行う:**
+
+```
+✅ feature/add-new-feature
+✅ feature/fix-bug-in-auth
+✅ feature/improve-performance
+
+❌ fix/auth-bug          （fixは使わない）
+❌ bugfix/login-error    （bugfixは使わない）
+❌ test/verify-something （testは使わない）
+```
+
+**理由:**
+- ブランチの種類を統一することで、履歴が分かりやすくなる
+- fix, bugfix, test等の使い分けで混乱を防ぐ
+- 全て feature/ に統一
+
+### ブランチ継続/新規作成の確認フロー（必須）
+
+**今までの機能と毛色が違うオーダーが来た時、必ず確認する:**
+
+1. **現在のブランチ名を表示**
+   ```
+   現在のブランチ: feature/add-authentication
+   ```
+
+2. **ユーザーに確認**
+   ```
+   新しいオーダーは「メール通知機能の追加」です。
+
+   このブランチで作業を継続しますか？
+   それとも新しいブランチを作成しますか？
+
+   [現在のブランチで継続する場合]
+   feature/add-authentication で作業を継続します。
+
+   [新しいブランチを作成する場合]
+   新しいブランチ名の候補: feature/add-email-notification
+   このブランチ名で作成してよろしいでしょうか？
+   ```
+
+3. **確認後に作業開始**
+   - ユーザーの承認を得てから作業開始
+   - どのブランチで作業しているか常に明確にする
+
+### Push前の確認（必須）
+
+**作業後に勝手にpushしない:**
+
+```
+作業が完了しました。
+
+[実装内容の報告]
+- ファイルA: 機能Xを実装
+- ファイルB: テストを追加
+
+コミット: a1b2c3d feat: Add feature X
+
+pushしますか？
+```
+
+**ユーザーの承認を得てからpush:**
+- ユーザー: 「はい」→ push実行
+- ユーザー: 「いいえ」→ pushしない、ローカルに残す
+
+### コミット署名の禁止（重要）
+
+**Pull RequestやCommitで署名を付加しない:**
+
+```
+❌ 禁止:
+Co-Authored-By: Claude <noreply@anthropic.com>
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+✅ 正しい:
+git commit -m "feat: Add new feature"
+（署名なし、シンプルなコミットメッセージのみ）
+```
+
+**理由:**
+- Claudeが作成したことが分からないようにする
+- プロフェッショナルなコミット履歴を維持
+- 余計な情報を追加しない
+
+---
+
 # 🚨 MUST Rules（Main AI - 13個）
 
 以下の13個のルールは**絶対に守ること**。詳細なルールはサブエージェントが担当します。
@@ -897,6 +989,6 @@ AIの誤った対応:
 
 ---
 
-**Current Version: 1.3.11**
+**Current Version: 1.3.12**
 **Last Updated: 2025-01-14**
 **Architecture: 3-Layer Hierarchical Rule System**
