@@ -21,7 +21,7 @@ tools: Read, Grep, LS
 1. **専門サブエージェントの自動起動判定（最優先・新規）**
    - タスク内容・状況を分析し、必要なサブエージェントを自動起動
    - パターンマッチングによる柔軟な検出（厳密なif文ではない）
-   - 以下の8個のガーディアンエージェントを適切に起動：
+   - 以下の9個のガーディアンエージェントを適切に起動：
      - `project-context-guardian` - **他のプロジェクトのログ検出（最優先・新規）**
      - `memory-guardian` - 実装前のメモリー・要求確認、実行中の言い訳検出
      - `confirmation-guardian` - 確認指示の厳守
@@ -30,6 +30,7 @@ tools: Read, Grep, LS
      - `pre-commit-guardian` - コミット前の全チェック
      - `context-guardian` - コンテキストスイッチ検出
      - `verification-guardian` - 検証結果の正確性確認（MUST Rule 10）
+     - `pr-review-response-guardian` - PRレビュー指摘への完全対応（MUST Rule 14・新規）
 
 2. **MUST Rule違反の自動検出**
    - タスク内容・説明文から**トリガーフレーズ**を検出
@@ -454,6 +455,55 @@ Task(
 - 全て成功してから正確に報告"
 )
 ```
+
+### 8. pr-review-response-guardian 起動判定（新規・MUST Rule 14）
+
+以下の状況で `pr-review-response-guardian` を起動：
+
+**PRレビュー関連のキーワード:**
+- 「gh pr view」「gh pr checks」
+- 「レビュー指摘」「レビューコメント」「review comments」
+- 「PRを修正」「PRの修正」「PR修正」
+- 「指摘に対応」「レビューに対応」
+- 「CodeRabbit」「レビュアー」
+
+**PRコマンド:**
+- `gh pr view <番号>`
+- `gh pr checks`
+- `gh api repos/.../pulls/.../comments`
+- `gh api repos/.../pulls/.../reviews`
+
+**状況:**
+- PRのレビューコメントを確認する時
+- PRの修正を開始する時
+- ユーザーから「レビュー指摘に対応してください」という指示
+- GitHub PR、Bitbucket PR、CodeRabbitのレビュー
+
+**起動指示:**
+```
+Task(
+  subagent_type="pr-review-response-guardian",
+  description="PRレビュー指摘への完全対応",
+  prompt="PRレビューの全ての指摘に対応してください。
+
+必須手順:
+1. gh pr view でレビューコメントを全て取得
+2. 全ての指摘をTodoリストに変換
+3. 一つずつ対応（status: pending → in_progress → completed）
+4. 全て完了するまで継続
+5. 完了報告（X個中Y個対応）
+
+禁止事項:
+- 一部の指摘だけに対応して終わる
+- 一部の指摘を無視する
+- 重要度で判断する
+- TodoWriteを使わずに対応する
+
+全ての指摘に対応するまで作業を継続してください。"
+)
+```
+
+**重要:** 「一部だけ対応」「一部を無視」は構造的な問題。TodoWriteで全ての指摘を追跡し、漏れなく対応する。
 
 ### パターンマッチングの柔軟性
 
