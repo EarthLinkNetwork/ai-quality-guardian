@@ -75,6 +75,8 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
 
+**v1.3.20の新機能**: MUST Rule 14追加 - PRレビュー指摘への完全対応義務（Pull Requestのレビュー指摘を受けた場合、全ての指摘に対応すること、一部だけ対応・一部を無視を禁止、AIの構造的な問題「一部だけ対応して終わる」への対策、gh pr viewで全指摘を取得→TodoWriteで追跡→一つずつ対応→全て完了するまで継続、「重要度」で判断せず全ての指摘を同等に扱う、pr-review-response-guardianサブエージェントを追加、rule-advisorに自動起動条件を追加、MUST Rule総数14→15個に増加）
+
 **v1.3.19の新機能**: Pre-push hook for project context checking - システム的強制の実装（別プロジェクトでのquality-guardian操作を自動的にブロックするpre-push hookを追加、project-context-check.jsモジュールを作成、install.shにlefthook/husky/pre-commit(Python)の設定例を追加、MUST Rule 6の構造的問題「AIがシステムプロンプトのルールを守らない」に対する技術的な解決策、v1.3.16-v1.3.18で文書化した問題への実装による対応）
 
 **v1.3.18の重要な教訓**: v1.3.16とv1.3.17の対策では不十分だった - システムプロンプトに既にルールが書いてあるのに守らない構造的問題を文書化、「気をつけます」も「CLAUDE.mdを確認します」も機能しない、ルール追加では解決できない問題への対応としてシステム的強制（pre-push hook）が必要
