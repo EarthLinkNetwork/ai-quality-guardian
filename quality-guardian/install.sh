@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.3.0"
+# version: "1.3.19"
 
 set -e
 
@@ -208,7 +208,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.3.0"
+CURRENT_VERSION="1.3.19"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -569,12 +569,22 @@ if [ -d ".git" ]; then
                 echo "    quality-guardian:"
                 echo "      run: ./quality-guardian check --quick"
                 echo ""
+                echo "pre-push:"
+                echo "  commands:"
+                echo "    project-context-check:"
+                echo "      run: node ./quality-guardian/modules/project-context-check.js"
+                echo ""
                 ;;
             "husky")
                 echo ".husky/pre-commit に以下を追加してください:"
                 echo ""
                 echo "# Quality Guardian"
                 echo "./quality-guardian check --quick || exit 1"
+                echo ""
+                echo ".husky/pre-push に以下を追加してください:"
+                echo ""
+                echo "# Project Context Check"
+                echo "node ./quality-guardian/modules/project-context-check.js || exit 1"
                 echo ""
                 ;;
             "pre-commit (Python)")
@@ -587,6 +597,13 @@ if [ -d ".git" ]; then
                 echo "      entry: ./quality-guardian check --quick"
                 echo "      language: system"
                 echo "      pass_filenames: false"
+                echo "      stages: [commit]"
+                echo "    - id: project-context-check"
+                echo "      name: Project Context Check"
+                echo "      entry: node ./quality-guardian/modules/project-context-check.js"
+                echo "      language: system"
+                echo "      pass_filenames: false"
+                echo "      stages: [push]"
                 echo ""
                 ;;
         esac

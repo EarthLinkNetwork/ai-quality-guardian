@@ -75,6 +75,18 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - ✅ package.json に npm scripts 追加
 - ✅ .claude/CLAUDE.md 更新
 
+**v1.3.19の新機能**: Pre-push hook for project context checking - システム的強制の実装（別プロジェクトでのquality-guardian操作を自動的にブロックするpre-push hookを追加、project-context-check.jsモジュールを作成、install.shにlefthook/husky/pre-commit(Python)の設定例を追加、MUST Rule 6の構造的問題「AIがシステムプロンプトのルールを守らない」に対する技術的な解決策、v1.3.16-v1.3.18で文書化した問題への実装による対応）
+
+**v1.3.18の重要な教訓**: v1.3.16とv1.3.17の対策では不十分だった - システムプロンプトに既にルールが書いてあるのに守らない構造的問題を文書化、「気をつけます」も「CLAUDE.mdを確認します」も機能しない、ルール追加では解決できない問題への対応としてシステム的強制（pre-push hook）が必要
+
+**v1.3.17の教訓**: CLAUDE.mdに書いてあるのに誤解が起きる問題を文書化 - 別プロジェクトのログから推測するのではなく、そのプロジェクトのCLAUDE.mdを最優先で確認、project-context-guardianにステップ0を追加
+
+**v1.3.16の教訓**: 別プロジェクトのログを引用して「再発防止」を語る問題を文書化 - 「気をつけます」は再発防止ではない、具体的な仕組みを文書化する、project-context-guardianの検出パターン強化（GitHub PR番号、CodeRabbit、Bitbucket等）
+
+**v1.3.15の新機能**: Git Worktree自動作成 - MUST Rule 13を「必須化」から「自動作成」に変更、新しいタスクを受けた時にAIが自動的にgit worktreeを作成して作業、git checkout -bでのブランチ作成を絶対禁止（mainブランチからの初回作成以外）
+
+**v1.3.14の新機能**: Git Worktree必須化 - MUST Rule 13追加、新しいタスク時は必ずgit worktree addでブランチ作成、複数のClaude Codeセッションを安全に並行実行、git checkout -bは絶対禁止、worktreeディレクトリ構造の標準化、MUST Rule総数12→13個に増加
+
 **v1.2.64の新機能**: MUST Rule 22追加 - 過去の合意・仕様の確認義務（実装前に過去の会話で合意した仕様・形式・ルールを必ず確認、「より良い」と思っても過去の合意を尊重、「ログ形式」「出力例」等の過去に決定した仕様の検索を義務化、合意を無視すると「膨大な時間の損失」、MUST Rule 13との関係を明確化、MUST Rule総数22→23個に増加）
 
 **v1.2.63の新機能**: MUST Rule 21追加 - 確認指示の厳守と表示義務（「確認してください」「あっているか見せて」「ここに出して」等の確認指示時は必ず内容を表示してユーザー承認を得てから次に進む、勝手に修正・作業開始を禁止、「間違えた後ほど確認を慎重に」の原則、「大体されで、よりおかしなことをして壊します」の防止、MUST Rule 18との関係を明確化、MUST Rule総数21→22個に増加）
