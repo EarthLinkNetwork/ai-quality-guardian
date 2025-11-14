@@ -962,9 +962,9 @@ AIの誤った対応:
 
 ---
 
-## 13. Git Worktree必須化（新規・最重要）
+## 13. Git Worktree自動作成（新規・最重要）
 
-**新しい修正・機能追加は必ずgit worktreeを使用すること。git checkout -bでのブランチ作成は禁止。**
+**新しいタスクを受けた時、AIが自動的にgit worktreeを作成して作業すること。git checkout -bでのブランチ作成は絶対禁止。**
 
 ### 基本原則
 
@@ -974,35 +974,71 @@ AIの誤った対応:
 - ファイル編集が互いに上書きされる
 - 予期しない動作が発生
 
-**解決策: git worktreeの必須化:**
+**解決策: AIによるworktreeの自動作成:**
+- 新しいタスクを受けたら、自動的にworktreeを作成
 - 各ブランチを別ディレクトリで管理
 - セッション間で競合しない
 - 安全に並行作業が可能
 
-### 必須手順
+### 必須手順（AIが自動実行）
 
-**新しいブランチで作業する場合:**
+**新しいタスクを受けた時、AIが以下を自動的に実行:**
 
 ```bash
-# 1. worktree用ディレクトリを作成（初回のみ）
+# 1. 現在のブランチを確認
+git branch --show-current
+# → mainブランチにいることを確認
+
+# 2. worktree用ディレクトリを作成（初回のみ）
 mkdir -p /Users/masa/dev/ai/scripts-worktrees
 
-# 2. git worktreeで新しいブランチを作成
-git worktree add ../scripts-worktrees/feature-new-functionality -b feature/new-functionality
+# 3. ブランチ名を決定
+# 例: feature/add-new-functionality
 
-# 3. worktree内で作業
-# ファイル編集時は worktree内のパスを使用:
-# /Users/masa/dev/ai/scripts-worktrees/feature-new-functionality/.claude/CLAUDE.md
+# 4. git worktreeで新しいブランチを自動作成
+git worktree add ../scripts-worktrees/feature-add-new-functionality -b feature/add-new-functionality
 
-# 4. コミット（worktree内で）
-cd ../scripts-worktrees/feature-new-functionality
+# 5. worktree内のパスを使用して作業
+# 例: /Users/masa/dev/ai/scripts-worktrees/feature-add-new-functionality/.claude/CLAUDE.md
+
+# 6. コミット（worktree内で）
+cd ../scripts-worktrees/feature-add-new-functionality
 git add .
 git commit -m "..."
-git push -u origin feature/new-functionality
+git push -u origin feature/add-new-functionality
 
-# 5. 作業完了後、worktreeを削除
-git worktree remove ../scripts-worktrees/feature-new-functionality
+# 7. mainブランチにマージ
+git checkout main
+git merge feature/add-new-functionality --no-ff -m "Merge feature/add-new-functionality into main"
+
+# 8. 作業完了後、worktreeを自動削除
+git worktree remove ../scripts-worktrees/feature-add-new-functionality
 ```
+
+### AIの作業フロー
+
+**新しいタスクを受けた時:**
+
+1. **ブランチ名を決定**
+   - ユーザーのタスク内容から適切なブランチ名を生成
+   - 命名規則: `feature/xxx`（MUST Rule 12に従う）
+
+2. **worktreeを自動作成**
+   ```bash
+   git worktree add ../scripts-worktrees/feature-xxx -b feature/xxx
+   ```
+
+3. **worktree内で作業**
+   - ファイル編集時は必ずworktree内のパスを使用
+   - 例: `/Users/masa/dev/ai/scripts-worktrees/feature-xxx/.claude/CLAUDE.md`
+
+4. **コミット・push**
+   - worktree内でコミット
+   - pushする前にユーザーに確認
+
+5. **マージ・worktree削除**
+   - mainブランチにマージ
+   - worktreeを削除
 
 ### worktree管理
 
@@ -1164,6 +1200,6 @@ git worktree remove <path>
 
 ---
 
-**Current Version: 1.3.14**
+**Current Version: 1.3.15**
 **Last Updated: 2025-01-14**
 **Architecture: 3-Layer Hierarchical Rule System**
