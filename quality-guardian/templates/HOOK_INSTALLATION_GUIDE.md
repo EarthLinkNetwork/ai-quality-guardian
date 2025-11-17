@@ -4,9 +4,42 @@
 
 各プロジェクトに `.claude/hooks/user-prompt-submit.sh` を配置することで、AIが作業を開始する前にそのプロジェクトのCLAUDE.mdを確認させることができます。
 
+**重要**: このhookシステムは `install.sh` によって **自動的にインストールされます**。ユーザーが手動で設定ファイルを編集する必要はありません。
+
 ---
 
-## インストール方法
+## 自動インストール（推奨）
+
+### install.shを実行するだけ
+
+```bash
+cd /path/to/your/project
+bash /path/to/quality-guardian/install.sh
+```
+
+install.shが自動的に以下を実行します：
+
+1. ✅ hookスクリプトを `.claude/hooks/user-prompt-submit.sh` にコピー
+2. ✅ 実行権限を付与（`chmod +x`）
+3. ✅ `.claude/settings.json` にhook設定を登録
+4. ✅ 既存のsettings.jsonがある場合はマージ
+
+**これだけで完了です。設定ファイルの編集は不要です。**
+
+### インストール後の必須手順
+
+**Claude Codeの再起動が必要です：**
+
+`.claude/settings.json` の変更を反映するには、Claude Codeを再起動してください。
+
+- VS Code: 再読み込み（`Developer: Reload Window`）
+- または: Claude Codeのセッションを終了して再起動
+
+---
+
+## 手動インストール（非推奨）
+
+install.shを使用できない場合のみ、以下の手順で手動インストールできます。
 
 ### 1. hookファイルをコピー
 
@@ -24,11 +57,62 @@ cp /path/to/quality-guardian/templates/hooks/user-prompt-submit.sh .claude/hooks
 chmod +x .claude/hooks/user-prompt-submit.sh
 ```
 
-**これだけで完了です。編集は不要です。**
+### 2. .claude/settings.json に登録
 
-プロジェクト名とパスは自動検出されます。
+`.claude/settings.json` を作成または編集：
 
-### 2. 動作確認
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**重要**: 既存の `.claude/settings.json` がある場合は、`hooks` セクションのみを追加してください。
+
+### 3. Claude Codeを再起動
+
+settings.json を変更した場合、Claude Codeの再起動が必要です。
+
+---
+
+## hookが自動的に設定する内容
+
+install.shは以下の処理を自動的に実行します：
+
+### hookスクリプトのインストール
+
+- `$CLAUDE_DIR/.claude/hooks/user-prompt-submit.sh`
+- Personal Mode: ホームディレクトリに配置（`~/.claude/hooks/`）
+- Team Mode: プロジェクト内に配置（`.claude/hooks/`）
+
+### settings.jsonの自動作成・更新
+
+- 新規作成: `.claude/settings.json` を作成してhook設定を記載
+- 既存ファイル: 既存の設定を保持しつつhook設定を追加（jq使用）
+- バックアップ: 既存ファイルがある場合は `.claude/settings.json.backup` を作成
+
+### プロジェクト情報の自動検出
+
+hookスクリプト内で以下を自動検出：
+- プロジェクト名（ディレクトリ名）
+- プロジェクトパス（絶対パス）
+
+**編集は不要です。**
+
+---
+
+## 動作確認
 
 Claude Codeを起動して、任意のメッセージを送信します。
 
@@ -65,45 +149,55 @@ Claude Codeを起動して、任意のメッセージを送信します。
 
 ---
 
-## 任意のプロジェクトへのインストール例
-
-どのプロジェクトでも同じ手順です：
-
-```bash
-# 任意のプロジェクトのディレクトリに移動
-cd /path/to/your-project
-
-# hooksディレクトリを作成
-mkdir -p .claude/hooks
-
-# テンプレートをコピー
-cp /path/to/quality-guardian/templates/hooks/user-prompt-submit.sh .claude/hooks/
-
-# 実行権限を付与
-chmod +x .claude/hooks/user-prompt-submit.sh
-```
-
-**完了です。編集は不要です。**
-
-プロジェクト名（ディレクトリ名）とパスは自動検出されます。
-
----
-
 ## トラブルシューティング
 
 ### hookが実行されない
 
-**原因1: 実行権限がない**
+**原因1: Claude Codeを再起動していない**
+
+`.claude/settings.json` の変更後、Claude Codeの再起動が必要です。
+
+**原因2: settings.jsonにhook設定がない**
+
+```bash
+# settings.jsonを確認
+cat .claude/settings.json
+
+# hooks.UserPromptSubmit が存在するか確認
+```
+
+存在しない場合は、手動で追加するか、install.shを再実行してください。
+
+**原因3: 実行権限がない**
+
 ```bash
 chmod +x .claude/hooks/user-prompt-submit.sh
 ```
 
-**原因2: ファイルパスが間違っている**
-- `.claude/hooks/user-prompt-submit.sh` の正確なパスを確認
+**原因4: ファイルパスが間違っている**
 
-**原因3: シェルスクリプトの構文エラー**
+- `.claude/hooks/user-prompt-submit.sh` の正確なパスを確認
+- `$CLAUDE_PROJECT_DIR` 環境変数が正しく展開されているか確認
+
+**原因5: シェルスクリプトの構文エラー**
+
 ```bash
 bash -n .claude/hooks/user-prompt-submit.sh
+```
+
+### jqがインストールされていない警告
+
+install.sh実行時に「jq がインストールされていません」という警告が表示された場合：
+
+```bash
+# macOS
+brew install jq
+
+# Ubuntu/Debian
+sudo apt-get install jq
+
+# その後、install.shを再実行
+bash /path/to/quality-guardian/install.sh --force
 ```
 
 ### プロジェクト名が正しく検出されない
@@ -122,12 +216,31 @@ bash -n .claude/hooks/user-prompt-submit.sh
 
 一時的に無効化したい場合：
 
+### 方法1: ファイル名を変更（推奨）
+
 ```bash
 # ファイル名を変更（.disabledを追加）
 mv .claude/hooks/user-prompt-submit.sh .claude/hooks/user-prompt-submit.sh.disabled
 
 # 再度有効化する場合
 mv .claude/hooks/user-prompt-submit.sh.disabled .claude/hooks/user-prompt-submit.sh
+
+# Claude Codeを再起動
+```
+
+### 方法2: settings.jsonから削除
+
+`.claude/settings.json` から `hooks.UserPromptSubmit` セクションを削除：
+
+```bash
+# バックアップ作成
+cp .claude/settings.json .claude/settings.json.backup
+
+# jqで削除
+jq 'del(.hooks.UserPromptSubmit)' .claude/settings.json > .claude/settings.json.tmp
+mv .claude/settings.json.tmp .claude/settings.json
+
+# Claude Codeを再起動
 ```
 
 ---
@@ -136,7 +249,9 @@ mv .claude/hooks/user-prompt-submit.sh.disabled .claude/hooks/user-prompt-submit
 
 プロジェクト固有のチェック項目を追加できます。
 
-例：API_KEYの確認を追加
+### 例：API_KEYの確認を追加
+
+`.claude/hooks/user-prompt-submit.sh` を編集：
 
 ```bash
 cat <<EOF
@@ -147,6 +262,8 @@ cat <<EOF
 
 EOF
 ```
+
+**注意**: hookスクリプトを編集した場合、変更は即座に反映されます（Claude Codeの再起動は不要）。
 
 ---
 
@@ -160,13 +277,18 @@ EOF
    - 終了コード0以外を返すと、AIの処理が中断されます
    - このテンプレートは常に終了コード0を返します
 
-3. **hookは標準入力からユーザーメッセージを受け取ります**
-   - `USER_MESSAGE=$(cat)` でメッセージを取得
-   - `echo "$USER_MESSAGE"` で標準出力に渡す
+3. **hookは標準入力からJSON形式で入力を受け取ります**
+   - `INPUT=$(cat)` でJSON全体を取得
+   - `jq -r '.prompt'` でユーザーメッセージを抽出
+   - `echo "$INPUT"` で元のJSONを標準出力に渡す
 
 4. **hookの出力はAIに見えます**
    - hookが出力したメッセージはAIのコンテキストに含まれます
    - これにより、AIにCLAUDE.mdの確認を促すことができます
+
+5. **settings.jsonの変更はClaude Code再起動が必要**
+   - hookスクリプトの変更: 即座に反映
+   - settings.jsonの変更: Claude Code再起動が必要
 
 ---
 
@@ -211,7 +333,18 @@ fi
 
 ## まとめ
 
-このhookを各プロジェクトに配置することで：
+### install.shによる自動インストール
+
+✅ hookスクリプトのコピー
+✅ 実行権限の付与
+✅ `.claude/settings.json` への登録
+✅ 既存設定の保持とマージ
+
+**ユーザーが手動で行うこと:**
+- ❶ `install.sh` を実行
+- ❷ Claude Codeを再起動
+
+### 期待される効果
 
 ✅ AIが作業を開始する前にCLAUDE.mdを確認するよう促される
 ✅ Git Worktree使用違反を防げる

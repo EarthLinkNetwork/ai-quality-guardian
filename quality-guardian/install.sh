@@ -300,7 +300,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.3.30"
+CURRENT_VERSION="1.3.31"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -992,6 +992,95 @@ echo "サブエージェント設定（全11個）をインストールしまし
 if [ "$INSTALL_MODE" = "personal" ] && [ "$CLAUDE_DIR" != "$PROJECT_DIR" ]; then
     echo "   配置先: $CLAUDE_DIR/.claude/agents/"
 fi
+
+# Claude Code hooks登録（Personal/Team Mode共通）
+echo ""
+echo "Claude Code hooks を .claude/settings.json に登録中..."
+
+SETTINGS_FILE="$CLAUDE_DIR/.claude/settings.json"
+
+# hookスクリプトのインストール
+HOOK_SCRIPT="$CLAUDE_DIR/.claude/hooks/user-prompt-submit.sh"
+mkdir -p "$CLAUDE_DIR/.claude/hooks"
+
+# テンプレートhookをコピー（ローカルまたはGitHubから）
+if [ -f "$SCRIPT_DIR/templates/hooks/user-prompt-submit.sh" ]; then
+    # ローカルファイルを使用
+    cp "$SCRIPT_DIR/templates/hooks/user-prompt-submit.sh" "$HOOK_SCRIPT"
+    chmod +x "$HOOK_SCRIPT"
+    echo "hook script をインストール: $HOOK_SCRIPT"
+else
+    # GitHubからダウンロード
+    echo "GitHubからhook scriptをダウンロード中..."
+    GITHUB_HOOK="https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/main/quality-guardian/templates/hooks/user-prompt-submit.sh"
+    curl -sSL -o "$HOOK_SCRIPT" "$GITHUB_HOOK" || {
+        echo "警告: hook scriptのダウンロードに失敗しました"
+    }
+    chmod +x "$HOOK_SCRIPT"
+fi
+
+# settings.jsonの作成または更新
+if [ -f "$SETTINGS_FILE" ]; then
+    # 既存settings.jsonがある場合、hooks設定をマージ
+    echo "既存の .claude/settings.json にhook設定を追加..."
+
+    # バックアップ作成
+    cp "$SETTINGS_FILE" "${SETTINGS_FILE}.backup"
+
+    # jqがあればJSONとして処理
+    if command -v jq &> /dev/null; then
+        # 既存のUserPromptSubmit hookがあるか確認
+        if jq -e '.hooks.UserPromptSubmit' "$SETTINGS_FILE" > /dev/null 2>&1; then
+            echo "UserPromptSubmit hook は既に登録済み（保持）"
+        else
+            # UserPromptSubmit hookを追加
+            jq '.hooks.UserPromptSubmit = [{"hooks": [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh"}]}]' \
+                "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" && \
+            mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+            echo ".claude/settings.json にhook設定を追加しました"
+        fi
+    else
+        echo "警告: jq がインストールされていません。手動で .claude/settings.json にhook設定を追加してください。"
+        echo ""
+        echo "追加する内容:"
+        echo '  "hooks": {'
+        echo '    "UserPromptSubmit": ['
+        echo '      {'
+        echo '        "hooks": ['
+        echo '          {'
+        echo '            "type": "command",'
+        echo '            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh"'
+        echo '          }'
+        echo '        ]'
+        echo '      }'
+        echo '    ]'
+        echo '  }'
+    fi
+else
+    # 新規にsettings.jsonを作成
+    echo "新しい .claude/settings.json を作成..."
+    cat > "$SETTINGS_FILE" << 'EOF'
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+    echo ".claude/settings.json を作成しました"
+fi
+
+echo ""
+echo "IMPORTANT: .claude/settings.json の変更を反映するには、Claude Codeの再起動が必要です。"
+echo ""
 
 # CLAUDE.md安全更新（Personal/Team Mode共通）
 echo ""

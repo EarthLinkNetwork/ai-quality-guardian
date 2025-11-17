@@ -9,7 +9,11 @@
 
 set -e
 
-USER_MESSAGE=$(cat)
+# 入力を読み取る（JSON形式）
+INPUT=$(cat)
+
+# JSONから prompt フィールドを抽出
+USER_MESSAGE=$(echo "$INPUT" | jq -r '.prompt // empty')
 
 # ============================================================================
 # プロジェクト情報の自動検出
@@ -65,6 +69,6 @@ cat <<EOF
 
 EOF
 
-# メッセージを標準出力に渡す（AIは処理を継続）
-echo "$USER_MESSAGE"
+# 元のJSON入力を標準出力に渡す（AIは処理を継続）
+echo "$INPUT"
 exit 0
