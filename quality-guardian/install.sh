@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.3.25"
+# version: "1.3.26"
 
 set -e
 
@@ -154,8 +154,8 @@ select_git_repository_for_personal_mode() {
 
 # インストール先を決定
 if [ "$INSTALL_MODE" = "personal" ]; then
-    # Personal Mode: .claude/ はカレント、Quality Guardian本体はGitリポジトリへ
-    CLAUDE_DIR="$CURRENT_DIR"
+    # Personal Mode: .claude/ とQuality Guardian本体は親ディレクトリへ
+    # プロジェクトディレクトリには何も作成しない
     GIT_PROJECT_DIR="$(select_git_repository_for_personal_mode)"
 
     if [ -z "$GIT_PROJECT_DIR" ] || [ ! -d "$GIT_PROJECT_DIR" ]; then
@@ -163,7 +163,19 @@ if [ "$INSTALL_MODE" = "personal" ]; then
         exit 1
     fi
 
-    PROJECT_DIR="$GIT_PROJECT_DIR"
+    # .claude/ と本体は親ディレクトリに配置
+    PARENT_DIR="$(dirname "$GIT_PROJECT_DIR")"
+    CLAUDE_DIR="$PARENT_DIR"
+    PROJECT_DIR="$PARENT_DIR"
+
+    echo ""
+    echo "[Personal Mode] インストール先:"
+    echo "  Gitプロジェクト: $GIT_PROJECT_DIR"
+    echo "  .claude/: $CLAUDE_DIR/.claude"
+    echo "  quality-guardian本体: $PROJECT_DIR/.quality-guardian"
+    echo ""
+    echo "  ※ Gitプロジェクト内には何も作成されません"
+    echo ""
 else
     # Team Mode: すべて同じディレクトリ（従来通り）
     if [ -n "$1" ]; then
@@ -208,7 +220,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.3.25"
+CURRENT_VERSION="1.3.26"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -349,78 +361,89 @@ else
     echo "GitHubからのダウンロード完了"
 fi
 
-# ESモジュールプロジェクトの場合、CommonJSとして動作させるため
-# .quality-guardianディレクトリにpackage.jsonを作成
-if grep -q '"type".*"module"' package.json 2>/dev/null; then
-    cat > .quality-guardian/package.json << 'EOF'
+# quality-guardianスクリプト作成（Team Modeのみ）
+if [ "$INSTALL_MODE" = "team" ]; then
+    # ESモジュールプロジェクトの場合、CommonJSとして動作させるため
+    # .quality-guardianディレクトリにpackage.jsonを作成
+    if grep -q '"type".*"module"' package.json 2>/dev/null; then
+        cat > .quality-guardian/package.json << 'EOF'
 {
   "type": "commonjs"
 }
 EOF
-    # .jsを.cjsにリネーム
-    mv .quality-guardian/quality-guardian.js .quality-guardian/quality-guardian.cjs
+        # .jsを.cjsにリネーム
+        mv .quality-guardian/quality-guardian.js .quality-guardian/quality-guardian.cjs
 
-    # 実行可能スクリプト作成（bashラッパー）
-    cat > quality-guardian << 'EOF'
+        # 実行可能スクリプト作成（bashラッパー）
+        cat > quality-guardian << 'EOF'
 #!/bin/bash
 exec node "$(dirname "$0")/.quality-guardian/quality-guardian.cjs" "$@"
 EOF
-else
-    # CommonJSプロジェクトの場合は従来通り
-    cat > quality-guardian << 'EOF'
+    else
+        # CommonJSプロジェクトの場合は従来通り
+        cat > quality-guardian << 'EOF'
 #!/usr/bin/env node
 require('./.quality-guardian/quality-guardian.js');
 EOF
-fi
-
-chmod +x quality-guardian
-
-# パッケージマネージャーの自動検出
-echo "📚 依存関係をチェック..."
-
-# 必要なパッケージ
-REQUIRED_PACKAGES="glob"
-
-if [ -f "package.json" ]; then
-    # package.jsonが存在する場合は依存関係を追加
-    # パッケージマネージャーを自動検出
-    if [ -f "pnpm-lock.yaml" ]; then
-        echo "pnpm を使用して依存関係をインストール..."
-        # pnpm-workspace.yamlがある場合はworkspace rootとして扱う
-        if [ -f "pnpm-workspace.yaml" ]; then
-            pnpm add -D -w $REQUIRED_PACKAGES
-        else
-            pnpm add -D $REQUIRED_PACKAGES
-        fi
-    elif [ -f "yarn.lock" ]; then
-        echo "yarn を使用して依存関係をインストール..."
-        # yarn workspacesの場合は-Wフラグを使用
-        if grep -q "workspaces" package.json 2>/dev/null; then
-            yarn add -D -W $REQUIRED_PACKAGES
-        else
-            yarn add -D $REQUIRED_PACKAGES
-        fi
-    elif [ -f "package-lock.json" ]; then
-        echo "npm を使用して依存関係をインストール..."
-        npm install --save-dev $REQUIRED_PACKAGES
-    elif command -v pnpm &> /dev/null; then
-        echo "pnpm を使用して依存関係をインストール..."
-        pnpm add -D -w $REQUIRED_PACKAGES
-    elif command -v yarn &> /dev/null; then
-        echo "yarn を使用して依存関係をインストール..."
-        yarn add -D $REQUIRED_PACKAGES
-    elif command -v npm &> /dev/null; then
-        echo "npm を使用して依存関係をインストール..."
-        npm install --save-dev $REQUIRED_PACKAGES
-    else
-        echo "パッケージマネージャーが見つかりません"
     fi
+
+    chmod +x quality-guardian
+    echo "✅ quality-guardianスクリプトを作成しました"
+else
+    echo "📝 quality-guardianスクリプトの作成をスキップ (Personal Mode)"
 fi
 
-# 設定ファイル生成
-echo "設定ファイルを生成..."
+# 依存関係インストール（Team Modeのみ）
+if [ "$INSTALL_MODE" = "team" ]; then
+    echo "📚 依存関係をチェック..."
 
-if [ ! -f ".quality-guardian.json" ]; then
+    # 必要なパッケージ
+    REQUIRED_PACKAGES="glob"
+
+    if [ -f "package.json" ]; then
+        # package.jsonが存在する場合は依存関係を追加
+        # パッケージマネージャーを自動検出
+        if [ -f "pnpm-lock.yaml" ]; then
+            echo "pnpm を使用して依存関係をインストール..."
+            # pnpm-workspace.yamlがある場合はworkspace rootとして扱う
+            if [ -f "pnpm-workspace.yaml" ]; then
+                pnpm add -D -w $REQUIRED_PACKAGES
+            else
+                pnpm add -D $REQUIRED_PACKAGES
+            fi
+        elif [ -f "yarn.lock" ]; then
+            echo "yarn を使用して依存関係をインストール..."
+            # yarn workspacesの場合は-Wフラグを使用
+            if grep -q "workspaces" package.json 2>/dev/null; then
+                yarn add -D -W $REQUIRED_PACKAGES
+            else
+                yarn add -D $REQUIRED_PACKAGES
+            fi
+        elif [ -f "package-lock.json" ]; then
+            echo "npm を使用して依存関係をインストール..."
+            npm install --save-dev $REQUIRED_PACKAGES
+        elif command -v pnpm &> /dev/null; then
+            echo "pnpm を使用して依存関係をインストール..."
+            pnpm add -D -w $REQUIRED_PACKAGES
+        elif command -v yarn &> /dev/null; then
+            echo "yarn を使用して依存関係をインストール..."
+            yarn add -D $REQUIRED_PACKAGES
+        elif command -v npm &> /dev/null; then
+            echo "npm を使用して依存関係をインストール..."
+            npm install --save-dev $REQUIRED_PACKAGES
+        else
+            echo "パッケージマネージャーが見つかりません"
+        fi
+    fi
+else
+    echo "📝 依存関係のインストールをスキップ (Personal Mode)"
+fi
+
+# 設定ファイル生成（Team Modeのみ）
+if [ "$INSTALL_MODE" = "team" ]; then
+    echo "設定ファイルを生成..."
+
+    if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
@@ -495,6 +518,8 @@ else
     else
         echo "設定ファイルは既に存在します（保持）"
     fi
+else
+    echo "📝 .quality-guardian.json の作成をスキップ (Personal Mode)"
 fi
 
 # .gitignoreに追加
