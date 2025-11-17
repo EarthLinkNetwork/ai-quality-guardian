@@ -152,9 +152,9 @@ git commit -m "feat: Add new feature"
 
 ---
 
-# 🚨 MUST Rules（Main AI - 16個）
+# 🚨 MUST Rules（Main AI - 17個）
 
-以下の16個のルールは**絶対に守ること**。詳細なルールはサブエージェントが担当します。
+以下の17個のルールは**絶対に守ること**。詳細なルールはサブエージェントが担当します。
 
 ## 0. プロジェクトコンテキスト確認義務（最優先・新規）
 
@@ -1860,6 +1860,139 @@ AIの誤った対応:
 
 ---
 
+## 16. 問題解決後の全体確認義務（テンプレート・ドキュメント同期）（新規・最重要）
+
+**問題を解決したら、同じパターンが他に存在しないか確認すること。特に実装を修正したら、対応するテンプレート・ドキュメント・インストーラーも同期すること。**
+
+### 問題の本質
+
+AIは「局所的な問題解決」をする構造的な問題がある：
+
+```
+問題発生:
+- 自分のhook (.claude/hooks/user-prompt-submit.sh) でJSON解析エラー
+
+AIの誤った対応:
+✓ 自分のhookを修正（JSON解析を追加）
+❌ テンプレート (templates/hooks/user-prompt-submit.sh) を放置
+❌ インストーラー (install.sh) を放置
+❌ ドキュメント (HOOK_INSTALLATION_GUIDE.md) を放置
+
+結果:
+- 自分のhookは動く
+- しかし他のプロジェクトにインストールされるテンプレートは動かない
+- ユーザー: 「テンプレートは修正しないのですか？」
+```
+
+### 厳守事項
+
+**問題を解決した後の必須手順:**
+
+1. **同じパターンが他に存在しないか確認**
+   ```bash
+   # 例: hookスクリプトを修正した場合
+   find . -name "*user-prompt-submit.sh" -type f
+   # → 実装とテンプレートの両方を発見
+   ```
+
+2. **特に以下のペアは必ず同期を保つ**
+   - `.claude/hooks/*` ⟷ `templates/hooks/*`
+   - 実装コード ⟷ インストーラー（install.sh）
+   - 実装コード ⟷ ドキュメント
+   - モジュール ⟷ テンプレート
+
+3. **全ての関連箇所を修正**
+   - 実装を修正したら、テンプレートも修正
+   - 実装を修正したら、インストーラーも更新
+   - 実装を修正したら、ドキュメントも更新
+
+4. **完了報告**
+   ```
+   問題を解決し、関連する全ての箇所を同期しました:
+   - 実装: .claude/hooks/user-prompt-submit.sh ✓
+   - テンプレート: templates/hooks/user-prompt-submit.sh ✓
+   - インストーラー: install.sh ✓
+   - ドキュメント: HOOK_INSTALLATION_GUIDE.md ✓
+   合計: 4箇所を同期
+   ```
+
+### 禁止事項
+
+```
+❌ 自分のコードだけ修正して、テンプレートを放置
+❌ 実装を修正して、インストーラーを放置
+❌ 実装を修正して、ドキュメントを放置
+❌ 問題解決後に「他にも同じ問題がないか？」を確認せずに完了
+❌ 「実装」と「テンプレート」の同期を忘れる
+```
+
+### 根本原因
+
+**局所的な問題解決 (Local Problem Solving):**
+- 目の前の問題（自分のhook）だけを解決
+- 同じパターン（テンプレート）の存在を忘れる
+- 「実装」と「テンプレート」は同期すべきなのに、同期を忘れる
+
+**全体確認の欠如 (Lack of Overall Verification):**
+- 問題を解決した
+- しかし「他に同じ問題がないか？」を確認しなかった
+
+### 過去の問題例（v1.3.30-31）
+
+**問題内容:**
+```
+v1.3.30で自分のhookを修正:
+- JSON解析を追加（jq使用）
+- settings.json登録を追加
+
+しかし:
+❌ templates/hooks/user-prompt-submit.sh は cat のまま（JSON解析なし）
+❌ install.sh は settings.json 処理なし
+❌ HOOK_INSTALLATION_GUIDE.md は手動手順のまま
+
+結果:
+- quality-guardian自体は動く
+- しかし他のプロジェクトにインストールすると動かない
+- ユーザーに指摘されてv1.3.31で全て修正
+```
+
+**ユーザーの指摘:**
+> "あなたが自信でミスしたことも、ちゃんと教訓として、ルール化してください"
+> "自分のhook (.claude/hooks/user-prompt-submit.sh) は jq でJSONパースしている。しかしテンプレートは cat のまま（v1.3.29で修正しなかった）"
+
+### 正しい対応（v1.3.31の例）
+
+```
+1. 問題発見: hookがJSON解析していない
+
+2. 全体確認:
+   find . -name "*user-prompt-submit.sh"
+   → .claude/hooks/user-prompt-submit.sh（実装）
+   → templates/hooks/user-prompt-submit.sh（テンプレート）
+
+3. 両方を修正:
+   ✓ 実装: JSON解析を追加
+   ✓ テンプレート: JSON解析を追加
+
+4. 関連ファイルも確認:
+   ✓ install.sh: settings.json処理を追加
+   ✓ HOOK_INSTALLATION_GUIDE.md: 自動インストールを強調
+
+5. 完了報告: 4箇所全てを同期
+```
+
+### なぜこれがMUST Ruleなのか
+
+- **信頼の損失**（最重要）: 「テンプレートは修正しないのですか？」
+- **他のプロジェクトへの影響**（重大）: テンプレートが動かない = 他のプロジェクトで使えない
+- **二度手間**（非効率）: ユーザーに指摘されてから修正
+- **構造的な問題**（AIの傾向）: 局所的な問題解決に陥りやすい
+
+### 詳細ルール
+詳細は `.claude/agents/template-sync-guardian.md` を参照
+
+---
+
 # 日本語応答と絵文字禁止（SHOULD）
 
 ## 日本語で応答すること
@@ -2219,13 +2352,13 @@ quality-guardian が lint 実行
 このプロジェクト自体が「AI開発の品質を守る」ツールなので、
 **開発者（AI）自身がルールを厳守すること**が極めて重要です。
 
-- 14個の核心ルールを常に意識（特にMUST Rule 0、MUST Rule 4、MUST Rule 11、MUST Rule 12、MUST Rule 13）
+- 17個の核心ルールを常に意識（特にMUST Rule 0、MUST Rule 4、MUST Rule 11、MUST Rule 12、MUST Rule 13、MUST Rule 16）
 - サブエージェントを積極的に活用
 - 詳細ルールはサブエージェントに任せる
 - 不明な点は必ずユーザーに確認
 
 ---
 
-**Current Version: 1.3.25**
+**Current Version: 1.3.32**
 **Last Updated: 2025-01-17**
 **Architecture: 3-Layer Hierarchical Rule System**
