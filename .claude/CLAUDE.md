@@ -1997,6 +1997,154 @@ logger.info('User created:', { user });
 
 ---
 
+## ESLint設定規約（重要・システム的強制）
+
+**ESLintルール設定でquality-guardianによる自動保護を実現する**
+
+### 基本原則
+
+- **ESLintルール + quality-guardianのlint実行 = システム的な強制**
+- quality-guardianが自動的にlintを実行して違反を検出
+- 「口約束」ではなく、システムによる強制
+
+### 必須ESLintルール
+
+**1. no-console ルール**
+
+loggerの使用を強制し、console.logを禁止：
+
+```json
+{
+  "rules": {
+    "no-console": ["error", { "allow": ["warn", "error"] }]
+  }
+}
+```
+
+**理由:**
+- console.logではなくloggerを使う（ロギング規約）
+- quality-guardianが自動検出
+- warnとerrorは許可（緊急時のデバッグ用）
+
+**2. prefer-const ルール**
+
+constの使用を強制し、不要なletを禁止：
+
+```json
+{
+  "rules": {
+    "prefer-const": "error"
+  }
+}
+```
+
+**理由:**
+- letではなくconstを使う（変数宣言規約）
+- 再代入しない変数は全てconstにする
+- quality-guardianが自動検出
+
+**3. Object property mutation 警告**
+
+constオブジェクトのプロパティ再代入を検出：
+
+```json
+{
+  "rules": {
+    "no-param-reassign": ["warn", { "props": true }]
+  }
+}
+```
+
+または、より厳格な制約が必要な場合：
+
+```json
+{
+  "plugins": ["functional"],
+  "rules": {
+    "functional/immutable-data": ["warn", {
+      "ignoreImmediateMutation": false,
+      "ignoreAccessorPattern": []
+    }]
+  }
+}
+```
+
+**理由:**
+- `const obj = {}; obj.prop = value;` を検出
+- イミュータビリティの原則を守る
+- 予期しない副作用を防ぐ
+
+### quality-guardianとの統合
+
+**自動保護の仕組み:**
+
+```
+ESLintルール設定
+  ↓
+quality-guardian が lint 実行
+  ↓
+違反を自動検出
+  ↓
+エラー・警告を表示
+  ↓
+コミット前にブロック（pre-commit hook経由）
+```
+
+**設定ファイル例:**
+
+`.eslintrc.json`:
+```json
+{
+  "env": {
+    "node": true,
+    "es2021": true
+  },
+  "extends": [
+    "eslint:recommended"
+  ],
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "rules": {
+    "no-console": ["error", { "allow": ["warn", "error"] }],
+    "prefer-const": "error",
+    "no-param-reassign": ["warn", { "props": true }]
+  }
+}
+```
+
+### 禁止事項
+
+```
+❌ ESLintルールを無視する（--no-verify等）
+❌ ESLintルールを緩める（errorをwarnに変更等）
+❌ 「一時的に」ESLintを無効化（// eslint-disable 等）
+❌ quality-guardianのlint実行をスキップ
+```
+
+### 過去の問題例への対策
+
+**ユーザーの指摘（再掲）:**
+```
+「loggerあるのにconsole.logを利用してしまう。loogerを使うのを基本にして、
+無かったらpinoの導入とloggerutilの実装を提案してください。
+アト、letも利用しないでと言ってあるのに利用します」
+```
+
+**対策:**
+- ESLintルール設定により、システム的に強制
+- quality-guardianが自動的にlintを実行
+- 違反があればコミット前にブロック
+- 「口約束」ではなく、具体的なシステム的強制
+
+**重要な教訓:**
+- **「気をつけます」は無効** - ESLintルールでシステム的に強制
+- **quality-guardianとの統合** - 自動検出・自動ブロック
+- **MUST Rule 6の実践** - この設定自体をCLAUDE.mdに記録
+
+---
+
 # 開発時の心構え
 
 1. **品質管理ツールの開発者として**
