@@ -1871,6 +1871,130 @@ AIの誤った対応:
 - **エラーハンドリング**: すべてのエラーに適切なメッセージ
 - **ユーザー通知**: 分かりやすいメッセージ（絵文字は禁止）
 
+## ロギング規約（重要）
+
+**console.logではなくloggerを使う**
+
+### 基本原則
+
+- **loggerがあればloggerを使う**（console.logは禁止）
+- **loggerがなければpinoの導入を提案**
+- **loggerutilの実装を提案**（プロジェクト共通のロガー）
+
+### 厳守事項
+
+1. **プロジェクトのロガーを確認**
+   ```bash
+   # loggerの存在確認
+   grep -r "import.*logger" src/
+   grep -r "const logger" src/
+   find . -name "logger.ts" -o -name "logger.js"
+   ```
+
+2. **loggerがある場合**
+   - 必ずloggerを使う
+   - console.logは絶対禁止
+
+3. **loggerがない場合**
+   - pinoの導入を提案
+   - loggerutilの実装を提案
+   ```typescript
+   // 提案例
+   import pino from 'pino';
+
+   export const logger = pino({
+     level: process.env.LOG_LEVEL || 'info',
+     transport: {
+       target: 'pino-pretty',
+       options: { colorize: true }
+     }
+   });
+   ```
+
+### 禁止事項
+
+```
+❌ console.log() の使用（loggerがあるのに使わない）
+❌ console.error() の使用（logger.error()を使う）
+❌ console.warn() の使用（logger.warn()を使う）
+❌ console.info() の使用（logger.info()を使う）
+```
+
+### 正しい対応
+
+```typescript
+// ❌ 誤り
+console.log('User created:', user);
+
+// ✅ 正しい
+logger.info('User created:', { user });
+```
+
+## 変数宣言規約（重要）
+
+**letではなくconstを使う**
+
+### 基本原則
+
+- **デフォルトはconst**（再代入しない変数）
+- **letは再代入が必要な場合のみ**
+- **varは絶対禁止**
+
+### 厳守事項
+
+1. **変数宣言時にconstを優先**
+   ```typescript
+   // ✅ 正しい
+   const user = await getUser(id);
+   const items = [];
+
+   // ❌ 誤り
+   let user = await getUser(id);  // 再代入しないのにlet
+   let items = [];  // 再代入しないのにlet
+   ```
+
+2. **letは再代入が必要な場合のみ**
+   ```typescript
+   // ✅ letが正当な場合
+   let count = 0;
+   for (const item of items) {
+     count++;  // 再代入が必要
+   }
+
+   // ✅ constを使うべき場合
+   const count = items.length;  // 再代入不要
+   ```
+
+### 禁止事項
+
+```
+❌ let の無闇な使用（再代入しないのにlet）
+❌ var の使用（絶対禁止）
+```
+
+### 過去の問題例
+
+**ユーザーの指摘:**
+```
+「loggerあるのにconsole.logを利用してしまう。loogerを使うのを基本にして、
+無かったらpinoの導入とloggerutilの実装を提案してください。
+アト、letも利用しないでと言ってあるのに利用します」
+```
+
+**検出したトリガーフレーズ:**
+- 「loggerあるのにconsole.logを利用してしまう」（問題の指摘）
+- 「letも利用しないでと言ってあるのに利用します」（ルール違反の指摘）
+
+**問題の本質:**
+- ユーザーが既に「loggerを使う」「letを使わない」と指示していた
+- AIがそれを守らず、console.logとletを使い続けた
+- MUST Rule 6違反（重要な指示を記録していなかった）
+
+**今後の対応:**
+- このルールをCLAUDE.mdに記録（MUST Rule 6の実践）
+- logger使用とconst使用を徹底
+- 違反時は即座に修正
+
 ---
 
 # 開発時の心構え
