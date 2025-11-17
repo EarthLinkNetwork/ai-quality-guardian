@@ -18,32 +18,17 @@ cd /path/to/your/project
 mkdir -p .claude/hooks
 
 # テンプレートをコピー
-cp /Users/masa/dev/ai/scripts/quality-guardian/templates/hooks/user-prompt-submit.sh .claude/hooks/
+cp /path/to/quality-guardian/templates/hooks/user-prompt-submit.sh .claude/hooks/
 
 # 実行権限を付与
 chmod +x .claude/hooks/user-prompt-submit.sh
 ```
 
-### 2. プロジェクト固有設定を編集
+**これだけで完了です。編集は不要です。**
 
-`.claude/hooks/user-prompt-submit.sh` を開いて、以下を編集：
+プロジェクト名とパスは自動検出されます。
 
-```bash
-# このプロジェクトの名前（例: "coupon", "sios-backup", "d1-portal"）
-PROJECT_NAME="YOUR_PROJECT_NAME_HERE"  # ← 編集
-
-# このプロジェクトのパス（例: /Users/masa/dev/coupon）
-PROJECT_PATH="YOUR_PROJECT_PATH_HERE"  # ← 編集
-```
-
-**例（couponプロジェクトの場合）:**
-
-```bash
-PROJECT_NAME="coupon"
-PROJECT_PATH="/Users/masa/dev/coupon"
-```
-
-### 3. 動作確認
+### 2. 動作確認
 
 Claude Codeを起動して、任意のメッセージを送信します。
 
@@ -51,13 +36,16 @@ Claude Codeを起動して、任意のメッセージを送信します。
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🚨 coupon プロジェクトで作業を開始します
+🚨 このプロジェクトで作業を開始します
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+プロジェクト名: your-project
+プロジェクトパス: /path/to/your-project
 
 【必須】作業開始前に以下を実行してください：
 
 1. CLAUDE.mdを読む
-   Read("/Users/masa/dev/coupon/.claude/CLAUDE.md")
+   Read("/path/to/your-project/.claude/CLAUDE.md")
 
 2. MUST Rulesを確認
    特に以下を確認：
@@ -77,49 +65,27 @@ Claude Codeを起動して、任意のメッセージを送信します。
 
 ---
 
-## 各プロジェクトへのインストール例
+## 任意のプロジェクトへのインストール例
 
-### couponプロジェクト
-
-```bash
-cd /Users/masa/dev/coupon
-mkdir -p .claude/hooks
-cp /Users/masa/dev/ai/scripts/quality-guardian/templates/hooks/user-prompt-submit.sh .claude/hooks/
-chmod +x .claude/hooks/user-prompt-submit.sh
-
-# 編集
-vi .claude/hooks/user-prompt-submit.sh
-# PROJECT_NAME="coupon"
-# PROJECT_PATH="/Users/masa/dev/coupon"
-```
-
-### siosバックアッププロジェクト
+どのプロジェクトでも同じ手順です：
 
 ```bash
-cd /Users/masa/dev/sios
-mkdir -p .claude/hooks
-cp /Users/masa/dev/ai/scripts/quality-guardian/templates/hooks/user-prompt-submit.sh .claude/hooks/
-chmod +x .claude/hooks/user-prompt-submit.sh
+# 任意のプロジェクトのディレクトリに移動
+cd /path/to/your-project
 
-# 編集
-vi .claude/hooks/user-prompt-submit.sh
-# PROJECT_NAME="sios-backup"
-# PROJECT_PATH="/Users/masa/dev/sios"
+# hooksディレクトリを作成
+mkdir -p .claude/hooks
+
+# テンプレートをコピー
+cp /path/to/quality-guardian/templates/hooks/user-prompt-submit.sh .claude/hooks/
+
+# 実行権限を付与
+chmod +x .claude/hooks/user-prompt-submit.sh
 ```
 
-### d1-portalプロジェクト
+**完了です。編集は不要です。**
 
-```bash
-cd /Users/masa/dev/d1-portal
-mkdir -p .claude/hooks
-cp /Users/masa/dev/ai/scripts/quality-guardian/templates/hooks/user-prompt-submit.sh .claude/hooks/
-chmod +x .claude/hooks/user-prompt-submit.sh
-
-# 編集
-vi .claude/hooks/user-prompt-submit.sh
-# PROJECT_NAME="d1-portal"
-# PROJECT_PATH="/Users/masa/dev/d1-portal"
-```
+プロジェクト名（ディレクトリ名）とパスは自動検出されます。
 
 ---
 
@@ -140,15 +106,15 @@ chmod +x .claude/hooks/user-prompt-submit.sh
 bash -n .claude/hooks/user-prompt-submit.sh
 ```
 
-### PROJECT_NAMEやPROJECT_PATHを編集し忘れた
+### プロジェクト名が正しく検出されない
 
-以下のように表示されます：
+プロジェクト名は、hookがインストールされたディレクトリの名前（`basename`）から自動検出されます。
 
-```
-🚨 YOUR_PROJECT_NAME_HERE プロジェクトで作業を開始します
-```
+例：
+- `/Users/masa/dev/my-project/.claude/hooks/user-prompt-submit.sh`
+- プロジェクト名: `my-project`
 
-→ `.claude/hooks/user-prompt-submit.sh` を編集してください
+もし期待と異なる名前が表示される場合、ディレクトリ構造を確認してください。
 
 ---
 

@@ -5,21 +5,21 @@
 # インストール方法:
 #   1. このファイルを各プロジェクトの .claude/hooks/user-prompt-submit.sh にコピー
 #   2. chmod +x .claude/hooks/user-prompt-submit.sh
-#   3. PROJECT_NAME を編集（例: "coupon", "sios-backup"）
+#   （編集不要 - プロジェクト名とパスは自動検出されます）
 
 set -e
 
 USER_MESSAGE=$(cat)
 
 # ============================================================================
-# プロジェクト固有設定（編集必須）
+# プロジェクト情報の自動検出
 # ============================================================================
 
-# このプロジェクトの名前（例: "coupon", "sios-backup", "d1-portal"）
-PROJECT_NAME="YOUR_PROJECT_NAME_HERE"
-
-# このプロジェクトのパス（例: /Users/masa/dev/coupon）
-PROJECT_PATH="YOUR_PROJECT_PATH_HERE"
+# このスクリプトのパス: .claude/hooks/user-prompt-submit.sh
+# プロジェクトルート: .claude/hooks/../../
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_PATH="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_NAME="$(basename "$PROJECT_PATH")"
 
 # ============================================================================
 # CLAUDE.md確認の強制
@@ -28,8 +28,11 @@ PROJECT_PATH="YOUR_PROJECT_PATH_HERE"
 cat <<EOF
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🚨 ${PROJECT_NAME} プロジェクトで作業を開始します
+🚨 このプロジェクトで作業を開始します
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+プロジェクト名: ${PROJECT_NAME}
+プロジェクトパス: ${PROJECT_PATH}
 
 【必須】作業開始前に以下を実行してください：
 
