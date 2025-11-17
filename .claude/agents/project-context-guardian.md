@@ -30,12 +30,15 @@
 
 他のプロジェクト:
 ❌ ファイルパス: /Users/masa/dev/ai/scripts 以外
-   例: src/views/, apps/orca/, lib/slack/
-❌ リポジトリ: coupon, reminder, XPSWOR, EarthLinkNetwork等
+   例: src/views/, apps/orca/, apps/frontend/, apps/backend/, lib/slack/, pages/, components/
+❌ テスト関連パス: e2e-tests/, playwright.config.ts, __tests__/
+❌ リポジトリ: coupon, reminder, XPSWOR, EarthLinkNetwork, eventsystem等
 ❌ Bitbucket URL: git.rakuten-it.com
 ❌ GitHub URL: github.com/EarthLinkNetwork等（このプロジェクト以外）
 ❌ ブランチ名: bugfix/, feature/（このプロジェクトにはブランチがない）
 ❌ プルリクエスト: 「PRを作成」等の言及
+❌ コンテナ名: *-devcontainer-*, *-container-*, eventsystem-*, indigo-*等
+❌ dockerコマンド: docker compose logs, docker compose up/down
 ```
 
 ### 2. ログ形式の検出
@@ -70,6 +73,12 @@
    - lefthook（Gitフック）
    - Bitbucket URL（git.rakuten-it.com）
    - GitHub PR番号（PR#3、PR#123等）
+
+6. dockerコマンド・コンテナ名（v1.3.25追加）:
+   - docker compose logs, docker compose up/down
+   - コンテナ名: *-devcontainer-*, *-container-*
+   - プロジェクト名を含むコンテナ: eventsystem-*, indigo-*
+   - テスト関連パス: e2e-tests/, playwright.config.ts
 ```
 
 ### 3. Main AIの問題行動検出
@@ -263,6 +272,34 @@ AI guardianとして分析:
 - MUST Rule 8 違反（プロジェクト固有ルール確認義務）
 - ブランチ作成前にCLAUDE.mdを確認していない
 - memory-guardian の起動タイミングに「ブランチ作成前」を追加
+
+### 問題例3: eventsystemログ検出失敗（v1.3.25）
+
+**問題内容:**
+```
+ユーザー: 「最低限のテストをしてもらえますか?」
+前のメッセージにeventsystemのログ:
+  - Container: eventsystem-devcontainer-1
+  - Path: apps/frontend/e2e-tests/
+  - Command: docker compose logs
+  - ⏺ marks（Claude Code実行ログ）
+
+Main AI: eventsystemのログをこのプロジェクトの問題と誤認
+         CLAUDE.mdに「作業完了報告前の最低限のエラーチェック」を追加しようとした
+         VERSION、install.shも変更開始
+→ 他のプロジェクトの問題をこのプロジェクトに反映しようとした
+```
+
+**ユーザーの指摘:**
+「ちょっとまった・・これちゃんと他のプロジェクトのことだってわかってますよね?」
+「qualityを守るquality guardianがルールを守れていないことが、アタなた対策が、うまくいっていないことの証明なので、もっとちゃんと対策をしてほしい」
+
+**本来すべきだったこと:**
+AI guardianとして分析:
+- **原因**: コンテナ名パターン（*-devcontainer-*）、テスト関連パス（e2e-tests/）、dockerコマンド（docker compose logs）が検出リストになかった
+- **根本原因**: project-context-guardianはLayer 2（サブエージェント）なので、Main AIが反応した後に起動される。検出が遅れる
+- **対策**: v1.3.25でコンテナ名、テスト関連パス、dockerコマンドのパターンを追加
+- **Layer 1強化**: MUST Rule 0にも同じパターンを追加（Main AIが直接参照できる）
 
 ## Main AIへの指示
 

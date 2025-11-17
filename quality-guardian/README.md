@@ -702,6 +702,28 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.25 (2025-01-17)
+
+**MUST Rule 0とproject-context-guardianの強化 - コンテナ名・テスト関連パス・dockerコマンドのパターン追加**
+
+- **MUST Rule 0の検出パターン強化**
+  - コンテナ名パターンを追加: `*-devcontainer-*`, `*-container-*`, `eventsystem-*`, `indigo-*`
+  - テスト関連パスを追加: `e2e-tests/`, `playwright.config.ts`, `__tests__/`
+  - dockerコマンドを追加: `docker compose logs`, `docker compose up/down`
+  - ディレクトリパターンを拡充: `apps/frontend/`, `apps/backend/`（既存: `apps/orca/`のみ）
+
+- **project-context-guardianの強化**
+  - 同じパターンを検出リストに追加（Layer 2の強化）
+  - 過去の問題例3を追加: eventsystemログ検出失敗の事例
+
+- **過去の問題例の追加**
+  - eventsystemログ検出失敗（v1.3.25）を文書化
+  - 原因: コンテナ名、テスト関連パス、dockerコマンドのパターンが検出リストになかった
+  - 根本原因: Layer 2（サブエージェント）はMain AIが反応した後に起動されるため検出が遅れる
+  - 対策: MUST Rule 0（Layer 1）にも同じパターンを追加してMain AIが直接参照できるようにした
+
+**目的:** quality-guardian開発者（AI自身）がMUST Rule 0を違反したことを受け、検出パターンを具体的に強化。「他のプロジェクトのログ」をより確実に検出し、AI guardianとしての役割を果たせるようにする。
+
 ### v1.2.65 (2025-01-06)
 
 **MUST Rule 13の強化とrule-advisorエージェントの強化**

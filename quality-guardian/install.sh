@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.3.24"
+# version: "1.3.25"
 
 set -e
 
@@ -208,7 +208,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.3.24"
+CURRENT_VERSION="1.3.25"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 

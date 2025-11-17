@@ -168,12 +168,15 @@ git commit -m "feat: Add new feature"
 - ✅ このプロジェクトのルール・サブエージェントの改善
 
 **他のプロジェクト（絶対に問題解決してはいけない）:**
-- ❌ 上記以外のファイルパス（`src/views/`, `apps/orca/`, `lib/slack/`, `pages/`, `components/` 等）
+- ❌ 上記以外のファイルパス（`src/views/`, `apps/orca/`, `apps/frontend/`, `apps/backend/`, `lib/slack/`, `pages/`, `components/` 等）
+- ❌ テスト関連パス（`e2e-tests/`, `playwright.config.ts`, `__tests__/` 等）
 - ❌ Claude Codeの実行ログ（⏺マーク、`Bash(...)`, `Read(...)`, `Edit(...)` 等）
 - ❌ ブランチ操作ログ（`git branch`, `git push`, `git checkout -b` 等）
 - ❌ プルリクエスト（Bitbucket URL、GitHub URL等）
 - ❌ ビルド・デプロイログ（`pnpm build`, `npm run`, `typecheck` 等）
-- ❌ 他のリポジトリ名（`coupon`, `reminder`, `XPSWOR`, `EarthLinkNetwork` 等）
+- ❌ dockerコマンド（`docker compose logs`, `docker compose up/down` 等）
+- ❌ コンテナ名（`*-devcontainer-*`, `*-container-*`, `eventsystem-*`, `indigo-*` 等）
+- ❌ 他のリポジトリ名（`coupon`, `reminder`, `XPSWOR`, `EarthLinkNetwork`, `eventsystem` 等）
 
 ### 他のプロジェクトのログを検出した場合の対応
 
@@ -199,11 +202,21 @@ git commit -m "feat: Add new feature"
 
 ### なぜこれが最優先か
 
-**過去の問題例:**
+**過去の問題例1: developブランチ直接commit違反**
 - ユーザーが他のプロジェクトのログを貼り付け
 - AIが即座に「問題を解決しよう」とする
 - developブランチに直接commit等の違反を犯す
 - ユーザー:「また、あなたが、他のプロジェクトの質問にこたえていますね? なぜ繰り返されるのですか?」
+
+**過去の問題例2: eventsystemログ検出失敗（v1.3.25）**
+- ユーザーが「最低限のテストをしてもらえますか?」と質問
+- 前のメッセージにeventsystemのログ（`eventsystem-devcontainer-1`, `apps/frontend/e2e-tests/`, `docker compose logs`）
+- AIがeventsystemのログをこのプロジェクトの問題と誤認
+- CLAUDE.mdに「作業完了報告前の最低限のエラーチェック」を追加しようとした
+- VERSION、install.shも変更開始
+- ユーザー:「ちょっとまった・・これちゃんと他のプロジェクトのことだってわかってますよね?」
+- **原因**: コンテナ名、`apps/frontend/`、`docker compose logs` のパターンが検出リストになかった
+- **対策**: v1.3.25でコンテナ名、テスト関連パス、dockerコマンドのパターンを追加
 
 **このルールを最初に確認することで:**
 - Main AIが他のプロジェクトに反応する前にブロック
@@ -2213,6 +2226,6 @@ quality-guardian が lint 実行
 
 ---
 
-**Current Version: 1.3.18**
-**Last Updated: 2025-01-14**
+**Current Version: 1.3.25**
+**Last Updated: 2025-01-17**
 **Architecture: 3-Layer Hierarchical Rule System**
