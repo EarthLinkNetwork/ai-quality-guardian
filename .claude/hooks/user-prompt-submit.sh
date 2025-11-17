@@ -4,7 +4,15 @@
 
 set -e
 
-USER_MESSAGE=$(cat)
+# 入力を読み取る（JSON形式）
+INPUT=$(cat)
+
+# デバッグ: 受け取った入力をログに出力
+echo "=== HOOK DEBUG $(date) ===" >> /tmp/quality-guardian-hook-debug.log
+echo "$INPUT" >> /tmp/quality-guardian-hook-debug.log
+
+# JSONから prompt フィールドを抽出
+USER_MESSAGE=$(echo "$INPUT" | jq -r '.prompt // empty')
 
 # このプロジェクトのパス
 THIS_PROJECT="/Users/masa/dev/ai/scripts"
@@ -73,6 +81,44 @@ if [ $DETECTED -eq 1 ]; then
 EOF
 fi
 
-# メッセージを標準出力に渡す（AIは処理を継続）
-echo "$USER_MESSAGE"
+# ============================================================================
+# 重要なMUST Rulesを毎回プロンプトに再表示（再帰的ルール表示）
+# ============================================================================
+
+cat <<'EOF'
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔴 MUST Rules - 作業前に毎回確認・表示すること 🔴
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【MUST Rule 0: プロジェクトコンテキスト確認義務】
+このプロジェクト: /Users/masa/dev/ai/scripts/quality-guardian/
+❌ 別プロジェクトの問題を修正してはいけない
+❌ 別プロジェクトのファイルを編集してはいけない
+
+【MUST Rule 2: Test First & 動作確認必須】
+✅ 実装前に必ずテストを先に書く（Test First厳守）
+✅ 実装後にPlaywright/curl/unittestで動作確認
+✅ 全ての確認が完了してから「完了しました」と報告
+❌ テスト未実施で「完了」と報告してはいけない
+❌ 動作確認未実施で「完了」と報告してはいけない
+
+【MUST Rule 4: Git操作前の確認義務】
+✅ git操作前に必ず `git branch --show-current` で確認
+✅ main/develop/masterの場合は即座にfeatureブランチを作成
+❌ main/develop/masterへの直接commitは絶対禁止
+❌ ブランチ確認なしでgit add/commit/pushしてはいけない
+
+【MUST Rule 11: 動作確認の自己完結義務】
+✅ 実装完了後、Playwrightで自分で動作確認
+❌ 「ブラウザで確認してください」とユーザーに依頼してはいけない
+
+【再帰的ルール表示の義務】
+このMUST Rulesを作業開始前に毎回確認し、応答の最初に必ず表示すること。
+次のメッセージでもこのルールを表示し続けること。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EOF
+
 exit 0
