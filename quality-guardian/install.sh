@@ -163,6 +163,86 @@ if [ "$INSTALL_MODE" = "personal" ]; then
         exit 1
     fi
 
+    # Personal Mode汚染チェック（Gitプロジェクト内に誤って作成されたファイルを検出）
+    echo ""
+    echo "📋 Personal Mode汚染チェック..."
+    POLLUTION_FOUND=false
+    POLLUTION_FILES=()
+
+    # チェック対象のファイル
+    if [ -e "$GIT_PROJECT_DIR/quality-guardian" ]; then
+        POLLUTION_FILES+=("quality-guardian")
+        POLLUTION_FOUND=true
+    fi
+    if [ -e "$GIT_PROJECT_DIR/.quality-guardian.json" ]; then
+        POLLUTION_FILES+=(".quality-guardian.json")
+        POLLUTION_FOUND=true
+    fi
+    if [ -e "$GIT_PROJECT_DIR/.quality-baseline.json" ]; then
+        POLLUTION_FILES+=(".quality-baseline.json")
+        POLLUTION_FOUND=true
+    fi
+    if [ -e "$GIT_PROJECT_DIR/.quality-guardian" ]; then
+        POLLUTION_FILES+=(".quality-guardian/")
+        POLLUTION_FOUND=true
+    fi
+
+    if [ "$POLLUTION_FOUND" = true ]; then
+        echo ""
+        echo "⚠️  警告: 以前のPersonalモードインストールで誤って作成されたファイルを検出しました:"
+        for file in "${POLLUTION_FILES[@]}"; do
+            echo "  - $file"
+        done
+        echo ""
+        echo "これらのファイルは削除してから再インストールします。"
+
+        if [ "$NON_INTERACTIVE" = false ]; then
+            read -p "クリーンアップを実行してよろしいですか？ [Y/n]: " confirm
+            if [ "$confirm" = "n" ] || [ "$confirm" = "N" ]; then
+                echo "クリーンアップをスキップしました。"
+                echo "注意: これらのファイルが残ったまま再インストールすると、問題が発生する可能性があります。"
+            else
+                # クリーンアップ実行
+                echo ""
+                echo "🧹 クリーンアップ開始..."
+                BACKUP_DIR="$GIT_PROJECT_DIR/.quality-guardian-backup-$(date +%Y%m%d-%H%M%S)"
+                mkdir -p "$BACKUP_DIR"
+
+                for file in "${POLLUTION_FILES[@]}"; do
+                    if [ -e "$GIT_PROJECT_DIR/$file" ]; then
+                        echo "  削除: $file"
+                        # バックアップ
+                        if [ -d "$GIT_PROJECT_DIR/$file" ]; then
+                            cp -r "$GIT_PROJECT_DIR/$file" "$BACKUP_DIR/"
+                        else
+                            cp "$GIT_PROJECT_DIR/$file" "$BACKUP_DIR/"
+                        fi
+                        # 削除
+                        rm -rf "$GIT_PROJECT_DIR/$file"
+                    fi
+                done
+
+                echo "  ✅ クリーンアップ完了"
+                echo "  バックアップ: $BACKUP_DIR"
+            fi
+        else
+            # 非対話モードの場合は自動的にクリーンアップ
+            echo ""
+            echo "🧹 クリーンアップ実行中（非対話モード）..."
+            for file in "${POLLUTION_FILES[@]}"; do
+                if [ -e "$GIT_PROJECT_DIR/$file" ]; then
+                    echo "  削除: $file"
+                    rm -rf "$GIT_PROJECT_DIR/$file"
+                fi
+            done
+            echo "  ✅ クリーンアップ完了"
+        fi
+        echo ""
+    else
+        echo "  ✅ 汚染は検出されませんでした"
+        echo ""
+    fi
+
     # .claude/ と本体は親ディレクトリに配置
     PARENT_DIR="$(dirname "$GIT_PROJECT_DIR")"
     CLAUDE_DIR="$PARENT_DIR"
