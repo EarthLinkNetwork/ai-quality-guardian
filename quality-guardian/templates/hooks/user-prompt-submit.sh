@@ -26,46 +26,65 @@ PROJECT_PATH="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PROJECT_NAME="$(basename "$PROJECT_PATH")"
 
 # ============================================================================
-# CLAUDE.md確認の強制
+# 全CRITICAL Rulesを毎回プロンプトに再表示（再帰的ルール表示）
 # ============================================================================
 
-cat <<EOF
+cat <<'EOF'
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🚨 このプロジェクトで作業を開始します
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🔴 CRITICAL Rules（最重要・13個）- 毎回確認
 
-プロジェクト名: ${PROJECT_NAME}
-プロジェクトパス: ${PROJECT_PATH}
+【Rule 1: ユーザー指示の厳守】
+指示されたことだけを実行。指示以外は一切禁止。
 
-【必須】作業開始前に以下を実行してください：
+【Rule 2: テスト必須と完了基準】
+Test First原則厳守。全テスト合格まで「完了」禁止。
+詳細: `.claude/rules/must-rules.md` Rule 2
 
-1. CLAUDE.mdを読む
-   Read("${PROJECT_PATH}/.claude/CLAUDE.md")
+【Rule 3: 不可逆な操作の事前確認】
+Slack通知・削除・Git危険操作は事前にユーザー確認必須。
+詳細: `.claude/rules/must-rules.md` Rule 3
 
-2. MUST Rulesを確認
-   特に以下を確認：
-   - 🚨 Git Worktree Usage (MUST Rule)
-   - 🚨 Branch Naming Convention
-   - 🚨 Database Authentication
-   - 🚨 API Configuration
-   - その他のプロジェクト固有ルール
+【Rule 4: Git操作前の確認義務】
+git-operation-guardian サブエージェント利用
+タイミング: git add/commit/push/checkout -b 等の前
+詳細: `.claude/agents/git-operation-guardian.md`
 
-3. 過去に教えられた手順を確認
-   - 「昨日教えた」「何回も言っている」と言われないために
-   - memory-guardianのトリガーフレーズを意識
+【Rule 5: エラー時の対策実施と作業継続】
+謝罪ではなく対策実施。困難な作業から逃避禁止。
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【Rule 6: 重要な理解の即座の文書化】
+「何回も言っている」→ 即座にCLAUDE.mdに記録。
+トリガー: 「〜すべき」「〜してはいけない」「困っている」
 
-【重要な確認事項】
+【Rule 7: 「同じ」指示の全体確認】
+「Aと同じ」→ 関連ファイル全て洗い出し、一貫性確保。
+詳細: `.claude/rules/must-rules.md` Rule 7
 
-□ CLAUDE.mdを読みましたか？
-□ Git Worktree使用ルールを確認しましたか？
-□ ブランチ命名規則を確認しましたか？
-□ データベース認証情報を確認しましたか？
-□ 過去の教えられた手順を確認しましたか？
+【Rule 9: 設計書First原則】
+設計書firstプロジェクトでは、必ず設計書を最初に確認。
+詳細: `.claude/rules/must-rules.md` Rule 9
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【Rule 11: 動作確認の自己完結義務】
+Playwrightで自分で確認。ユーザーに依頼禁止。
+詳細: `.claude/agents/memory-guardian.md` Section 1.9
+
+【Rule 12: 問題発生時の再発防止義務】
+問題発生 → 原因分析 → CLAUDE.mdにルール追加 → バージョン更新 → コミット
+詳細: `.claude/agents/memory-guardian.md`
+
+【Rule 16: 問題解決後の全体確認義務】
+実装修正 → テンプレート・インストーラー・ドキュメントも同期。
+`.claude/hooks/*` ⟷ `templates/hooks/*`
+詳細: `.claude/rules/must-rules.md` Rule 16
+
+【Rule 17: Claude Code痕跡の完全排除】
+コミット署名禁止。絵文字禁止。ドキュメント勝手に作成禁止。
+詳細: `.claude/rules/must-rules.md` Rule 17
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【再帰的ルール表示の義務】
+このCRITICAL Rulesを応答の最初に毎回表示すること。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 EOF
 
