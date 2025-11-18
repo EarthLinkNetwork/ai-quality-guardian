@@ -8,14 +8,21 @@
 
 ## 実装手順（厳守）
 
-### 1. 最新バージョンの確認（毎回実行）
+### 1. GitHubから最新バージョンを取得（必須・毎回実行）
 
-BashツールでcurlまたはWebFetchを使ってGitHubから最新バージョンを取得：
+**重要**: この手順を絶対にスキップしてはいけません。
+
+BashツールでcurlでGitHubから最新バージョンを取得：
 ```bash
 curl -s https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/main/quality-guardian/VERSION
 ```
 
-このURLから最新バージョン番号を取得します。
+**必ず実行して結果を確認:**
+```
+例: curl実行結果 → 1.3.33
+```
+
+このURLから取得したバージョン番号を **LATEST_VERSION** として記録します。
 
 ### 2. 現在インストール済みバージョンの確認
 
@@ -26,11 +33,26 @@ curl -s https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/m
 }
 ```
 
-### 3. バージョン比較
+このバージョン番号を **INSTALLED_VERSION** として記録します。
 
-- **未インストール**: インストール処理へ
-- **バージョンが古い**: アップデート処理へ
-- **最新版**: 「既に最新版です」と報告
+### 3. バージョン比較（必須）
+
+**必ず両方のバージョンを表示してから判定:**
+
+```
+GitHubの最新版: 1.3.33 (LATEST_VERSION)
+インストール済み: 1.3.25 (INSTALLED_VERSION)
+比較結果: 1.3.25 < 1.3.33 → アップデートが必要
+```
+
+**判定ロジック:**
+- **未インストール** (.quality-guardian.jsonが存在しない): インストール処理へ
+- **INSTALLED_VERSION < LATEST_VERSION**: アップデート処理へ
+- **INSTALLED_VERSION == LATEST_VERSION**: 品質チェックのみ実行
+- **INSTALLED_VERSION > LATEST_VERSION**: 警告（開発版の可能性）
+
+**重要**: 「最新バージョンXXXが既にインストールされている」という誤解を招く表現は使わない。
+正しい表現: 「現在XXXがインストールされています。GitHubの最新版はYYYです。」
 
 ### 4. インストール/アップデート実行
 
