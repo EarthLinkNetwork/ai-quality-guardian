@@ -702,6 +702,29 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.26 (2025-01-17)
+
+**Personal Modeの設計ミス修正 - プロジェクトディレクトリ汚染の防止**
+
+- **install.shのPersonalモード実装を修正**
+  - `.claude/` とquality-guardian本体を**親ディレクトリ**にインストール（プロジェクトディレクトリの外）
+  - プロジェクトディレクトリには**何も作成しない**（quality-guardianスクリプト、.quality-guardian.json、依存関係等）
+  - `quality-guardian`スクリプト作成をTeamモードのみに制限
+  - 依存関係（glob等）のインストールをTeamモードのみに制限
+  - `.quality-guardian.json`作成をTeamモードのみに制限
+
+- **Personalモード汚染チェック・クリーンアップ機能を追加**
+  - `check-personal-pollution.sh`: Personalモードで誤って作成されたファイルを検出
+  - `cleanup-personal-pollution.sh`: 検出されたファイルを削除（バックアップ付き）
+  - 検出対象: `quality-guardian`, `.quality-guardian.json`, `.quality-baseline.json`, `.quality-guardian/`
+
+- **過去の問題の修正**
+  - Personalモードでもpackage.jsonに依存関係を追加していた（修正済み）
+  - Personalモードでもプロジェクトルートにquality-guardianスクリプトを作成していた（修正済み）
+  - Personalモードでも.quality-guardian.jsonを作成していた（修正済み）
+
+**目的:** Personalモードは「個人設定のみ、プロジェクトディレクトリを汚さない」という本来の目的を実現。ユーザーのグローバルCLAUDE.md「MUST Rule 8. Personal Modeでプロジェクトディレクトリを汚さない」に準拠。
+
 ### v1.3.25 (2025-01-17)
 
 **MUST Rule 0とproject-context-guardianの強化 - コンテナ名・テスト関連パス・dockerコマンドのパターン追加**

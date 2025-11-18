@@ -79,6 +79,18 @@
    - コンテナ名: *-devcontainer-*, *-container-*
    - プロジェクト名を含むコンテナ: eventsystem-*, indigo-*
    - テスト関連パス: e2e-tests/, playwright.config.ts
+
+7. データベース・サーバー関連エラー（v1.3.27追加）:
+   - パスワード認証エラー: "password authentication failed", "FATAL", "pg_hba.conf"
+   - 接続エラー: "Connection refused", "timeout", "Could not connect"
+   - データベースユーザー: cloudsqlsuperuser, postgres等のユーザー名
+   - バックアップ・検証スクリプトパス: /Users/masa/dev/sios/, /Users/masa/dev/*/backup/
+
+8. Git worktree使用違反（v1.3.27追加）:
+   - git checkout -b コマンド（別プロジェクトのCLAUDE.mdでworktree必須の場合）
+   - 「ブランチはwroktreeで対応するように」という指摘
+   - CLAUDE.mdに「🚨 Git Worktree Usage (MUST Rule)」がある
+   - 「完全にルール違反をしていました」（AI自身の違反の認識）
 ```
 
 ### 3. Main AIの問題行動検出

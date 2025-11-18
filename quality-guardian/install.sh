@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.3.25"
+# version: "1.3.33"
 
 set -e
 
@@ -154,8 +154,8 @@ select_git_repository_for_personal_mode() {
 
 # インストール先を決定
 if [ "$INSTALL_MODE" = "personal" ]; then
-    # Personal Mode: .claude/ はカレント、Quality Guardian本体はGitリポジトリへ
-    CLAUDE_DIR="$CURRENT_DIR"
+    # Personal Mode: .claude/ とQuality Guardian本体は親ディレクトリへ
+    # プロジェクトディレクトリには何も作成しない
     GIT_PROJECT_DIR="$(select_git_repository_for_personal_mode)"
 
     if [ -z "$GIT_PROJECT_DIR" ] || [ ! -d "$GIT_PROJECT_DIR" ]; then
@@ -163,7 +163,99 @@ if [ "$INSTALL_MODE" = "personal" ]; then
         exit 1
     fi
 
-    PROJECT_DIR="$GIT_PROJECT_DIR"
+    # Personal Mode汚染チェック（Gitプロジェクト内に誤って作成されたファイルを検出）
+    echo ""
+    echo "📋 Personal Mode汚染チェック..."
+    POLLUTION_FOUND=false
+    POLLUTION_FILES=()
+
+    # チェック対象のファイル
+    if [ -e "$GIT_PROJECT_DIR/quality-guardian" ]; then
+        POLLUTION_FILES+=("quality-guardian")
+        POLLUTION_FOUND=true
+    fi
+    if [ -e "$GIT_PROJECT_DIR/.quality-guardian.json" ]; then
+        POLLUTION_FILES+=(".quality-guardian.json")
+        POLLUTION_FOUND=true
+    fi
+    if [ -e "$GIT_PROJECT_DIR/.quality-baseline.json" ]; then
+        POLLUTION_FILES+=(".quality-baseline.json")
+        POLLUTION_FOUND=true
+    fi
+    if [ -e "$GIT_PROJECT_DIR/.quality-guardian" ]; then
+        POLLUTION_FILES+=(".quality-guardian/")
+        POLLUTION_FOUND=true
+    fi
+
+    if [ "$POLLUTION_FOUND" = true ]; then
+        echo ""
+        echo "⚠️  警告: 以前のPersonalモードインストールで誤って作成されたファイルを検出しました:"
+        for file in "${POLLUTION_FILES[@]}"; do
+            echo "  - $file"
+        done
+        echo ""
+        echo "これらのファイルは削除してから再インストールします。"
+
+        if [ "$NON_INTERACTIVE" = false ]; then
+            read -p "クリーンアップを実行してよろしいですか？ [Y/n]: " confirm
+            if [ "$confirm" = "n" ] || [ "$confirm" = "N" ]; then
+                echo "クリーンアップをスキップしました。"
+                echo "注意: これらのファイルが残ったまま再インストールすると、問題が発生する可能性があります。"
+            else
+                # クリーンアップ実行
+                echo ""
+                echo "🧹 クリーンアップ開始..."
+                BACKUP_DIR="$GIT_PROJECT_DIR/.quality-guardian-backup-$(date +%Y%m%d-%H%M%S)"
+                mkdir -p "$BACKUP_DIR"
+
+                for file in "${POLLUTION_FILES[@]}"; do
+                    if [ -e "$GIT_PROJECT_DIR/$file" ]; then
+                        echo "  削除: $file"
+                        # バックアップ
+                        if [ -d "$GIT_PROJECT_DIR/$file" ]; then
+                            cp -r "$GIT_PROJECT_DIR/$file" "$BACKUP_DIR/"
+                        else
+                            cp "$GIT_PROJECT_DIR/$file" "$BACKUP_DIR/"
+                        fi
+                        # 削除
+                        rm -rf "$GIT_PROJECT_DIR/$file"
+                    fi
+                done
+
+                echo "  ✅ クリーンアップ完了"
+                echo "  バックアップ: $BACKUP_DIR"
+            fi
+        else
+            # 非対話モードの場合は自動的にクリーンアップ
+            echo ""
+            echo "🧹 クリーンアップ実行中（非対話モード）..."
+            for file in "${POLLUTION_FILES[@]}"; do
+                if [ -e "$GIT_PROJECT_DIR/$file" ]; then
+                    echo "  削除: $file"
+                    rm -rf "$GIT_PROJECT_DIR/$file"
+                fi
+            done
+            echo "  ✅ クリーンアップ完了"
+        fi
+        echo ""
+    else
+        echo "  ✅ 汚染は検出されませんでした"
+        echo ""
+    fi
+
+    # .claude/ と本体は親ディレクトリに配置
+    PARENT_DIR="$(dirname "$GIT_PROJECT_DIR")"
+    CLAUDE_DIR="$PARENT_DIR"
+    PROJECT_DIR="$PARENT_DIR"
+
+    echo ""
+    echo "[Personal Mode] インストール先:"
+    echo "  Gitプロジェクト: $GIT_PROJECT_DIR"
+    echo "  .claude/: $CLAUDE_DIR/.claude"
+    echo "  quality-guardian本体: $PROJECT_DIR/.quality-guardian"
+    echo ""
+    echo "  ※ Gitプロジェクト内には何も作成されません"
+    echo ""
 else
     # Team Mode: すべて同じディレクトリ（従来通り）
     if [ -n "$1" ]; then
@@ -208,7 +300,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.3.25"
+CURRENT_VERSION="1.3.33"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -349,78 +441,89 @@ else
     echo "GitHubからのダウンロード完了"
 fi
 
-# ESモジュールプロジェクトの場合、CommonJSとして動作させるため
-# .quality-guardianディレクトリにpackage.jsonを作成
-if grep -q '"type".*"module"' package.json 2>/dev/null; then
-    cat > .quality-guardian/package.json << 'EOF'
+# quality-guardianスクリプト作成（Team Modeのみ）
+if [ "$INSTALL_MODE" = "team" ]; then
+    # ESモジュールプロジェクトの場合、CommonJSとして動作させるため
+    # .quality-guardianディレクトリにpackage.jsonを作成
+    if grep -q '"type".*"module"' package.json 2>/dev/null; then
+        cat > .quality-guardian/package.json << 'EOF'
 {
   "type": "commonjs"
 }
 EOF
-    # .jsを.cjsにリネーム
-    mv .quality-guardian/quality-guardian.js .quality-guardian/quality-guardian.cjs
+        # .jsを.cjsにリネーム
+        mv .quality-guardian/quality-guardian.js .quality-guardian/quality-guardian.cjs
 
-    # 実行可能スクリプト作成（bashラッパー）
-    cat > quality-guardian << 'EOF'
+        # 実行可能スクリプト作成（bashラッパー）
+        cat > quality-guardian << 'EOF'
 #!/bin/bash
 exec node "$(dirname "$0")/.quality-guardian/quality-guardian.cjs" "$@"
 EOF
-else
-    # CommonJSプロジェクトの場合は従来通り
-    cat > quality-guardian << 'EOF'
+    else
+        # CommonJSプロジェクトの場合は従来通り
+        cat > quality-guardian << 'EOF'
 #!/usr/bin/env node
 require('./.quality-guardian/quality-guardian.js');
 EOF
-fi
-
-chmod +x quality-guardian
-
-# パッケージマネージャーの自動検出
-echo "📚 依存関係をチェック..."
-
-# 必要なパッケージ
-REQUIRED_PACKAGES="glob"
-
-if [ -f "package.json" ]; then
-    # package.jsonが存在する場合は依存関係を追加
-    # パッケージマネージャーを自動検出
-    if [ -f "pnpm-lock.yaml" ]; then
-        echo "pnpm を使用して依存関係をインストール..."
-        # pnpm-workspace.yamlがある場合はworkspace rootとして扱う
-        if [ -f "pnpm-workspace.yaml" ]; then
-            pnpm add -D -w $REQUIRED_PACKAGES
-        else
-            pnpm add -D $REQUIRED_PACKAGES
-        fi
-    elif [ -f "yarn.lock" ]; then
-        echo "yarn を使用して依存関係をインストール..."
-        # yarn workspacesの場合は-Wフラグを使用
-        if grep -q "workspaces" package.json 2>/dev/null; then
-            yarn add -D -W $REQUIRED_PACKAGES
-        else
-            yarn add -D $REQUIRED_PACKAGES
-        fi
-    elif [ -f "package-lock.json" ]; then
-        echo "npm を使用して依存関係をインストール..."
-        npm install --save-dev $REQUIRED_PACKAGES
-    elif command -v pnpm &> /dev/null; then
-        echo "pnpm を使用して依存関係をインストール..."
-        pnpm add -D -w $REQUIRED_PACKAGES
-    elif command -v yarn &> /dev/null; then
-        echo "yarn を使用して依存関係をインストール..."
-        yarn add -D $REQUIRED_PACKAGES
-    elif command -v npm &> /dev/null; then
-        echo "npm を使用して依存関係をインストール..."
-        npm install --save-dev $REQUIRED_PACKAGES
-    else
-        echo "パッケージマネージャーが見つかりません"
     fi
+
+    chmod +x quality-guardian
+    echo "✅ quality-guardianスクリプトを作成しました"
+else
+    echo "📝 quality-guardianスクリプトの作成をスキップ (Personal Mode)"
 fi
 
-# 設定ファイル生成
-echo "設定ファイルを生成..."
+# 依存関係インストール（Team Modeのみ）
+if [ "$INSTALL_MODE" = "team" ]; then
+    echo "📚 依存関係をチェック..."
 
-if [ ! -f ".quality-guardian.json" ]; then
+    # 必要なパッケージ
+    REQUIRED_PACKAGES="glob"
+
+    if [ -f "package.json" ]; then
+        # package.jsonが存在する場合は依存関係を追加
+        # パッケージマネージャーを自動検出
+        if [ -f "pnpm-lock.yaml" ]; then
+            echo "pnpm を使用して依存関係をインストール..."
+            # pnpm-workspace.yamlがある場合はworkspace rootとして扱う
+            if [ -f "pnpm-workspace.yaml" ]; then
+                pnpm add -D -w $REQUIRED_PACKAGES
+            else
+                pnpm add -D $REQUIRED_PACKAGES
+            fi
+        elif [ -f "yarn.lock" ]; then
+            echo "yarn を使用して依存関係をインストール..."
+            # yarn workspacesの場合は-Wフラグを使用
+            if grep -q "workspaces" package.json 2>/dev/null; then
+                yarn add -D -W $REQUIRED_PACKAGES
+            else
+                yarn add -D $REQUIRED_PACKAGES
+            fi
+        elif [ -f "package-lock.json" ]; then
+            echo "npm を使用して依存関係をインストール..."
+            npm install --save-dev $REQUIRED_PACKAGES
+        elif command -v pnpm &> /dev/null; then
+            echo "pnpm を使用して依存関係をインストール..."
+            pnpm add -D -w $REQUIRED_PACKAGES
+        elif command -v yarn &> /dev/null; then
+            echo "yarn を使用して依存関係をインストール..."
+            yarn add -D $REQUIRED_PACKAGES
+        elif command -v npm &> /dev/null; then
+            echo "npm を使用して依存関係をインストール..."
+            npm install --save-dev $REQUIRED_PACKAGES
+        else
+            echo "パッケージマネージャーが見つかりません"
+        fi
+    fi
+else
+    echo "📝 依存関係のインストールをスキップ (Personal Mode)"
+fi
+
+# 設定ファイル生成（Team Modeのみ）
+if [ "$INSTALL_MODE" = "team" ]; then
+    echo "設定ファイルを生成..."
+
+    if [ ! -f ".quality-guardian.json" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
@@ -495,6 +598,8 @@ else
     else
         echo "設定ファイルは既に存在します（保持）"
     fi
+else
+    echo "📝 .quality-guardian.json の作成をスキップ (Personal Mode)"
 fi
 
 # .gitignoreに追加
@@ -887,6 +992,95 @@ echo "サブエージェント設定（全11個）をインストールしまし
 if [ "$INSTALL_MODE" = "personal" ] && [ "$CLAUDE_DIR" != "$PROJECT_DIR" ]; then
     echo "   配置先: $CLAUDE_DIR/.claude/agents/"
 fi
+
+# Claude Code hooks登録（Personal/Team Mode共通）
+echo ""
+echo "Claude Code hooks を .claude/settings.json に登録中..."
+
+SETTINGS_FILE="$CLAUDE_DIR/.claude/settings.json"
+
+# hookスクリプトのインストール
+HOOK_SCRIPT="$CLAUDE_DIR/.claude/hooks/user-prompt-submit.sh"
+mkdir -p "$CLAUDE_DIR/.claude/hooks"
+
+# テンプレートhookをコピー（ローカルまたはGitHubから）
+if [ -f "$SCRIPT_DIR/templates/hooks/user-prompt-submit.sh" ]; then
+    # ローカルファイルを使用
+    cp "$SCRIPT_DIR/templates/hooks/user-prompt-submit.sh" "$HOOK_SCRIPT"
+    chmod +x "$HOOK_SCRIPT"
+    echo "hook script をインストール: $HOOK_SCRIPT"
+else
+    # GitHubからダウンロード
+    echo "GitHubからhook scriptをダウンロード中..."
+    GITHUB_HOOK="https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/main/quality-guardian/templates/hooks/user-prompt-submit.sh"
+    curl -sSL -o "$HOOK_SCRIPT" "$GITHUB_HOOK" || {
+        echo "警告: hook scriptのダウンロードに失敗しました"
+    }
+    chmod +x "$HOOK_SCRIPT"
+fi
+
+# settings.jsonの作成または更新
+if [ -f "$SETTINGS_FILE" ]; then
+    # 既存settings.jsonがある場合、hooks設定をマージ
+    echo "既存の .claude/settings.json にhook設定を追加..."
+
+    # バックアップ作成
+    cp "$SETTINGS_FILE" "${SETTINGS_FILE}.backup"
+
+    # jqがあればJSONとして処理
+    if command -v jq &> /dev/null; then
+        # 既存のUserPromptSubmit hookがあるか確認
+        if jq -e '.hooks.UserPromptSubmit' "$SETTINGS_FILE" > /dev/null 2>&1; then
+            echo "UserPromptSubmit hook は既に登録済み（保持）"
+        else
+            # UserPromptSubmit hookを追加
+            jq '.hooks.UserPromptSubmit = [{"hooks": [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh"}]}]' \
+                "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" && \
+            mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+            echo ".claude/settings.json にhook設定を追加しました"
+        fi
+    else
+        echo "警告: jq がインストールされていません。手動で .claude/settings.json にhook設定を追加してください。"
+        echo ""
+        echo "追加する内容:"
+        echo '  "hooks": {'
+        echo '    "UserPromptSubmit": ['
+        echo '      {'
+        echo '        "hooks": ['
+        echo '          {'
+        echo '            "type": "command",'
+        echo '            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh"'
+        echo '          }'
+        echo '        ]'
+        echo '      }'
+        echo '    ]'
+        echo '  }'
+    fi
+else
+    # 新規にsettings.jsonを作成
+    echo "新しい .claude/settings.json を作成..."
+    cat > "$SETTINGS_FILE" << 'EOF'
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+    echo ".claude/settings.json を作成しました"
+fi
+
+echo ""
+echo "IMPORTANT: .claude/settings.json の変更を反映するには、Claude Codeの再起動が必要です。"
+echo ""
 
 # CLAUDE.md安全更新（Personal/Team Mode共通）
 echo ""

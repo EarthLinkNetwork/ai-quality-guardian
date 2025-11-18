@@ -21,7 +21,127 @@
 
 ## チェック項目
 
-### 0. ブランチ作成時の命名規則確認（新規・最優先）
+### 0. Git Worktree使用必須チェック（新規・最優先・v1.3.27追加）
+
+**ブランチ作成前に、そのプロジェクトのCLAUDE.mdでworktree使用が必須かチェックする。必須の場合、`git checkout -b` は絶対禁止。**
+
+#### 必須手順
+
+1. **プロジェクトのCLAUDE.mdを確認**
+   ```bash
+   grep -i "worktree" /path/to/project/.claude/CLAUDE.md
+   grep -i "🚨 Git Worktree" /path/to/project/.claude/CLAUDE.md
+   ```
+
+2. **worktree必須の場合の検出**
+   ```
+   以下のパターンを検出したらworktree必須:
+   - "🚨 Git Worktree Usage (MUST Rule)"
+   - "git worktree を使用すること"
+   - "ブランチはworktreeで対応"
+   - MUST Rule 13等でworktreeが義務化されている
+   ```
+
+3. **worktree必須の場合の対応**
+   ```bash
+   ❌ 絶対禁止: git checkout -b feature/xxx
+   ✅ 必須: git worktree add path -b feature/xxx
+   ```
+
+#### 検出すべきパターン
+
+**worktree違反の検出:**
+```
+🚨 以下を検出したらBLOCKER:
+
+1. CLAUDE.mdにworktree必須の記載がある
+2. AIが git checkout -b を実行しようとしている
+3. 別プロジェクトのログで git checkout -b を使った形跡
+```
+
+**正しいworktree使用例:**
+```bash
+# 1. worktree用ディレクトリ作成
+mkdir -p /path/to/project-worktrees
+
+# 2. worktreeで新ブランチ作成
+git worktree add ../project-worktrees/feature-xxx -b feature/xxx
+
+# 3. worktree内で作業
+cd ../project-worktrees/feature-xxx
+git add .
+git commit -m "..."
+git push -u origin feature/xxx
+
+# 4. 完了後worktree削除
+git worktree remove ../project-worktrees/feature-xxx
+```
+
+#### 禁止事項
+
+```
+❌ CLAUDE.mdにworktree必須の記載があるのに git checkout -b を使用
+❌ worktree確認をスキップしてブランチ作成
+❌ 「おそらくworktreeは不要」と推測
+❌ ユーザープロジェクトのCLAUDE.mdを確認しない
+```
+
+#### 出力例（BLOCKER判定）
+
+```markdown
+🚫 git-operation-guardian: Git Worktree違反を検出（BLOCKER）
+
+[プロジェクトのCLAUDE.md確認結果]
+/Users/ts-masayoshi.uehara/dev/CLAUDE.md:
+- "🚨 Git Worktree Usage (MUST Rule)" を検出
+- このプロジェクトではworktreeが必須
+
+[実行しようとしたコマンド]
+git checkout -b feature/mycoupon-intersection-observer
+
+[問題]
+このプロジェクトでは git checkout -b の使用は禁止されています。
+必ず git worktree を使用してください。
+
+[正しい手順]
+1. worktree用ディレクトリ作成（初回のみ）:
+   mkdir -p /Users/ts-masayoshi.uehara/dev/mycoupon-worktrees
+
+2. worktreeでブランチ作成:
+   git worktree add ../mycoupon-worktrees/feature-mycoupon-intersection-observer -b feature/mycoupon-intersection-observer
+
+3. worktree内で作業:
+   cd ../mycoupon-worktrees/feature-mycoupon-intersection-observer
+   # 作業...
+
+判定: BLOCKER - git checkout -b の使用を中止してください
+```
+
+#### 過去の問題例（v1.3.27）
+
+**問題内容:**
+- 別プロジェクト（couponシステム）でAIが `git checkout -b feature/mycoupon-intersection-observer` を実行
+- そのプロジェクトのCLAUDE.md (line 154+) に「🚨 Git Worktree Usage (MUST Rule)」が明記
+- AIがworktreeを使わずにgit checkout -bを実行してしまった
+
+**ユーザーの指摘:**
+```
+「ブランチはwroktreeで対応するようにclaude.mdなどで指定されていますか?」
+
+AIの回答:
+「はい、CLAUDE.mdに明確に記載されています。確認します。」
+（しかし実際には違反していた）
+```
+
+**本来すべきだったこと:**
+1. ブランチ作成前にそのプロジェクトのCLAUDE.mdを確認
+2. 「🚨 Git Worktree Usage (MUST Rule)」を検出
+3. git worktree add でブランチ作成
+4. git checkout -b は使用しない
+
+---
+
+### 1. ブランチ作成時の命名規則確認（新規・最優先）
 
 **ブランチ作成前に、必ずプロジェクトの既存ブランチ命名規則を確認する。**
 
