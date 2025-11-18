@@ -30,19 +30,23 @@
 
 # 応答テンプレート（必須・毎回実行）
 
-**全ての応答の冒頭にCRITICAL Rules（最重要13個）を表示すること：**
+**全ての応答の冒頭にCRITICAL Rules（最重要12個）を表示すること：**
 
-UserPromptSubmit hookがsystem-reminderとして表示するCRITICAL Rules（13個の簡略版）を、
-ユーザーへの応答の最初にそのまま表示すること。
+UserPromptSubmit hookがsystem-reminderとして表示するCRITICAL Rulesを、
+**省略禁止・一字一句そのまま**ユーザーへの応答の最初に表示すること。
+
+**表示形式：**
+✅ hookと同じ複数行の詳細版を完全再現
+❌ 1行に簡略化（Rule 1:ユーザー指示厳守 | Rule 2:テスト必須 | ...）
 
 **表示内容：**
-- 13個のCRITICAL Rules（簡略化版）
+- 12個のCRITICAL Rules（詳細版）
 - 各ルール: タイトル + 簡潔な説明 + 詳細参照先
 - 再帰的ルール表示の義務も含める
 
 **理由：**
 17個の完全版は「ちょっと多い」（ユーザー指摘）。
-最重要13個を簡略化することで、効率的にルールを意識できる。
+最重要12個に絞り込み、詳細版で表示することで、ルールを確実に意識できる。
 
 ---
 
@@ -692,6 +696,6 @@ v1.3.39でCRITICAL Rules（13個の簡略版）を実装した際：
 
 ---
 
-**Current Version: 1.3.42**
+**Current Version: 1.3.43**
 **Last Updated: 2025-11-18**
 **Architecture: 3-Layer Hierarchical Rule System**
