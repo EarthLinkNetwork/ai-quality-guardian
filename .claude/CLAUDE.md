@@ -151,41 +151,56 @@ pushしますか？
 - ユーザー: 「はい」→ push実行
 - ユーザー: 「いいえ」→ pushしない、ローカルに残す
 
-### 自動PR作成・マージ（このプロジェクト専用・重要）
+### 直接mainブランチを伸ばす（このプロジェクト専用・重要）
 
 **このai-quality-guardianプロジェクト専用の特別ルール:**
 
-このプロジェクトでは、「Push前の確認（必須）」の例外として、**featureブランチ作業完了後に自動的にPRを作成・マージすること**。
+このプロジェクトでは、**PRを作成せず、直接mainブランチを伸ばすこと**。
+
+**理由:**
+- quality-guardian自体が品質管理ツール
+- PRレビューの代わりに、徹底的なテストで品質を保証
+- シンプルな開発フロー
 
 **必須手順:**
 
-1. **作業完了後、自動的にpush**
+1. **mainブランチで直接作業**
    ```bash
-   git push -u origin feature/xxx
+   # 現在のブランチ確認
+   git branch --show-current
+   # → main であることを確認
+
+   # ファイル編集
+   # ...
+
+   # 変更をステージング
+   git add <files>
+
+   # コミット
+   git commit -m "..."
    ```
 
-2. **GitHub CLIでPRを自動作成**
+2. **pushの前に必ずテストを実行**
    ```bash
-   gh pr create --base main --title "タイトル" --body "説明"
+   # syntax check
+   bash -n quality-guardian/install.sh
+   bash -n quality-guardian/templates/hooks/user-prompt-submit.sh
+
+   # その他のテスト（該当する場合）
+   npm test
+   npm run lint
+   npm run typecheck
    ```
 
-3. **PRを自動マージ**
+3. **全テスト合格後にpush**
    ```bash
-   gh pr merge --merge --delete-branch
+   git push origin main
    ```
-
-4. **remoteブランチの確認**
-   ```bash
-   git branch -r | grep feature/
-   ```
-
-   - featureブランチが残っていないことを確認
-   - 残っている場合は削除
 
 **重要な注意点:**
-- この自動PR作成・マージは**このai-quality-guardianプロジェクトのみ**の特別ルール
-- 他のプロジェクトでは通常の「Push前の確認（必須）」フローに従う
-- remoteは常にfeatureブランチが無い状態を保つ
+- **この直接mainブランチを伸ばす運用は、このai-quality-guardianプロジェクトのみ**の特別ルール
+- 他のプロジェクトでは必ずPR経由でマージ
+- テストを徹底すること（quality-guardian自体がバグを持つのは存在意義を揺るがす）
 
 ### コミット署名の禁止（重要）
 
@@ -256,8 +271,8 @@ Git操作（add, commit, push, checkout -b等）を実行する前に、必ず�
 ### 12. 問題発生時の再発防止義務（最重要）
 問題が起きたら、謝罪だけでなく「なぜ起きたか」を分析し、再発防止策を実装する。同じ問題を繰り返さない。
 
-### 13. Git Worktree自動作成（最重要）
-新しいタスクを受けた時、AIが自動的にgit worktreeを作成して作業する。git checkout -bでのブランチ作成は絶対禁止。
+### 13. Git操作方法の選択（プロジェクト別・最重要）
+このプロジェクト（quality-guardian）では mainブランチで直接作業。他のプロジェクトでは worktree を使用。
 
 ### 14. PRレビュー指摘への完全対応義務（最重要）
 Pull Requestのレビュー指摘を受けた場合、全ての指摘に対応する。一部だけ対応して終わることを禁止。
@@ -677,6 +692,6 @@ v1.3.39でCRITICAL Rules（13個の簡略版）を実装した際：
 
 ---
 
-**Current Version: 1.3.40**
-**Last Updated: 2025-01-18**
+**Current Version: 1.3.41**
+**Last Updated: 2025-11-18**
 **Architecture: 3-Layer Hierarchical Rule System**

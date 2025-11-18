@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.3.40"
+# version: "1.3.41"
 
 set -e
 
@@ -300,7 +300,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.3.40"
+CURRENT_VERSION="1.3.41"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -597,6 +597,7 @@ else
         fi
     else
         echo "設定ファイルは既に存在します（保持）"
+    fi
     fi
 else
     echo "📝 .quality-guardian.json の作成をスキップ (Personal Mode)"

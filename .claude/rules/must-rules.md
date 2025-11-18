@@ -1334,11 +1334,45 @@ AIの誤った対応:
 
 ---
 
-## 13. Git Worktree自動作成（新規・最重要）
+## 13. Git操作方法の選択（プロジェクト別・最重要）
 
-**新しいタスクを受けた時、AIが自動的にgit worktreeを作成して作業すること。git checkout -bでのブランチ作成は絶対禁止。**
+**プロジェクトごとに適切なGit操作方法を選択すること。このプロジェクト（quality-guardian）では mainブランチで直接作業、他のプロジェクトでは worktree を使用。**
 
-### 基本原則
+### このプロジェクト（quality-guardian）の運用
+
+**quality-guardian では mainブランチで直接作業:**
+
+- **理由**: quality-guardian自体が品質管理ツールであり、徹底的なテストで品質を保証
+- **方法**: mainブランチで直接編集・コミット・push
+- **PR不要**: PRレビューの代わりにテストを徹底
+
+**必須手順:**
+```bash
+# 1. mainブランチで作業
+git branch --show-current  # → main であることを確認
+
+# 2. ファイル編集
+
+# 3. テストを徹底
+bash -n quality-guardian/install.sh
+bash -n quality-guardian/templates/hooks/user-prompt-submit.sh
+
+# 4. コミット
+git add <files>
+git commit -m "..."
+
+# 5. push
+git push origin main
+```
+
+**禁止事項:**
+```
+❌ quality-guardian で worktree を作成
+❌ quality-guardian で featureブランチを作成
+❌ quality-guardian で PRを作成
+```
+
+### 他のプロジェクトの運用
 
 **複数ブランチ対応時の問題:**
 - `git checkout -b` でブランチ作成 → working directoryが同じ
