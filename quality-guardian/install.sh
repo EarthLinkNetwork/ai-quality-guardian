@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.3.37"
+# version: "1.3.38"
 
 set -e
 
@@ -300,7 +300,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.3.37"
+CURRENT_VERSION="1.3.38"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -1088,6 +1088,7 @@ echo "CLAUDE.mdを更新中..."
 
 # .claudeディレクトリの作成（CLAUDE_DIRに配置）
 mkdir -p "$CLAUDE_DIR/.claude"
+mkdir -p "$CLAUDE_DIR/.claude/rules"
 
 # テンプレートファイルの取得（ローカルまたはGitHubから）
 TEMPLATE_FILE=""
@@ -1104,64 +1105,160 @@ else
     }
 fi
 
-# CLAUDE.mdの安全な更新
+# MUST Rulesファイルの取得
+MUST_RULES_FILE=""
+if [ -f "$SCRIPT_DIR/../.claude/rules/must-rules.md" ]; then
+    MUST_RULES_FILE="$SCRIPT_DIR/../.claude/rules/must-rules.md"
+else
+    echo "GitHubからMUST Rulesをダウンロード中..."
+    MUST_RULES_FILE="/tmp/must-rules-$$.md"
+    curl -sSL -o "$MUST_RULES_FILE" "https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/main/.claude/rules/must-rules.md" || {
+        echo "警告: MUST Rulesのダウンロードに失敗しました"
+        MUST_RULES_FILE=""
+    }
+fi
+
+# バージョンベースの移行ロジック
 if [ -f "$CLAUDE_DIR/.claude/CLAUDE.md" ]; then
-    # Quality Guardian設定セクションが既に存在するかチェック
-    if grep -q "# Quality Guardian Configuration" "$CLAUDE_DIR/.claude/CLAUDE.md"; then
-        echo "Quality Guardian設定は既に存在します"
-    else
-        echo "既存CLAUDE.mdにQuality Guardian設定を追加します"
-        # バックアップ作成
-        cp "$CLAUDE_DIR/.claude/CLAUDE.md" "$CLAUDE_DIR/.claude/CLAUDE.md.backup"
+    # 既存のCLAUDE.mdが存在する場合、バージョンを検出
+    EXISTING_VERSION=""
+    if grep -q "Current Version:" "$CLAUDE_DIR/.claude/CLAUDE.md"; then
+        EXISTING_VERSION=$(grep "Current Version:" "$CLAUDE_DIR/.claude/CLAUDE.md" | sed 's/.*Current Version: \([0-9.]*\).*/\1/')
+        echo "既存CLAUDE.mdのバージョン: $EXISTING_VERSION"
+    fi
 
-        # テンプレートファイルを読み込んで既存ファイルに追記
-        if [ -n "$TEMPLATE_FILE" ] && [ -f "$TEMPLATE_FILE" ]; then
-            # プレースホルダーを置換
-            TEMPLATE_CONTENT=$(cat "$TEMPLATE_FILE" | \
-                sed "s|__PROJECT_TYPE__|$PROJECT_TYPE|g")
+    # バージョン1.3.37以前の場合、移行が必要
+    if [ -z "$EXISTING_VERSION" ] || [ "$EXISTING_VERSION" \< "1.3.38" ]; then
+        echo ""
+        echo "================================================================"
+        echo "🔄 CLAUDE.md構造の大規模変更（v1.3.38）"
+        echo "================================================================"
+        echo ""
+        echo "Quality Guardianのアーキテクチャが改善されました："
+        echo ""
+        echo "変更内容:"
+        echo "  - CLAUDE.md: 2562行 → 625行に簡素化"
+        echo "  - MUST Rules詳細を .claude/rules/must-rules.md に移動"
+        echo "  - ルールの可読性と保守性が向上"
+        echo ""
+        echo "影響:"
+        echo "  - 既存のCLAUDE.mdは新しい構造に置き換わります"
+        echo "  - UserPromptSubmit hookは引き続き全ルールを表示します"
+        echo ""
+        echo "バックアップ:"
+        echo "  - 既存CLAUDE.md → .claude/CLAUDE.md.backup-v$EXISTING_VERSION"
+        echo ""
+        echo "復旧方法:"
+        echo "  もし問題が発生した場合、以下のコマンドで復旧できます："
+        echo "  cd $CLAUDE_DIR/.claude"
+        echo "  cp CLAUDE.md.backup-v$EXISTING_VERSION CLAUDE.md"
+        echo ""
+        read -p "移行を実行しますか？ (y/N): " CONFIRM_MIGRATION
 
-            # テストコマンドプレースホルダー置換
-            if [ -n "$TEST_COMMAND" ]; then
-                TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__TEST_COMMAND_PLACEHOLDER__|# テスト実行: $TEST_COMMAND|")
-            else
-                TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__TEST_COMMAND_PLACEHOLDER__||")
+        if [ "$CONFIRM_MIGRATION" = "y" ] || [ "$CONFIRM_MIGRATION" = "Y" ]; then
+            echo ""
+            echo "移行を開始します..."
+
+            # バックアップ作成
+            cp "$CLAUDE_DIR/.claude/CLAUDE.md" "$CLAUDE_DIR/.claude/CLAUDE.md.backup-v${EXISTING_VERSION:-unknown}"
+            echo "✓ バックアップ作成: CLAUDE.md.backup-v${EXISTING_VERSION:-unknown}"
+
+            # .claude/rules/must-rules.md を配置
+            if [ -n "$MUST_RULES_FILE" ] && [ -f "$MUST_RULES_FILE" ]; then
+                cp "$MUST_RULES_FILE" "$CLAUDE_DIR/.claude/rules/must-rules.md"
+                echo "✓ MUST Rules配置: .claude/rules/must-rules.md"
             fi
 
-            # リントコマンドプレースホルダー置換
-            if [ -n "$LINT_COMMAND" ]; then
-                TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__LINT_COMMAND_PLACEHOLDER__|# リント: $LINT_COMMAND|")
-            else
-                TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__LINT_COMMAND_PLACEHOLDER__||")
+            # 新しいCLAUDE.mdを配置
+            if [ -f "$SCRIPT_DIR/../.claude/CLAUDE.md" ]; then
+                cp "$SCRIPT_DIR/../.claude/CLAUDE.md" "$CLAUDE_DIR/.claude/CLAUDE.md"
+                echo "✓ 新しいCLAUDE.md配置（簡素化版、625行）"
             fi
 
-            # 型チェックコマンドプレースホルダー置換
-            if [ -n "$TYPE_CHECK_COMMAND" ]; then
-                TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__TYPE_CHECK_COMMAND_PLACEHOLDER__|# 型チェック: $TYPE_CHECK_COMMAND|")
-            else
-                TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__TYPE_CHECK_COMMAND_PLACEHOLDER__||")
-            fi
-
-            # ビルドコマンドプレースホルダー置換
-            if [ -n "$BUILD_COMMAND" ]; then
-                TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__BUILD_COMMAND_PLACEHOLDER__|# ビルド: $BUILD_COMMAND|")
-            else
-                TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__BUILD_COMMAND_PLACEHOLDER__||")
-            fi
-
-            # セパレーターと設定追加
-            echo "" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
-            echo "# ================================================================" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
-            echo "# Quality Guardian Configuration (Auto-generated)" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
-            echo "# ================================================================" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
-            echo "$TEMPLATE_CONTENT" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
-
-            echo "CLAUDE.mdを安全に更新しました（テンプレート使用）"
+            echo ""
+            echo "✅ 移行完了（v1.3.38アーキテクチャ）"
         else
-            echo "警告: テンプレートファイルが利用できません。CLAUDE.mdの更新をスキップします。"
+            echo ""
+            echo "移行をキャンセルしました。"
+            echo "既存のCLAUDE.mdを維持します。"
+            echo ""
+            echo "注意: Quality Guardian v1.3.38の機能を完全に利用するには移行が必要です。"
+            echo "      後で移行する場合は、再度インストールを実行してください。"
+        fi
+    else
+        # v1.3.38以降の場合、通常の更新
+        echo "CLAUDE.mdは最新のアーキテクチャです（v$EXISTING_VERSION）"
+
+        # .claude/rules/must-rules.md を更新
+        if [ -n "$MUST_RULES_FILE" ] && [ -f "$MUST_RULES_FILE" ]; then
+            cp "$MUST_RULES_FILE" "$CLAUDE_DIR/.claude/rules/must-rules.md"
+            echo "✓ MUST Rules更新: .claude/rules/must-rules.md"
+        fi
+
+        # CLAUDE.mdを更新（Quality Guardian設定セクションのみ）
+        if grep -q "# Quality Guardian Configuration" "$CLAUDE_DIR/.claude/CLAUDE.md"; then
+            echo "Quality Guardian設定は既に存在します"
+        else
+            echo "既存CLAUDE.mdにQuality Guardian設定を追加します"
+            # バックアップ作成
+            cp "$CLAUDE_DIR/.claude/CLAUDE.md" "$CLAUDE_DIR/.claude/CLAUDE.md.backup"
+
+            # テンプレートファイルを読み込んで既存ファイルに追記
+            if [ -n "$TEMPLATE_FILE" ] && [ -f "$TEMPLATE_FILE" ]; then
+                # プレースホルダーを置換
+                TEMPLATE_CONTENT=$(cat "$TEMPLATE_FILE" | \
+                    sed "s|__PROJECT_TYPE__|$PROJECT_TYPE|g")
+
+                # テストコマンドプレースホルダー置換
+                if [ -n "$TEST_COMMAND" ]; then
+                    TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__TEST_COMMAND_PLACEHOLDER__|# テスト実行: $TEST_COMMAND|")
+                else
+                    TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__TEST_COMMAND_PLACEHOLDER__||")
+                fi
+
+                # リントコマンドプレースホルダー置換
+                if [ -n "$LINT_COMMAND" ]; then
+                    TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__LINT_COMMAND_PLACEHOLDER__|# リント: $LINT_COMMAND|")
+                else
+                    TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__LINT_COMMAND_PLACEHOLDER__||")
+                fi
+
+                # 型チェックコマンドプレースホルダー置換
+                if [ -n "$TYPE_CHECK_COMMAND" ]; then
+                    TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__TYPE_CHECK_COMMAND_PLACEHOLDER__|# 型チェック: $TYPE_CHECK_COMMAND|")
+                else
+                    TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__TYPE_CHECK_COMMAND_PLACEHOLDER__||")
+                fi
+
+                # ビルドコマンドプレースホルダー置換
+                if [ -n "$BUILD_COMMAND" ]; then
+                    TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__BUILD_COMMAND_PLACEHOLDER__|# ビルド: $BUILD_COMMAND|")
+                else
+                    TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | sed "s|__BUILD_COMMAND_PLACEHOLDER__||")
+                fi
+
+                # セパレーターと設定追加
+                echo "" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
+                echo "# ================================================================" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
+                echo "# Quality Guardian Configuration (Auto-generated)" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
+                echo "# ================================================================" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
+                echo "$TEMPLATE_CONTENT" >> "$CLAUDE_DIR/.claude/CLAUDE.md"
+
+                echo "CLAUDE.mdを安全に更新しました（テンプレート使用）"
+            else
+                echo "警告: テンプレートファイルが利用できません。CLAUDE.mdの更新をスキップします。"
+            fi
         fi
     fi
 else
-    echo "新しいCLAUDE.mdを作成します"
+    # 新規インストールの場合
+    echo "新しいCLAUDE.mdを作成します（v1.3.38アーキテクチャ）"
+
+    # .claude/rules/must-rules.md を配置
+    if [ -n "$MUST_RULES_FILE" ] && [ -f "$MUST_RULES_FILE" ]; then
+        cp "$MUST_RULES_FILE" "$CLAUDE_DIR/.claude/rules/must-rules.md"
+        echo "✓ MUST Rules配置: .claude/rules/must-rules.md"
+    fi
 
     # テンプレートファイルを読み込んで新規作成
     if [ -n "$TEMPLATE_FILE" ] && [ -f "$TEMPLATE_FILE" ]; then
@@ -1199,10 +1296,18 @@ else
 
         # ファイルに書き込み
         echo "$TEMPLATE_CONTENT" > "$CLAUDE_DIR/.claude/CLAUDE.md"
-        echo "CLAUDE.mdを作成しました（テンプレート使用）"
+        echo "✓ CLAUDE.md作成（簡素化版、625行）"
     else
         echo "警告: テンプレートファイルが利用できません。CLAUDE.mdの作成をスキップします。"
     fi
+fi
+
+# 一時ファイルのクリーンアップ
+if [ -f "/tmp/claude-template-$$.md" ]; then
+    rm -f "/tmp/claude-template-$$.md"
+fi
+if [ -f "/tmp/must-rules-$$.md" ]; then
+    rm -f "/tmp/must-rules-$$.md"
 fi
 
 # 一時ファイルのクリーンアップ
