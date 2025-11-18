@@ -557,6 +557,58 @@ quality-guardian が lint 実行
 
 ---
 
+# 過去の重要な違反事例（再発防止のための記録）
+
+## MUST Rule 16違反: templates/hooks/ 同期漏れ（v1.3.39 → v1.3.40で修正）
+
+### 違反内容
+
+**発生日**: 2025-01-18
+**バージョン**: v1.3.39実装時
+
+v1.3.39でCRITICAL Rules（13個の簡略版）を実装した際：
+- ✅ `.claude/hooks/user-prompt-submit.sh` を更新（CRITICAL Rules形式、70行）
+- ❌ `templates/hooks/user-prompt-submit.sh` を更新せず（旧形式、75行のまま）
+
+**MUST Rule 16違反**: "`.claude/hooks/* ⟷ templates/hooks/*` 同期義務" を守らなかった
+
+### 根本原因
+
+1. **TodoListの不備**: v1.3.39のTodoListに templates/ 同期タスクが含まれていなかった
+2. **Rule 16確認漏れ**: 実装前にMUST Rule 16を確認しなかった
+3. **焦点の狭さ**: `.claude/hooks/` のみに集中し、templates/ を見落とした
+
+### 影響範囲
+
+**深刻な影響:**
+- 他のプロジェクトが quality-guardian をインストールした場合、旧形式のhookがコピーされる
+- CRITICAL Rules（13個簡略版）が表示されない
+- v1.3.39の改善が他のプロジェクトに伝わらない
+- Quality Guardian自体が品質ルールを違反（深刻な矛盾）
+
+### 対策（v1.3.40で実施）
+
+**即時対応:**
+1. ✅ `templates/hooks/user-prompt-submit.sh` を CRITICAL Rules 形式に更新（94行）
+2. ✅ `.claude-template.md` に応答テンプレート追加
+3. ✅ この違反事例をCLAUDE.mdに記録（MUST Rule 12実践）
+
+**再発防止策:**
+1. **実装前チェック**: `.claude/hooks/` 修正時は必ず MUST Rule 16 を確認
+2. **TodoList強化**: templates/ 同期を明示的にタスクに含める
+3. **ペアチェック**: 実装後に `.claude/` と `templates/` を比較確認
+4. **将来的改善**: 自動同期チェックスクリプトの導入を検討
+
+### 教訓
+
+**「Quality Guardian tool itself violated quality rules」**
+- 品質管理ツールが自ら品質ルールを違反する深刻な矛盾
+- ルール強制システム自体にも強制が必要
+- MUST Rule 16（同期義務）の重要性を再認識
+- MUST Rule 12（再発防止義務）の実践例
+
+---
+
 # 開発時の心構え
 
 1. **品質管理ツールの開発者として**
@@ -625,6 +677,6 @@ quality-guardian が lint 実行
 
 ---
 
-**Current Version: 1.3.39**
+**Current Version: 1.3.40**
 **Last Updated: 2025-01-18**
 **Architecture: 3-Layer Hierarchical Rule System**
