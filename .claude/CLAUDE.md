@@ -146,6 +146,42 @@ pushしますか？
 - ユーザー: 「はい」→ push実行
 - ユーザー: 「いいえ」→ pushしない、ローカルに残す
 
+### 自動PR作成・マージ（このプロジェクト専用・重要）
+
+**このai-quality-guardianプロジェクト専用の特別ルール:**
+
+このプロジェクトでは、「Push前の確認（必須）」の例外として、**featureブランチ作業完了後に自動的にPRを作成・マージすること**。
+
+**必須手順:**
+
+1. **作業完了後、自動的にpush**
+   ```bash
+   git push -u origin feature/xxx
+   ```
+
+2. **GitHub CLIでPRを自動作成**
+   ```bash
+   gh pr create --base main --title "タイトル" --body "説明"
+   ```
+
+3. **PRを自動マージ**
+   ```bash
+   gh pr merge --merge --delete-branch
+   ```
+
+4. **remoteブランチの確認**
+   ```bash
+   git branch -r | grep feature/
+   ```
+
+   - featureブランチが残っていないことを確認
+   - 残っている場合は削除
+
+**重要な注意点:**
+- この自動PR作成・マージは**このai-quality-guardianプロジェクトのみ**の特別ルール
+- 他のプロジェクトでは通常の「Push前の確認（必須）」フローに従う
+- remoteは常にfeatureブランチが無い状態を保つ
+
 ### コミット署名の禁止（重要）
 
 **Pull RequestやCommitで署名を付加しない:**
@@ -2521,6 +2557,6 @@ quality-guardian が lint 実行
 
 ---
 
-**Current Version: 1.3.34**
-**Last Updated: 2025-01-18**
+**Current Version: 1.3.36**
+**Last Updated: 2025-11-18**
 **Architecture: 3-Layer Hierarchical Rule System**
