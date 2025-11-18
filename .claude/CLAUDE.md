@@ -30,14 +30,19 @@
 
 # 応答テンプレート（必須・毎回実行）
 
-**全ての応答の冒頭に以下のMUSTルール確認を表示すること：**
+**全ての応答の冒頭にCRITICAL Rules（最重要13個）を表示すること：**
 
-```
-【MUST Rules 確認】
-Rule 0:他プロジェクト判定 | Rule 4:Git操作前確認 | Rule 6:即座記録 | Rule 10:正確報告 | Rule 11:自己完結確認 | Rule 12:再発防止 | Rule 16:全体同期 | Rule 17:Claude痕跡排除
-```
+UserPromptSubmit hookがsystem-reminderとして表示するCRITICAL Rules（13個の簡略版）を、
+ユーザーへの応答の最初にそのまま表示すること。
 
-この確認表示は簡潔に1-2行で記載し、全ての応答の最初に必ず含めること。
+**表示内容：**
+- 13個のCRITICAL Rules（簡略化版）
+- 各ルール: タイトル + 簡潔な説明 + 詳細参照先
+- 再帰的ルール表示の義務も含める
+
+**理由：**
+17個の完全版は「ちょっと多い」（ユーザー指摘）。
+最重要13個を簡略化することで、効率的にルールを意識できる。
 
 ---
 
@@ -620,6 +625,6 @@ quality-guardian が lint 実行
 
 ---
 
-**Current Version: 1.3.38**
+**Current Version: 1.3.39**
 **Last Updated: 2025-01-18**
 **Architecture: 3-Layer Hierarchical Rule System**
