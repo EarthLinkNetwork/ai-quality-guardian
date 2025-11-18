@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.3.43"
+# version: "1.3.44"
 
 set -e
 
@@ -300,7 +300,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.3.43"
+CURRENT_VERSION="1.3.44"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -527,7 +527,7 @@ if [ "$INSTALL_MODE" = "team" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.3.43",
+  "version": "1.3.44",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -1018,6 +1018,55 @@ else
         echo "警告: hook scriptのダウンロードに失敗しました"
     }
     chmod +x "$HOOK_SCRIPT"
+fi
+
+# Personal Mode時: 子プロジェクトの .claude/settings.json を自動更新
+if [ "$INSTALL_MODE" = "personal" ]; then
+    echo ""
+    echo "📋 Personal Mode: 子プロジェクトのhook設定を更新中..."
+
+    # 親ディレクトリ配下の全ディレクトリを検索（1階層のみ）
+    for project_dir in "$CLAUDE_DIR"/*/; do
+        # .claude/settings.json が存在するか確認
+        if [ -f "${project_dir}.claude/settings.json" ]; then
+            PROJECT_NAME=$(basename "$project_dir")
+            echo "  - ${PROJECT_NAME} のhook設定を更新..."
+
+            PROJECT_SETTINGS="${project_dir}.claude/settings.json"
+
+            # バックアップ作成
+            cp "$PROJECT_SETTINGS" "${PROJECT_SETTINGS}.backup-$(date +%Y%m%d-%H%M%S)"
+
+            # jqがあればJSONとして処理
+            if command -v jq &> /dev/null; then
+                # 既存のUserPromptSubmit hookを確認
+                if jq -e '.hooks.UserPromptSubmit' "$PROJECT_SETTINGS" > /dev/null 2>&1; then
+                    # 親ディレクトリのhookが既に登録されているか確認
+                    if jq -e '.hooks.UserPromptSubmit[].hooks[] | select(.command == "$CLAUDE_PROJECT_DIR/../.claude/hooks/user-prompt-submit.sh")' "$PROJECT_SETTINGS" > /dev/null 2>&1; then
+                        echo "    ✓ 既に登録済み（スキップ）"
+                    else
+                        # 親ディレクトリのhookを追加
+                        jq '.hooks.UserPromptSubmit[0].hooks += [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/../.claude/hooks/user-prompt-submit.sh"}]' \
+                            "$PROJECT_SETTINGS" > "${PROJECT_SETTINGS}.tmp" && \
+                        mv "${PROJECT_SETTINGS}.tmp" "$PROJECT_SETTINGS"
+                        echo "    ✓ hook設定を追加しました"
+                    fi
+                else
+                    # UserPromptSubmit hookセクション自体がない場合は作成
+                    jq '.hooks.UserPromptSubmit = [{"hooks": [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/../.claude/hooks/user-prompt-submit.sh"}]}]' \
+                        "$PROJECT_SETTINGS" > "${PROJECT_SETTINGS}.tmp" && \
+                    mv "${PROJECT_SETTINGS}.tmp" "$PROJECT_SETTINGS"
+                    echo "    ✓ hook設定を作成しました"
+                fi
+            else
+                echo "    警告: jq がインストールされていません。手動で設定を追加してください。"
+                echo "    ファイル: ${PROJECT_SETTINGS}"
+                echo '    追加内容: {"type": "command", "command": "$CLAUDE_PROJECT_DIR/../.claude/hooks/user-prompt-submit.sh"}'
+            fi
+        fi
+    done
+
+    echo "  Personal Mode子プロジェクト設定完了"
 fi
 
 # settings.jsonの作成または更新
