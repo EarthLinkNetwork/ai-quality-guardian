@@ -293,3 +293,134 @@ graph TD
 - 実装方法によってビジネス価値が異なり、正しい選択が判断不能
 
 **判定ロジック**: 技術的に解決可能な問題は全て修正し、ビジネス判断が必要な場合のみblocked。
+
+---
+
+## quality-guardian プロジェクト専用チェック
+
+**このセクションはquality-guardian自体（/Users/masa/dev/ai/scripts/quality-guardian/）の品質チェックに適用されます。**
+
+### 対象プロジェクト検出
+
+以下の条件でquality-guardianプロジェクトを判定：
+- パスに `/quality-guardian/` が含まれる
+- `quality-guardian.js` または `install.sh` が存在する
+
+### 必須品質チェック（フェーズ）
+
+#### Phase 1: シェルスクリプト Syntax Check
+
+**対象ファイル:**
+```bash
+quality-guardian/install.sh
+quality-guardian/templates/hooks/*.sh
+.claude/hooks/*.sh
+```
+
+**チェックコマンド:**
+```bash
+bash -n quality-guardian/install.sh
+bash -n quality-guardian/templates/hooks/user-prompt-submit.sh
+find .claude/hooks -name "*.sh" -exec bash -n {} \;
+```
+
+**エラー対応:**
+- syntax error検出時は即座に該当行を確認
+- 不足している `fi`, `done`, `esac` 等を追加
+- 修正後、再度 `bash -n` でチェック
+
+#### Phase 2: Node.js スクリプト基本チェック
+
+**対象ファイル:**
+```bash
+quality-guardian/quality-guardian.js
+quality-guardian/modules/*.js
+```
+
+**チェックコマンド:**
+```bash
+node --check quality-guardian/quality-guardian.js
+find quality-guardian/modules -name "*.js" -exec node --check {} \;
+```
+
+**エラー対応:**
+- SyntaxError検出時は該当行を修正
+- CommonJS形式（require/module.exports）の一貫性を確認
+
+#### Phase 3: テンプレート同期チェック
+
+**重要: MUST Rule 16（問題解決後の全体確認義務）に従う**
+
+**チェック項目:**
+```bash
+# templates/hooks/ と .claude/hooks/ の同期確認
+diff -r quality-guardian/templates/hooks/ .claude/hooks/
+
+# install.sh の version と各ファイルのversionが一致するか
+grep -h "version" quality-guardian/VERSION quality-guardian/package.json quality-guardian/quality-guardian.js quality-guardian/install.sh
+```
+
+**エラー対応:**
+- テンプレートと実体が不一致の場合、実体をテンプレートに同期
+- バージョン不一致の場合、全ファイルを統一
+
+#### Phase 4: インストーラー実行テスト
+
+**テストコマンド:**
+```bash
+# Personal Modeテスト（dry-run）
+cd /tmp
+bash -x /Users/masa/dev/ai/scripts/quality-guardian/install.sh --dry-run
+
+# Syntax check
+bash -n /Users/masa/dev/ai/scripts/quality-guardian/install.sh
+```
+
+**エラー対応:**
+- `--dry-run` オプションが未実装の場合は実装を提案
+- エラー発生時は該当箇所を修正
+
+### 自動修正ポリシー（quality-guardian専用）
+
+#### 自動修正範囲
+- シェルスクリプトのsyntax error（明確な場合）
+  - 不足している `fi`, `done`, `esac` の追加
+  - クォートミスの修正
+- ファイル同期（templates → 実体）
+- バージョン統一
+
+#### 手動修正範囲
+- ロジックに関わるエラー（仕様確認が必要）
+- install.shの新機能追加
+- 複雑な構造的問題
+
+### 完了条件（quality-guardian専用）
+
+以下の全てがパスした場合のみ `approved`:
+
+✅ Phase 1: 全シェルスクリプトが `bash -n` でエラー0
+✅ Phase 2: 全JavaScriptファイルが `node --check` でエラー0
+✅ Phase 3: テンプレートと実体が同期、バージョンが統一
+✅ Phase 4: install.shが実行可能（dry-runまたは実環境）
+
+### 実行例
+
+```bash
+# quality-fixer起動時の自動判定
+if [[ $(pwd) == *"/quality-guardian"* ]]; then
+  echo "quality-guardian専用チェックを実行します"
+
+  # Phase 1
+  bash -n quality-guardian/install.sh || exit 1
+  bash -n quality-guardian/templates/hooks/*.sh || exit 1
+
+  # Phase 2
+  node --check quality-guardian/quality-guardian.js || exit 1
+
+  # Phase 3
+  diff -r quality-guardian/templates/hooks/ .claude/hooks/ || echo "Warning: テンプレート不一致"
+
+  # Phase 4
+  bash -n quality-guardian/install.sh && echo "✅ install.sh syntax OK"
+fi
+```

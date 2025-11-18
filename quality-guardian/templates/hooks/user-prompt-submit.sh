@@ -1,32 +1,88 @@
 #!/bin/bash
-# 各プロジェクト用 user-prompt-submit hook テンプレート
-# このファイルを各プロジェクトの .claude/hooks/ にコピーして使用する
-#
-# インストール方法:
-#   1. このファイルを各プロジェクトの .claude/hooks/user-prompt-submit.sh にコピー
-#   2. chmod +x .claude/hooks/user-prompt-submit.sh
-#   （編集不要 - プロジェクト名とパスは自動検出されます）
+# quality-guardian用 user-prompt-submit hook
+# 別プロジェクトのログを検出して、修正ではなく分析を促す
 
 set -e
 
 # 入力を読み取る（JSON形式）
 INPUT=$(cat)
 
+# デバッグ: 受け取った入力をログに出力
+echo "=== HOOK DEBUG $(date) ===" >> /tmp/quality-guardian-hook-debug.log
+echo "$INPUT" >> /tmp/quality-guardian-hook-debug.log
+
 # JSONから prompt フィールドを抽出
 USER_MESSAGE=$(echo "$INPUT" | jq -r '.prompt // empty')
 
-# ============================================================================
-# プロジェクト情報の自動検出
-# ============================================================================
+# このプロジェクトのパス
+THIS_PROJECT="/Users/masa/dev/ai/scripts"
 
-# このスクリプトのパス: .claude/hooks/user-prompt-submit.sh
-# プロジェクトルート: .claude/hooks/../../
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_PATH="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PROJECT_NAME="$(basename "$PROJECT_PATH")"
+# 検出パターン
+DETECTED=0
+
+# 1. 別プロジェクトのパス検出
+if echo "$USER_MESSAGE" | grep -qE '/Users/masa/dev/[^/]+/' | grep -qvE '/Users/masa/dev/ai/scripts'; then
+  DETECTED=1
+fi
+
+# 2. データベース・サーバーエラー検出
+if echo "$USER_MESSAGE" | grep -qE 'password authentication failed|FATAL.*password|pg_hba.conf|Connection terminated|cloudsqlsuperuser'; then
+  DETECTED=1
+fi
+
+# 3. Git worktree違反検出
+if echo "$USER_MESSAGE" | grep -qE 'git checkout -b|ブランチはw[or]ktreeで対応'; then
+  DETECTED=1
+fi
+
+# 4. Claude Code実行ログ検出（⏺マーク）
+if echo "$USER_MESSAGE" | grep -qE '⏺|Bash\(|Read\(|Edit\(|Write\('; then
+  DETECTED=1
+fi
+
+# 5. Bitbucket/GitHub URL検出
+if echo "$USER_MESSAGE" | grep -qE 'bitbucket\.org|github\.com.*pull/[0-9]+'; then
+  DETECTED=1
+fi
+
+# 検出時の対応
+if [ $DETECTED -eq 1 ]; then
+  cat <<'EOF'
+
+🚨🚨🚨 BLOCKER: 別プロジェクトのログを検出しました 🚨🚨🚨
+
+このメッセージには、このプロジェクト（quality-guardian）以外の情報が含まれています。
+
+【重要】
+- このプロジェクトのパス: /Users/masa/dev/ai/scripts/quality-guardian/
+- 別プロジェクトの問題を修正してはいけません
+- AI guardianとして分析のみ行ってください
+
+【検出されたパターン】
+以下のいずれかが検出されました：
+- 別プロジェクトのファイルパス
+- データベース・サーバーエラー（password authentication failed等）
+- Git worktree使用違反（git checkout -b等）
+- Claude Code実行ログ（⏺マーク等）
+- Bitbucket/GitHub URL
+
+【正しい対応】
+1. 「これは別プロジェクトのログです」と宣言
+2. project-context-guardianを起動してルール違反を分析
+3. quality-guardian自体を強化（ルール追加、サブエージェント改善）
+4. バージョン更新とコミット
+
+【絶対禁止】
+❌ 別プロジェクトのファイルを修正
+❌ 別プロジェクトのブランチを作成
+❌ 別プロジェクトの問題を解決
+❌ 「修正します」と反応
+
+EOF
+fi
 
 # ============================================================================
-# 全CRITICAL Rulesを毎回プロンプトに再表示（再帰的ルール表示）
+# 全MUST Rulesを毎回プロンプトに再表示（再帰的ルール表示）
 # ============================================================================
 
 cat <<'EOF'
@@ -88,6 +144,4 @@ Playwrightで自分で確認。ユーザーに依頼禁止。
 
 EOF
 
-# 元のJSON入力を標準出力に渡す（AIは処理を継続）
-echo "$INPUT"
 exit 0

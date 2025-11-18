@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.3.41"
+# version: "1.3.42"
 
 set -e
 
@@ -300,7 +300,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.3.41"
+CURRENT_VERSION="1.3.42"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -527,7 +527,7 @@ if [ "$INSTALL_MODE" = "team" ]; then
     # 新規インストール
     cat > .quality-guardian.json << 'EOF'
 {
-  "version": "1.2.64",
+  "version": "1.3.42",
   "enabled": true,
   "modules": {
     "baseline": {
@@ -1201,10 +1201,97 @@ if [ -f "$CLAUDE_DIR/.claude/CLAUDE.md" ]; then
             echo "Quality Guardian設定は既に存在します"
         else
             echo "既存CLAUDE.mdにQuality Guardian設定を追加します"
+
+            # 相反ルールチェック
+            echo ""
+            echo "既存CLAUDE.mdとの相反チェックを実行中..."
+            CONFLICTS_FOUND=false
+            CONFLICT_DETAILS=""
+
+            # テストコマンドの競合チェック
+            if [ -n "$TEST_COMMAND" ] && grep -q "テスト実行:" "$CLAUDE_DIR/.claude/CLAUDE.md"; then
+                EXISTING_TEST=$(grep "テスト実行:" "$CLAUDE_DIR/.claude/CLAUDE.md" | head -1)
+                CONFLICT_DETAILS="$CONFLICT_DETAILS\n  テストコマンド:"
+                CONFLICT_DETAILS="$CONFLICT_DETAILS\n    既存: $EXISTING_TEST"
+                CONFLICT_DETAILS="$CONFLICT_DETAILS\n    新規: テスト実行: $TEST_COMMAND"
+                CONFLICTS_FOUND=true
+            fi
+
+            # リントコマンドの競合チェック
+            if [ -n "$LINT_COMMAND" ] && grep -q "リント:" "$CLAUDE_DIR/.claude/CLAUDE.md"; then
+                EXISTING_LINT=$(grep "リント:" "$CLAUDE_DIR/.claude/CLAUDE.md" | head -1)
+                CONFLICT_DETAILS="$CONFLICT_DETAILS\n  リントコマンド:"
+                CONFLICT_DETAILS="$CONFLICT_DETAILS\n    既存: $EXISTING_LINT"
+                CONFLICT_DETAILS="$CONFLICT_DETAILS\n    新規: リント: $LINT_COMMAND"
+                CONFLICTS_FOUND=true
+            fi
+
+            # 型チェックコマンドの競合チェック
+            if [ -n "$TYPE_CHECK_COMMAND" ] && grep -q "型チェック:" "$CLAUDE_DIR/.claude/CLAUDE.md"; then
+                EXISTING_TYPE=$(grep "型チェック:" "$CLAUDE_DIR/.claude/CLAUDE.md" | head -1)
+                CONFLICT_DETAILS="$CONFLICT_DETAILS\n  型チェックコマンド:"
+                CONFLICT_DETAILS="$CONFLICT_DETAILS\n    既存: $EXISTING_TYPE"
+                CONFLICT_DETAILS="$CONFLICT_DETAILS\n    新規: 型チェック: $TYPE_CHECK_COMMAND"
+                CONFLICTS_FOUND=true
+            fi
+
+            # 相反が見つかった場合、ユーザーに確認
+            if [ "$CONFLICTS_FOUND" = true ]; then
+                echo ""
+                echo "⚠️  既存のCLAUDE.mdに相反する設定があります："
+                echo -e "$CONFLICT_DETAILS"
+                echo ""
+                echo "どちらの設定を採用しますか？"
+                echo "  1) 既存の設定を維持（Quality Guardian設定を追加しない）"
+                echo "  2) 新規の設定を採用（既存の設定を上書き）"
+                echo "  3) マージ（Quality Guardian設定を追加、既存も保持）"
+                echo ""
+                read -p "選択してください (1/2/3): " CONFLICT_CHOICE
+
+                case "$CONFLICT_CHOICE" in
+                    1)
+                        echo ""
+                        echo "既存の設定を維持します。Quality Guardian設定の追加をスキップします。"
+                        echo ""
+                        # 追記処理をスキップするため、早期リターン的な処理
+                        # このブロック全体をスキップするフラグを設定
+                        SKIP_QG_CONFIG=true
+                        ;;
+                    2)
+                        echo ""
+                        echo "新規の設定を採用します。既存の相反する設定を削除します。"
+                        # 既存の相反する行を削除
+                        if [ -n "$TEST_COMMAND" ]; then
+                            sed -i.tmp '/テスト実行:/d' "$CLAUDE_DIR/.claude/CLAUDE.md"
+                        fi
+                        if [ -n "$LINT_COMMAND" ]; then
+                            sed -i.tmp '/リント:/d' "$CLAUDE_DIR/.claude/CLAUDE.md"
+                        fi
+                        if [ -n "$TYPE_CHECK_COMMAND" ]; then
+                            sed -i.tmp '/型チェック:/d' "$CLAUDE_DIR/.claude/CLAUDE.md"
+                        fi
+                        rm -f "$CLAUDE_DIR/.claude/CLAUDE.md.tmp"
+                        SKIP_QG_CONFIG=false
+                        ;;
+                    3|*)
+                        echo ""
+                        echo "マージモードで追加します。既存の設定とQuality Guardian設定の両方を保持します。"
+                        SKIP_QG_CONFIG=false
+                        ;;
+                esac
+            else
+                echo "✓ 相反する設定は見つかりませんでした"
+                SKIP_QG_CONFIG=false
+            fi
+
             # バックアップ作成
             cp "$CLAUDE_DIR/.claude/CLAUDE.md" "$CLAUDE_DIR/.claude/CLAUDE.md.backup"
 
-            # テンプレートファイルを読み込んで既存ファイルに追記
+            # 相反チェックの結果に応じて追記処理をスキップ
+            if [ "$SKIP_QG_CONFIG" = true ]; then
+                echo "Quality Guardian設定の追加をスキップしました"
+            else
+                # テンプレートファイルを読み込んで既存ファイルに追記
             if [ -n "$TEMPLATE_FILE" ] && [ -f "$TEMPLATE_FILE" ]; then
                 # プレースホルダーを置換
                 TEMPLATE_CONTENT=$(cat "$TEMPLATE_FILE" | \
@@ -1249,6 +1336,7 @@ if [ -f "$CLAUDE_DIR/.claude/CLAUDE.md" ]; then
             else
                 echo "警告: テンプレートファイルが利用できません。CLAUDE.mdの更新をスキップします。"
             fi
+            fi  # SKIP_QG_CONFIGのif文終了
         fi
     fi
 else
