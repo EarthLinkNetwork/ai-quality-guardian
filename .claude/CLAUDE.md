@@ -2557,6 +2557,6 @@ quality-guardian が lint 実行
 
 ---
 
-**Current Version: 1.3.36**
-**Last Updated: 2025-11-18**
+**Current Version: 1.3.37**
+**Last Updated: 2025-01-18**
 **Architecture: 3-Layer Hierarchical Rule System**
