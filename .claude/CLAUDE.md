@@ -725,6 +725,6 @@ v1.3.39でCRITICAL Rules（13個の簡略版）を実装した際：
 
 ---
 
-**Current Version: 1.3.45**
+**Current Version: 1.3.46**
 **Last Updated: 2025-11-18**
 **Architecture: 3-Layer Hierarchical Rule System**

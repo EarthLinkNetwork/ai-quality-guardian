@@ -14,8 +14,14 @@ echo "$INPUT" >> /tmp/quality-guardian-hook-debug.log
 # JSONから prompt フィールドを抽出
 USER_MESSAGE=$(echo "$INPUT" | jq -r '.prompt // empty')
 
-# このプロジェクトのパス
-THIS_PROJECT="/Users/masa/dev/ai/scripts"
+# このプロジェクトのパス（動的解決）
+if [ -n "$CLAUDE_PROJECT_DIR" ]; then
+    THIS_PROJECT="$CLAUDE_PROJECT_DIR"
+else
+    # フォールバック: hookスクリプトの場所から推測
+    # .claude/hooks/user-prompt-submit.sh → ../../（プロジェクトルート）
+    THIS_PROJECT="$(cd "$(dirname "$0")/../.." && pwd)"
+fi
 
 # 検出パターン
 DETECTED=0
