@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.3.55"
+# version: "1.3.56"
 
 set -e
 
@@ -398,7 +398,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.3.55"
+CURRENT_VERSION="1.3.56"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -852,20 +852,92 @@ if [ -d ".git" ]; then
                 2)
                     # 上書き
                     cat > .git/hooks/pre-commit << 'EOF'
-#!/bin/sh
+#!/bin/bash
 # Quality Guardian pre-commit hook
+# lint, test, typecheck, build を実行してコミット品質を保証
 
-# 品質チェックを実行
-if [ -x "./quality-guardian" ]; then
-    echo "Quality Guardian チェック実行中..."
-    ./quality-guardian check --quick
+set -e
 
-    if [ $? -ne 0 ]; then
-        echo "品質チェックに失敗しました"
-        echo "修正するには: ./quality-guardian fix"
-        exit 1
-    fi
+echo "🔍 Quality Guardian pre-commit check..."
+
+# エラーカウント
+ERRORS=0
+
+# package.jsonが存在するか確認
+if [ ! -f "package.json" ]; then
+  echo "⚠️  package.json not found, skipping npm checks"
+  exit 0
 fi
+
+# 1. Lint実行（存在する場合）
+if grep -q '"lint"' package.json 2>/dev/null; then
+  echo "  running: npm run lint"
+  if npm run lint 2>&1; then
+    echo "  ✅ lint passed"
+  else
+    echo "  ❌ lint failed"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "  ⏭  lint script not found, skipping"
+fi
+
+# 2. Test実行（存在する場合）
+if grep -q '"test"' package.json 2>/dev/null; then
+  # "test": "echo \"Error: no test specified\" && exit 1" の場合はスキップ
+  if grep -q 'Error: no test specified' package.json 2>/dev/null; then
+    echo "  ⏭  test script not implemented, skipping"
+  else
+    echo "  running: npm test"
+    if npm test 2>&1; then
+      echo "  ✅ test passed"
+    else
+      echo "  ❌ test failed"
+      ERRORS=$((ERRORS + 1))
+    fi
+  fi
+else
+  echo "  ⏭  test script not found, skipping"
+fi
+
+# 3. TypeCheck実行（存在する場合）
+if grep -q '"typecheck"' package.json 2>/dev/null; then
+  echo "  running: npm run typecheck"
+  if npm run typecheck 2>&1; then
+    echo "  ✅ typecheck passed"
+  else
+    echo "  ❌ typecheck failed"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "  ⏭  typecheck script not found, skipping"
+fi
+
+# 4. Build実行（存在する場合）
+if grep -q '"build"' package.json 2>/dev/null; then
+  echo "  running: npm run build"
+  if npm run build 2>&1; then
+    echo "  ✅ build passed"
+  else
+    echo "  ❌ build failed"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "  ⏭  build script not found, skipping"
+fi
+
+# 結果判定
+if [ $ERRORS -gt 0 ]; then
+  echo ""
+  echo "❌ Quality Guardian: $ERRORS check(s) failed"
+  echo ""
+  echo "修正してから再度コミットしてください。"
+  echo "または、緊急の場合は --no-verify でスキップできます（非推奨）。"
+  exit 1
+fi
+
+echo "✅ All Quality Guardian checks passed!"
+exit 0
 EOF
                     chmod +x .git/hooks/pre-commit
                     echo "Git pre-commit hook を上書きしました"
@@ -898,20 +970,92 @@ EOF
     else
         # 既存hookがない場合は新規作成
         cat > .git/hooks/pre-commit << 'EOF'
-#!/bin/sh
+#!/bin/bash
 # Quality Guardian pre-commit hook
+# lint, test, typecheck, build を実行してコミット品質を保証
 
-# 品質チェックを実行
-if [ -x "./quality-guardian" ]; then
-    echo "Quality Guardian チェック実行中..."
-    ./quality-guardian check --quick
+set -e
 
-    if [ $? -ne 0 ]; then
-        echo "品質チェックに失敗しました"
-        echo "修正するには: ./quality-guardian fix"
-        exit 1
-    fi
+echo "🔍 Quality Guardian pre-commit check..."
+
+# エラーカウント
+ERRORS=0
+
+# package.jsonが存在するか確認
+if [ ! -f "package.json" ]; then
+  echo "⚠️  package.json not found, skipping npm checks"
+  exit 0
 fi
+
+# 1. Lint実行（存在する場合）
+if grep -q '"lint"' package.json 2>/dev/null; then
+  echo "  running: npm run lint"
+  if npm run lint 2>&1; then
+    echo "  ✅ lint passed"
+  else
+    echo "  ❌ lint failed"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "  ⏭  lint script not found, skipping"
+fi
+
+# 2. Test実行（存在する場合）
+if grep -q '"test"' package.json 2>/dev/null; then
+  # "test": "echo \"Error: no test specified\" && exit 1" の場合はスキップ
+  if grep -q 'Error: no test specified' package.json 2>/dev/null; then
+    echo "  ⏭  test script not implemented, skipping"
+  else
+    echo "  running: npm test"
+    if npm test 2>&1; then
+      echo "  ✅ test passed"
+    else
+      echo "  ❌ test failed"
+      ERRORS=$((ERRORS + 1))
+    fi
+  fi
+else
+  echo "  ⏭  test script not found, skipping"
+fi
+
+# 3. TypeCheck実行（存在する場合）
+if grep -q '"typecheck"' package.json 2>/dev/null; then
+  echo "  running: npm run typecheck"
+  if npm run typecheck 2>&1; then
+    echo "  ✅ typecheck passed"
+  else
+    echo "  ❌ typecheck failed"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "  ⏭  typecheck script not found, skipping"
+fi
+
+# 4. Build実行（存在する場合）
+if grep -q '"build"' package.json 2>/dev/null; then
+  echo "  running: npm run build"
+  if npm run build 2>&1; then
+    echo "  ✅ build passed"
+  else
+    echo "  ❌ build failed"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "  ⏭  build script not found, skipping"
+fi
+
+# 結果判定
+if [ $ERRORS -gt 0 ]; then
+  echo ""
+  echo "❌ Quality Guardian: $ERRORS check(s) failed"
+  echo ""
+  echo "修正してから再度コミットしてください。"
+  echo "または、緊急の場合は --no-verify でスキップできます（非推奨）。"
+  exit 1
+fi
+
+echo "✅ All Quality Guardian checks passed!"
+exit 0
 EOF
 
         chmod +x .git/hooks/pre-commit
