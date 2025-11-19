@@ -256,14 +256,14 @@ git commit -m "feat: Add new feature"
 
 ---
 
-# 🚨 MUST Rules（Main AI - 17個）
+# 🚨 MUST Rules（Main AI - 18個）
 
 **詳細なルールは `.claude/rules/must-rules.md` を参照してください。**
 **UserPromptSubmit hookが毎回全てのルールを表示します。**
 
 ## ルール一覧（概要のみ）
 
-以下の17個のルールは**絶対に守ること**：
+以下の18個のルールは**絶対に守ること**：
 
 ### 0. プロジェクトコンテキスト確認義務（最優先）
 ユーザーの入力を見た瞬間に、これが「このプロジェクト」の話か「他のプロジェクト」の話かを判定する。他のプロジェクトの問題を解決しない。
@@ -318,6 +318,9 @@ Pull Requestの実装内容をまとめる際、全ての実装項目を確認�
 
 ### 17. Claude Code痕跡の完全排除（最重要）
 Claude Codeの実行痕跡（⏺マーク、内部ログ、ツール呼び出し等）を、ユーザーへの応答・ドキュメント・コミットメッセージ等に一切含めない。
+
+### 18. developmentブランチ保護義務（最重要）
+PR作成前に、developmentブランチとの差分を確認し、最近マージされた変更（1-2週間以内）を意図せず上書きしていないか検証する。development-branch-guardianサブエージェントを使用。
 
 ---
 
@@ -725,6 +728,6 @@ v1.3.39でCRITICAL Rules（13個の簡略版）を実装した際：
 
 ---
 
-**Current Version: 1.3.46**
+**Current Version: 1.3.47**
 **Last Updated: 2025-11-18**
 **Architecture: 3-Layer Hierarchical Rule System**
