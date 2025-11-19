@@ -1210,6 +1210,95 @@ AIは結果報告時に以下の問題行動をする：
 ❌ 「概ね成功しました」（曖昧）
 ```
 
+### CodeRabbitレビュー確認の詳細手順（重要）
+
+**CodeRabbitレビュー確認時の必須事項:**
+
+CodeRabbitのレビューコメント対応状況を確認する際、**最新のレビューサマリーだけを確認することを絶対禁止**。
+
+#### 厳守事項
+
+1. **全てのPRコメントを確認**
+   ```bash
+   # 最新レビューサマリーだけ確認（禁止）
+   gh pr view 1 --repo owner/repo --json reviews
+
+   # 全てのPRコメントを確認（必須）
+   gh api repos/owner/repo/pulls/1/comments \
+     --jq '.[] | select(.user.login == "coderabbitai" or .user.login == "coderabbitai[bot]") | {line: .line, path: .path, body: .body}'
+   ```
+
+2. **重要度レベルでフィルタリング**
+   ```bash
+   # Critical・Major・Minorの未解決コメントを抽出
+   gh api repos/owner/repo/pulls/1/comments \
+     --jq '.[] | select(.user.login == "coderabbitai" or .user.login == "coderabbitai[bot]") | select(.body | contains("🔴 Critical") or contains("🟠 Major") or contains("🟡 Minor")) | {severity: (.body | capture("(?<emoji>🔴|🟠|🟡) (?<level>Critical|Major|Minor)").level), path: .path, line: .line}'
+   ```
+
+3. **件数を正確にカウント**
+   ```bash
+   # Critical件数
+   critical_count=$(gh api repos/owner/repo/pulls/1/comments --jq '[.[] | select(.user.login == "coderabbitai" or .user.login == "coderabbitai[bot]") | select(.body | contains("🔴 Critical"))] | length')
+
+   # Major件数
+   major_count=$(gh api repos/owner/repo/pulls/1/comments --jq '[.[] | select(.user.login == "coderabbitai" or .user.login == "coderabbitai[bot]") | select(.body | contains("🟠 Major"))] | length')
+
+   # Minor件数
+   minor_count=$(gh api repos/owner/repo/pulls/1/comments --jq '[.[] | select(.user.login == "coderabbitai" or .user.login == "coderabbitai[bot]") | select(.body | contains("🟡 Minor"))] | length')
+   ```
+
+4. **正確に報告**
+   ```
+   ✅ 正しい報告:
+   「CodeRabbitレビューコメント確認結果：
+   - 🔴 Critical: 5件
+   - 🟠 Major: 17件
+   - 🟡 Minor: 8件
+   合計30件の未解決コメントがあります。」
+
+   ❌ 誤った報告:
+   「Actionable comments: 0件（全て対応済み）」
+   ← 最新レビューサマリーだけ見た結果、実際には30件残っている
+   ```
+
+#### 禁止事項
+
+```
+❌ 最新レビューサマリーだけを確認（gh pr view --json reviews）
+❌ 「Actionable comments: 0」を鵜呑みにする
+❌ 全てのPRコメントを確認せずに「全て対応済み」と報告
+❌ 証拠なしに「対応完了」と報告
+```
+
+#### 過去の問題例（v1.3.51で追加）
+
+**問題内容:**
+- AIが CodeRabbit レビュー確認時に最新のレビューサマリーだけを確認
+- 報告：「Actionable comments: 0件（全て対応済み）」
+- 実際：🔴 Critical: 5件、🟠 Major: 17件、🟡 Minor: 8件（合計30件が未解決）
+
+**ユーザーの指摘:**
+「⚠️ Potential issue | 🟡 Minor とかのこってますが、なにをみているのですか?」
+「レビュー対応したというけどよく確認かしてなくて、対応がのこっていたことが問題でしょ?」
+
+**根本原因:**
+- `gh pr view --json reviews` で最新レビューサマリーのみ確認
+- PRスレッド内の全コメントを確認しなかった
+- MUST Rule 10違反（検証結果の不正確な報告）
+
+**本来すべきだったこと:**
+1. `gh api repos/owner/repo/pulls/1/comments` で全てのPRコメントを取得
+2. CodeRabbit botのコメントをフィルタリング
+3. 🔴 Critical、🟠 Major、🟡 Minor の件数を正確にカウント
+4. 証拠に基づいて正確に報告
+
+#### なぜこれがMUST Rule 10に含まれるか
+
+- **証拠に基づかない報告**（最新サマリーだけを見た推測）
+- **失敗の隠蔽**（30件の未解決を「0件」と報告）
+- **ユーザーの信頼を損なう**（「全て対応済み」という虚偽報告）
+- **MUST Rule 12違反**（再発防止義務）により、この手順を追加
+
 ### 詳細ルール
 - verification-guardianが自動的にチェック（`.claude/agents/verification-guardian.md`）
 - 過去の問題例と対策（データベース検証の失敗隠蔽等）
