@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.3.52"
+# version: "1.3.53"
 
 set -e
 
@@ -300,7 +300,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.3.52"
+CURRENT_VERSION="1.3.53"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 
@@ -1018,6 +1018,29 @@ else
         echo "警告: hook scriptのダウンロードに失敗しました"
     }
     chmod +x "$HOOK_SCRIPT"
+fi
+
+# Personal Mode時: 子プロジェクトにもhookをインストール
+if [ "$INSTALL_MODE" = "personal" ]; then
+    echo ""
+    echo "📋 Personal Mode: 子プロジェクトにhookをインストール中..."
+
+    CHILD_HOOK_SCRIPT="$GIT_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh"
+    mkdir -p "$GIT_PROJECT_DIR/.claude/hooks"
+
+    if [ -f "$SCRIPT_DIR/templates/hooks/user-prompt-submit.sh" ]; then
+        cp "$SCRIPT_DIR/templates/hooks/user-prompt-submit.sh" "$CHILD_HOOK_SCRIPT"
+        chmod +x "$CHILD_HOOK_SCRIPT"
+        echo "  子プロジェクトにhook scriptをインストール: $CHILD_HOOK_SCRIPT"
+    else
+        # GitHubからダウンロード
+        echo "  GitHubからhook scriptをダウンロード中..."
+        GITHUB_HOOK="https://raw.githubusercontent.com/EarthLinkNetwork/ai-quality-guardian/main/quality-guardian/templates/hooks/user-prompt-submit.sh"
+        curl -sSL -o "$CHILD_HOOK_SCRIPT" "$GITHUB_HOOK" || {
+            echo "  警告: hook scriptのダウンロードに失敗しました"
+        }
+        chmod +x "$CHILD_HOOK_SCRIPT"
+    fi
 fi
 
 # Personal Mode時: 子プロジェクトの .claude/settings.json を自動更新
