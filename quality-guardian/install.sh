@@ -2,7 +2,7 @@
 
 # Quality Guardian インストーラー
 # 任意のプロジェクトに品質管理システムを導入
-# version: "1.3.54"
+# version: "1.3.55"
 
 set -e
 
@@ -13,6 +13,7 @@ CURRENT_DIR="$(pwd)"
 INSTALL_MODE="team"
 FORCE_INSTALL=false
 NON_INTERACTIVE=false
+UNINSTALL_MODE=false
 CLAUDE_DIR=""
 GIT_PROJECT_DIR=""
 
@@ -34,6 +35,22 @@ for arg in "$@"; do
         --non-interactive|--auto)
             NON_INTERACTIVE=true
             shift
+            ;;
+        --uninstall)
+            UNINSTALL_MODE=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [options]"
+            echo ""
+            echo "Options:"
+            echo "  --personal, --mode=personal   Personal Mode (親ディレクトリにインストール)"
+            echo "  --team, --mode=team           Team Mode (プロジェクト直接インストール・デフォルト)"
+            echo "  --force                       強制インストール（既存設定を上書き）"
+            echo "  --non-interactive, --auto     非対話モード"
+            echo "  --uninstall                   アンインストール"
+            echo "  --help, -h                    ヘルプ表示"
+            exit 0
             ;;
     esac
 done
@@ -273,6 +290,87 @@ else
     GIT_PROJECT_DIR="$PROJECT_DIR"
 fi
 
+# アンインストールモード
+if [ "$UNINSTALL_MODE" = true ]; then
+    echo "Quality Guardian アンインストール開始"
+    echo "対象プロジェクト: $PROJECT_DIR"
+    echo ""
+
+    cd "$PROJECT_DIR"
+
+    # 削除するファイル・ディレクトリのリスト
+    REMOVED_FILES=()
+
+    # 1. 設定ファイルの削除
+    if [ -f ".quality-guardian.json" ]; then
+        rm -f ".quality-guardian.json"
+        REMOVED_FILES+=(".quality-guardian.json")
+    fi
+
+    # 2. ベースラインファイルの削除
+    if [ -f ".quality-baseline.json" ]; then
+        rm -f ".quality-baseline.json"
+        REMOVED_FILES+=(".quality-baseline.json")
+    fi
+
+    # 3. quality-guardianスクリプトの削除
+    if [ -f "quality-guardian" ]; then
+        rm -f "quality-guardian"
+        REMOVED_FILES+=("quality-guardian")
+    fi
+
+    # 4. .quality-guardianディレクトリの削除
+    if [ -d ".quality-guardian" ]; then
+        rm -rf ".quality-guardian"
+        REMOVED_FILES+=(".quality-guardian/")
+    fi
+
+    # 5. Git pre-commitフックの削除（Team Modeの場合）
+    if [ -f ".git/hooks/pre-commit" ]; then
+        # Quality Guardianのフックかどうか確認
+        if grep -q "Quality Guardian" ".git/hooks/pre-commit" 2>/dev/null; then
+            rm -f ".git/hooks/pre-commit"
+            REMOVED_FILES+=(".git/hooks/pre-commit")
+        fi
+    fi
+
+    # 6. Claude Code hookの削除（Personal Modeの場合）
+    if [ -f ".claude/hooks/user-prompt-submit.sh" ]; then
+        rm -f ".claude/hooks/user-prompt-submit.sh"
+        REMOVED_FILES+=(".claude/hooks/user-prompt-submit.sh")
+    fi
+
+    # 7. CLAUDE.mdの削除（Team Modeでインストールした場合のみ）
+    if [ -f ".claude/CLAUDE.md" ] && grep -q "quality-guardian" ".claude/CLAUDE.md" 2>/dev/null; then
+        echo ""
+        echo "注意: .claude/CLAUDE.md にquality-guardian設定が含まれています"
+        echo "このファイルは削除しません（他の設定が含まれている可能性があるため）"
+        echo "手動で確認・編集してください"
+        echo ""
+    fi
+
+    # 削除結果の表示
+    if [ ${#REMOVED_FILES[@]} -gt 0 ]; then
+        echo "削除されたファイル:"
+        for file in "${REMOVED_FILES[@]}"; do
+            echo "  - $file"
+        done
+        echo ""
+        echo "アンインストールが完了しました"
+    else
+        echo "削除するファイルが見つかりませんでした"
+        echo "Quality Guardianはインストールされていない可能性があります"
+    fi
+
+    echo ""
+    echo "注意事項:"
+    echo "  - lefthookプロジェクトの場合、'npx lefthook install' を実行して"
+    echo "    lefthookのpre-commitフックを再生成してください"
+    echo ""
+
+    exit 0
+fi
+
 echo "Quality Guardian インストール開始"
 echo "対象プロジェクト: $PROJECT_DIR"
 if [ "$INSTALL_MODE" = "personal" ]; then
@@ -300,7 +398,7 @@ fi
 cd "$PROJECT_DIR"
 
 # 既存インストールの確認とバージョンチェック
-CURRENT_VERSION="1.3.54"
+CURRENT_VERSION="1.3.55"
 INSTALLED_VERSION=""
 IS_INSTALLED=false
 

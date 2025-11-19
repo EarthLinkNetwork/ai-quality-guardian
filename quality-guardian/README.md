@@ -184,6 +184,43 @@ chmod +x quality-guardian
 ./quality-guardian init
 ```
 
+## アンインストール
+
+Quality Guardianをアンインストールする場合は、`--uninstall` オプションを使用します。
+
+### アンインストール手順
+
+```bash
+# プロジェクトディレクトリで実行
+cd your-project
+bash ~/dev/ai/scripts/quality-guardian/install.sh --uninstall
+```
+
+### 削除されるファイル
+
+- `.quality-guardian.json` - 設定ファイル
+- `.quality-baseline.json` - ベースラインファイル
+- `quality-guardian` - 実行スクリプト
+- `.quality-guardian/` - モジュールディレクトリ
+- `.git/hooks/pre-commit` - pre-commitフック（Quality Guardianのものの場合のみ）
+- `.claude/hooks/user-prompt-submit.sh` - Claude Code hook
+
+### 注意事項
+
+**lefthookプロジェクトの場合：**
+
+Quality Guardianのアンインストール後、lefthookのpre-commitフックを再生成してください。
+
+```bash
+npx lefthook install
+```
+
+これにより、lefthook標準のフックが再生成されます。
+
+**CLAUDE.mdについて：**
+
+`.claude/CLAUDE.md` にquality-guardian設定が含まれている場合、このファイルは自動削除されません（他の設定が含まれている可能性があるため）。必要に応じて手動で確認・編集してください。
+
 ## 使用方法
 
 ### 基本フロー
