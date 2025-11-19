@@ -27,7 +27,7 @@ fi
 DETECTED=0
 
 # 1. 別プロジェクトのパス検出
-if echo "$USER_MESSAGE" | grep -qE '/Users/masa/dev/[^/]+/' | grep -qvE '/Users/masa/dev/ai/scripts'; then
+if echo "$USER_MESSAGE" | grep -qE '/Users/masa/dev/[^/]+/' | grep -qvE "$THIS_PROJECT"; then
   DETECTED=1
 fi
 
