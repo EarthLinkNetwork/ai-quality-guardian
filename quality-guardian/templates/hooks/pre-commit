@@ -39,6 +39,7 @@ if [ -n "$STAGED_FILES" ]; then
     "quality-guardian/analysis-must-rules.md"
     "quality-guardian/templates/hooks/pre-commit"
     ".claude/hooks/pre-commit"
+    "quality-guardian/README.md"
   )
 
   # 各ファイルをチェック
