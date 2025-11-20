@@ -1,0 +1,85 @@
+#!/bin/bash
+# Quality Guardian post-commit hook
+# PR状態確認（MUST Rule 20）
+
+set -e
+
+echo "📋 Quality Guardian post-commit check..."
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# MUST Rule 20: PR状態確認
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+echo ""
+echo "  checking: PR status (MUST Rule 20)"
+
+# 現在のブランチ名を取得
+CURRENT_BRANCH=$(git branch --show-current)
+
+# 保護ブランチのリスト
+PROTECTED_BRANCHES=(
+  "main"
+  "master"
+  "develop"
+  "production"
+  "staging"
+)
+
+# 現在のブランチが保護ブランチの場合はチェックスキップ
+BRANCH_PROTECTED=0
+for PROTECTED in "${PROTECTED_BRANCHES[@]}"; do
+  if [ "$CURRENT_BRANCH" = "$PROTECTED" ]; then
+    BRANCH_PROTECTED=1
+    break
+  fi
+done
+
+if [ $BRANCH_PROTECTED -eq 1 ]; then
+  echo "  ⏭  protected branch, skipping PR check"
+  exit 0
+fi
+
+# featureブランチの場合、PR状態を確認
+if [[ "$CURRENT_BRANCH" =~ ^feature/ ]]; then
+  # リモートブランチが存在するか確認
+  if git ls-remote --exit-code --heads origin "$CURRENT_BRANCH" >/dev/null 2>&1; then
+    echo "  ✅ remote branch exists: origin/$CURRENT_BRANCH"
+
+    # gh コマンドが利用可能か確認
+    if command -v gh >/dev/null 2>&1; then
+      # PRが存在するか確認
+      PR_NUMBER=$(gh pr list --head "$CURRENT_BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+      if [ -n "$PR_NUMBER" ]; then
+        echo "  ✅ PR exists: #$PR_NUMBER"
+      else
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "⚠️  MUST Rule 20: PRが作成されていません"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "ブランチ: $CURRENT_BRANCH"
+        echo "リモート: origin/$CURRENT_BRANCH"
+        echo ""
+        echo "PRを作成してください："
+        echo "  gh pr create --base main --title \"Your PR Title\""
+        echo ""
+        echo "または、GitHub上でPRを作成してください："
+        echo "  https://github.com/$(git config --get remote.origin.url | sed 's/.*github.com[:/]\(.*\)\.git/\1/')/compare/$CURRENT_BRANCH"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      fi
+    else
+      echo "  ⚠️  gh command not found, skipping PR check"
+      echo "     Install gh: https://cli.github.com/"
+    fi
+  else
+    echo "  ⚠️  remote branch not pushed yet"
+    echo "     Push to remote: git push -u origin $CURRENT_BRANCH"
+  fi
+else
+  echo "  ⏭  not a feature branch, skipping PR check"
+fi
+
+echo ""
+echo "✅ Post-commit checks completed"
+exit 0
