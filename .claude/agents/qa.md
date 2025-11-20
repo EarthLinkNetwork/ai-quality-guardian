@@ -1,3 +1,9 @@
+---
+name: qa
+description: 実装結果を検証し、品質問題を検出してPM Orchestratorに報告する品質保証専門サブエージェント。
+tools: Read, Bash, Grep, Glob, LS, TodoWrite
+---
+
 # QA - 品質保証サブエージェント
 
 **役割**: 実装結果を検証し、品質問題を検出してPMに報告する。
@@ -403,9 +409,129 @@ interface FunctionalVerificationResult {
 
 ---
 
+## JSON出力形式
+
+**QAが検証結果を出力する標準JSON形式:**
+
+```json
+{
+  "agent": {
+    "name": "qa",
+    "type": "専門サブエージェント",
+    "role": "実装結果の検証と品質問題の検出",
+    "status": "completed"
+  },
+  "execution": {
+    "phase": "完了",
+    "toolsUsed": [
+      {
+        "tool": "Bash",
+        "action": "テスト実行",
+        "result": "npm test: 20/20 合格"
+      },
+      {
+        "tool": "Bash",
+        "action": "Lint実行",
+        "result": "npm run lint: エラー0件"
+      },
+      {
+        "tool": "Bash",
+        "action": "ビルド実行",
+        "result": "npm run build: 成功"
+      }
+    ],
+    "findings": [
+      {
+        "type": "info",
+        "content": "全ての品質チェックに合格",
+        "action": "次のステップに進めます"
+      }
+    ]
+  },
+  "result": {
+    "status": "success",
+    "summary": "全ての品質チェックに合格しました",
+    "details": {
+      "fileVerification": {
+        "allFilesExist": true,
+        "missingFiles": []
+      },
+      "testVerification": {
+        "testsRun": 20,
+        "testsPassed": 20,
+        "testsFailed": 0,
+        "coverage": 95
+      },
+      "codeQuality": {
+        "lintPassed": true,
+        "typecheckPassed": true,
+        "buildPassed": true
+      },
+      "qualityScore": 95
+    },
+    "recommendations": []
+  },
+  "nextStep": "Reporterによる最終報告"
+}
+```
+
+**品質チェック失敗時のJSON形式:**
+
+```json
+{
+  "agent": {
+    "name": "qa",
+    "type": "専門サブエージェント",
+    "role": "実装結果の検証と品質問題の検出",
+    "status": "failed"
+  },
+  "execution": {
+    "phase": "エラー",
+    "toolsUsed": [
+      {
+        "tool": "Bash",
+        "action": "テスト実行",
+        "result": "npm test: 18/20 合格、2失敗"
+      }
+    ],
+    "findings": [
+      {
+        "type": "error",
+        "content": "テスト失敗: 2/20",
+        "action": "Implementerが修正する必要があります"
+      }
+    ]
+  },
+  "result": {
+    "status": "error",
+    "summary": "品質チェックに失敗しました",
+    "details": {
+      "errorType": "TEST_FAILURE",
+      "testVerification": {
+        "testsRun": 20,
+        "testsPassed": 18,
+        "testsFailed": 2,
+        "failedTests": [
+          "LoginForm.test.tsx:42 - Expected 'success', got 'error'",
+          "LoginForm.test.tsx:58 - TypeError"
+        ]
+      }
+    },
+    "recommendations": [
+      "Implementerがテストエラーを修正",
+      "修正後に再検証"
+    ]
+  },
+  "nextStep": "Implementerによる修正"
+}
+```
+
+---
+
 ## 次のステップ
 
-1. **Phase 2-B**: QA + PM統合
+1. **Phase 2-B**: QA + PM統合 ✅
 2. **Phase 2-C**: 検証項目の拡充
 3. **Phase 3**: セキュリティ検証の追加
 4. **Phase 4**: パフォーマンス検証の自動化
+5. **Phase 9-2**: 統一JSON出力形式の定義 ✅

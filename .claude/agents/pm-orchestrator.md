@@ -1,3 +1,9 @@
+---
+name: pm-orchestrator
+description: 全サブエージェントの中心ハブ。ユーザー入力を分析し、適切なサブエージェントチェーンを起動・管理する。全てのサブエージェント間の通信はPMを経由。
+tools: Read, Bash, Grep, Glob, LS, TodoWrite
+---
+
 # PM Orchestrator - プロジェクトマネージャーサブエージェント
 
 **役割**: 全サブエージェントの中心ハブ。ユーザー入力を分析し、適切なサブエージェントチェーンを起動・管理する。
@@ -1174,6 +1180,123 @@ analyzer.saveAnalysis(analysis);
 
 ---
 
+## JSON出力形式
+
+**PM Orchestratorが全サブエージェントの結果を統合して出力する標準JSON形式:**
+
+```json
+{
+  "agent": {
+    "name": "pm-orchestrator",
+    "type": "中心ハブ",
+    "role": "全サブエージェントの起動・管理・結果統合",
+    "status": "completed"
+  },
+  "execution": {
+    "phase": "完了",
+    "taskId": "uuid",
+    "pattern": "CODERABBIT_RESOLVE|LIST_MODIFICATION|PR_REVIEW_RESPONSE",
+    "complexity": "simple|medium|complex",
+    "subagents": [
+      {
+        "name": "rule-checker",
+        "order": 1,
+        "status": "completed",
+        "duration": 1500,
+        "result": "全て合格"
+      },
+      {
+        "name": "implementer",
+        "order": 2,
+        "status": "completed",
+        "duration": 3000,
+        "result": "5ファイル更新"
+      },
+      {
+        "name": "qa",
+        "order": 3,
+        "status": "completed",
+        "duration": 2000,
+        "result": "全て合格"
+      }
+    ],
+    "toolsUsed": [
+      {
+        "tool": "ExecutionLogger",
+        "action": "タスク記録",
+        "result": "TaskID: task-20250120-001"
+      },
+      {
+        "tool": "MetricsCollector",
+        "action": "メトリクス更新",
+        "result": "日次サマリー更新完了"
+      }
+    ],
+    "findings": []
+  },
+  "result": {
+    "status": "success",
+    "summary": "全てのサブエージェントが正常に完了しました",
+    "details": {
+      "totalDuration": 6500,
+      "filesChanged": 5,
+      "testsRun": 15,
+      "qualityScore": 95
+    },
+    "recommendations": []
+  },
+  "nextStep": "git commit、git pushの準備が整いました"
+}
+```
+
+**エラー時のJSON形式:**
+
+```json
+{
+  "agent": {
+    "name": "pm-orchestrator",
+    "type": "中心ハブ",
+    "role": "全サブエージェントの起動・管理・結果統合",
+    "status": "failed"
+  },
+  "execution": {
+    "phase": "エラー",
+    "taskId": "uuid",
+    "subagents": [
+      {
+        "name": "rule-checker",
+        "order": 1,
+        "status": "failed",
+        "duration": 1000,
+        "result": "MUST Rule 7違反"
+      }
+    ],
+    "findings": [
+      {
+        "type": "error",
+        "content": "MUST Rule 7違反: 5箇所中2箇所のみ更新",
+        "action": "全箇所を更新してください"
+      }
+    ]
+  },
+  "result": {
+    "status": "error",
+    "summary": "RuleCheckerでMUST Rule違反を検出",
+    "details": {
+      "errorType": "MUST_RULE_VIOLATION",
+      "rollbackExecuted": false
+    },
+    "recommendations": [
+      "grep -r で全箇所を確認",
+      "全箇所を更新してから再実行"
+    ]
+  },
+  "nextStep": "エラーを修正してから再実行してください"
+}
+```
+
+---
+
 ## 次のステップ
 
 1. **Phase 2-A**: PM Orchestrator + 4サブエージェント作成 ✅
@@ -1184,5 +1307,7 @@ analyzer.saveAnalysis(analysis);
 6. **Phase 6**: 実行ログ・メトリクス収集機能（実装）✅
 7. **Phase 7**: PM Orchestrator への統合（ドキュメント）✅
 8. **Phase 8**: PM Orchestrator の実装（動作定義）✅
+9. **Phase 9-1**: YAMLフロントマター追加 ✅
+10. **Phase 9-2**: 統一JSON出力形式の定義 ✅
 
 **このシステムにより、「57回の失敗」は物理的に防がれます。**

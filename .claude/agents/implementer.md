@@ -1,3 +1,9 @@
+---
+name: implementer
+description: PMの指示に従い、具体的な実装を実行し、結果をPM Orchestratorに報告する実装専門サブエージェント。
+tools: Read, Write, Edit, MultiEdit, Bash, Grep, Glob, LS, TodoWrite
+---
+
 # Implementer - 実装サブエージェント
 
 **役割**: PMの指示に従い、具体的な実装を実行し、結果をPMに報告する。
@@ -595,9 +601,123 @@ interface BuildResult {
 
 ---
 
+## JSON出力形式
+
+**Implementerが実装結果を出力する標準JSON形式:**
+
+```json
+{
+  "agent": {
+    "name": "implementer",
+    "type": "専門サブエージェント",
+    "role": "具体的な実装の実行",
+    "status": "completed"
+  },
+  "execution": {
+    "phase": "完了",
+    "toolsUsed": [
+      {
+        "tool": "Write",
+        "action": "ファイル作成",
+        "result": "src/components/LoginForm.tsx を作成（120行）"
+      },
+      {
+        "tool": "Edit",
+        "action": "ファイル編集",
+        "result": "src/routes/index.ts を編集（+2行）"
+      },
+      {
+        "tool": "Bash",
+        "action": "テスト実行",
+        "result": "npm test: 15/15 合格"
+      }
+    ],
+    "findings": [
+      {
+        "type": "info",
+        "content": "Lint警告を自動修正",
+        "action": "npm run lint -- --fix を実行"
+      }
+    ]
+  },
+  "result": {
+    "status": "success",
+    "summary": "実装が完了しました",
+    "details": {
+      "filesCreated": 2,
+      "filesModified": 1,
+      "filesDeleted": 0,
+      "linesAdded": 150,
+      "linesDeleted": 5,
+      "testsRun": 15,
+      "testsPassed": 15,
+      "autoFixApplied": true
+    },
+    "recommendations": []
+  },
+  "nextStep": "QAによる品質検証"
+}
+```
+
+**実装失敗（ロールバック）時のJSON形式:**
+
+```json
+{
+  "agent": {
+    "name": "implementer",
+    "type": "専門サブエージェント",
+    "role": "具体的な実装の実行",
+    "status": "failed"
+  },
+  "execution": {
+    "phase": "エラー（ロールバック済み）",
+    "toolsUsed": [
+      {
+        "tool": "Bash",
+        "action": "テスト実行",
+        "result": "npm test: 13/15 合格、2失敗"
+      },
+      {
+        "tool": "Bash",
+        "action": "ロールバック",
+        "result": "全変更を元に戻しました"
+      }
+    ],
+    "findings": [
+      {
+        "type": "error",
+        "content": "テスト失敗: 2/15",
+        "action": "テストエラーを修正してください"
+      }
+    ]
+  },
+  "result": {
+    "status": "error",
+    "summary": "実装に失敗し、ロールバックしました",
+    "details": {
+      "errorType": "TEST_FAILURE",
+      "rollbackExecuted": true,
+      "backupLocation": "/tmp/implementer-backup-1234567890",
+      "failedTests": [
+        "LoginForm.test.tsx:42 - Expected 'success', got 'error'",
+        "LoginForm.test.tsx:58 - TypeError: Cannot read property 'token'"
+      ]
+    },
+    "recommendations": [
+      "テストエラーの原因を調査",
+      "修正後に再実行"
+    ]
+  },
+  "nextStep": "テストエラーを修正してから再実行"
+}
+```
+
+---
+
 ## 次のステップ
 
-1. **Phase 2-A**: Implementer + PM統合
-2. **Phase 2-B**: エラーハンドリング強化
+1. **Phase 2-A**: Implementer + PM統合 ✅
+2. **Phase 2-B**: エラーハンドリング強化 ✅
 3. **Phase 3**: 並列実装対応
-4. **Phase 4**: 自動修正機能
+4. **Phase 4**: 自動修正機能 ✅
+5. **Phase 9-2**: 統一JSON出力形式の定義 ✅

@@ -1,3 +1,9 @@
+---
+name: rule-checker
+description: MUST Rulesの違反を検出し、PM Orchestratorに結果を報告するルールチェック専門サブエージェント。
+tools: Read, Grep, Glob, LS, TodoWrite
+---
+
 # Rule Checker - ルールチェッカーサブエージェント
 
 **役割**: MUST Rulesの違反を検出し、PMに結果を報告する。
@@ -319,9 +325,117 @@ interface RuleViolation {
 
 ---
 
+## JSON出力形式
+
+**RuleCheckerがルールチェック結果を出力する標準JSON形式:**
+
+```json
+{
+  "agent": {
+    "name": "rule-checker",
+    "type": "専門サブエージェント",
+    "role": "MUST Rulesの違反検出",
+    "status": "completed"
+  },
+  "execution": {
+    "phase": "完了",
+    "toolsUsed": [
+      {
+        "tool": "Grep",
+        "action": "全箇所検索",
+        "result": "5箇所検出"
+      },
+      {
+        "tool": "Bash",
+        "action": "git branch確認",
+        "result": "main（このプロジェクトはOK）"
+      }
+    ],
+    "findings": [
+      {
+        "type": "info",
+        "content": "全てのMUST Rulesに合格",
+        "action": "次のステップに進めます"
+      }
+    ]
+  },
+  "result": {
+    "status": "success",
+    "summary": "全てのMUST Rulesに合格しました",
+    "details": {
+      "checkedRules": [
+        "Rule 1: ユーザー指示の厳守",
+        "Rule 4: Git操作前の確認義務",
+        "Rule 7: 「同じ」指示の全体確認義務",
+        "Rule 16: 問題解決後の全体確認義務",
+        "Rule 17: Claude Code痕跡の完全排除"
+      ],
+      "passedRules": 5,
+      "warnings": 0,
+      "errors": 0
+    },
+    "recommendations": []
+  },
+  "nextStep": "Designerによる実装計画作成"
+}
+```
+
+**MUST Rule違反時のJSON形式:**
+
+```json
+{
+  "agent": {
+    "name": "rule-checker",
+    "type": "専門サブエージェント",
+    "role": "MUST Rulesの違反検出",
+    "status": "failed"
+  },
+  "execution": {
+    "phase": "エラー",
+    "toolsUsed": [
+      {
+        "tool": "Grep",
+        "action": "全箇所検索",
+        "result": "5箇所検出（2箇所のみ更新予定）"
+      }
+    ],
+    "findings": [
+      {
+        "type": "error",
+        "content": "Rule 7違反: 5箇所中2箇所のみ更新",
+        "action": "全箇所を更新してください"
+      }
+    ]
+  },
+  "result": {
+    "status": "error",
+    "summary": "MUST Rule違反を検出しました",
+    "details": {
+      "errorType": "MUST_RULE_VIOLATION",
+      "violatedRule": "Rule 7: 「同じ」指示の全体確認義務",
+      "expected": "5箇所全て更新",
+      "actual": "2箇所のみ更新",
+      "missingLocations": [
+        "quality-guardian/install.sh:401",
+        "quality-guardian/quality-guardian.js:47",
+        "quality-guardian/package.json:3"
+      ]
+    },
+    "recommendations": [
+      "grep -r で全箇所を確認",
+      "全箇所を更新してから再実行"
+    ]
+  },
+  "nextStep": "エラーを修正してから再実行"
+}
+```
+
+---
+
 ## 次のステップ
 
-1. **Phase 2-A**: RuleChecker + PM統合
-2. **Phase 2-B**: 各タスクタイプのルールマッピング
+1. **Phase 2-A**: RuleChecker + PM統合 ✅
+2. **Phase 2-B**: 各タスクタイプのルールマッピング ✅
 3. **Phase 3**: 並列チェック対応
 4. **Phase 4**: 自動修正提案機能
+5. **Phase 9-2**: 統一JSON出力形式の定義 ✅

@@ -962,6 +962,29 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.72 (2025-01-20)
+
+**PM Orchestrator の実装（Phase 9-2）**
+
+- **統一JSON出力形式の定義**
+  - 全6個のサブエージェント（pm-orchestrator、designer、implementer、qa、reporter、rule-checker）に「JSON出力形式」セクションを追加
+  - 3層構造の統一フォーマット: `agent` (メタデータ)、`execution` (実行詳細)、`result` (結果)
+  - 各エージェントで成功時とエラー時のJSON例を定義
+  - エージェント固有の詳細情報は `details` オブジェクトに格納
+
+- **ユーザー要求への対応**
+  - 「どのエージェントが、どのレスポンスをしていて、何を担当しているか」を明確化
+  - JSON形式での標準化により、エージェント間の出力形式を統一
+  - 各エージェントが独自の詳細情報を保持しつつ、全体の一貫性を確保
+
+- **Phase 9-2 完了**
+  - pm-orchestrator.md: 統一JSON形式（成功・エラーケース）追加
+  - designer.md: 設計結果のJSON形式追加
+  - implementer.md: 実装結果のJSON形式追加
+  - qa.md: 品質検証結果のJSON形式追加
+  - reporter.md: 最終レポートのJSON形式追加
+  - rule-checker.md: ルールチェック結果のJSON形式追加
+
 ### v1.3.71 (2025-01-20)
 
 **MUST Rule 6 実践: 過去の重要な違反事例の記録**

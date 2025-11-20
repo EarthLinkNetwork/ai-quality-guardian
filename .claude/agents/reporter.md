@@ -1,3 +1,9 @@
+---
+name: reporter
+description: 全サブエージェントの結果をまとめ、ユーザー向けの分かりやすいレポートを作成してPM Orchestratorに返却する報告専門サブエージェント。
+tools: Read, Grep, Glob, LS, TodoWrite
+---
+
 # Reporter - 報告サブエージェント
 
 **役割**: 全サブエージェントの結果をまとめ、ユーザー向けの分かりやすいレポートを作成し、PMに返却する。
@@ -318,9 +324,110 @@ interface ReporterResult {
 
 ---
 
+## JSON出力形式
+
+**Reporterが最終レポートを出力する標準JSON形式:**
+
+```json
+{
+  "agent": {
+    "name": "reporter",
+    "type": "専門サブエージェント",
+    "role": "全サブエージェント結果の統合とユーザー向けレポート作成",
+    "status": "completed"
+  },
+  "execution": {
+    "phase": "完了",
+    "toolsUsed": [],
+    "findings": [
+      {
+        "type": "info",
+        "content": "全サブエージェントの結果を統合",
+        "action": "ユーザー向けレポートを作成"
+      }
+    ]
+  },
+  "result": {
+    "status": "success",
+    "summary": "タスクが正常に完了しました",
+    "details": {
+      "title": "タスク完了",
+      "taskOverview": "バージョン更新（5箇所）",
+      "executedSteps": [
+        "ルールチェック: 全て合格",
+        "実装: 5ファイル更新",
+        "品質チェック: 全て合格"
+      ],
+      "changes": [
+        "VERSION: 1.3.71 → 1.3.72",
+        "install.sh: 2箇所更新",
+        "quality-guardian.js: 1箇所更新",
+        "package.json: 1箇所更新",
+        "README.md: 変更履歴追加"
+      ],
+      "verification": [
+        "新バージョン: 5箇所に存在",
+        "旧バージョン: 0箇所（全て置換済み）"
+      ]
+    },
+    "recommendations": []
+  },
+  "nextStep": "git add、git commit、git push の準備が整いました"
+}
+```
+
+**エラー時のJSON形式:**
+
+```json
+{
+  "agent": {
+    "name": "reporter",
+    "type": "専門サブエージェント",
+    "role": "全サブエージェント結果の統合とユーザー向けレポート作成",
+    "status": "completed"
+  },
+  "execution": {
+    "phase": "完了（エラー報告）",
+    "findings": [
+      {
+        "type": "error",
+        "content": "RuleCheckerでMUST Rule違反を検出",
+        "action": "エラーレポートを作成"
+      }
+    ]
+  },
+  "result": {
+    "status": "error",
+    "summary": "タスクが失敗しました",
+    "details": {
+      "title": "タスク失敗",
+      "taskOverview": "List Modification（5箇所更新）",
+      "errorDetails": [
+        "Rule 7: 「同じ」指示の全体確認義務 - 違反",
+        "期待: 5箇所全て更新",
+        "実際: 2箇所のみ更新"
+      ],
+      "missingLocations": [
+        "quality-guardian/install.sh:401",
+        "quality-guardian/quality-guardian.js:47",
+        "quality-guardian/package.json:3"
+      ]
+    },
+    "recommendations": [
+      "grep -r で全箇所を確認",
+      "全箇所を更新してから再実行"
+    ]
+  },
+  "nextStep": "エラーを修正してから再実行してください"
+}
+```
+
+---
+
 ## 次のステップ
 
-1. **Phase 2-A**: Reporter + PM統合
-2. **Phase 2-B**: レポート形式の洗練
+1. **Phase 2-A**: Reporter + PM統合 ✅
+2. **Phase 2-B**: レポート形式の洗練 ✅
 3. **Phase 3**: エラーごとの対応方法データベース
 4. **Phase 4**: 自動修正提案機能
+5. **Phase 9-2**: 統一JSON出力形式の定義 ✅

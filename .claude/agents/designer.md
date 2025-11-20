@@ -1,3 +1,9 @@
+---
+name: designer
+description: タスクを分析し、実装計画を作成してPM Orchestratorに返す設計専門サブエージェント。
+tools: Read, Grep, Glob, LS, TodoWrite
+---
+
 # Designer - 設計サブエージェント
 
 **役割**: タスクを分析し、実装計画を作成してPMに返す。
@@ -343,9 +349,111 @@ interface Risk {
 
 ---
 
+## JSON出力形式
+
+**Designerが設計結果を出力する標準JSON形式:**
+
+```json
+{
+  "agent": {
+    "name": "designer",
+    "type": "専門サブエージェント",
+    "role": "タスク分析と実装計画作成",
+    "status": "completed"
+  },
+  "execution": {
+    "phase": "完了",
+    "toolsUsed": [
+      {
+        "tool": "Read",
+        "action": "既存コード確認",
+        "result": "3ファイル確認"
+      },
+      {
+        "tool": "Grep",
+        "action": "類似パターン検索",
+        "result": "5件の類似実装を発見"
+      }
+    ],
+    "findings": [
+      {
+        "type": "info",
+        "content": "タスクタイプ: 新機能実装、複雑度: Complex",
+        "action": "5ファイル作成、3ファイル編集が必要"
+      }
+    ]
+  },
+  "result": {
+    "status": "success",
+    "summary": "実装計画を作成しました",
+    "details": {
+      "taskType": "new_feature",
+      "complexity": "complex",
+      "estimatedFiles": 8,
+      "estimatedLines": 500,
+      "risks": [
+        {
+          "category": "security",
+          "severity": "high",
+          "description": "JWT秘密鍵の管理",
+          "mitigation": "環境変数に保存"
+        }
+      ]
+    },
+    "recommendations": [
+      "RuleCheckerでMUST Rules検証",
+      "実装前にセキュリティレビュー"
+    ]
+  },
+  "nextStep": "RuleCheckerによるMUST Rules検証"
+}
+```
+
+**設計失敗時のJSON形式:**
+
+```json
+{
+  "agent": {
+    "name": "designer",
+    "type": "専門サブエージェント",
+    "role": "タスク分析と実装計画作成",
+    "status": "failed"
+  },
+  "execution": {
+    "phase": "エラー",
+    "findings": [
+      {
+        "type": "error",
+        "content": "要件が不明確",
+        "action": "要件を明確化してください"
+      }
+    ]
+  },
+  "result": {
+    "status": "error",
+    "summary": "設計に失敗しました",
+    "details": {
+      "errorType": "UNCLEAR_REQUIREMENTS",
+      "missingInfo": [
+        "認証方式の指定",
+        "対象画面の指定"
+      ]
+    },
+    "recommendations": [
+      "認証方式を明確化（JWT? OAuth? Session?）",
+      "対象画面を指定"
+    ]
+  },
+  "nextStep": "要件を明確化してから再実行"
+}
+```
+
+---
+
 ## 次のステップ
 
-1. **Phase 2-B**: Designer + PM統合
+1. **Phase 2-B**: Designer + PM統合 ✅
 2. **Phase 2-C**: 設計品質の向上
 3. **Phase 3**: 複数の設計案を生成して比較
 4. **Phase 4**: 自動最適化機能
+5. **Phase 9-2**: 統一JSON出力形式の定義 ✅
