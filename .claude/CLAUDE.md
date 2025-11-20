@@ -27,8 +27,9 @@
 -->
 
 ---
-
 # 応答テンプレート（必須・毎回実行）
+
+## CRITICAL Rules表示（必須）
 
 **全ての応答の冒頭にCRITICAL Rules（最重要12個）を表示すること：**
 
@@ -48,6 +49,42 @@ UserPromptSubmit hookがsystem-reminderとして表示するCRITICAL Rulesを、
 17個の完全版は「ちょっと多い」（ユーザー指摘）。
 最重要12個に絞り込み、詳細版で表示することで、ルールを確実に意識できる。
 
+---
+
+## PM Orchestrator起動推奨（複雑タスク検出時）
+
+**複雑なタスクを検出した場合、PM Orchestratorの起動を推奨すること：**
+
+UserPromptSubmit hookが以下のパターンを検出した場合、
+応答の冒頭（CRITICAL Rulesの直後）にPM Orchestrator起動推奨を表示すること。
+
+**起動推奨パターン:**
+- 複数ステップのタスク（3ステップ以上）
+- 複数ファイル変更（5ファイル以上）
+- ルールチェックが必要なタスク（Git操作、不可逆な操作等）
+- 品質保証が必要なタスク（実装、テスト、デプロイ等）
+
+**推奨メッセージ例:**
+```
+📊 複雑なタスクを検出しました
+
+このタスクはPM Orchestratorによる管理が推奨されます:
+- 複数ステップの調整
+- サブエージェント間の連携
+- 品質チェックの自動化
+
+PM Orchestratorを起動しますか？
+```
+
+**UserPromptSubmit hookとの連携:**
+- hookがパターンを検出 → system-reminderで推奨メッセージを表示
+- Main AIがメッセージを受け取る → ユーザーに推奨を提示
+- ユーザーが承認 → PM Orchestrator起動
+
+**重要:**
+- 推奨メッセージを勝手に省略しない
+- ユーザーの承認を得てから起動
+- 「口約束」で終わらせず、必ず表示する（MUST Rule 6違反防止）
 ---
 
 # Claude Code Configuration for AI Scripts Repository
