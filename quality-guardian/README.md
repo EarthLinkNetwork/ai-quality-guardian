@@ -739,6 +739,47 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.64 (2025-01-20)
+
+**Designer と QA サブエージェント追加 - AI Control System の完成（Phase 2-B）**
+
+- **6つの専門サブエージェントによる完全な制御システム**
+  1. **pm-orchestrator.md**: 中心ハブ、全体管理
+  2. **designer.md**: タスク分析・実装計画作成
+  3. **rule-checker.md**: MUST Rules 検証
+  4. **qa.md**: 品質保証・テスト検証
+  5. **implementer.md**: 実装実行
+  6. **reporter.md**: ユーザー向けレポート
+
+- **Designer サブエージェント（新規作成）**
+  - タスク分析（種類・複雑度・影響範囲）
+  - 実装計画作成（具体的な手順）
+  - リスク分析（後方互換性・セキュリティ・パフォーマンス）
+  - 3つのパターン対応（新機能実装、バグ修正、リファクタリング）
+
+- **QA サブエージェント（新規作成）**
+  - 実装結果の検証（機能・テスト・コード品質・ドキュメント）
+  - 品質問題の検出（バグ・パフォーマンス・セキュリティ・保守性）
+  - 検証項目（ファイル検証、テスト検証、Lint/TypeCheck/Build、Playwright機能確認）
+  - 3つの結果パターン（全合格、警告あり、エラーあり）
+
+- **PM Orchestrator の実行パターン（既存、Designer/QA統合済み）**
+  - パターン1: CodeRabbit Resolve（RuleChecker → Implementer → Reporter）
+  - パターン2: List Modification（RuleChecker → Implementer → QA → Reporter）
+  - パターン3: PR Review Response（RuleChecker → Designer → Implementer → QA → Reporter）
+  - パターン4: 複雑な実装タスク（Designer → RuleChecker/QA並列 → Implementer → QA → Reporter）
+
+- **Phase 2-B の成果**
+  - 全ての役割が分離され、各サブエージェントは3-5個のルールに集中
+  - Designer による事前計画で、実装ミスを防止
+  - QA による事後検証で、品質問題を検出
+  - PM による checkpoints 制御で、ルール違反を物理的にブロック
+  - 「57回のやり直し」問題の根本的解決
+
+- **次フェーズ予定**
+  - Phase 3: エラーハンドリング・自動修正・ロールバック機能
+  - Phase 4: 完全自動化パイプライン・継続的品質改善
+
 ### v1.3.63 (2025-01-20)
 
 **PM Orchestrator システムの実装 - AI Control System化の本格化（Phase 2-A）**
