@@ -962,6 +962,34 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.73 (2025-01-20)
+
+**PM Orchestrator の実装（Phase 9-3）- 自動起動機能の実装**
+
+- **UserPromptSubmit hook のパターン検出拡張**
+  - Complex Implementation Pattern Detection を追加（新機能、リファクタリング、複数ファイル実装等）
+  - Quality Check Pattern Detection を追加（品質チェック、lint/test実行、検証タスク等）
+  - PM Orchestrator起動条件を5パターンに拡張（従来3パターン → 5パターン）
+
+- **自動起動の仕組み**
+  - hookがパターンを検出すると、Main AIにTask tool起動を指示
+  - 検出パターン: CodeRabbit Resolve、List Modification、PR Review Response、Complex Implementation、Quality Check
+  - パターン別に具体的な指示を表示（手順、禁止事項、正しい対応）
+
+- **MUST Rule 16実践: .claude/hooks ⟷ templates/hooks 同期**
+  - .claude/hooks/user-prompt-submit.sh を拡張
+  - templates/hooks/user-prompt-submit.sh も同期
+  - 新規インストール時も最新版のhookが使用される
+
+- **MUST Rule 2実践: 動作確認**
+  - hook syntax check実行（bash -n）
+  - 両方のhookファイルでエラーなしを確認
+
+- **完了した内容**
+  - Phase 9-2: JSON出力形式の定義（v1.3.72）
+  - Phase 9-3: PM Orchestrator自動起動の実装（このバージョン）
+  - PM Orchestratorシステムが実際に動作する状態を実現
+
 ### v1.3.72 (2025-01-20)
 
 **PM Orchestrator の実装（Phase 9-2）**

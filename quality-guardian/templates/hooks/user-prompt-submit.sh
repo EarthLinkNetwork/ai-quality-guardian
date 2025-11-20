@@ -55,7 +55,7 @@ if echo "$USER_MESSAGE" | grep -qE 'bitbucket\.org|github\.com.*pull/[0-9]+'; th
 fi
 
 # ============================================================================
-# インテリジェントパターン検出（Phase 1: AI Control System）
+# インテリジェントパターン検出（Phase 1-3: AI Control System Extended）
 # ============================================================================
 
 # 6. CodeRabbit Resolve Pattern Detection
@@ -71,6 +71,18 @@ fi
 # 8. PR Review Response Pattern Detection
 if echo "$USER_MESSAGE" | grep -qiE 'PR.*レビュー|プルリク.*レビュー|review.*指摘|レビュー.*指摘|全.*指摘.*対応|指摘.*漏れ'; then
   PR_REVIEW_RESPONSE=1
+fi
+
+# 9. Complex Implementation Pattern Detection（Phase 9-3追加）
+COMPLEX_IMPLEMENTATION=0
+if echo "$USER_MESSAGE" | grep -qiE '新機能|新しい機能|リファクタリング|複数ファイル|設計.*必要|アーキテクチャ|実装.*してください|機能.*追加'; then
+  COMPLEX_IMPLEMENTATION=1
+fi
+
+# 10. Quality Check Pattern Detection（Phase 9-3追加）
+QUALITY_CHECK=0
+if echo "$USER_MESSAGE" | grep -qiE '品質チェック|quality.*check|lint.*test|全.*チェック|検証.*実行|テスト.*実行|ビルド.*確認'; then
+  QUALITY_CHECK=1
 fi
 
 # 検出時の対応
@@ -329,13 +341,13 @@ EOF
 fi
 
 # ============================================================================
-# PM Orchestrator 起動判定（Phase 2: AI Control System）
+# PM Orchestrator 起動判定（Phase 2-3: AI Control System Extended）
 # ============================================================================
 
 LAUNCH_PM=0
 
 # 複雑なタスクの場合、PM Orchestratorを起動
-if [ $CODERABBIT_RESOLVE -eq 1 ] || [ $LIST_MODIFICATION -eq 1 ] || [ $PR_REVIEW_RESPONSE -eq 1 ]; then
+if [ $CODERABBIT_RESOLVE -eq 1 ] || [ $LIST_MODIFICATION -eq 1 ] || [ $PR_REVIEW_RESPONSE -eq 1 ] || [ $COMPLEX_IMPLEMENTATION -eq 1 ] || [ $QUALITY_CHECK -eq 1 ]; then
   LAUNCH_PM=1
 fi
 
@@ -378,6 +390,8 @@ Task tool を使用:
           - CodeRabbit Resolve: $CODERABBIT_RESOLVE
           - List Modification: $LIST_MODIFICATION
           - PR Review Response: $PR_REVIEW_RESPONSE
+          - Complex Implementation: $COMPLEX_IMPLEMENTATION
+          - Quality Check: $QUALITY_CHECK
 
           PMとして、以下を実行してください：
           1. タスクタイプを決定
