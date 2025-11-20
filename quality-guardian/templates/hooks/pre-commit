@@ -39,6 +39,8 @@ if [ -n "$STAGED_FILES" ]; then
     "quality-guardian/analysis-must-rules.md"
     "quality-guardian/templates/hooks/pre-commit"
     ".claude/hooks/pre-commit"
+    ".claude/hooks/user-prompt-submit.sh"
+    "quality-guardian/templates/hooks/user-prompt-submit.sh"
     "quality-guardian/README.md"
   )
 
