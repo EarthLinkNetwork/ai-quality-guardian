@@ -435,11 +435,244 @@ async function executeSubAgents(plan) {
 
 ---
 
+## Phase 5: 実行ログ・メトリクス収集機能
+
+### 目的
+
+PM Orchestrator の各実行を記録し、品質メトリクスを収集することで、継続的な品質改善の基盤を構築する。
+
+### 実行ログの記録
+
+**ログファイル**: `.quality-guardian/logs/pm-orchestrator-YYYYMMDD-HHmmss.log`
+
+**記録内容**:
+
+```typescript
+interface ExecutionLog {
+  // 基本情報
+  taskId: string;              // ユニークなタスクID
+  startTime: string;           // 開始時刻（ISO 8601形式）
+  endTime: string;             // 終了時刻（ISO 8601形式）
+  duration: number;            // 実行時間（ミリ秒）
+
+  // タスク情報
+  userInput: string;           // ユーザー入力（最初の200文字）
+  taskType: string;            // new_feature | bug_fix | refactoring | pr_review
+  complexity: string;          // simple | medium | complex
+  detectedPattern: string;     // CODERABBIT_RESOLVE | LIST_MODIFICATION | PR_REVIEW_RESPONSE
+
+  // サブエージェント実行記録
+  subagents: SubagentExecution[];
+
+  // 結果
+  status: "success" | "error" | "rollback";
+  errorType?: string;          // エラーの種類
+  autoFixAttempted: boolean;   // 自動修正を試みたか
+  autoFixSuccess: boolean;     // 自動修正が成功したか
+  retryCount: number;          // リトライ回数
+  rollbackExecuted: boolean;   // ロールバックを実行したか
+
+  // 品質メトリクス
+  filesChanged: number;        // 変更ファイル数
+  linesAdded: number;          // 追加行数
+  linesDeleted: number;        // 削除行数
+  testsAdded: number;          // 追加テスト数
+  qualityScore: number;        // QAサブエージェントのスコア（0-100）
+}
+
+interface SubagentExecution {
+  name: string;                // "Designer" | "RuleChecker" | "Implementer" | "QA" | "Reporter"
+  startTime: string;
+  endTime: string;
+  duration: number;
+  status: "success" | "error" | "warning";
+  errorMessage?: string;
+  outputSummary: string;       // 出力の要約（最初の500文字）
+}
+```
+
+### ログ記録の実装例
+
+```typescript
+// タスク開始時
+async function startTask(userInput: string) {
+  const taskId = generateTaskId(); // timestamp + random
+  const startTime = new Date().toISOString();
+
+  const log: ExecutionLog = {
+    taskId,
+    startTime,
+    endTime: "",
+    duration: 0,
+    userInput: userInput.substring(0, 200),
+    taskType: analyzeTaskType(userInput),
+    complexity: analyzeComplexity(userInput),
+    detectedPattern: detectPattern(userInput),
+    subagents: [],
+    status: "success",
+    autoFixAttempted: false,
+    autoFixSuccess: false,
+    retryCount: 0,
+    rollbackExecuted: false,
+    filesChanged: 0,
+    linesAdded: 0,
+    linesDeleted: 0,
+    testsAdded: 0,
+    qualityScore: 0
+  };
+
+  return { taskId, log };
+}
+
+// サブエージェント起動時
+async function launchSubagent(name: string, taskId: string) {
+  const subagentStart = new Date().toISOString();
+
+  // サブエージェント実行
+  const result = await executeSubagent(name);
+
+  const subagentEnd = new Date().toISOString();
+  const duration = new Date(subagentEnd).getTime() - new Date(subagentStart).getTime();
+
+  const subagentExecution: SubagentExecution = {
+    name,
+    startTime: subagentStart,
+    endTime: subagentEnd,
+    duration,
+    status: result.status,
+    errorMessage: result.error,
+    outputSummary: result.output.substring(0, 500)
+  };
+
+  // ログに追加
+  appendSubagentLog(taskId, subagentExecution);
+
+  return result;
+}
+
+// タスク完了時
+async function completeTask(taskId: string, status: string) {
+  const endTime = new Date().toISOString();
+
+  // ログを更新
+  updateLog(taskId, {
+    endTime,
+    duration: calculateDuration(startTime, endTime),
+    status,
+    filesChanged: countChangedFiles(),
+    linesAdded: countAddedLines(),
+    linesDeleted: countDeletedLines(),
+    testsAdded: countAddedTests(),
+    qualityScore: getQualityScore()
+  });
+
+  // ログをファイルに保存
+  await saveLog(taskId);
+}
+```
+
+### メトリクス集計機能
+
+**日次サマリー**: `.quality-guardian/logs/summary-YYYYMMDD.json`
+
+```typescript
+interface DailySummary {
+  date: string;
+  totalTasks: number;
+  successTasks: number;
+  errorTasks: number;
+  rollbackTasks: number;
+
+  // 平均値
+  averageDuration: number;     // 平均実行時間（ミリ秒）
+  averageQualityScore: number; // 平均品質スコア
+
+  // エラー統計
+  errorTypes: { [key: string]: number };
+  autoFixSuccessRate: number;  // 自動修正成功率（%）
+  retrySuccessRate: number;    // リトライ成功率（%）
+
+  // パターン統計
+  patternDistribution: { [key: string]: number };
+  complexityDistribution: { [key: string]: number };
+
+  // サブエージェント統計
+  subagentUsage: { [key: string]: number };
+  subagentAverageDuration: { [key: string]: number };
+}
+```
+
+### 継続的品質改善の基盤
+
+**ログ分析による改善提案**:
+
+```typescript
+async function analyzeTrends() {
+  // 過去7日間のログを分析
+  const logs = await loadRecentLogs(7);
+
+  // 傾向を検出
+  const trends = {
+    // エラー率が上昇しているか
+    errorRateIncreasing: detectErrorRateTrend(logs),
+
+    // 特定のパターンでエラーが多いか
+    problematicPatterns: findProblematicPatterns(logs),
+
+    // 特定のサブエージェントが遅いか
+    slowSubagents: findSlowSubagents(logs),
+
+    // 自動修正成功率が低下しているか
+    autoFixDegrading: detectAutoFixTrend(logs)
+  };
+
+  // 改善提案を生成
+  const suggestions = generateSuggestions(trends);
+
+  return { trends, suggestions };
+}
+```
+
+**改善提案の例**:
+
+- エラー率が上昇 → Rule Checker のルールを追加
+- 特定パターンで失敗 → パターン検出ロジックを改善
+- サブエージェントが遅い → 並列実行を検討
+- 自動修正成功率低下 → Auto-fix ロジックを強化
+
+### Phase 5 の実装手順
+
+1. **ExecutionLog インターフェースの実装**
+   - TypeScript 型定義
+   - JSON スキーマ
+
+2. **ログ記録機能の実装**
+   - タスク開始時のログ作成
+   - サブエージェント実行記録
+   - タスク完了時のログ保存
+
+3. **メトリクス集計機能の実装**
+   - 日次サマリー生成
+   - 週次・月次集計
+
+4. **分析・改善提案機能の実装**
+   - 傾向検出
+   - 自動改善提案
+   - レポート生成
+
+5. **PM Orchestrator への統合**
+   - ログ記録を全実行フローに組み込む
+   - エラーハンドリングと連携
+   - Reporter サブエージェントで結果表示
+
+---
+
 ## 次のステップ
 
 1. **Phase 2-A**: PM Orchestrator + 4サブエージェント作成 ✅
 2. **Phase 2-B**: Designer + QA サブエージェント追加 ✅
 3. **Phase 3**: エラーハンドリング・自動修正・ロールバック ✅
-4. **Phase 4**: 完全自動化パイプライン・継続的品質改善
+4. **Phase 4**: PM Orchestrator ドキュメント化 ✅
+5. **Phase 5**: 実行ログ・メトリクス収集機能 🚧（設計完了）
 
 **このシステムにより、「57回の失敗」は物理的に防がれます。**
