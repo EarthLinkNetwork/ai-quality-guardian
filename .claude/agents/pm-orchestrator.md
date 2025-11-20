@@ -667,12 +667,299 @@ async function analyzeTrends() {
 
 ---
 
+## Phase 7: PM Orchestrator への統合
+
+### 目的
+
+Phase 6 で実装した実行ログ・メトリクス収集・トレンド分析を PM Orchestrator の全実行フローに統合し、完全自動化を実現する。
+
+### 統合方法
+
+#### 1. ログ記録の初期化
+
+PM Orchestrator 起動時に ExecutionLogger を初期化：
+
+```javascript
+const ExecutionLogger = require('../../quality-guardian/modules/execution-logger');
+
+async function runPMOrchestrator(userInput) {
+  // 1. ログ記録開始
+  const logger = new ExecutionLogger();
+  const { taskId, log } = logger.startTask(userInput);
+
+  console.log(`[PM] Task started: ${taskId}`);
+  console.log(`[PM] Pattern: ${log.detectedPattern}`);
+  console.log(`[PM] Complexity: ${log.complexity}`);
+
+  try {
+    // 2. サブエージェント起動フロー
+    await executeTaskFlow(logger, taskId);
+
+    // 3. タスク完了
+    const completedLog = logger.completeTask('success', qualityScore);
+    console.log(`[PM] Task completed: ${taskId}`);
+
+    return completedLog;
+  } catch (error) {
+    // エラー時もログ記録
+    logger.completeTask('error', 0, error.type);
+    throw error;
+  }
+}
+```
+
+#### 2. サブエージェント実行記録
+
+各サブエージェント起動時に記録：
+
+```javascript
+async function launchSubagent(name, logger, taskId) {
+  console.log(`[PM] Launching ${name} subagent...`);
+
+  const startTime = Date.now();
+  let status = 'success';
+  let output = '';
+  let error = null;
+
+  try {
+    // サブエージェント実行
+    const result = await Task({
+      subagent_type: name.toLowerCase(),
+      prompt: `...`,
+      description: `${name} subagent execution`
+    });
+
+    output = result.output;
+
+  } catch (e) {
+    status = 'error';
+    error = e.message;
+    output = e.toString();
+  }
+
+  // ログに記録
+  logger.recordSubagent(name, status, output, error);
+
+  console.log(`[PM] ${name} completed (${Date.now() - startTime}ms)`);
+
+  if (status === 'error') {
+    throw new Error(`${name} failed: ${error}`);
+  }
+
+  return output;
+}
+```
+
+#### 3. エラーハンドリングとの連携
+
+Auto-fix、Retry、Rollback の記録：
+
+```javascript
+async function executeImplementer(logger) {
+  let retryCount = 0;
+  const maxRetries = 3;
+
+  while (retryCount < maxRetries) {
+    try {
+      const result = await launchSubagent('Implementer', logger);
+
+      // Auto-fix が実行された場合
+      if (result.includes('Auto-fix')) {
+        logger.recordAutoFix(true, true);
+      }
+
+      return result;
+
+    } catch (error) {
+      retryCount++;
+      logger.recordRetry();
+
+      if (retryCount >= maxRetries) {
+        // Rollback 実行
+        logger.recordRollback();
+        logger.recordAutoFix(true, false);
+        throw error;
+      }
+
+      // リトライ
+      console.log(`[PM] Retry ${retryCount}/${maxRetries}...`);
+      await sleep(1000 * retryCount);
+    }
+  }
+}
+```
+
+#### 4. メトリクス集計の自動実行
+
+タスク完了後、メトリクスを更新：
+
+```javascript
+const MetricsCollector = require('../../quality-guardian/modules/metrics-collector');
+
+async function runPMOrchestrator(userInput) {
+  const logger = new ExecutionLogger();
+  const { taskId, log } = logger.startTask(userInput);
+
+  try {
+    await executeTaskFlow(logger, taskId);
+    const completedLog = logger.completeTask('success', qualityScore);
+
+    // 日次サマリーを更新
+    const collector = new MetricsCollector();
+    const today = new Date();
+    collector.saveDailySummary(today);
+
+    return completedLog;
+
+  } catch (error) {
+    logger.completeTask('error', 0, error.type);
+    throw error;
+  }
+}
+```
+
+#### 5. トレンド分析の定期実行
+
+週次でトレンド分析を実行：
+
+```javascript
+const TrendAnalyzer = require('../../quality-guardian/modules/trend-analyzer');
+
+async function runWeeklyAnalysis() {
+  const analyzer = new TrendAnalyzer();
+  const analysis = analyzer.analyzeTrends(7);
+
+  if (!analysis.analyzed) {
+    return;
+  }
+
+  // 改善提案を表示
+  if (analysis.suggestions.length > 0) {
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📊 週次トレンド分析結果');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    analysis.suggestions.forEach(sug => {
+      const emoji = sug.priority === 'high' ? '🔴' : sug.priority === 'medium' ? '🟡' : '🟢';
+      console.log(`${emoji} [${sug.priority.toUpperCase()}] ${sug.title}`);
+      console.log(`   ${sug.description}`);
+      console.log('   対策:');
+      sug.actions.forEach(action => {
+        console.log(`   - ${action}`);
+      });
+      console.log('');
+    });
+  }
+
+  // 分析結果を保存
+  analyzer.saveAnalysis(analysis);
+}
+```
+
+#### 6. Reporter への統合
+
+Reporter サブエージェントで実行ログを表示：
+
+```javascript
+async function reportTaskCompletion(completedLog) {
+  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('📊 PM Orchestrator 実行レポート');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+  console.log(`[タスクID] ${completedLog.taskId}`);
+  console.log(`[実行時間] ${(completedLog.duration / 1000).toFixed(1)}秒`);
+  console.log(`[パターン] ${completedLog.detectedPattern}`);
+  console.log(`[複雑度] ${completedLog.complexity}`);
+  console.log(`[ステータス] ${completedLog.status}`);
+  console.log('');
+
+  // サブエージェント実行履歴
+  console.log('[サブエージェント実行履歴]');
+  completedLog.subagents.forEach((sub, index) => {
+    const emoji = sub.status === 'success' ? '✅' : sub.status === 'error' ? '❌' : '⚠️';
+    console.log(`${index + 1}. ${emoji} ${sub.name} (${(sub.duration / 1000).toFixed(1)}秒)`);
+  });
+  console.log('');
+
+  // 品質メトリクス
+  console.log('[品質メトリクス]');
+  console.log(`- 変更ファイル数: ${completedLog.filesChanged}`);
+  console.log(`- 追加行数: ${completedLog.linesAdded}`);
+  console.log(`- 削除行数: ${completedLog.linesDeleted}`);
+  console.log(`- 追加テスト数: ${completedLog.testsAdded}`);
+  console.log(`- 品質スコア: ${completedLog.qualityScore}/100`);
+  console.log('');
+
+  // エラーハンドリング統計
+  if (completedLog.autoFixAttempted || completedLog.retryCount > 0 || completedLog.rollbackExecuted) {
+    console.log('[エラーハンドリング統計]');
+    if (completedLog.autoFixAttempted) {
+      console.log(`- 自動修正: ${completedLog.autoFixSuccess ? '成功' : '失敗'}`);
+    }
+    if (completedLog.retryCount > 0) {
+      console.log(`- リトライ回数: ${completedLog.retryCount}`);
+    }
+    if (completedLog.rollbackExecuted) {
+      console.log(`- ロールバック: 実行`);
+    }
+    console.log('');
+  }
+
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+}
+```
+
+### 統合後の実行フロー
+
+```
+1. ユーザー入力
+   ↓
+2. UserPromptSubmit hook（パターン検出）
+   ↓
+3. PM Orchestrator 起動
+   ├─► ExecutionLogger.startTask() ← ログ記録開始
+   │
+   ├─► RuleChecker サブエージェント
+   │   └─► logger.recordSubagent('RuleChecker', ...)
+   │
+   ├─► Designer サブエージェント
+   │   └─► logger.recordSubagent('Designer', ...)
+   │
+   ├─► Implementer サブエージェント
+   │   ├─► Auto-fix 実行 → logger.recordAutoFix(...)
+   │   ├─► Retry → logger.recordRetry()
+   │   └─► Rollback → logger.recordRollback()
+   │
+   ├─► QA サブエージェント
+   │   └─► logger.recordSubagent('QA', ...)
+   │
+   ├─► logger.completeTask('success', qualityScore) ← ログ保存
+   │
+   ├─► MetricsCollector.saveDailySummary() ← メトリクス更新
+   │
+   └─► Reporter サブエージェント（実行ログ表示）
+
+4. ユーザーに結果報告
+```
+
+### Phase 7 の成果
+
+- ✅ **完全自動化**: 全タスクで実行ログが自動記録される
+- ✅ **透明性**: 各サブエージェントの実行時間・結果が可視化される
+- ✅ **品質向上**: メトリクス収集により継続的改善が可能
+- ✅ **問題の早期検出**: トレンド分析により問題を事前に発見
+- ✅ **データ駆動**: 改善提案がデータに基づいて自動生成される
+
+---
+
 ## 次のステップ
 
 1. **Phase 2-A**: PM Orchestrator + 4サブエージェント作成 ✅
 2. **Phase 2-B**: Designer + QA サブエージェント追加 ✅
 3. **Phase 3**: エラーハンドリング・自動修正・ロールバック ✅
 4. **Phase 4**: PM Orchestrator ドキュメント化 ✅
-5. **Phase 5**: 実行ログ・メトリクス収集機能 🚧（設計完了）
+5. **Phase 5**: 実行ログ・メトリクス収集機能（設計）✅
+6. **Phase 6**: 実行ログ・メトリクス収集機能（実装）✅
+7. **Phase 7**: PM Orchestrator への統合 ✅（ドキュメント完了）
 
 **このシステムにより、「57回の失敗」は物理的に防がれます。**

@@ -962,6 +962,43 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.69 (2025-01-20)
+
+**PM Orchestrator への統合（Phase 7）**
+
+- **pm-orchestrator.md に Phase 7 統合ドキュメントを追加**
+  - ExecutionLogger の初期化方法
+  - サブエージェント実行記録の方法
+  - エラーハンドリング（Auto-fix、Retry、Rollback）との連携
+  - MetricsCollector による日次サマリー自動更新
+  - TrendAnalyzer による週次トレンド分析
+  - Reporter サブエージェントでの実行ログ表示
+
+- **統合後の実行フロー文書化**
+  - ユーザー入力 → UserPromptSubmit hook → PM Orchestrator 起動
+  - ExecutionLogger.startTask() でログ記録開始
+  - 各サブエージェント起動時に logger.recordSubagent()
+  - Auto-fix/Retry/Rollback 実行時に logger.recordAutoFix/recordRetry/recordRollback()
+  - logger.completeTask() でログ保存・Git統計収集
+  - MetricsCollector.saveDailySummary() でメトリクス更新
+  - Reporter サブエージェントで実行ログ表示
+
+- **Phase 7 の成果**
+  - 完全自動化: 全タスクで実行ログが自動記録
+  - 透明性: 各サブエージェントの実行時間・結果が可視化
+  - 品質向上: メトリクス収集により継続的改善が可能
+  - 問題の早期検出: トレンド分析により問題を事前に発見
+  - データ駆動: 改善提案がデータに基づいて自動生成
+
+- **PM Orchestrator システム完成**
+  - Phase 2-A: PM Orchestrator + 4サブエージェント作成 ✅
+  - Phase 2-B: Designer + QA サブエージェント追加 ✅
+  - Phase 3: エラーハンドリング・自動修正・ロールバック ✅
+  - Phase 4: PM Orchestrator ドキュメント化 ✅
+  - Phase 5: 実行ログ・メトリクス収集機能（設計）✅
+  - Phase 6: 実行ログ・メトリクス収集機能（実装）✅
+  - Phase 7: PM Orchestrator への統合 ✅
+
 ### v1.3.68 (2025-01-20)
 
 **実行ログ・メトリクス収集機能の実装（Phase 6）**
