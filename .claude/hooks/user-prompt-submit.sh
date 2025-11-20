@@ -329,6 +329,74 @@ EOF
 fi
 
 # ============================================================================
+# PM Orchestrator 起動判定（Phase 2: AI Control System）
+# ============================================================================
+
+LAUNCH_PM=0
+
+# 複雑なタスクの場合、PM Orchestratorを起動
+if [ $CODERABBIT_RESOLVE -eq 1 ] || [ $LIST_MODIFICATION -eq 1 ] || [ $PR_REVIEW_RESPONSE -eq 1 ]; then
+  LAUNCH_PM=1
+fi
+
+if [ $LAUNCH_PM -eq 1 ]; then
+  cat <<'EOF'
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 PM Orchestrator 起動
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+このタスクは複雑なため、PM Orchestrator サブエージェントを起動します。
+
+【PM Orchestrator の役割】
+- タスク分析
+- 適切なサブエージェントの起動
+- チェックポイント管理
+- 最終報告
+
+【実行フロー】
+1. PM → RuleChecker（ルールチェック）
+2. PM → Implementer（実装実行）
+3. PM → Reporter（結果まとめ）
+4. PM → ユーザー報告
+
+【重要】
+全てのサブエージェントはPMを経由します。
+PMが全チェックOKを確認してから次に進みます。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【Main AIへの指示】
+以下のコマンドでPM Orchestratorを起動してください：
+
+Task tool を使用:
+  subagent_type: "pm-orchestrator"
+  description: "Complex task orchestration"
+  prompt: "ユーザー入力を分析し、適切なサブエージェントチェーンを起動してください。
+
+          検出されたパターン:
+          - CodeRabbit Resolve: $CODERABBIT_RESOLVE
+          - List Modification: $LIST_MODIFICATION
+          - PR Review Response: $PR_REVIEW_RESPONSE
+
+          PMとして、以下を実行してください：
+          1. タスクタイプを決定
+          2. 必要なサブエージェントを決定（RuleChecker, Implementer, Reporter）
+          3. 各サブエージェントを順番に起動（Task tool使用）
+          4. 各結果を集約
+          5. 最終報告をユーザーに提示
+
+          【厳守事項】
+          - 全てのサブエージェント間の通信はPMを経由
+          - 各サブエージェントの結果を必ずPMが確認
+          - エラーがあれば即座に停止してユーザーに報告
+          - 全チェックOKの場合のみ次に進む"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EOF
+fi
+
+# ============================================================================
 # 全MUST Rulesを毎回プロンプトに再表示（再帰的ルール表示）
 # ============================================================================
 
