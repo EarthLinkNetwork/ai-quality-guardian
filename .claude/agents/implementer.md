@@ -261,11 +261,207 @@ Status: SUCCESS
 
 ---
 
-## エラーハンドリング
+## エラーハンドリング（Phase 3: 自動修正・ロールバック）
+
+### エラー発生時の対応フロー
+
+**基本原則**:
+1. **軽微なエラー（Lint等）**: 自動修正を試みる
+2. **一時的なエラー（ネットワーク等）**: リトライを試みる
+3. **重大なエラー（テスト失敗等）**: PMに報告、ロールバック提案
+4. **自動修正失敗**: PMに報告、元の状態に戻す
+
+### 自動修正可能なエラー
+
+以下のエラーは自動修正を試みる：
+
+**1. Lint エラー（自動修正可能な場合）**
+```bash
+# ESLint の自動修正機能を使用
+npm run lint -- --fix
+
+# 修正結果を確認
+npm run lint
+```
+
+**2. 未使用変数・import**
+```bash
+# ESLint で自動削除
+npm run lint -- --fix
+
+# または手動で削除
+# Read → Edit で未使用変数を削除
+```
+
+**3. フォーマットエラー**
+```bash
+# Prettier で自動フォーマット
+npx prettier --write src/**/*.ts
+```
+
+### リトライ可能なエラー
+
+以下のエラーはリトライを試みる（最大3回）：
+
+**1. ネットワークエラー**
+```bash
+# gh api の失敗を3回リトライ
+for i in {1..3}; do
+  gh api graphql -f query='...' && break
+  sleep 2
+done
+```
+
+**2. 一時的なファイルロック**
+```bash
+# ファイルアクセス失敗を3回リトライ
+for i in {1..3}; do
+  cat file.txt && break
+  sleep 1
+done
+```
+
+### ロールバック機能
+
+**実装前にバックアップを作成：**
+
+```bash
+# 1. 変更前のファイル状態を保存
+BACKUP_DIR="/tmp/implementer-backup-$(date +%s)"
+mkdir -p "$BACKUP_DIR"
+
+for file in "${files_to_modify[@]}"; do
+  if [ -f "$file" ]; then
+    cp "$file" "$BACKUP_DIR/$(basename $file)"
+  fi
+done
+
+# 2. 実装を試みる
+# ... 実装処理 ...
+
+# 3. エラー発生時、バックアップから復元
+if [ $? -ne 0 ]; then
+  for file in "${files_to_modify[@]}"; do
+    if [ -f "$BACKUP_DIR/$(basename $file)" ]; then
+      cp "$BACKUP_DIR/$(basename $file)" "$file"
+    fi
+  done
+  echo "❌ Implementation failed, rolled back to previous state"
+fi
+```
+
+### エラー対応の詳細パターン
+
+#### パターン1: Lint エラー → 自動修正成功
+
+**エラー検出**:
+```
+Lint:
+  ❌ npm run lint: 3 errors
+      - NewFeature.ts:15 - 'unusedVar' is assigned but never used
+      - NewFeature.ts:42 - Missing semicolon
+      - NewFeature.ts:68 - Line exceeds 80 characters
+```
+
+**自動修正試行**:
+```bash
+# 1. 自動修正を試みる
+npm run lint -- --fix
+
+# 2. 再確認
+npm run lint
+```
+
+**PMへの返却**:
+```
+Implementer Report:
+
+✅ Implementation completed (with auto-fix)
+
+Files modified:
+  ✅ src/feature/NewFeature.ts
+
+Lint:
+  ✅ npm run lint: No errors (auto-fixed 3 issues)
+      - Removed unused variable 'unusedVar'
+      - Added missing semicolon
+      - Wrapped long line
+
+Status: SUCCESS
+```
+
+#### パターン2: ネットワークエラー → リトライ成功
+
+**エラー検出**:
+```
+Error:
+  gh api graphql failed: Network timeout
+```
+
+**リトライ試行**:
+```bash
+# 3回リトライ
+Attempt 1: ❌ Network timeout
+Attempt 2: ❌ Network timeout
+Attempt 3: ✅ Success
+```
+
+**PMへの返却**:
+```
+Implementer Report:
+
+✅ Implementation completed (with retry)
+
+Actions performed:
+  ✅ Resolved CodeRabbit comment (after 3 retries)
+
+Status: SUCCESS
+```
+
+#### パターン3: テスト失敗 → ロールバック
+
+**エラー検出**:
+```
+Tests:
+  ❌ npm test: 2/15 tests failed
+      - NewFeature.test.ts:42 - Expected 5, got 3
+```
+
+**ロールバック実行**:
+```bash
+# 1. バックアップから復元
+cp /tmp/implementer-backup-*/NewFeature.ts src/feature/NewFeature.ts
+
+# 2. 復元確認
+git diff src/feature/NewFeature.ts
+# → 変更前の状態に戻った
+```
+
+**PMへの返却**:
+```
+Implementer Report:
+
+❌ Implementation failed and rolled back
+
+Files modified:
+  ⏭  src/feature/NewFeature.ts (rolled back)
+
+Tests:
+  ❌ npm test: 2/15 tests failed
+      - NewFeature.test.ts:42 - Expected 5, got 3
+      - NewFeature.test.ts:58 - TypeError: Cannot read property 'x'
+
+Rollback:
+  ✅ All changes reverted to previous state
+  ✅ Backup location: /tmp/implementer-backup-1234567890
+
+Status: ERROR_ROLLED_BACK
+Action required: Please review test failures and retry
+```
 
 ### エラー発生時の対応
 
-**原則**: エラーが発生しても、PMに報告する。Implementerが勝手に修正しない。
+**原則**: 自動修正を試みる。修正失敗時はロールバックしてPMに報告。
 
 **エラー例1**: ファイルが見つからない
 
