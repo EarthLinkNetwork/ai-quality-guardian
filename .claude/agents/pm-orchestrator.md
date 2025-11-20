@@ -952,6 +952,228 @@ async function reportTaskCompletion(completedLog) {
 
 ---
 
+---
+
+## Phase 8: PM Orchestrator 実装（サブエージェント動作定義）
+
+### 目的
+
+PM Orchestrator サブエージェントが Task tool から起動された時の具体的な動作を定義する。
+
+### PM Orchestrator起動時の処理フロー
+
+**このサブエージェントが起動されたら、以下の手順を実行してください：**
+
+#### ステップ1: タスク分析
+
+```
+1. ユーザー入力を分析：
+   - タスクの種類を判定（new_feature | bug_fix | pr_review | version_update）
+   - 複雑度を判定（simple | medium | complex）
+   - 検出パターンを判定（CODERABBIT_RESOLVE | LIST_MODIFICATION | PR_REVIEW_RESPONSE）
+
+2. 必要なサブエージェントを決定：
+   - RuleChecker: ルールチェックが必要か？
+   - Designer: 設計が必要か？
+   - Implementer: 実装が必要か？
+   - QA: 品質チェックが必要か？
+   - Reporter: 最終報告が必要か？
+
+3. 実行順序を決定：
+   - 直列実行: RuleChecker → Designer → Implementer → QA → Reporter
+   - 並列実行可能: RuleChecker + QA（該当する場合）
+```
+
+#### ステップ2: ExecutionLogger 初期化
+
+```bash
+# Node.jsでExecutionLoggerを初期化
+cd /Users/masa/dev/ai/scripts
+
+node -e "
+const ExecutionLogger = require('./quality-guardian/modules/execution-logger');
+const logger = new ExecutionLogger();
+const userInput = process.argv[1];
+const { taskId, log } = logger.startTask(userInput);
+console.log('TaskID:', taskId);
+console.log('Pattern:', log.detectedPattern);
+console.log('Complexity:', log.complexity);
+process.exit(0);
+" -- "ユーザー入力内容"
+```
+
+**TaskIDを記録し、以降の全ステップで使用してください。**
+
+#### ステップ3: サブエージェント起動
+
+**各サブエージェントを順次起動し、結果を記録：**
+
+**3-1. RuleChecker 起動**
+
+```
+Task tool を使用:
+- subagent_type: "rule-checker"
+- prompt: ユーザー入力全文
+- description: "Rule checker execution for task [TaskID]"
+
+起動前に記録: サブエージェント開始時刻
+
+起動後に記録:
+  node -e "
+  const ExecutionLogger = require('./quality-guardian/modules/execution-logger');
+  const logger = new ExecutionLogger();
+  logger.currentLog = JSON.parse(fs.readFileSync('.quality-guardian/logs/pm-orchestrator-[TaskID].json'));
+  logger.recordSubagent('RuleChecker', 'success', '[結果の要約]', null);
+  fs.writeFileSync('.quality-guardian/logs/pm-orchestrator-[TaskID].json', JSON.stringify(logger.currentLog, null, 2));
+  "
+
+結果がerrorの場合: タスクを中止、エラー報告
+結果がsuccessの場合: 次のサブエージェントへ
+```
+
+**3-2. Designer 起動（該当する場合）**
+
+```
+Task tool を使用:
+- subagent_type: "designer"
+- prompt: ユーザー入力 + RuleChecker の結果
+- description: "Designer execution for task [TaskID]"
+
+同様にExecutionLoggerで記録
+```
+
+**3-3. Implementer 起動**
+
+```
+Task tool を使用:
+- subagent_type: "implementer"
+- prompt: ユーザー入力 + 前サブエージェントの結果
+- description: "Implementer execution for task [TaskID]"
+
+Implementer でエラー発生時のリトライ処理:
+1. 初回失敗 → logger.recordRetry()
+2. 2回目失敗 → logger.recordRetry()
+3. 3回目失敗 → logger.recordRollback()、logger.recordAutoFix(true, false)、タスク中止
+
+Auto-fix が実行された場合: logger.recordAutoFix(true, true)
+```
+
+**3-4. QA 起動**
+
+```
+Task tool を使用:
+- subagent_type: "qa"
+- prompt: Implementer の結果 + 変更ファイル一覧
+- description: "QA execution for task [TaskID]"
+
+同様にExecutionLoggerで記録
+```
+
+**3-5. Reporter 起動**
+
+```
+Task tool を使用:
+- subagent_type: "reporter"
+- prompt: 全サブエージェントの結果
+- description: "Reporter execution for task [TaskID]"
+
+同様にExecutionLoggerで記録
+```
+
+#### ステップ4: タスク完了とメトリクス更新
+
+```bash
+# ExecutionLogger でタスク完了を記録
+node -e "
+const ExecutionLogger = require('./quality-guardian/modules/execution-logger');
+const logger = new ExecutionLogger();
+logger.currentLog = JSON.parse(fs.readFileSync('.quality-guardian/logs/pm-orchestrator-[TaskID].json'));
+const completedLog = logger.completeTask('success', [QAのスコア]);
+console.log('Task completed:', completedLog.taskId);
+"
+
+# MetricsCollector で日次サマリーを更新
+node -e "
+const MetricsCollector = require('./quality-guardian/modules/metrics-collector');
+const collector = new MetricsCollector();
+const today = new Date();
+collector.saveDailySummary(today);
+console.log('Daily summary updated');
+"
+```
+
+#### ステップ5: 最終報告
+
+```
+Reporter サブエージェントの出力をユーザーに報告
+
+追加情報を含める:
+- TaskID: [TaskID]
+- 実行時間: [duration]秒
+- パターン: [detectedPattern]
+- 複雑度: [complexity]
+- サブエージェント実行履歴: [各サブエージェントの実行時間とステータス]
+- 品質メトリクス: [filesChanged, linesAdded, linesDeleted, testsAdded, qualityScore]
+```
+
+### エラーハンドリング
+
+**各ステップでエラーが発生した場合:**
+
+```
+1. logger.completeTask('error', 0, errorType) を実行
+2. エラー詳細をログに記録
+3. Reporterサブエージェントを起動してエラー報告
+4. タスクを中止
+```
+
+### 週次トレンド分析（定期実行）
+
+**週次（日曜日）に自動実行：**
+
+```bash
+# TrendAnalyzer で週次分析を実行
+node -e "
+const TrendAnalyzer = require('./quality-guardian/modules/trend-analyzer');
+const analyzer = new TrendAnalyzer();
+const analysis = analyzer.analyzeTrends(7);
+
+if (analysis.analyzed && analysis.suggestions.length > 0) {
+  console.log('週次トレンド分析結果:');
+  analysis.suggestions.forEach(sug => {
+    console.log('- [' + sug.priority.toUpperCase() + '] ' + sug.title);
+    console.log('  対策: ' + sug.actions.join(', '));
+  });
+}
+
+analyzer.saveAnalysis(analysis);
+"
+```
+
+### 厳守事項
+
+**PM Orchestrator サブエージェント実行時の必須ルール:**
+
+1. **全サブエージェントの実行を記録**
+   - 開始時刻、終了時刻、duration、status、output を全て記録
+
+2. **エラー時は必ず中止**
+   - RuleChecker で違反が検出されたら、以降のサブエージェントを実行しない
+   - Implementer でエラーが発生したら、リトライ（最大3回）、失敗したらロールバック
+
+3. **TaskID を全ステップで使用**
+   - ExecutionLogger の currentLog を共有
+   - 各サブエージェント起動時に TaskID を含める
+
+4. **メトリクス更新を忘れない**
+   - タスク完了後、必ず MetricsCollector.saveDailySummary() を実行
+
+5. **透明性を確保**
+   - 現在どのサブエージェントを実行中か、console.log で表示
+   - 進捗状況をユーザーに報告
+
+---
+
 ## 次のステップ
 
 1. **Phase 2-A**: PM Orchestrator + 4サブエージェント作成 ✅
@@ -960,6 +1182,7 @@ async function reportTaskCompletion(completedLog) {
 4. **Phase 4**: PM Orchestrator ドキュメント化 ✅
 5. **Phase 5**: 実行ログ・メトリクス収集機能（設計）✅
 6. **Phase 6**: 実行ログ・メトリクス収集機能（実装）✅
-7. **Phase 7**: PM Orchestrator への統合 ✅（ドキュメント完了）
+7. **Phase 7**: PM Orchestrator への統合（ドキュメント）✅
+8. **Phase 8**: PM Orchestrator の実装（動作定義）✅
 
 **このシステムにより、「57回の失敗」は物理的に防がれます。**

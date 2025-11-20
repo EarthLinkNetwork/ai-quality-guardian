@@ -962,6 +962,51 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.70 (2025-01-20)
+
+**PM Orchestrator の実装（Phase 8）**
+
+- **pm-orchestrator.md に Phase 8 実装定義を追加**
+  - サブエージェント起動時の具体的な処理フローを定義
+  - ステップ1: タスク分析（種類・複雑度・パターン判定、必要サブエージェント決定）
+  - ステップ2: ExecutionLogger 初期化（TaskID生成、ログ記録開始）
+  - ステップ3: サブエージェント順次起動（RuleChecker → Designer → Implementer → QA → Reporter）
+  - ステップ4: タスク完了とメトリクス更新（ExecutionLogger.completeTask()、MetricsCollector.saveDailySummary()）
+  - ステップ5: 最終報告（Reporter出力 + 追加メトリクス情報）
+
+- **ExecutionLogger との統合方法を明確化**
+  - Node.js で ExecutionLogger を初期化するコマンド
+  - 各サブエージェント実行後に recordSubagent() でログ記録
+  - エラー時のリトライ・ロールバック記録（recordRetry()、recordRollback()、recordAutoFix()）
+  - TaskID を全ステップで共有する仕組み
+
+- **エラーハンドリングの具体化**
+  - RuleChecker 違反時は即座にタスク中止
+  - Implementer エラー時はリトライ（最大3回）→ 失敗時はロールバック
+  - 全エラーを ExecutionLogger に記録
+
+- **週次トレンド分析の実装**
+  - 週次（日曜日）に TrendAnalyzer.analyzeTrends(7) を自動実行
+  - 改善提案を console に表示
+  - 分析結果を JSON ファイルに保存
+
+- **厳守事項の明確化**
+  - 全サブエージェント実行を記録（開始時刻、終了時刻、duration、status、output）
+  - エラー時は必ず中止（RuleChecker違反、Implementer失敗時）
+  - TaskID を全ステップで使用
+  - メトリクス更新を忘れない
+  - 透明性を確保（進捗状況をユーザーに報告）
+
+- **PM Orchestrator システム完成（全8フェーズ）**
+  - Phase 2-A: PM Orchestrator + 4サブエージェント作成 ✅
+  - Phase 2-B: Designer + QA サブエージェント追加 ✅
+  - Phase 3: エラーハンドリング・自動修正・ロールバック ✅
+  - Phase 4: PM Orchestrator ドキュメント化 ✅
+  - Phase 5: 実行ログ・メトリクス収集機能（設計）✅
+  - Phase 6: 実行ログ・メトリクス収集機能（実装）✅
+  - Phase 7: PM Orchestrator への統合（ドキュメント）✅
+  - Phase 8: PM Orchestrator の実装（動作定義）✅
+
 ### v1.3.69 (2025-01-20)
 
 **PM Orchestrator への統合（Phase 7）**
