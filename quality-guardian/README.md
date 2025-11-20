@@ -962,6 +962,20 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.76 (2025-01-20)
+
+**PM Orchestrator の実装（Phase 9-6）- 全ての応答でPM Orchestrator起動**
+
+- **LAUNCH_PM=1 を常に設定**
+  - ユーザー指示：「パターンではなく全ての応答で PM Orchestrator 起動」
+  - パターン検出は参考情報としてPM Orchestratorに渡す
+  - PM Orchestratorがタスク分析時に、簡単/複雑を判定して処理
+
+- **実装の意図**
+  - 全てのユーザー入力をPM Orchestratorに渡す
+  - PM Orchestratorが簡単なタスクはMain AIに戻し、複雑なタスクは処理
+  - 「基本全部Orchestratorが処理してください」という指示の実現
+
 ### v1.3.75 (2025-01-20)
 
 **PM Orchestrator の実装（Phase 9-5）- Hook出力への起動メッセージ追加**

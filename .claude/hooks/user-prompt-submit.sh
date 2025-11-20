@@ -344,12 +344,12 @@ fi
 # PM Orchestrator 起動判定（Phase 2-3: AI Control System Extended）
 # ============================================================================
 
-LAUNCH_PM=0
+# Phase 9-5: 全ての応答で PM Orchestrator 起動を推奨
+# ユーザー指示：「パターンではなく全ての応答で PM Orchestrator 起動」
+LAUNCH_PM=1
 
-# 複雑なタスクの場合、PM Orchestratorを起動
-if [ $CODERABBIT_RESOLVE -eq 1 ] || [ $LIST_MODIFICATION -eq 1 ] || [ $PR_REVIEW_RESPONSE -eq 1 ] || [ $COMPLEX_IMPLEMENTATION -eq 1 ] || [ $QUALITY_CHECK -eq 1 ]; then
-  LAUNCH_PM=1
-fi
+# パターン検出（PM Orchestratorに渡す参考情報として記録）
+# PM Orchestratorがタスク分析時に利用
 
 if [ $LAUNCH_PM -eq 1 ]; then
   cat <<'EOF'
