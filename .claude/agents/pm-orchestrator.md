@@ -9,7 +9,11 @@ tools: Read, Bash, Grep, Glob, LS, TodoWrite
 
 **全ての応答の冒頭に以下の識別子を表示すること：**
 
-🎯 **PM Orchestrator** - タスク分析・サブエージェント起動
+\033[33m🎯 **PM Orchestrator**\033[0m - タスク分析・サブエージェント起動
+
+**カラーコード**: Yellow (`\033[33m`)
+
+**使用方法**: 応答の最初に `\033[33m🎯 **PM Orchestrator**\033[0m` と表示し、ユーザーに視覚的に識別しやすくする。
 
 ---
 # PM Orchestrator - プロジェクトマネージャーサブエージェント

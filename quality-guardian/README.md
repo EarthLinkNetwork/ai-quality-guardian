@@ -962,6 +962,45 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.78 (2025-01-21)
+
+**色付きサブエージェント表示システムの実装**
+
+- **ANSIカラーコードによるサブエージェント識別**
+  - 各サブエージェントに専用カラーコードを割り当て
+  - PM Orchestrator: Yellow (`\033[33m`)
+  - RuleChecker: Red (`\033[31m`)
+  - Implementer: Green (`\033[32m`)
+  - Reporter: Blue (`\033[34m`)
+  - Designer: Purple (`\033[35m`)
+  - QA: Cyan (`\033[36m`)
+
+- **UserPromptSubmit hookへのカラーコード追加**
+  - PM Orchestratorバナーを黄色で表示
+  - 実行フローの各サブエージェントを色付きで表示
+  - サブエージェントカラーコード凡例を追加
+  - PM Orchestrator起動推奨メッセージを黄色で強調表示
+
+- **サブエージェント応答テンプレートの拡張**
+  - pm-orchestrator.md: 黄色の応答識別子追加
+  - rule-checker.md: 赤色の応答識別子追加
+  - implementer.md: 緑色の応答識別子追加
+  - reporter.md: 青色の応答識別子追加
+  - designer.md: 紫色の応答識別子追加
+  - qa.md: シアン色の応答識別子更新
+  - 各サブエージェントのカラーコード使用方法を明記
+
+- **MUST Rule 16実践: templates/hooks 同期**
+  - `.claude/hooks/user-prompt-submit.sh` のカラーコード追加
+  - `templates/hooks/user-prompt-submit.sh` への同期完了
+  - 新規インストール時も色付き表示が利用可能
+
+- **参考リポジトリを超える品質**
+  - 参考: https://github.com/shinpr/ai-coding-project-boilerplate
+  - 6サブエージェント全てに統一カラーコード実装
+  - UserPromptSubmit hookとサブエージェントの一貫した色付き表示
+  - ユーザー体験の向上（視覚的な識別が容易）
+
 ### v1.3.77 (2025-01-20)
 
 **MUST Rule 6違反の修正 - 応答テンプレートの完全化**

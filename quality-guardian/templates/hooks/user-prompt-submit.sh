@@ -358,6 +358,12 @@ if [ $LAUNCH_PM -eq 1 ]; then
 🎯 PM Orchestrator 起動
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+\033[33m████████████████████████████████████████████████████████████\033[0m
+\033[33m█                                                            █\033[0m
+\033[33m█  🎯 PM ORCHESTRATOR - タスク分析・サブエージェント起動   █\033[0m
+\033[33m█                                                            █\033[0m
+\033[33m████████████████████████████████████████████████████████████\033[0m
+
 このタスクは複雑なため、PM Orchestrator サブエージェントを起動します。
 
 【PM Orchestrator の役割】
@@ -367,10 +373,18 @@ if [ $LAUNCH_PM -eq 1 ]; then
 - 最終報告
 
 【実行フロー】
-1. PM → RuleChecker（ルールチェック）
-2. PM → Implementer（実装実行）
-3. PM → Reporter（結果まとめ）
-4. PM → ユーザー報告
+1. \033[33mPM\033[0m → \033[31mRuleChecker\033[0m（ルールチェック）
+2. \033[33mPM\033[0m → \033[32mImplementer\033[0m（実装実行）
+3. \033[33mPM\033[0m → \033[34mReporter\033[0m（結果まとめ）
+4. \033[33mPM\033[0m → ユーザー報告
+
+【サブエージェントカラーコード】
+- \033[33m🎯 PM Orchestrator\033[0m (Yellow)
+- \033[31m🔴 RuleChecker\033[0m (Red)
+- \033[32m🟢 Implementer\033[0m (Green)
+- \033[34m🔵 Reporter\033[0m (Blue)
+- \033[35m🟣 Designer\033[0m (Purple)
+- \033[36m🔵 QA\033[0m (Cyan)
 
 【重要】
 全てのサブエージェントはPMを経由します。
@@ -493,7 +507,7 @@ if [ $LAUNCH_PM -eq 1 ]; then
   cat <<EOF
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 **PM Orchestrator** 起動推奨
+\033[33m🎯 **PM Orchestrator** 起動推奨\033[0m
 
 検出パターン:
 ${DETECTED_PATTERNS}
