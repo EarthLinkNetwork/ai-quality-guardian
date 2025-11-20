@@ -477,4 +477,30 @@ Playwrightで自分で確認。ユーザーに依頼禁止。
 
 EOF
 
+# ============================================================================
+# PM Orchestrator 起動表示（Phase 9-3追加）
+# ============================================================================
+
+if [ $LAUNCH_PM -eq 1 ]; then
+  # 検出されたパターンをリスト化
+  DETECTED_PATTERNS=""
+  [ $CODERABBIT_RESOLVE -eq 1 ] && DETECTED_PATTERNS="${DETECTED_PATTERNS}  - CodeRabbit Resolve\n"
+  [ $LIST_MODIFICATION -eq 1 ] && DETECTED_PATTERNS="${DETECTED_PATTERNS}  - List Modification\n"
+  [ $PR_REVIEW_RESPONSE -eq 1 ] && DETECTED_PATTERNS="${DETECTED_PATTERNS}  - PR Review Response\n"
+  [ $COMPLEX_IMPLEMENTATION -eq 1 ] && DETECTED_PATTERNS="${DETECTED_PATTERNS}  - Complex Implementation\n"
+  [ $QUALITY_CHECK -eq 1 ] && DETECTED_PATTERNS="${DETECTED_PATTERNS}  - Quality Check\n"
+
+  cat <<EOF
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 **PM Orchestrator** 起動推奨
+
+検出パターン:
+${DETECTED_PATTERNS}
+Main AIへ: Task tool で pm-orchestrator を起動してください
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EOF
+fi
+
 exit 0

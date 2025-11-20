@@ -962,6 +962,20 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.75 (2025-01-20)
+
+**PM Orchestrator の実装（Phase 9-5）- Hook出力への起動メッセージ追加**
+
+- **UserPromptSubmit hook 出力の改善**
+  - パターン検出時に、CRITICAL Rules直後にPM Orchestrator起動メッセージを表示
+  - 検出されたパターン（CodeRabbit Resolve、List Modification、PR Review Response、Complex Implementation、Quality Check）をリスト表示
+  - ユーザーに「🎯 PM Orchestrator 起動推奨」と視覚的に通知
+  - Main AIに「Task tool で pm-orchestrator を起動してください」と明確に指示
+
+- **hook同期（MUST Rule 16）**
+  - `.claude/hooks/user-prompt-submit.sh` と `templates/hooks/user-prompt-submit.sh` を同期
+  - 他のプロジェクトにインストールする際にも、同じhook動作が保証される
+
 ### v1.3.73 (2025-01-20)
 ### v1.3.74 (2025-01-20)
 
