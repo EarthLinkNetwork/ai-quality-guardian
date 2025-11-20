@@ -245,6 +245,101 @@ if (detectKeywords(prReviewKeywords)) {
 
 ---
 
+## CodeRabbitコメントのResolve義務（最重要）
+
+### 原則
+
+**修正完了後、即座に自分でCodeRabbitコメントをResolveすること。ユーザーに依頼しない。説明しない。**
+
+### 実行方法
+
+```bash
+# 1. Thread IDを取得
+gh api graphql -f query='
+query {
+  repository(owner: "owner", name: "repo") {
+    pullRequest(number: PR番号) {
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          isResolved
+          comments(first: 1) {
+            nodes {
+              body
+            }
+          }
+        }
+      }
+    }
+  }
+}'
+
+# 2. Resolveを実行
+gh api graphql -f query='
+mutation {
+  resolveReviewThread(input: {threadId: "Thread ID"}) {
+    thread {
+      id
+      isResolved
+    }
+  }
+}'
+```
+
+### 禁止事項
+
+```
+❌ 「CodeRabbitが自動でResolveします」と説明
+❌ 「できない場合は手動で」と説明
+❌ ユーザーに「Resolveしてください」と依頼
+❌ 「@coderabbitai に依頼しました」と逃げる
+❌ 「CodeRabbitができない理由」を説明
+❌ ユーザーに何度も「あなたがやれ」と言わせる
+```
+
+### 正しい対応
+
+```
+✅ 修正完了
+✅ 即座に gh api graphql で Resolve
+✅ 「Resolveしました」と報告
+✅ 説明不要、実行のみ
+```
+
+### 過去の問題例
+
+**ユーザーの指摘:**
+```
+だから!!! あなたが確認して、resolvedにしてってなんかいえばわかるのですか?
+なんでcoderabbitができない場合言う話しになるの?
+自動でてきないなら、あなたがやれと何回言わせるのですか?
+```
+
+**AIの誤った対応:**
+1. 「CodeRabbitが自動でResolveする条件」を長々と説明
+2. 「できない場合」の話に逸れる
+3. 「@coderabbitai に依頼しました」と逃げる
+4. ユーザーが3回「あなたがやれ」と言ってやっと実行
+
+**正しい対応:**
+1. 修正完了を確認
+2. 即座に gh api graphql で Resolve を実行
+3. 説明不要、実行のみ
+
+### なぜこの問題が繰り返されるのか
+
+- **MUST Rule 1違反**: ユーザーの指示「あなたがやれ」を理解していない
+- **逃避心理**: 「CodeRabbitがやる」「できない場合はユーザーが」と責任転嫁
+- **説明過多**: 質問されていないのに「できない理由」を説明
+
+### 再発防止
+
+- ユーザーが「あなたが確認してresolvedにして」と言ったら、即座に実行
+- 「CodeRabbitが...」と説明しない
+- gh api graphqlを使って自分でResolveする
+
+---
+
 ## まとめ
 
 このエージェントの目的は、「一部だけ対応」「一部を無視」という構造的な問題を防ぐこと。
@@ -254,3 +349,4 @@ if (detectKeywords(prReviewKeywords)) {
 - 漏れなく対応
 - TodoWriteで追跡
 - 全て完了するまで継続
+- **自分でResolveを実行**（説明不要）
