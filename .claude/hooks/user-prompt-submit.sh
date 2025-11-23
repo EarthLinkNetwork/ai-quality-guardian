@@ -352,7 +352,7 @@ LAUNCH_PM=1
 # PM Orchestratorがタスク分析時に利用
 
 if [ $LAUNCH_PM -eq 1 ]; then
-  cat <<'EOF'
+  echo -e "$(cat <<'PMEOF'
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 PM Orchestrator 起動
@@ -421,7 +421,8 @@ Task tool を使用:
           - 全チェックOKの場合のみ次に進む"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EOF
+PMEOF
+)"
 fi
 
 # ============================================================================
@@ -504,7 +505,7 @@ if [ $LAUNCH_PM -eq 1 ]; then
   [ $COMPLEX_IMPLEMENTATION -eq 1 ] && DETECTED_PATTERNS="${DETECTED_PATTERNS}  - Complex Implementation\n"
   [ $QUALITY_CHECK -eq 1 ] && DETECTED_PATTERNS="${DETECTED_PATTERNS}  - Quality Check\n"
 
-  cat <<EOF
+  echo -e "$(cat <<EOF
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 \033[33m🎯 **PM Orchestrator** 起動推奨\033[0m
@@ -515,6 +516,7 @@ Main AIへ: Task tool で pm-orchestrator を起動してください
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 EOF
+)"
 fi
 
 exit 0
