@@ -493,30 +493,26 @@ Playwrightで自分で確認。ユーザーに依頼禁止。
 EOF
 
 # ============================================================================
-# PM Orchestrator 起動表示（Phase 9-3追加）
+# PM Orchestrator 必須起動（v1.3.86）
+# 検出は不要。毎回起動する。
 # ============================================================================
 
-if [ $LAUNCH_PM -eq 1 ]; then
-  # 検出されたパターンをリスト化
-  DETECTED_PATTERNS=""
-  [ $CODERABBIT_RESOLVE -eq 1 ] && DETECTED_PATTERNS="${DETECTED_PATTERNS}  - CodeRabbit Resolve\n"
-  [ $LIST_MODIFICATION -eq 1 ] && DETECTED_PATTERNS="${DETECTED_PATTERNS}  - List Modification\n"
-  [ $PR_REVIEW_RESPONSE -eq 1 ] && DETECTED_PATTERNS="${DETECTED_PATTERNS}  - PR Review Response\n"
-  [ $COMPLEX_IMPLEMENTATION -eq 1 ] && DETECTED_PATTERNS="${DETECTED_PATTERNS}  - Complex Implementation\n"
-  [ $QUALITY_CHECK -eq 1 ] && DETECTED_PATTERNS="${DETECTED_PATTERNS}  - Quality Check\n"
-
-  echo -e "$(cat <<EOF
+cat <<'EOF'
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-\033[33m🎯 **PM Orchestrator** 起動推奨\033[0m
+🎯 PM Orchestrator 起動（必須）
 
-検出パターン:
-${DETECTED_PATTERNS}
-Main AIへ: Task tool で pm-orchestrator を起動してください
+Main AIへ:
+  Task tool で pm-orchestrator を即座に起動せよ
+  検出・確認は不要
+  毎回起動する
+
+起動方法:
+  subagent_type: "pm-orchestrator"
+  description: "タスク管理"
+  prompt: ユーザー入力をそのまま渡す
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 EOF
-)"
-fi
 
 exit 0
