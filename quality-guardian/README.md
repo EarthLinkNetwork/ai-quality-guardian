@@ -962,6 +962,41 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.85 (2025-01-26)
+
+**PM Orchestrator Enhancement: Context Sharing & Security System (Tasks 11, 12)**
+
+- **Task 11: Context Sharing Mechanism**
+  - `SharedContext` class implementation
+    - Key-value store with TTL support
+    - File caching with LRU eviction
+    - Data sanitization for sensitive information
+  - `ContextManager` class implementation
+    - High-level API for PM Orchestrator
+    - Subagent execution context management
+    - Previous results retrieval and preparation
+  - Tests: 28 tests passed
+
+- **Task 12: Security Functions**
+  - `Permission` class implementation
+    - Operation type and permission level enums
+    - Default rules for all subagents (rule-checker, designer, implementer, qa, etc.)
+    - Glob pattern matching for path restrictions
+  - `SecurityGuard` class implementation
+    - Input validation with dangerous pattern detection
+    - Command validation
+    - File path validation
+    - Operation permission checking
+  - Tests: 29 tests passed
+
+- **Architecture Enhancement**
+  - Context sharing between subagents
+  - Security-first design with permission-based access control
+  - Prepared for Task 14 (Integration Tests)
+
+- **Version Updates**
+  - 5 locations updated: VERSION, install.sh (2 places), quality-guardian.js, package.json
+
 ### v1.3.84 (2025-01-25)
 
 **パターン検出の変数展開バグ修正 (Task 13)**
