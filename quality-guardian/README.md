@@ -962,6 +962,32 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.84 (2025-01-25)
+
+**パターン検出の変数展開バグ修正 (Task 13)**
+
+- **heredocクォート修正**
+  - `user-prompt-submit.sh`のheredoc記法を修正（line 355）
+  - Before: `<<'PMEOF'`（変数展開されない - $CODERABBIT_RESOLVEがリテラル表示）
+  - After: `<<PMEOF`（変数展開される - パターン検出が正しく動作）
+  - パターン検出変数（CODERABBIT_RESOLVE, LIST_MODIFICATION等）が正しく展開されるように
+
+- **テンプレート同期**（MUST Rule 16準拠）
+  - `.claude/hooks/user-prompt-submit.sh`の修正を`templates/hooks/user-prompt-submit.sh`に同期
+  - 両ファイルで同一の修正を適用
+
+- **影響範囲**
+  - PM Orchestratorのパターン検出が正しく動作するように
+  - UserPromptSubmit hookからのパターンマッチングが機能
+
+### v1.3.83 (2025-01-25)
+
+**PM Orchestrator 100%起動ルール実装**
+
+- CLAUDE.mdに「PM Orchestrator 100%起動ルール」セクションを追加
+- system-reminderに「PM Orchestrator 起動」が表示されたら必ず起動する
+- Task 9（リアルタイム可視化）完了：ColorCode, ToolVisualizer, ProgressTrackerクラス実装
+
 ### v1.3.82 (2025-01-24)
 
 **MUST Rule 10違反の記録と実際の動作確認**

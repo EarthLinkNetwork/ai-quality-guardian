@@ -352,7 +352,7 @@ LAUNCH_PM=1
 # PM Orchestratorがタスク分析時に利用
 
 if [ $LAUNCH_PM -eq 1 ]; then
-  echo -e "$(cat <<'PMEOF'
+  echo -e "$(cat <<PMEOF
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 PM Orchestrator 起動
