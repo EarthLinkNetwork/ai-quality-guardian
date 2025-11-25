@@ -1,0 +1,11 @@
+# PM Orchestrator Configuration
+# hookからカスタムコマンドを呼び出す設定
+
+customCommands:
+  pm-orchestrator:
+    steps:
+      - run: echo "PM Orchestrator起動"
+
+hooks:
+  UserPromptSubmit:
+    - run: pm-orchestrator

@@ -1,0 +1,44 @@
+[
+  {
+    "name": "Security Review",
+    "pattern": "SECURITY_REVIEW",
+    "complexity": "complex",
+    "strategy": "sequential",
+    "subagents": [
+      {
+        "name": "rule-checker",
+        "required": true,
+        "timeout": 60000,
+        "retryCount": 0
+      },
+      {
+        "name": "code-analyzer",
+        "required": true,
+        "dependsOn": ["rule-checker"],
+        "timeout": 180000,
+        "retryCount": 1
+      },
+      {
+        "name": "tester",
+        "required": true,
+        "dependsOn": ["code-analyzer"],
+        "timeout": 240000,
+        "retryCount": 2
+      },
+      {
+        "name": "qa",
+        "required": true,
+        "dependsOn": ["tester"],
+        "timeout": 240000,
+        "retryCount": 0
+      },
+      {
+        "name": "reporter",
+        "required": true,
+        "dependsOn": ["qa"],
+        "timeout": 30000,
+        "retryCount": 0
+      }
+    ]
+  }
+]

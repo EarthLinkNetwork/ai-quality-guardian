@@ -1,0 +1,142 @@
+# Default Workflow Configurations
+# このファイルは、PM Orchestratorのデフォルトワークフロー定義です。
+
+# PR Review Response Pattern
+- name: "PR Review Response"
+  pattern: "PR_REVIEW_RESPONSE"
+  complexity: "complex"
+  strategy: "sequential"
+  subagents:
+    - name: "rule-checker"
+      required: true
+      timeout: 60000
+      retryCount: 0
+    - name: "code-analyzer"
+      required: false
+      dependsOn: ["rule-checker"]
+      timeout: 120000
+      retryCount: 1
+    - name: "implementer"
+      required: true
+      dependsOn: ["rule-checker", "code-analyzer"]
+      timeout: 300000
+      retryCount: 2
+    - name: "tester"
+      required: true
+      dependsOn: ["implementer"]
+      timeout: 180000
+      retryCount: 1
+    - name: "qa"
+      required: true
+      dependsOn: ["tester"]
+      timeout: 240000
+      retryCount: 0
+    - name: "reporter"
+      required: true
+      dependsOn: ["qa"]
+      timeout: 30000
+      retryCount: 0
+
+# List Modification Pattern
+- name: "List Modification"
+  pattern: "LIST_MODIFICATION"
+  complexity: "medium"
+  strategy: "sequential"
+  subagents:
+    - name: "rule-checker"
+      required: true
+      timeout: 60000
+      retryCount: 0
+    - name: "implementer"
+      required: true
+      dependsOn: ["rule-checker"]
+      timeout: 180000
+      retryCount: 2
+    - name: "qa"
+      required: true
+      dependsOn: ["implementer"]
+      timeout: 120000
+      retryCount: 0
+    - name: "reporter"
+      required: true
+      dependsOn: ["qa"]
+      timeout: 30000
+      retryCount: 0
+
+# Complex Implementation Pattern
+- name: "Complex Implementation"
+  pattern: "COMPLEX_IMPLEMENTATION"
+  complexity: "complex"
+  strategy: "sequential"
+  subagents:
+    - name: "rule-checker"
+      required: true
+      timeout: 60000
+      retryCount: 0
+    - name: "designer"
+      required: true
+      dependsOn: ["rule-checker"]
+      timeout: 120000
+      retryCount: 1
+    - name: "implementer"
+      required: true
+      dependsOn: ["designer"]
+      timeout: 300000
+      retryCount: 2
+    - name: "tester"
+      required: true
+      dependsOn: ["implementer"]
+      timeout: 180000
+      retryCount: 1
+    - name: "qa"
+      required: true
+      dependsOn: ["tester"]
+      timeout: 240000
+      retryCount: 0
+    - name: "reporter"
+      required: true
+      dependsOn: ["qa"]
+      timeout: 30000
+      retryCount: 0
+
+# Quality Check Pattern
+- name: "Quality Check"
+  pattern: "QUALITY_CHECK"
+  complexity: "simple"
+  strategy: "sequential"
+  subagents:
+    - name: "qa"
+      required: true
+      timeout: 240000
+      retryCount: 0
+    - name: "reporter"
+      required: true
+      dependsOn: ["qa"]
+      timeout: 30000
+      retryCount: 0
+
+# CodeRabbit Resolve Pattern
+- name: "CodeRabbit Resolve"
+  pattern: "CODERABBIT_RESOLVE"
+  complexity: "medium"
+  strategy: "sequential"
+  subagents:
+    - name: "rule-checker"
+      required: true
+      timeout: 60000
+      retryCount: 0
+    - name: "implementer"
+      required: true
+      dependsOn: ["rule-checker"]
+      timeout: 180000
+      retryCount: 2
+    - name: "qa"
+      required: false
+      dependsOn: ["implementer"]
+      timeout: 120000
+      retryCount: 0
+    - name: "reporter"
+      required: true
+      dependsOn: ["implementer", "qa"]
+      timeout: 30000
+      retryCount: 0

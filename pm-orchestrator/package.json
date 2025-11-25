@@ -1,0 +1,42 @@
+{
+  "name": "pm-orchestrator-enhancement",
+  "version": "1.0.0",
+  "description": "PM Orchestrator Enhancement - Multi-agent parallel execution system",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "test:unit": "jest --testPathPattern=tests/unit",
+    "test:integration": "jest --testPathPattern=tests/integration",
+    "test:e2e": "jest --testPathPattern=tests/e2e",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "cli": "node dist/cli/index.js"
+  },
+  "bin": {
+    "pm-orchestrator": "./dist/cli/index.js"
+  },
+  "keywords": [
+    "pm-orchestrator",
+    "multi-agent",
+    "parallel-execution",
+    "quality-guardian"
+  ],
+  "author": "Quality Guardian Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^29.5.11",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.10.6",
+    "@typescript-eslint/eslint-plugin": "^6.17.0",
+    "@typescript-eslint/parser": "^6.17.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.1"
+  }
+}

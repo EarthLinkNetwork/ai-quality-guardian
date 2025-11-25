@@ -1,17 +1,9 @@
 {
-  "customCommands": {
-    "pm": {
-      "description": "PM Orchestratorを起動してタスクを管理",
-      "steps": [
-        {"run": "/pm $ARGUMENTS"}
-      ]
-    }
-  },
   "hooks": {
     "UserPromptSubmit": [
       {
         "type": "command",
-        "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh"
+        "command": "/pm $PROMPT"
       }
     ]
   }
