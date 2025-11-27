@@ -16,34 +16,33 @@ export class CICDEngineer {
 
   /**
    * CI/CDパイプラインを構築します
-   *
-   * @param platform プラットフォーム
-   * @param pipeline パイプライン設定
-   * @returns CI/CD構築結果
    */
   public async buildPipeline(
     platform: 'github' | 'gitlab' | 'jenkins',
-    pipeline: PipelineConfig
+    _pipeline: PipelineConfig
   ): Promise<CICDEngineerOutput> {
     const configFiles: string[] = [];
     const workflows: Workflow[] = [];
 
     switch (platform) {
-      case 'github':
-        const githubResult = this.buildGitHubActions(pipeline);
+      case 'github': {
+        const githubResult = this.buildGitHubActions(_pipeline);
         configFiles.push(...githubResult.files);
         workflows.push(...githubResult.workflows);
         break;
-      case 'gitlab':
-        const gitlabResult = this.buildGitLabCI(pipeline);
+      }
+      case 'gitlab': {
+        const gitlabResult = this.buildGitLabCI(_pipeline);
         configFiles.push(...gitlabResult.files);
         workflows.push(...gitlabResult.workflows);
         break;
-      case 'jenkins':
-        const jenkinsResult = this.buildJenkins(pipeline);
+      }
+      case 'jenkins': {
+        const jenkinsResult = this.buildJenkins(_pipeline);
         configFiles.push(...jenkinsResult.files);
         workflows.push(...jenkinsResult.workflows);
         break;
+      }
     }
 
     const validationResult = this.validatePipeline(configFiles, workflows);
@@ -56,85 +55,38 @@ export class CICDEngineer {
     };
   }
 
-  /**
-   * GitHub Actionsを構築（プライベート）
-   */
-  private buildGitHubActions(pipeline: PipelineConfig): {
-    files: string[];
-    workflows: Workflow[];
-  } {
-    // 実装例: .github/workflows/ci.yml 生成
-    const files = ['.github/workflows/ci.yml'];
-    const workflows = [
-      {
-        name: 'CI',
-        file: '.github/workflows/ci.yml'
-      }
-    ];
-
-    return { files, workflows };
-  }
-
-  /**
-   * GitLab CIを構築（プライベート）
-   */
-  private buildGitLabCI(pipeline: PipelineConfig): {
-    files: string[];
-    workflows: Workflow[];
-  } {
-    // 実装例: .gitlab-ci.yml 生成
-    const files = ['.gitlab-ci.yml'];
-    const workflows = [
-      {
-        name: 'Pipeline',
-        file: '.gitlab-ci.yml'
-      }
-    ];
-
-    return { files, workflows };
-  }
-
-  /**
-   * Jenkinsを構築（プライベート）
-   */
-  private buildJenkins(pipeline: PipelineConfig): {
-    files: string[];
-    workflows: Workflow[];
-  } {
-    // 実装例: Jenkinsfile 生成
-    const files = ['Jenkinsfile'];
-    const workflows = [
-      {
-        name: 'Jenkins Pipeline',
-        file: 'Jenkinsfile'
-      }
-    ];
-
-    return { files, workflows };
-  }
-
-  /**
-   * パイプラインを検証（プライベート）
-   */
-  private validatePipeline(
-    configFiles: string[],
-    workflows: Workflow[]
-  ): ValidationResult {
-    const errors: string[] = [];
-
-    // 実装例: 設定ファイルの構文チェック、必須項目確認等
-
-    if (configFiles.length === 0) {
-      errors.push('No config files generated');
-    }
-
-    if (workflows.length === 0) {
-      errors.push('No workflows defined');
-    }
-
+  private buildGitHubActions(_pipeline: PipelineConfig): { files: string[]; workflows: Workflow[] } {
     return {
-      valid: errors.length === 0,
-      errors
+      files: ['.github/workflows/ci.yml', '.github/workflows/deploy.yml'],
+      workflows: [
+        { name: 'CI', file: '.github/workflows/ci.yml' },
+        { name: 'Deploy', file: '.github/workflows/deploy.yml' }
+      ]
+    };
+  }
+
+  private buildGitLabCI(_pipeline: PipelineConfig): { files: string[]; workflows: Workflow[] } {
+    return {
+      files: ['.gitlab-ci.yml'],
+      workflows: [
+        { name: 'CI/CD', file: '.gitlab-ci.yml' }
+      ]
+    };
+  }
+
+  private buildJenkins(_pipeline: PipelineConfig): { files: string[]; workflows: Workflow[] } {
+    return {
+      files: ['Jenkinsfile'],
+      workflows: [
+        { name: 'Pipeline', file: 'Jenkinsfile' }
+      ]
+    };
+  }
+
+  private validatePipeline(configFiles: string[], workflows: Workflow[]): ValidationResult {
+    return {
+      valid: configFiles.length > 0 && workflows.length > 0,
+      errors: []
     };
   }
 }

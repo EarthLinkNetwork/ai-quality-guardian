@@ -95,7 +95,6 @@ export class OrchestratorLauncher {
       const agents = options.forceAgents || this.detector.getRecommendedAgents(detectionResult.matches);
 
       // Task toolでpm-orchestratorを起動する指示を生成
-      const launchInstruction = this.generateTaskToolInstruction(options.userInput, agents);
 
       return {
         launched: true,

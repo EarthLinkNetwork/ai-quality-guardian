@@ -18,25 +18,25 @@ export class CodeAnalyzer {
    * @returns 分析結果
    */
   public async analyze(
-    files: string[],
-    analysisType: 'similarity' | 'quality' | 'architecture',
-    context?: string
+    _files: string[],
+    _analysisType: 'similarity' | 'quality' | 'architecture',
+    _context?: string
   ): Promise<CodeAnalyzerOutput> {
     const findings: Finding[] = [];
     let metrics: CodeMetrics;
 
-    switch (analysisType) {
+    switch (_analysisType) {
       case 'similarity':
-        findings.push(...this.analyzeSimilarity(files));
-        metrics = this.calculateMetrics(files, 'similarity');
+        findings.push(...this.analyzeSimilarity(_files));
+        metrics = this.calculateMetrics(_files, 'similarity');
         break;
       case 'quality':
-        findings.push(...this.analyzeQuality(files));
-        metrics = this.calculateMetrics(files, 'quality');
+        findings.push(...this.analyzeQuality(_files));
+        metrics = this.calculateMetrics(_files, 'quality');
         break;
       case 'architecture':
-        findings.push(...this.analyzeArchitecture(files, context));
-        metrics = this.calculateMetrics(files, 'architecture');
+        findings.push(...this.analyzeArchitecture(_files, _context));
+        metrics = this.calculateMetrics(_files, 'architecture');
         break;
     }
 
@@ -51,7 +51,7 @@ export class CodeAnalyzer {
   /**
    * 類似度分析（プライベート）
    */
-  private analyzeSimilarity(files: string[]): Finding[] {
+  private analyzeSimilarity(_files: string[]): Finding[] {
     const findings: Finding[] = [];
 
     // コード重複の検出
@@ -63,7 +63,7 @@ export class CodeAnalyzer {
   /**
    * 品質分析（プライベート）
    */
-  private analyzeQuality(files: string[]): Finding[] {
+  private analyzeQuality(_files: string[]): Finding[] {
     const findings: Finding[] = [];
 
     // コード品質の検出
@@ -75,7 +75,7 @@ export class CodeAnalyzer {
   /**
    * アーキテクチャ分析（プライベート）
    */
-  private analyzeArchitecture(files: string[], context?: string): Finding[] {
+  private analyzeArchitecture(_files: string[], _context?: string): Finding[] {
     const findings: Finding[] = [];
 
     // アーキテクチャパターンの検出
@@ -88,8 +88,8 @@ export class CodeAnalyzer {
    * メトリクスを計算（プライベート）
    */
   private calculateMetrics(
-    files: string[],
-    analysisType: string
+    _files: string[],
+    _analysisType: string
   ): CodeMetrics {
     // 実装例: 実際のファイル解析に基づいたメトリクス計算
     return {

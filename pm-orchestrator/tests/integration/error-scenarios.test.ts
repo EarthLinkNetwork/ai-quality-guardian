@@ -37,7 +37,7 @@ describe('Error Scenario Integration Tests', () => {
       const result: SubagentResult = {
         name: 'implementer',
         status: 'error',
-        executionTime: 50,
+        duration: 50,
         output: {},
         error: 'Permission denied'
       };
@@ -115,7 +115,7 @@ describe('Error Scenario Integration Tests', () => {
       const result: SubagentResult = {
         name: 'implementer',
         status: 'error',
-        executionTime: 10,
+        duration: 10,
         output: {},
         error: `Invalid input: ${validation.errors.join(', ')}`
       };
@@ -225,7 +225,7 @@ describe('Error Scenario Integration Tests', () => {
       const result: SubagentResult = {
         name: 'implementer',
         status: 'error',
-        executionTime: 10,
+        duration: 10,
         output: {},
         error: 'Required context not found'
       };
@@ -251,7 +251,7 @@ describe('Error Scenario Integration Tests', () => {
           resolve({
             name: 'implementer',
             status: 'success',
-            executionTime: 2000,
+            duration: 2000,
             output: {}
           });
         }, 2000); // Takes 2 seconds
@@ -262,7 +262,7 @@ describe('Error Scenario Integration Tests', () => {
           resolve({
             name: 'implementer',
             status: 'error',
-            executionTime: timeout,
+            duration: timeout,
             output: {},
             error: 'Agent execution timeout'
           });
@@ -279,7 +279,7 @@ describe('Error Scenario Integration Tests', () => {
       const crashedAgent: SubagentResult = {
         name: 'implementer',
         status: 'error',
-        executionTime: 100,
+        duration: 100,
         output: {},
         error: 'Agent process crashed: Out of memory'
       };
@@ -301,7 +301,7 @@ describe('Error Scenario Integration Tests', () => {
       results.set('rule-checker', {
         name: 'rule-checker',
         status: 'error',
-        executionTime: 100,
+        duration: 100,
         output: {},
         error: 'Critical rule violation'
       });
@@ -358,7 +358,7 @@ describe('Error Scenario Integration Tests', () => {
       const apiError: SubagentResult = {
         name: 'implementer',
         status: 'error',
-        executionTime: 5000,
+        duration: 5000,
         output: {},
         error: 'API request failed: 503 Service Unavailable'
       };
@@ -378,7 +378,7 @@ describe('Error Scenario Integration Tests', () => {
           return {
             name: 'implementer',
             status: 'error',
-            executionTime: 100,
+            duration: 100,
             output: {},
             error: 'Transient error'
           };
@@ -387,7 +387,7 @@ describe('Error Scenario Integration Tests', () => {
         return {
           name: 'implementer',
           status: 'success',
-          executionTime: 100,
+          duration: 100,
           output: { retry: attemptCount }
         };
       };
@@ -418,7 +418,7 @@ describe('Error Scenario Integration Tests', () => {
       const error: SubagentResult = {
         name: 'implementer',
         status: 'error',
-        executionTime: 300,
+        duration: 300,
         output: {
           filesModified: backup.files,
           rollbackRequired: true

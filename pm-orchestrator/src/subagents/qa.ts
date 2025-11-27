@@ -48,7 +48,7 @@ export class QA {
   /**
    * Lintを実行（プライベート）
    */
-  private async runLint(files: string[]): Promise<CheckResult> {
+  private async runLint(_files: string[]): Promise<CheckResult> {
     // 実装例: ESLint実行
     return {
       passed: true,
@@ -61,7 +61,7 @@ export class QA {
   /**
    * テストを実行（プライベート）
    */
-  private async runTest(files: string[]): Promise<CheckResult> {
+  private async runTest(_files: string[]): Promise<CheckResult> {
     // 実装例: Jest実行
     return {
       passed: true,
@@ -74,7 +74,7 @@ export class QA {
   /**
    * 型チェックを実行（プライベート）
    */
-  private async runTypecheck(files: string[]): Promise<CheckResult> {
+  private async runTypecheck(_files: string[]): Promise<CheckResult> {
     // 実装例: tsc --noEmit実行
     return {
       passed: true,
@@ -87,7 +87,7 @@ export class QA {
   /**
    * ビルドを実行（プライベート）
    */
-  private async runBuild(files: string[]): Promise<CheckResult> {
+  private async runBuild(_files: string[]): Promise<CheckResult> {
     // 実装例: tsc実行
     return {
       passed: true,

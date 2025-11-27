@@ -56,7 +56,7 @@ describe('End-to-End Workflow Tests', () => {
       const pmResult: SubagentResult = {
         name: 'pm-orchestrator',
         status: 'success',
-        executionTime: 100,
+        duration: 100,
         output: {
           workflow: workflow?.name,
           prNumber: 123,
@@ -70,7 +70,7 @@ describe('End-to-End Workflow Tests', () => {
       const ruleResult: SubagentResult = {
         name: 'rule-checker',
         status: 'success',
-        executionTime: 150,
+        duration: 150,
         output: {
           violations: [],
           warnings: [],
@@ -96,7 +96,7 @@ describe('End-to-End Workflow Tests', () => {
       const implementerResult: SubagentResult = {
         name: 'implementer',
         status: 'success',
-        executionTime: 500,
+        duration: 500,
         output: {
           filesModified: ['src/types.ts', 'tests/unit.test.ts'],
           typeErrorsFixed: 1,
@@ -117,7 +117,7 @@ describe('End-to-End Workflow Tests', () => {
       const qaResult: SubagentResult = {
         name: 'qa',
         status: 'success',
-        executionTime: 300,
+        duration: 300,
         output: {
           lintPassed: true,
           testsPassed: true,
@@ -134,7 +134,7 @@ describe('End-to-End Workflow Tests', () => {
       const reporterResult: SubagentResult = {
         name: 'reporter',
         status: 'success',
-        executionTime: 50,
+        duration: 50,
         output: {
           summary: 'PR #123 review comments addressed successfully',
           details: {
@@ -160,7 +160,7 @@ describe('End-to-End Workflow Tests', () => {
       const ruleResult: SubagentResult = {
         name: 'rule-checker',
         status: 'error',
-        executionTime: 150,
+        duration: 150,
         output: {
           violations: ['MUST Rule 2: Test First violated'],
           approved: false
@@ -196,7 +196,7 @@ describe('End-to-End Workflow Tests', () => {
       const pmResult: SubagentResult = {
         name: 'pm-orchestrator',
         status: 'success',
-        executionTime: 50,
+        duration: 50,
         output: {
           currentVersion: '1.3.0',
           targetVersion: '1.3.1',
@@ -214,7 +214,7 @@ describe('End-to-End Workflow Tests', () => {
       const implementerResult: SubagentResult = {
         name: 'implementer',
         status: 'success',
-        executionTime: 200,
+        duration: 200,
         output: {
           filesModified: pmResult.output.filesToUpdate,
           versionsUpdated: 3
@@ -230,7 +230,7 @@ describe('End-to-End Workflow Tests', () => {
       const reporterResult: SubagentResult = {
         name: 'reporter',
         status: 'success',
-        executionTime: 30,
+        duration: 30,
         output: {
           summary: 'Version updated to 1.3.1',
           filesUpdated: 3
@@ -254,7 +254,7 @@ describe('End-to-End Workflow Tests', () => {
       const qaResult: SubagentResult = {
         name: 'qa',
         status: 'success',
-        executionTime: 800,
+        duration: 800,
         output: {
           lint: { passed: true, errors: 0 },
           test: { passed: true, coverage: 85 },
@@ -270,7 +270,7 @@ describe('End-to-End Workflow Tests', () => {
       const reporterResult: SubagentResult = {
         name: 'reporter',
         status: 'success',
-        executionTime: 50,
+        duration: 50,
         output: {
           summary: 'All quality checks passed',
           qualityScore: 90,
@@ -286,7 +286,7 @@ describe('End-to-End Workflow Tests', () => {
       const qaResult: SubagentResult = {
         name: 'qa',
         status: 'error',
-        executionTime: 600,
+        duration: 600,
         output: {
           lint: { passed: false, errors: 3 },
           test: { passed: false, failures: 2 },
@@ -368,7 +368,7 @@ describe('End-to-End Workflow Tests', () => {
       const firstAttempt: SubagentResult = {
         name: 'implementer',
         status: 'error',
-        executionTime: 300,
+        duration: 300,
         output: {},
         error: 'Type check failed'
       };
@@ -379,7 +379,7 @@ describe('End-to-End Workflow Tests', () => {
       const secondAttempt: SubagentResult = {
         name: 'implementer',
         status: 'success',
-        executionTime: 350,
+        duration: 350,
         output: {
           filesModified: ['src/types.ts'],
           typeErrorsFixed: 1
@@ -407,7 +407,7 @@ describe('End-to-End Workflow Tests', () => {
       const criticalError: SubagentResult = {
         name: 'implementer',
         status: 'error',
-        executionTime: 200,
+        duration: 200,
         output: {
           rollbackRequired: true,
           backupCreated: true
@@ -443,7 +443,7 @@ describe('End-to-End Workflow Tests', () => {
       results.set('designer', {
         name: 'designer',
         status: 'success',
-        executionTime: 400,
+        duration: 400,
         output: {
           designDoc: 'design.md',
           architecture: 'OAuth 2.0',
@@ -455,7 +455,7 @@ describe('End-to-End Workflow Tests', () => {
       results.set('implementer', {
         name: 'implementer',
         status: 'success',
-        executionTime: 800,
+        duration: 800,
         output: {
           filesCreated: ['src/auth/provider.ts', 'src/auth/context.ts', 'src/auth/hook.ts'],
           testsCreated: ['tests/auth.test.ts']
@@ -466,7 +466,7 @@ describe('End-to-End Workflow Tests', () => {
       results.set('qa', {
         name: 'qa',
         status: 'success',
-        executionTime: 500,
+        duration: 500,
         output: {
           allChecksPassed: true,
           coverage: 90,
@@ -478,7 +478,7 @@ describe('End-to-End Workflow Tests', () => {
       results.set('reporter', {
         name: 'reporter',
         status: 'success',
-        executionTime: 100,
+        duration: 100,
         output: {
           summary: 'Authentication feature implemented successfully',
           documentation: 'Updated README and API docs'

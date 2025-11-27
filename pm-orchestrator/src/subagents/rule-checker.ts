@@ -19,19 +19,19 @@ export class RuleChecker {
    */
   public async check(
     taskType: string,
-    files: string[],
+    _files: string[],
     operation: 'git' | 'file' | 'api'
   ): Promise<RuleCheckerOutput> {
     const violations: RuleViolation[] = [];
 
     // Rule 4: Git操作前の確認
     if (operation === 'git') {
-      const gitViolations = this.checkGitRules(files);
+      const gitViolations = this.checkGitRules(_files);
       violations.push(...gitViolations);
     }
 
     // Rule 17: Claude Code痕跡の確認
-    const traceViolations = this.checkTraceRules(files);
+    const traceViolations = this.checkTraceRules(_files);
     violations.push(...traceViolations);
 
     return {
@@ -46,7 +46,7 @@ export class RuleChecker {
   /**
    * Git操作のルールをチェック（プライベート）
    */
-  private checkGitRules(files: string[]): RuleViolation[] {
+  private checkGitRules(_files: string[]): RuleViolation[] {
     const violations: RuleViolation[] = [];
 
     // Rule 4: mainブランチへの直接変更禁止
@@ -59,7 +59,7 @@ export class RuleChecker {
   /**
    * Claude Code痕跡のルールをチェック（プライベート）
    */
-  private checkTraceRules(files: string[]): RuleViolation[] {
+  private checkTraceRules(_files: string[]): RuleViolation[] {
     const violations: RuleViolation[] = [];
 
     // Rule 17: コミット署名禁止

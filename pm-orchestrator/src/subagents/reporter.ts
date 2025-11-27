@@ -62,7 +62,7 @@ export class Reporter {
   /**
    * タイトルを生成（プライベート）
    */
-  private generateTitle(status: string, executionLog: any): string {
+  private generateTitle(status: string, _executionLog: any): string {
     const statusEmoji = {
       success: '✅',
       warning: '⚠️',
@@ -222,7 +222,7 @@ export class Reporter {
    */
   private generateNextSteps(
     status: string,
-    subagentResults: any[]
+    _subagentResults: any[]
   ): string[] {
     const nextSteps: string[] = [];
 

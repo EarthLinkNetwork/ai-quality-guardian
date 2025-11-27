@@ -41,7 +41,7 @@ describe('Subagent Coordination Integration Tests', () => {
       const pmResult: SubagentResult = {
         name: 'pm-orchestrator',
         status: 'success',
-        executionTime: 100,
+        duration: 100,
         output: {
           taskType: 'pr-review',
           requiredAgents: ['rule-checker', 'implementer', 'qa', 'reporter']
@@ -65,7 +65,7 @@ describe('Subagent Coordination Integration Tests', () => {
       const ruleCheckerResult: SubagentResult = {
         name: 'rule-checker',
         status: 'success',
-        executionTime: 150,
+        duration: 150,
         output: {
           violations: [],
           warnings: ['Consider adding tests'],
@@ -83,7 +83,7 @@ describe('Subagent Coordination Integration Tests', () => {
       const implementerResult: SubagentResult = {
         name: 'implementer',
         status: 'success',
-        executionTime: 500,
+        duration: 500,
         output: {
           filesModified: ['src/index.ts', 'src/utils.ts'],
           testsAdded: ['tests/index.test.ts']
@@ -99,7 +99,7 @@ describe('Subagent Coordination Integration Tests', () => {
       const qaResult: SubagentResult = {
         name: 'qa',
         status: 'success',
-        executionTime: 300,
+        duration: 300,
         output: {
           lintPassed: true,
           testsPassed: true,
@@ -141,7 +141,7 @@ describe('Subagent Coordination Integration Tests', () => {
       const ruleCheckerResult: SubagentResult = {
         name: 'rule-checker',
         status: 'error',
-        executionTime: 100,
+        duration: 100,
         output: {
           violations: ['MUST Rule 1 violated'],
           approved: false
@@ -167,7 +167,7 @@ describe('Subagent Coordination Integration Tests', () => {
       const successResult: SubagentResult = {
         name: 'rule-checker',
         status: 'success',
-        executionTime: 100,
+        duration: 100,
         output: {
           violations: [],
           approved: true
@@ -190,7 +190,7 @@ describe('Subagent Coordination Integration Tests', () => {
       const implementerResult: SubagentResult = {
         name: 'implementer',
         status: 'error',
-        executionTime: 200,
+        duration: 200,
         output: {},
         error: 'Implementation failed'
       };
@@ -212,7 +212,7 @@ describe('Subagent Coordination Integration Tests', () => {
       const qaResult: SubagentResult = {
         name: 'qa',
         status: 'success',
-        executionTime: 300,
+        duration: 300,
         output: {
           qualityScore: 95
         }
@@ -336,7 +336,7 @@ describe('Subagent Coordination Integration Tests', () => {
       results.set('rule-checker', {
         name: 'rule-checker',
         status: 'error',
-        executionTime: 100,
+        duration: 100,
         output: {},
         error: 'Critical rule violation'
       });
@@ -360,7 +360,7 @@ describe('Subagent Coordination Integration Tests', () => {
       results.set('implementer', {
         name: 'implementer',
         status: 'error',
-        executionTime: 200,
+        duration: 200,
         output: {},
         error: 'Build failed'
       });
@@ -369,7 +369,7 @@ describe('Subagent Coordination Integration Tests', () => {
       results.set('implementer', {
         name: 'implementer',
         status: 'success',
-        executionTime: 250,
+        duration: 250,
         output: {
           filesModified: ['src/fixed.ts']
         }

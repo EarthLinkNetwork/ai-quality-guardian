@@ -7,13 +7,13 @@
 export enum AgentColor {
   PM_ORCHESTRATOR = '\x1b[33m',      // Yellow
   RULE_CHECKER = '\x1b[31m',         // Red
-  CODE_ANALYZER = '\x1b[35m',        // Purple
-  DESIGNER = '\x1b[35m',             // Purple
+  CODE_ANALYZER = '\x1b[35m',        // Magenta
+  DESIGNER = '\x1b[95m',             // Bright Magenta
   IMPLEMENTER = '\x1b[32m',          // Green
-  TESTER = '\x1b[36m',               // Cyan
+  TESTER = '\x1b[96m',               // Bright Cyan
   QA = '\x1b[36m',                   // Cyan
   CICD_ENGINEER = '\x1b[34m',        // Blue
-  REPORTER = '\x1b[34m',             // Blue
+  REPORTER = '\x1b[94m',             // Bright Blue
   RESET = '\x1b[0m'
 }
 

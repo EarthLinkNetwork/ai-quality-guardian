@@ -25,17 +25,17 @@ export class Designer {
    * @returns 設計結果
    */
   public async design(
-    requirements: string,
+    _requirements: string,
     constraints: string[],
-    existingArchitecture?: string
+    _existingArchitecture?: string
   ): Promise<DesignerOutput> {
-    const architecture = this.designArchitecture(requirements, existingArchitecture);
-    const components = this.designComponents(requirements, architecture);
-    const dataModels = this.designDataModels(requirements);
+    const _architecture = this.designArchitecture(_requirements, _existingArchitecture);
+    const components = this.designComponents(_requirements, _architecture);
+    const dataModels = this.designDataModels(_requirements);
     const designDoc = this.generateDesignDoc(
-      requirements,
+      _requirements,
       constraints,
-      architecture,
+      _architecture,
       components,
       dataModels
     );
@@ -43,7 +43,7 @@ export class Designer {
     return {
       status: 'completed',
       designDoc,
-      architecture,
+      architecture: _architecture,
       components,
       dataModels
     };
@@ -53,16 +53,16 @@ export class Designer {
    * アーキテクチャを設計（プライベート）
    */
   private designArchitecture(
-    requirements: string,
-    existingArchitecture?: string
+    _requirements: string,
+    _existingArchitecture?: string
   ): ArchitectureDesign {
-    const pattern = this.selectArchitecturePattern(requirements);
-    const layers = this.defineLayers(pattern);
-    const dependencies = this.defineDependencies(layers);
+    const _pattern = this.selectArchitecturePattern(_requirements);
+    const _layers = this.defineLayers(_pattern);
+    const dependencies = this.defineDependencies(_layers);
 
     return {
-      pattern,
-      layers,
+      pattern: _pattern,
+      layers: _layers,
       dependencies
     };
   }
@@ -70,7 +70,7 @@ export class Designer {
   /**
    * アーキテクチャパターンを選択（プライベート）
    */
-  private selectArchitecturePattern(requirements: string): string {
+  private selectArchitecturePattern(_requirements: string): string {
     // 実装例: 要件に基づいたパターン選択
     // Layered, Hexagonal, Microservices, Event-Driven等
     return 'Layered Architecture';
@@ -79,7 +79,7 @@ export class Designer {
   /**
    * レイヤーを定義（プライベート）
    */
-  private defineLayers(pattern: string): Layer[] {
+  private defineLayers(_pattern: string): Layer[] {
     // 実装例: パターンに基づいたレイヤー定義
     return [
       {
@@ -103,7 +103,7 @@ export class Designer {
   /**
    * 依存関係を定義（プライベート）
    */
-  private defineDependencies(layers: Layer[]): Dependency[] {
+  private defineDependencies(_layers: Layer[]): Dependency[] {
     // 実装例: レイヤー間の依存関係定義
     return [
       {
@@ -123,8 +123,8 @@ export class Designer {
    * コンポーネントを設計（プライベート）
    */
   private designComponents(
-    requirements: string,
-    architecture: ArchitectureDesign
+    _requirements: string,
+    _architecture: ArchitectureDesign
   ): ComponentDesign[] {
     // 実装例: アーキテクチャに基づいたコンポーネント設計
     return [
@@ -144,7 +144,7 @@ export class Designer {
   /**
    * データモデルを設計（プライベート）
    */
-  private designDataModels(requirements: string): DataModel[] {
+  private designDataModels(_requirements: string): DataModel[] {
     // 実装例: 要件に基づいたデータモデル設計
     return [
       {
@@ -163,9 +163,9 @@ export class Designer {
    * 設計書を生成（プライベート）
    */
   private generateDesignDoc(
-    requirements: string,
+    _requirements: string,
     constraints: string[],
-    architecture: ArchitectureDesign,
+    _architecture: ArchitectureDesign,
     components: ComponentDesign[],
     dataModels: DataModel[]
   ): string {
@@ -173,19 +173,19 @@ export class Designer {
 # Design Document
 
 ## Requirements
-${requirements}
+${_requirements}
 
 ## Constraints
 ${constraints.map(c => `- ${c}`).join('\n')}
 
 ## Architecture
-Pattern: ${architecture.pattern}
+Pattern: ${_architecture.pattern}
 
 ### Layers
-${architecture.layers.map(l => `- ${l.name}: ${l.purpose}`).join('\n')}
+${_architecture.layers.map(l => `- ${l.name}: ${l.purpose}`).join('\n')}
 
 ### Dependencies
-${architecture.dependencies.map(d => `- ${d.from} -> ${d.to} (${d.type})`).join('\n')}
+${_architecture.dependencies.map(d => `- ${d.from} -> ${d.to} (${d.type})`).join('\n')}
 
 ## Components
 ${components.map(c => `- ${c.name}: ${c.purpose}`).join('\n')}

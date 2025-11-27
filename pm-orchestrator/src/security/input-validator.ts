@@ -154,6 +154,7 @@ export class InputValidator {
     result = this.escapeHtml(result);
 
     // 制御文字を削除
+    // eslint-disable-next-line no-control-regex
     result = result.replace(/[\x00-\x1F\x7F]/g, '');
 
     // 連続する空白を1つに

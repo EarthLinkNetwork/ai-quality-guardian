@@ -313,7 +313,7 @@ describe('Performance Integration Tests', () => {
         ['implementer', {
           name: 'implementer',
           status: 'success',
-          executionTime: 100,
+          duration: 100,
           output: { qualityScore: 85 }
         }]
       ]);
@@ -348,7 +348,7 @@ describe('Performance Integration Tests', () => {
         const result: SubagentResult = {
           name: agentName,
           status: 'success',
-          executionTime: Math.random() * 500,
+          duration: Math.random() * 500,
           output: { index }
         };
 
@@ -377,7 +377,7 @@ describe('Performance Integration Tests', () => {
         const result: SubagentResult = {
           name: agentName,
           status: 'success',
-          executionTime: 50,
+          duration: 50,
           output: { timestamp: Date.now() }
         };
 
@@ -488,7 +488,7 @@ describe('Performance Integration Tests', () => {
           context.set(`agent-${i}`, {
             name: `agent-${i}`,
             status: 'success',
-            executionTime: 100,
+            duration: 100,
             output: { value: i }
           });
         }

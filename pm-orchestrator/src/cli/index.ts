@@ -6,7 +6,7 @@
  */
 
 import { PMOrchestrator } from '../orchestrator/pm-orchestrator';
-import { ExecutionLogger } from '../logger/execution-logger';
+// import { ExecutionLogger } from '../logger/execution-logger';
 import { ProgressTracker, TerminalUI } from '../visualization';
 
 async function main() {
