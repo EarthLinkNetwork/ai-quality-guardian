@@ -1,0 +1,32 @@
+# Source files (TypeScript)
+src/
+tests/
+
+# Config files
+.eslintrc.json
+jest.config.js
+tsconfig.json
+
+# Development files
+*.test.ts
+*.test.js
+*.spec.ts
+*.spec.js
+
+# Workflows (development only)
+workflows/
+
+# Documentation (except README)
+docs/
+
+# Git files
+.git/
+.gitignore
+
+# Editor files
+.vscode/
+.idea/
+
+# Build artifacts that shouldn't be published
+*.tgz
+*.log

@@ -1,7 +1,7 @@
 ---
 name: qa
 description: 実装結果を検証し、品質問題を検出してPM Orchestratorに報告する品質保証専門サブエージェント。
-tools: Read, Bash, Grep, Glob, LS, TodoWrite
+tools: Read, Bash, Grep, Glob, LS, TodoWrite, Task
 ---
 
 

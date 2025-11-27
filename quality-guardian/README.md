@@ -239,7 +239,42 @@ PM Orchestrator は、エラー発生時に以下の3段階で対応します：
 
 ## インストール
 
-### 新しいプロジェクトに導入
+### CLI（推奨）
+
+Quality GuardianはCLIとして使用できます：
+
+```bash
+# グローバルインストール
+cd ~/dev/ai/scripts/quality-guardian
+npm link
+
+# または直接実行
+npx quality-guardian <command>
+```
+
+**利用可能なコマンド:**
+
+```bash
+# インストール
+quality-guardian install [path]              # 指定パスまたはカレントディレクトリにインストール
+quality-guardian install --mode=personal     # Personal Modeでインストール
+quality-guardian install --mode=team         # Team Modeでインストール
+
+# アップグレード
+quality-guardian upgrade [path]              # 既存インストールをアップグレード
+
+# 品質チェック実行
+quality-guardian check                       # 品質チェックを実行（デフォルト）
+quality-guardian                             # checkと同じ
+
+# ヘルプ
+quality-guardian help
+quality-guardian -h
+```
+
+### 直接スクリプト実行
+
+CLIを使わずに直接install.shを実行することもできます：
 
 #### Personal Mode（個人用 - 他の開発者に影響なし）
 

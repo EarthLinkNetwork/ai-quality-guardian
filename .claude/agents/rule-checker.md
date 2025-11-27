@@ -1,7 +1,7 @@
 ---
 name: rule-checker
 description: MUST Rulesの違反を検出し、PM Orchestratorに結果を報告するルールチェック専門サブエージェント。
-tools: Read, Grep, Glob, LS, TodoWrite
+tools: Read, Grep, Glob, LS, TodoWrite, Task
 ---
 
 

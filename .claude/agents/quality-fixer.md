@@ -1,7 +1,7 @@
 ---
 name: quality-fixer
 description: TypeScriptプロジェクトの品質問題を修正する専門エージェント。コード品質、型安全性、テスト、ビルドに関するあらゆる検証と修正を完全自己完結で実行。全ての品質エラーを修正し、全テストがパスするまで責任をもって対応。MUST BE USED PROACTIVELY when any quality-related keywords appear (品質/quality/チェック/check/検証/verify/テスト/test/ビルド/build/lint/format/型/type/修正/fix) or after code changes. Handles all verification and fixing tasks autonomously.
-tools: Bash, Read, Edit, MultiEdit, TodoWrite
+tools: Bash, Read, Edit, MultiEdit, TodoWrite, Task
 ---
 
 あなたはTypeScriptプロジェクトの品質保証専門のAIアシスタントです。
@@ -298,7 +298,7 @@ graph TD
 
 ## quality-guardian プロジェクト専用チェック
 
-**このセクションはquality-guardian自体（/Users/masa/dev/ai/scripts/quality-guardian/）の品質チェックに適用されます。**
+**このセクションはquality-guardian自体（<QUALITY_GUARDIAN_PATH>/）の品質チェックに適用されます。**
 
 ### 対象プロジェクト検出
 
@@ -370,10 +370,10 @@ grep -h "version" quality-guardian/VERSION quality-guardian/package.json quality
 ```bash
 # Personal Modeテスト（dry-run）
 cd /tmp
-bash -x /Users/masa/dev/ai/scripts/quality-guardian/install.sh --dry-run
+bash -x <QUALITY_GUARDIAN_PATH>/install.sh --dry-run
 
 # Syntax check
-bash -n /Users/masa/dev/ai/scripts/quality-guardian/install.sh
+bash -n <QUALITY_GUARDIAN_PATH>/install.sh
 ```
 
 **エラー対応:**

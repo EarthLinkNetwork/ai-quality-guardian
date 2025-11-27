@@ -1,3 +1,8 @@
+> **⚠️ DEPRECATION NOTICE**
+> このファイルの内容は [docs/QUALITY_GUARDIAN.md](../../docs/QUALITY_GUARDIAN.md) に移行されました。
+> 今後は docs/QUALITY_GUARDIAN.md を正式な参照先としてください。
+> このファイルは後方互換性のために残されていますが、将来的に削除される可能性があります。
+
 # 🚨 MUST Rules（Main AI - 17個）
 
 以下の17個のルールは**絶対に守ること**。詳細なルールはサブエージェントが担当します。
@@ -16,7 +21,7 @@
 **他のプロジェクト（絶対に問題解決してはいけない）:**
 - ❌ 上記以外のファイルパス（`src/views/`, `apps/orca/`, `apps/frontend/`, `apps/backend/`, `lib/slack/`, `pages/`, `components/` 等）
 - ❌ テスト関連パス（`e2e-tests/`, `playwright.config.ts`, `__tests__/` 等）
-- ❌ Claude Codeの実行ログ（⏺マーク、`Bash(...)`, `Read(...)`, `Edit(...)` 等）
+- ❌ Claude Codeの実行ログ（マーク、`Bash(...)`, `Read(...)`, `Edit(...)` 等）
 - ❌ ブランチ操作ログ（`git branch`, `git push`, `git checkout -b` 等）
 - ❌ プルリクエスト（Bitbucket URL、GitHub URL等）
 - ❌ ビルド・デプロイログ（`pnpm build`, `npm run`, `typecheck` 等）
@@ -2245,8 +2250,8 @@ v1.3.30で自分のhookを修正:
 
 ```
 ❌ 禁止:
-Co-Authored-By: Claude <noreply@anthropic.com>
-Generated with [Claude Code](https://claude.com/claude-code)
+Co-Authored-By: [AI名] <[email]>
+Generated with [AIツール]([URL])
 feat: Add feature 🎉
 🤖 AI-generated code
 
@@ -2291,7 +2296,7 @@ fix: Fix authentication bug
 /path/to/project/docs/design.md
 
 # ✅ 正しい: Claude Code起動場所（ルート直下）に配置
-/Users/masa/dev/ai/scripts/docs/design.md
+<AI_SCRIPTS_PATH>/docs/design.md
 ```
 
 **理由:**
@@ -2311,9 +2316,9 @@ fix: Fix authentication bug
 ### 禁止事項
 
 ```
-❌ Claude Code、Anthropic等の記載
-❌ Co-Authored-By: Claude
-❌ Generated with Claude Code
+❌ AIツール、AI会社名等の記載
+❌ Co-Authored-By: [AI名]
+❌ Generated with [AIツール]
 ❌ 絵文字の使用（全ての成果物で）
 ❌ ドキュメントの勝手な作成
 ❌ パーソナルモード時にプロジェクト内にdocs配置
@@ -2327,9 +2332,9 @@ fix: Fix authentication bug
 # ❌ 誤り
 git commit -m "feat: Add user authentication 🔐
 
-Generated with [Claude Code](https://claude.com/claude-code)
+Generated with [AIツール]([URL])
 
-Co-Authored-By: Claude <noreply@anthropic.com>"
+Co-Authored-By: [AI名] <[email]>"
 
 # ✅ 正しい
 git commit -m "feat: Add user authentication"
@@ -2346,7 +2351,7 @@ git commit -m "feat: Add user authentication"
 [正しい対応]
 ✅ 「設計書を作成します。配置場所を確認します：
    - プロジェクト内（docs/design.md）
-   - ルート直下（/Users/masa/dev/ai/scripts/docs/design.md）
+   - ルート直下（<AI_SCRIPTS_PATH>/docs/design.md）
    どちらに配置しますか？」
 ✅ ユーザーの承認を得てから作成
 ```
@@ -2361,14 +2366,14 @@ git commit -m "feat: Add user authentication"
 ### 過去の問題例
 
 **問題内容:**
-ユーザーから「Claude Codeの痕跡を残さないでください」という指示を受けた後も：
+ユーザーから「AIツールの痕跡を残さないでください」という指示を受けた後も：
 - コミットメッセージに絵文字を使用
-- Co-Authored-By: Claude を追加
+- Co-Authored-By: [AI名] を追加
 - ドキュメントを勝手に作成
 - AIツール使用が分かる表現を使用
 
 **本来すべきだったこと:**
-- 全ての成果物からClaude Codeの痕跡を排除
+- 全ての成果物からAIツールの痕跡を排除
 - 絵文字を一切使わない
 - ドキュメント作成前にユーザー確認
 - プロフェッショナルな成果物として提供

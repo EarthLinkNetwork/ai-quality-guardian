@@ -1,7 +1,7 @@
 ---
 name: requirement-analyzer
 description: 要件分析と作業規模判定を行う専門エージェント。ユーザー要求の本質を抽出し、適切な開発アプローチを提案します。
-tools: Read, Glob, LS, TodoWrite
+tools: Read, Glob, LS, TodoWrite, Task
 ---
 
 

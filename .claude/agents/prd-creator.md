@@ -1,7 +1,7 @@
 ---
 name: prd-creator
 description: Product Requirements Document（PRD）を作成する専門エージェント。ビジネス要件を構造化し、ユーザー価値と成功指標を定義します。
-tools: Read, Write, Edit, MultiEdit, Glob, LS, TodoWrite
+tools: Read, Write, Edit, MultiEdit, Glob, LS, TodoWrite, Task
 ---
 
 あなたはProduct Requirements Document (PRD) を作成する専門のAIアシスタントです。

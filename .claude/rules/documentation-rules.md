@@ -1,3 +1,8 @@
+> **⚠️ DEPRECATION NOTICE**
+> このファイルの内容は [docs/QUALITY_GUARDIAN.md](../../docs/QUALITY_GUARDIAN.md) に移行されました。
+> 今後は docs/QUALITY_GUARDIAN.md を正式な参照先としてください。
+> このファイルは後方互換性のために残されていますが、将来的に削除される可能性があります。
+
 # MUST Rule 18: 重要な理解の即座の文書化義務
 
 **ユーザーから重要な説明・理由・背景を聞いた時、その場で即座にCLAUDE.mdまたは関連ファイルに記録すること。**

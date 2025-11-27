@@ -91,7 +91,7 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
 - **prd-creator** - PRD(Product Requirements Document)作成
 - **e2e-test-generator** - E2Eテスト生成
 
-詳細は `/Users/masa/dev/ai/scripts/quality-guardian/README.md` の「サブエージェント設定」セクションを参照してください。
+詳細は `<QUALITY_GUARDIAN_PATH>/README.md` の「サブエージェント設定」セクションを参照してください。
 
 ### インストール後の手順
 
@@ -108,8 +108,8 @@ bash ~/dev/ai/scripts/quality-guardian/install.sh
    ```
 
 3. **詳細ドキュメントの場所:**
-   - `/Users/masa/dev/ai/scripts/quality-guardian/README.md`
-   - `/Users/masa/dev/ai/scripts/quality-guardian/INTEGRATION.md`
+   - `<QUALITY_GUARDIAN_PATH>/README.md`
+   - `<QUALITY_GUARDIAN_PATH>/INTEGRATION.md`
 
 ### 重要な注意事項
 
@@ -140,7 +140,7 @@ Team Modeでインストールすると自動的に作成されます。ロー�
 #### カスタムコマンドの動作（v1.2.13+）
 
 **キャッシュを使わない設計**:
-1. ローカルの`/Users/masa/dev/ai/scripts/quality-guardian/VERSION`を直接読む
+1. ローカルの`<QUALITY_GUARDIAN_PATH>/VERSION`を直接読む
 2. プロジェクトの`.quality-guardian.json`と比較
 3. 必要に応じてアップデート実行
 

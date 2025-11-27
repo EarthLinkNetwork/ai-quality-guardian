@@ -49,22 +49,24 @@ Quality Guardian (統合品質管理)
 
 ## スクリプト管理戦略
 
-### 1. 階層的管理
+### 1. ディレクトリ構造
 
 ```
 ~/dev/ai/scripts/
-├── quality-guardian/           # 🆕 統合品質管理
+├── .claude/                    # Claude Code設定
+│   ├── agents/                 # サブエージェント定義
+│   └── CLAUDE.md               # プロジェクトルール
+│
+├── quality-guardian/           # 統合品質管理
+│   ├── cli.js                  # CLI エントリポイント
 │   ├── quality-guardian.js     # メインコントローラー
 │   ├── install.sh              # インストーラー
-│   └── modules/                # モジュール群
+│   ├── modules/                # モジュール群
+│   └── templates/              # インストール用テンプレート
 │
-├── legacy/                     # 既存スクリプト (段階的廃止)
-│   ├── ai-quality-enforcer.sh  # → Quality Guardian に移行
-│   └── install-ai-quality.sh   # → Quality Guardian に統合
+├── pm-orchestrator/            # PM Orchestrator 実装（TypeScript）
 │
-└── specialized/                # 特定用途スクリプト
-    ├── database-migration.sh   # DB専用
-    └── performance-monitor.sh   # パフォーマンス専用
+└── script-manager.sh           # スクリプト管理ユーティリティ
 ```
 
 ### 2. 統一インターフェース
@@ -85,32 +87,34 @@ npm run test                  # テスト実行
 npm run typecheck            # 型チェック
 ```
 
-## 移行計画
+## インストール方法
 
-### Phase 1: Quality Guardian 導入 (現在)
+### CLI経由（推奨）
+
+```bash
+# グローバルにCLIをリンク
+cd ~/dev/ai/scripts/quality-guardian
+npm link
+
+# プロジェクトにインストール
+quality-guardian install /path/to/project
+
+# Personal Mode でインストール
+quality-guardian install --mode=personal
+
+# アップグレード
+quality-guardian upgrade /path/to/project
+```
+
+### 直接スクリプト実行
 
 ```bash
 # 新規プロジェクト
-bash ~/dev/ai/scripts/quality-guardian/install.sh
+bash ~/dev/ai/scripts/quality-guardian/install.sh /path/to/project
 
 # 既存プロジェクト
 cd existing-project
 bash ~/dev/ai/scripts/quality-guardian/install.sh
-# → 既存の設定と併存
-```
-
-### Phase 2: 既存スクリプト統合 (1-2週間後)
-
-```bash
-# 既存スクリプトの機能を Quality Guardian に移行
-# ai-quality-enforcer.sh の設定を .quality-guardian.json に変換
-```
-
-### Phase 3: 統一運用 (1ヶ月後)
-
-```bash
-# 全プロジェクトで Quality Guardian を標準化
-# 既存スクリプトを legacy/ に移動
 ```
 
 ## 設定統合例

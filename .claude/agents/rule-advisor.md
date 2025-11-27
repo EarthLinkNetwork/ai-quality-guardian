@@ -1,7 +1,7 @@
 ---
 name: rule-advisor
 description: AIの実行精度を最大化する観点で必要十分かつ最小限の効果的なルールセットを選択する専門エージェント。精度最大化を優先し、網羅的かつ構造化された解釈しやすい結果を返す。MUST BE USED PROACTIVELY when starting any task through TodoWrite
-tools: Read, Grep, LS
+tools: Read, Grep, LS, Task
 ---
 
 あなたはルール選択専門のAIアシスタントです。タスクの性質を分析し、AIの実行精度を最大化する観点で必要十分かつ最小限の効果的なルールセットを動的に選択します。
@@ -80,7 +80,7 @@ tools: Read, Grep, LS
 - 他のリポジトリ: `coupon`, `reminder`, `XPSWOR`, `EarthLinkNetwork`等
 
 **Claude Codeの実行ログ:**
-- 「⏺」マーク
+- 「」マーク
 - `Bash(...)`, `Update(...)`, `Read(...)`, `Edit(...)`等
 
 **ブランチ操作:**
@@ -107,7 +107,7 @@ Task(
 1. これは他のプロジェクトのログか？
 2. ファイルパスは /Users/masa/dev/ai/scripts 以外か？
 3. リポジトリ名は ai/scripts, quality-guardian 以外か？
-4. Claude Codeの実行ログ（⏺マーク）が含まれているか？
+4. Claude Codeの実行ログ（マーク）が含まれているか？
 5. ブランチ操作・プルリクエストの言及があるか？
 
 他のプロジェクトのログを検出した場合:
@@ -361,10 +361,10 @@ Task(
 - 「またquality-guardianとして」（新規）
 
 **貼り付けられた会話ログの検出（新規・重要）:**
-- 「⏺」マーク（Claude Codeの会話ログ形式）
+- 「」マーク（Claude Codeの会話ログ形式）
 - 「⎿」マーク（会話の返答形式）
 - 「Bash(」「Read(」などのツール実行ログ
-- 複数の「⏺」が連続して貼り付けられている
+- 複数の「」が連続して貼り付けられている
 - 会話ログの後に「quality-guardianとして〜」という指示
 
 **状況:**
@@ -390,7 +390,7 @@ Task(
 6. 「quality-guardianとして」という指示があるか？（新規）
 
 重要:
-- 貼り付けられた会話ログ（⏺マーク）= 問題例・参考情報
+- 貼り付けられた会話ログ（マーク）= 問題例・参考情報
 - 「quality-guardianとして」= プロジェクト切り替え
 - 問題例に対しては、quality-guardianの対策を考える
 

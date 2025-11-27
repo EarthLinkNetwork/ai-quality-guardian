@@ -22,7 +22,7 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 【MUST Rule 0】プロジェクトコンテキスト確認済み？
-✓ このプロジェクト: /Users/masa/dev/ai/scripts/quality-guardian/
+✓ このプロジェクト: <QUALITY_GUARDIAN_PATH>/
 ✓ 別プロジェクトの問題を修正していない
 
 【MUST Rule 2】Test First & 動作確認済み？
@@ -66,7 +66,7 @@
 
 ### 2.2 このプロジェクトの識別
 
-**このプロジェクト**: `/Users/masa/dev/ai/scripts/quality-guardian/`
+**このプロジェクト**: `<QUALITY_GUARDIAN_PATH>/`
 
 ✅ 許可される操作:
 - `quality-guardian/` 配下のファイル編集
@@ -83,7 +83,7 @@
 **検出パターン**（hookが自動検出）:
 - 別プロジェクトのファイルパス
 - データベースエラー
-- Claude Code実行ログ（⏺マーク）
+- Claude Code実行ログ（マーク）
 - Bitbucket/GitHub URL
 
 **検出時の対応**:

@@ -1,3 +1,8 @@
+> **⚠️ DEPRECATION NOTICE**
+> このファイルの内容は [docs/QUALITY_GUARDIAN.md](../../docs/QUALITY_GUARDIAN.md) に移行されました。
+> 今後は docs/QUALITY_GUARDIAN.md を正式な参照先としてください。
+> このファイルは後方互換性のために残されていますが、将来的に削除される可能性があります。
+
 # Git操作の詳細ルール
 
 このファイルには、Git操作に関する詳細ルールをまとめています。

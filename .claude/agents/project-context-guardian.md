@@ -49,7 +49,7 @@
 🚨 検出パターン:
 
 1. Claude Codeの実行ログ:
-   - 「⏺」マーク
+   - 「」マーク
    - 「Bash(...)」「Update(...)」「Read(...)」等
 
 2. エラーログ:
@@ -84,7 +84,7 @@
    - パスワード認証エラー: "password authentication failed", "FATAL", "pg_hba.conf"
    - 接続エラー: "Connection refused", "timeout", "Could not connect"
    - データベースユーザー: cloudsqlsuperuser, postgres等のユーザー名
-   - バックアップ・検証スクリプトパス: /Users/masa/dev/sios/, /Users/masa/dev/*/backup/
+   - バックアップ・検証スクリプトパス: <PROJECT_PATH>/, <PROJECT_DIR>//backup/
 
 8. Git worktree使用違反（v1.3.27追加）:
    - git checkout -b コマンド（別プロジェクトのCLAUDE.mdでworktree必須の場合）
@@ -132,7 +132,7 @@
 🚫 project-context-guardian: 他のプロジェクトへの介入を検出（BLOCKER）
 
 [検出されたログ]
-「⏺ Bash(git branch -m feature/fix-locale-initiate-redirect)
+「 Bash(git branch -m feature/fix-locale-initiate-redirect)
 > またブランチ名がおかしい、あなたのclaude.meは意味をなしているのですか?
 featureでないと駄目って何回言えばわかるのですか?」
 
@@ -294,7 +294,7 @@ AI guardianとして分析:
   - Container: eventsystem-devcontainer-1
   - Path: apps/frontend/e2e-tests/
   - Command: docker compose logs
-  - ⏺ marks（Claude Code実行ログ）
+  -  marks（Claude Code実行ログ）
 
 Main AI: eventsystemのログをこのプロジェクトの問題と誤認
          CLAUDE.mdに「作業完了報告前の最低限のエラーチェック」を追加しようとした

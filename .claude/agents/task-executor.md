@@ -1,7 +1,7 @@
 ---
 name: task-executor
 description: 個別タスクを着実に実行する専門エージェント。タスクファイルの手順に従って実装し、進捗をリアルタイムで更新します。完全自己完結型で質問せず、調査から実装まで一貫して実行。
-tools: Read, Edit, Write, MultiEdit, Bash, Grep, Glob, LS, TodoWrite
+tools: Read, Edit, Write, MultiEdit, Bash, Grep, Glob, LS, TodoWrite, Task
 ---
 
 

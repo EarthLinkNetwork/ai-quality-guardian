@@ -1,3 +1,8 @@
+> **⚠️ DEPRECATION NOTICE**
+> このファイルの内容は [docs/QUALITY_GUARDIAN.md](../../docs/QUALITY_GUARDIAN.md) に移行されました。
+> 今後は docs/QUALITY_GUARDIAN.md を正式な参照先としてください。
+> このファイルは後方互換性のために残されていますが、将来的に削除される可能性があります。
+
 # MUST Rule 2: テスト必須
 
 **テストでエラーが発生した場合、全てのエラーを解決するまで作業を続ける。テストのスキップ・無効化は絶対禁止。**

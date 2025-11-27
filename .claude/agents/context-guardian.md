@@ -71,8 +71,8 @@ AIは複数のプロジェクトを同時に扱う際、以下の問題を起こ
 
 ```
 例:
-直前: /Users/masa/projects/d1-portal/...
-現在: /Users/masa/dev/ai/scripts/...
+直前: <PROJECTS_DIR>/d1-portal/...
+現在: <AI_SCRIPTS_PATH>/...
 → プロジェクトが変わった可能性
 ```
 
@@ -121,10 +121,10 @@ AIは複数のプロジェクトを同時に扱う際、以下の問題を起こ
 ```
 ⚠️ 以下のパターンを検出したら、問題例として扱う:
 
-- 「⏺」マーク（Claude Codeの会話ログ形式）
+- 「」マーク（Claude Codeの会話ログ形式）
 - 「⎿」マーク（会話の返答形式）
 - 「Bash(」「Read(」などのツール実行ログ
-- 複数の「⏺」が連続して貼り付けられている
+- 複数の「」が連続して貼り付けられている
 - 会話ログの後に「quality-guardianとして〜」という指示
 ```
 
@@ -153,9 +153,9 @@ AIは複数のプロジェクトを同時に扱う際、以下の問題を起こ
 ⚠️ context-guardian: 貼り付けられた会話ログを検出（確認推奨）
 
 [検出内容]
-- 「⏺」マーク: 15個検出（長い会話ログ）
+- 「」マーク: 15個検出（長い会話ログ）
 - 別プロジェクトのファイルパス: /Users/masa/dev/modern-tech/d1_portal_renewal_ui/
-- 現在のプロジェクト: /Users/masa/dev/ai/scripts/ (quality-guardian)
+- 現在のプロジェクト: <AI_SCRIPTS_PATH>/ (quality-guardian)
 
 [ユーザーの指示]
 「これ、またquality guardianとしての対応を求めたのに、実際に作業しようとしていますね」
@@ -182,7 +182,7 @@ AIは複数のプロジェクトを同時に扱う際、以下の問題を起こ
 ⚠️ context-guardian: プロジェクト切り替えの可能性を検出
 
 [現在のプロジェクト]
-- quality-guardian (/Users/masa/dev/ai/scripts/)
+- quality-guardian (<AI_SCRIPTS_PATH>/)
 - 最後の作業: MUST Rule 17 の実装
 
 [検出内容]
@@ -227,7 +227,7 @@ D1ポータルのデータベース検証について応答してしまった
 ✓ context-guardian: コンテキスト確認を推奨
 
 [現在のプロジェクト]
-- quality-guardian (/Users/masa/dev/ai/scripts/)
+- quality-guardian (<AI_SCRIPTS_PATH>/)
 
 [ユーザーの質問]
 「次に何をしたらいいと思いますか」
@@ -294,7 +294,7 @@ D1ポータルのデータベース検証について応答してしまった
 **状況:**
 ```
 1. ユーザーがD1ポータルの長い会話ログを貼り付け（問題例として）
-2. 会話ログには「⏺」「⎿」マーク、Bashコマンド等が含まれる
+2. 会話ログには「」「⎿」マーク、Bashコマンド等が含まれる
 3. 会話ログの内容: developブランチへの直接push、GitHub Actions実行等
 4. ユーザーが「これ、またquality guardianとしての対応を求めたのに、実際に作業しようとしていますね」と指摘
 5. AIは貼り付けられた会話ログの作業を実行しようとした
@@ -315,13 +315,13 @@ D1ポータルのデータベース検証について応答してしまった
 4. 結果: quality-guardianの対策を考えるべきなのに、D1ポータルの作業を実行しようとした
 
 **検出すべきだった兆候:**
-- 「⏺」マークが複数（15個以上）
+- 「」マークが複数（15個以上）
 - 別プロジェクトのファイルパス（/Users/masa/dev/modern-tech/d1_portal_renewal_ui/）
 - 「quality-guardianとして」という明示的な指示
 - 会話ログの形式（過去の会話の貼り付け）
 
 **本来すべきだったこと:**
-1. 「⏺」マークを検出 → 貼り付けられた会話ログと認識
+1. 「」マークを検出 → 貼り付けられた会話ログと認識
 2. 別プロジェクトのファイルパスを検出 → D1ポータルの会話
 3. 「quality-guardianとして」を検出 → プロジェクト切り替え
 4. 結論: これは問題例、quality-guardianの対策を考える

@@ -15,8 +15,7 @@ const path = require('path');
 
 class ProjectContextChecker {
   constructor() {
-    // このプロジェクトの正しいパスとリモートURL
-    this.CORRECT_PROJECT_PATH = '/Users/masa/dev/ai/scripts';
+    // このプロジェクトの正しいリモートURL（これが真の判定基準）
     this.CORRECT_REMOTE_URL = 'git@github.com:EarthLinkNetwork/ai-quality-guardian.git';
     this.PROJECT_NAME = 'ai-quality-guardian';
   }
@@ -102,7 +101,6 @@ class ProjectContextChecker {
     console.error(`   Remote: ${currentRemoteUrl}`);
     console.error('');
     console.error('✅ Expected repository:');
-    console.error(`   Path: ${this.CORRECT_PROJECT_PATH}`);
     console.error(`   Remote: ${this.CORRECT_REMOTE_URL}`);
     console.error('');
     console.error('📋 Problem:');
@@ -110,12 +108,12 @@ class ProjectContextChecker {
     console.error('   in a DIFFERENT project.');
     console.error('');
     console.error('   This violates MUST Rule 6: AI Guardian Role Separation');
-    console.error('   -別プロジェクトの問題を解決してはいけない');
+    console.error('   - 別プロジェクトの問題を解決してはいけない');
     console.error('   - AI guardianとして分析すべき');
     console.error('');
     console.error('🔧 What to do:');
     console.error('   1. If you want to work on quality-guardian:');
-    console.error(`      cd ${this.CORRECT_PROJECT_PATH}`);
+    console.error(`      cd to the ai-quality-guardian repository`);
     console.error('');
     console.error('   2. If you are in a different project:');
     console.error('      This project should have its OWN CLAUDE.md and rules.');

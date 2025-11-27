@@ -1,3 +1,8 @@
+> **⚠️ DEPRECATION NOTICE**
+> このファイルの内容は [docs/QUALITY_GUARDIAN.md](../../docs/QUALITY_GUARDIAN.md) に移行されました。
+> 今後は docs/QUALITY_GUARDIAN.md を正式な参照先としてください。
+> このファイルは後方互換性のために残されていますが、将来的に削除される可能性があります。
+
 # MUST Rule 1: ユーザー指示の厳守
 
 **ユーザーの指示は一字一句守る。指示されたことだけを実行し、指示以外のことは一切行わない。**

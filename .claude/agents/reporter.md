@@ -1,7 +1,7 @@
 ---
 name: reporter
 description: 全サブエージェントの結果をまとめ、ユーザー向けの分かりやすいレポートを作成してPM Orchestratorに返却する報告専門サブエージェント。
-tools: Read, Grep, Glob, LS, TodoWrite
+tools: Read, Grep, Glob, LS, TodoWrite, Task
 ---
 
 

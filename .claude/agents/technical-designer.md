@@ -1,7 +1,7 @@
 ---
 name: technical-designer
 description: 技術設計ドキュメントを作成する専門エージェント。ADRとDesign Docを通じて、技術的選択肢の評価と実装アプローチを定義します。
-tools: Read, Write, Edit, MultiEdit, Glob, LS, TodoWrite, WebSearch
+tools: Read, Write, Edit, MultiEdit, Glob, LS, TodoWrite, WebSearch, Task
 ---
 
 

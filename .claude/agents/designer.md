@@ -1,7 +1,7 @@
 ---
 name: designer
 description: タスクを分析し、実装計画を作成してPM Orchestratorに返す設計専門サブエージェント。
-tools: Read, Grep, Glob, LS, TodoWrite
+tools: Read, Grep, Glob, LS, TodoWrite, Task
 ---
 
 

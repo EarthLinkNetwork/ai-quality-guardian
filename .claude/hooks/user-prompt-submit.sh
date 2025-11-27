@@ -30,7 +30,7 @@ LIST_MODIFICATION=0
 PR_REVIEW_RESPONSE=0
 
 # 1. 別プロジェクトのパス検出
-if echo "$USER_MESSAGE" | grep -qE '/Users/masa/dev/[^/]+/' | grep -qvE "$THIS_PROJECT"; then
+if echo "$USER_MESSAGE" | grep -qE '(/[a-zA-Z0-9_/.+-]+)' && ! echo "$USER_MESSAGE" | grep -qE "$THIS_PROJECT"; then
   DETECTED=1
 fi
 
@@ -88,7 +88,7 @@ fi
 # 検出時の対応
 if [ $DETECTED -eq 1 ]; then
   # 別プロジェクトのパスを抽出
-  PROJECT_PATH=$(echo "$USER_MESSAGE" | grep -oE '/Users/masa/dev/[^/]+/[^/]+' | head -1 | sed 's:/$::')
+  PROJECT_PATH=$(echo "$USER_MESSAGE" | grep -oE '/[a-zA-Z0-9_/.+-]+' | grep -vE "^$THIS_PROJECT" | head -1 | sed 's:/$::')
 
   cat <<EOF
 
@@ -97,7 +97,7 @@ if [ $DETECTED -eq 1 ]; then
 このメッセージには、このプロジェクト（quality-guardian）以外の情報が含まれています。
 
 【重要】
-- このプロジェクトのパス: /Users/masa/dev/ai/scripts/quality-guardian/
+- このプロジェクトのパス: $THIS_PROJECT
 - 別プロジェクトの問題を修正してはいけません
 - AI guardianとして分析のみ行ってください
 
@@ -438,11 +438,11 @@ cat <<'EOF'
 
 【Rule 2: テスト必須と完了基準】
 Test First原則厳守。全テスト合格まで「完了」禁止。
-詳細: `.claude/rules/must-rules.md` Rule 2
+詳細: `docs/QUALITY_GUARDIAN.md` Section 1.3
 
 【Rule 3: 不可逆な操作の事前確認】
 Slack通知・削除・Git危険操作は事前にユーザー確認必須。
-詳細: `.claude/rules/must-rules.md` Rule 3
+詳細: `docs/QUALITY_GUARDIAN.md` Section 1.2
 
 【Rule 4: Git操作前の確認義務】
 git-operation-guardian サブエージェント利用
@@ -458,11 +458,11 @@ git-operation-guardian サブエージェント利用
 
 【Rule 7: 「同じ」指示の全体確認】
 「Aと同じ」→ 関連ファイル全て洗い出し、一貫性確保。
-詳細: `.claude/rules/must-rules.md` Rule 7
+詳細: `docs/QUALITY_GUARDIAN.md` Section 2.1
 
 【Rule 9: 設計書First原則】
 設計書firstプロジェクトでは、必ず設計書を最初に確認。
-詳細: `.claude/rules/must-rules.md` Rule 9
+詳細: `docs/WORKFLOW.md` Section 1
 
 【Rule 11: 動作確認の自己完結義務】
 Playwrightで自分で確認。ユーザーに依頼禁止。
@@ -475,11 +475,11 @@ Playwrightで自分で確認。ユーザーに依頼禁止。
 【Rule 16: 問題解決後の全体確認義務】
 実装修正 → テンプレート・インストーラー・ドキュメントも同期。
 `.claude/hooks/*` ⟷ `templates/hooks/*`
-詳細: `.claude/rules/must-rules.md` Rule 16
+詳細: `docs/QUALITY_GUARDIAN.md` Section 2.2
 
 【Rule 17: Claude Code痕跡の完全排除】
 コミット署名禁止。絵文字禁止。ドキュメント勝手に作成禁止。
-詳細: `.claude/rules/must-rules.md` Rule 17
+詳細: `docs/PROJECT_SPEC.md` Section 3
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【再帰的ルール表示の義務】
