@@ -1,6 +1,6 @@
 {
   "name": "pm-orchestrator-enhancement",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "PM Orchestrator Enhancement - Multi-agent parallel execution system",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -10,9 +10,11 @@
     "test:unit": "jest --testPathPattern=tests/unit",
     "test:integration": "jest --testPathPattern=tests/integration",
     "test:e2e": "jest --testPathPattern=tests/e2e",
+    "test:install": "./scripts/test-install.sh",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
-    "cli": "node dist/cli/index.js"
+    "cli": "node dist/cli/index.js",
+    "prepublishOnly": "npm run build && npm run test && npm run typecheck"
   },
   "bin": {
     "pm-orchestrator": "./dist/cli/index.js"

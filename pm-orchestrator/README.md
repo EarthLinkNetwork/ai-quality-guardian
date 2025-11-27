@@ -61,21 +61,33 @@ pnpm typecheck
 ```typescript
 import { PMOrchestrator, ExecutionLogger, ProgressTracker } from 'pm-orchestrator-enhancement';
 
-// 初期化
-const logger = new ExecutionLogger('/path/to/logs');
-const tracker = new ProgressTracker();
-const orchestrator = new PMOrchestrator(logger, tracker);
+// 初期化（ログ出力先ディレクトリを指定）
+const orchestrator = new PMOrchestrator('/path/to/logs');
 
 // タスク実行
-const result = await orchestrator.execute({
-  taskId: 'task-1',
-  taskType: 'implementation',
-  description: 'Add user authentication feature',
-  files: ['src/auth/login.ts'],
-  requirements: 'Implement JWT-based authentication'
+const result = await orchestrator.executeTask({
+  userInput: 'Add user authentication feature',
+  detectedPattern: 'implementation'
 });
 
 console.log(result);
+```
+
+### コンポーネントを個別に使用
+
+```typescript
+import { ExecutionLogger, ProgressTracker } from 'pm-orchestrator-enhancement';
+
+// ExecutionLogger - タスク実行ログの記録
+const logger = new ExecutionLogger('/path/to/logs');
+const { taskId } = logger.startTask('user input', 'implementation', 'medium', 'pattern');
+logger.completeTask(taskId, { status: 'success' });
+
+// ProgressTracker - 進捗追跡
+const tracker = new ProgressTracker();
+tracker.startTask('task-1', 'My Task');
+tracker.updateProgress('task-1', 50, 'implementer');
+tracker.completeTask('task-1');
 ```
 
 ### サブエージェントの直接使用
