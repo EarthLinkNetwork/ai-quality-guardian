@@ -1,6 +1,12 @@
 # Source files (TypeScript)
 src/
 tests/
+lib/
+
+# Test directories
+.pm-orchestrator-test/
+**/__tests__/
+dist/workflow/__tests__/
 
 # Config files
 .eslintrc.json
@@ -30,3 +36,6 @@ docs/
 # Build artifacts that shouldn't be published
 *.tgz
 *.log
+
+# Scripts (except what's needed)
+scripts/migrate.sh

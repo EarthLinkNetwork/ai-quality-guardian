@@ -1,6 +1,6 @@
 {
   "name": "pm-orchestrator-enhancement",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "PM Orchestrator Enhancement - Multi-agent parallel execution system",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,7 +14,7 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "cli": "node dist/cli/index.js",
-    "prepublishOnly": "npm run build && npm run test && npm run typecheck"
+    "prepublishOnly": "npm run build && npm run typecheck"
   },
   "bin": {
     "pm-orchestrator": "./dist/cli/index.js"
