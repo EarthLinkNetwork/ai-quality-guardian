@@ -8,6 +8,10 @@
 import { PMOrchestrator } from '../orchestrator/pm-orchestrator';
 // import { ExecutionLogger } from '../logger/execution-logger';
 import { ProgressTracker, TerminalUI } from '../visualization';
+import { execSync } from 'child_process';
+import * as path from 'path';
+
+const VERSION = '1.0.3';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -18,13 +22,19 @@ async function main() {
   }
 
   if (args.includes('--version') || args.includes('-v')) {
-    console.log('PM Orchestrator Enhancement v1.0.0');
+    console.log(`PM Orchestrator Enhancement v${VERSION}`);
     process.exit(0);
   }
 
   const command = args[0];
 
   switch (command) {
+    case 'install':
+      runInstall(args.slice(1));
+      break;
+    case 'uninstall':
+      runUninstall(args.slice(1));
+      break;
     case 'execute':
       await executeTask(args.slice(1));
       break;
@@ -58,6 +68,8 @@ Usage:
   pm-orchestrator <command> [options]
 
 Commands:
+  install     Install PM Orchestrator to a project (.claude/ directory)
+  uninstall   Remove PM Orchestrator from a project
   execute     Execute a complete task with automatic subagent selection
   analyze     Analyze code quality, similarity, or architecture
   design      Create design documents based on requirements
@@ -70,6 +82,9 @@ Options:
   -v, --version  Show version information
 
 Examples:
+  pm-orchestrator install              Install to current directory
+  pm-orchestrator install ./my-project Install to specific directory
+  pm-orchestrator uninstall            Remove from current directory
   pm-orchestrator execute --task "Add user authentication"
   pm-orchestrator analyze --files "src/**/*.ts" --type quality
   pm-orchestrator design --requirements "User management system"
@@ -79,6 +94,34 @@ Examples:
 
 For more information, visit: https://github.com/pm-orchestrator/pm-orchestrator-enhancement
 `);
+}
+
+function runInstall(args: string[]) {
+  const targetDir = args[0] || '.';
+  const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'install.sh');
+
+  console.log(`Installing PM Orchestrator to ${targetDir}...`);
+
+  try {
+    execSync(`bash "${scriptPath}" "${targetDir}"`, { stdio: 'inherit' });
+  } catch (error) {
+    console.error('Installation failed');
+    process.exit(1);
+  }
+}
+
+function runUninstall(args: string[]) {
+  const targetDir = args[0] || '.';
+  const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'uninstall.sh');
+
+  console.log(`Uninstalling PM Orchestrator from ${targetDir}...`);
+
+  try {
+    execSync(`bash "${scriptPath}" "${targetDir}"`, { stdio: 'inherit' });
+  } catch (error) {
+    console.error('Uninstallation failed');
+    process.exit(1);
+  }
 }
 
 async function executeTask(args: string[]) {
