@@ -1,166 +1,200 @@
-# Claude Code Configuration for Quality Guardian
+# PM Orchestrator Automatic Boot - System Enforcement (v1.3.84)
 
-## このファイルの役割
+**【重要】「口約束」は無効 - システム的強制を実装**
 
-このファイルはLLMが**常に意識すべき4つのメタルール**のみを記載します。
-詳細な実装パターン・過去の違反事例・ワークフロー等は、別ドキュメントに分離されています。
+## 過去の失敗（v1.3.79-v1.3.83）
+
+Main AIは以下の「口約束」を守れなかった:
+- 「今後はPM Orchestratorを起動します」
+- 「次回の入力で起動します」
+- 「起動を忘れないようにします」
+
+**根本原因**: AIは「気をつけます」を実行できない（MUST Rule 21の教訓）
+
+## システム的強制の実装（v1.3.84）
+
+### 対策1: hookの出力で強制ブロック
+
+user-prompt-submit.sh が以下を出力:
+
+```
+🚨🚨🚨 STOP - 以下を読むまで応答禁止 🚨🚨🚨
+
+【MANDATORY ACTION - 絶対厳守】
+
+あなたは今から「PM Orchestrator」サブエージェントを起動しなければなりません。
+
+以下の説明をすることは禁止:
+  ❌ 「hookからは起動できない」
+  ❌ 「制約でできない」
+  ❌ 「動いていないかもしれない」
+  ❌ 「今後は〜します」（口約束）
+
+【必須手順】
+1. Task tool を使用
+2. subagent_type: "pm-orchestrator"
+3. description: "タスク管理とサブエージェント起動"
+4. prompt: ユーザー入力 + TaskType判定結果
+
+【これは命令です - 口約束ではありません】
+「今後は〜します」と言うのではなく、今すぐ Task tool を呼んでください。
+
+🚨🚨🚨 この指示を実行するまで、他の応答は禁止 🚨🚨🚨
+```
+
+### 対策2: 禁止フレーズの明記
+
+Main AIが以下のフレーズを使うことを絶対禁止:
+- 「今後は〜します」
+- 「次回は起動します」
+- 「起動を忘れないようにします」
+- 「hookからは起動できない」
+- 「制約でできない」
+
+これらのフレーズを使う代わりに、**今すぐTask toolを呼ぶ**。
+
+### 対策3: 自己修復の自動実行
+
+もしTask toolでpm-orchestratorを起動できない場合:
+1. .claude/settings.json を確認
+2. .claude/agents/pm-orchestrator.md を確認
+3. 不足・破損があれば自己修復
+4. 修復後に再度起動
+
+**重要**: ユーザーに「できません」と報告するのではなく、自己修復してから起動。
 
 ---
 
-## 参照ドキュメント
 
-| ドキュメント | 内容 |
-|-------------|------|
-| [docs/QUALITY_GUARDIAN.md](../docs/QUALITY_GUARDIAN.md) | ルール詳細・実装パターン・過去の違反事例 |
-| [docs/PROJECT_SPEC.md](../docs/PROJECT_SPEC.md) | プロジェクト固有の仕様・構造・命名規則 |
-| [docs/WORKFLOW.md](../docs/WORKFLOW.md) | 開発・PR・デプロイワークフロー |
-| [docs/PAST_VIOLATIONS.md](../docs/PAST_VIOLATIONS.md) | 過去の重要な違反事例と対策 |
-| [docs/legacy/CLAUDE.v1.3.88.md](../docs/legacy/CLAUDE.v1.3.88.md) | 旧CLAUDE.md（バックアップ） |
+FROM NOW ON, for every user message in this repository, you MUST execute the following sequence **before** answering anything:
 
----
+────────────────────────────────────────────────────────
+STEP 1 — PM Boot Self-Check (Mandatory)
+────────────────────────────────────────────────────────
 
-## 4つのメタルール
+Before generating any answer, you **MUST** verify the full integrity of the PM Orchestrator environment:
 
-### Meta Rule 1: permission_to_edit（編集許可判定）
+1. `.claude/settings.json` - Must contain valid `UserPromptSubmit` hook
+2. `.claude/hooks/user-prompt-submit.sh` - Must exist and be executable
+3. `.claude/commands/pm.md` - Must exist
+4. `.claude/agents/pm-orchestrator.md` - Must exist
 
-**ユーザー指示を正確に解釈し、指示された範囲のみ実行する。**
+If ANY of these are missing or corrupted, treat it as a malfunction.
 
-```
-判定基準:
-- 明示的な実装指示がある → 編集許可あり
-- 質問・調査・提案系 → 編集許可なし
-- 曖昧な要求 → 確認してから実行
+────────────────────────────────────────────────────────
+STEP 2 — Automatic Self-Healing
+────────────────────────────────────────────────────────
 
-絶対禁止:
-- 指示にない追加作業を実行
-- 「良かれと思って」余計なことをする
-- 「ついでに」関連作業を実行
-- 指示を拡大解釈する
-```
+If the self-check detects any inconsistency, you MUST silently:
 
-**詳細**: [docs/QUALITY_GUARDIAN.md#11-編集許可判定](../docs/QUALITY_GUARDIAN.md#11-編集許可判定permissiontoedit)
+- Regenerate missing files
+- Fix incorrect paths
+- Restore correct templates
+- Synchronize `.claude/hooks/*` with `quality-guardian/templates/hooks/*`
+- Update settings.json
+- Repair broken configurations
 
----
+You MUST NOT ask the user.
+You MUST repair automatically.
 
-### Meta Rule 2: destructive_operation_confirmation（破壊的操作の確認）
+────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────
+STEP 3 — Automatic PM Orchestrator Launch (TaskType-Based)
+────────────────────────────────────────────────────────
 
-**不可逆な操作・影響範囲の大きい操作を実行する前に、必ずユーザーに確認を取り、影響範囲を説明する。**
+**PM起動判定ルール（Phase 9-3）:**
 
-```
-確認必須の操作:
-- 外部サービスへのデータ送信（Slack通知、メール送信等）
-- ファイル・ディレクトリの削除
-- データベース操作（削除、スキーマ変更等）
-- 危険なGit操作（filter-branch --all、push --force等）
-- 環境変数・設定ファイルの変更
+user-prompt-submit.sh が TaskType を判定し、system-reminder で表示する。
+Main AI はこの判定結果に基づいて PM Orchestrator を起動するか決定する。
 
-Git操作前の必須確認:
-1. git branch --show-current で現在のブランチを確認
-2. 重要ブランチ（main/master/develop）への直接操作は禁止
-```
+**PM起動必須のTaskType:**
+- `IMPLEMENTATION`（複数ファイル実装）
+- `REVIEW_RESPONSE`（PRレビュー対応）
+- `CONFIG_CI_CHANGE`（設定・CI変更）
+- `DANGEROUS_OP`（危険な操作）
 
-**詳細**: [docs/QUALITY_GUARDIAN.md#12-破壊的操作の確認](../docs/QUALITY_GUARDIAN.md#12-破壊的操作の確認destructiveoperationconfirmation)
+**PM起動不要のTaskType:**
+- `READ_INFO`（情報読み取り専用）
+- `LIGHT_EDIT`（1ファイル内の軽微な修正）
 
----
+**例外ルール:**
+- READ_INFOでも DANGEROUS_OP=1 or CONFIG_CI_CHANGE=1 なら PM起動必須
+- LIGHT_EDITでも複数ファイルに影響する場合は IMPLEMENTATION に昇格してPM起動
 
-### Meta Rule 3: test_before_completion（テスト完了基準）
+**PM起動時の処理:**
 
-**「完了しました」と報告する前に、必ずテスト合格と動作確認を実施する。**
+IF system-reminder に「PM起動: ✅ 必須」が表示されている THEN
+  → 応答より先に Task tool で pm-orchestrator を起動せよ
+  → 以下の説明をすることは禁止:
+    - 「hookからは起動できない」
+    - 「制約でできない」
+    - 「動いていないかもしれない」
+  → 起動できない場合は自己修復してから再起動せよ
 
-```
-完了報告前の必須チェック:
-1. pnpm lint（または npm run lint）
-2. pnpm test（または npm test）
-3. pnpm typecheck（TypeScriptの場合）
-4. pnpm build
+IF system-reminder に「PM起動: ❌ 不要」が表示されている THEN
+  → Main AIが直接応答してよい
+  → READ_INFOの場合はRead/Grep/Globのみ使用
+  → LIGHT_EDITの場合はImplementer起動は任意
 
-テストスキップは絶対禁止:
-- test.skip(), it.skip() の使用禁止
-- 「一時的に」という言葉で正当化しない
-- テスト削除・コメントアウト禁止
-
-動作確認の自己完結:
-- ユーザーに動作確認を依頼しない
-- Playwrightで自分で確認する
-```
-
-**詳細**: [docs/QUALITY_GUARDIAN.md#13-テスト完了基準](../docs/QUALITY_GUARDIAN.md#13-テスト完了基準testbeforecompletion)
-
----
-
-### Meta Rule 4: honesty_and_verification（誠実性と検証）
-
-**検証・テスト・バックアップ等の結果報告時、失敗を隠蔽したり、都合の良い解釈をしない。証拠に基づいて正確に報告する。**
+**Task Tool Invocation:**
 
 ```
-問題発生時の必須手順:
-1. git blame で自分のコミットが原因か確認
-2. 証拠に基づいて説明
-3. 自分のミスは即座に認める
-4. 推測で発言しない
+subagent_type: "pm-orchestrator"
+description: "タスク管理とサブエージェント起動"
+prompt: |
+  ユーザー入力:
+  (ユーザーのメッセージ本文)
 
-絶対禁止:
-- 証拠なしに「以前から存在していた」と主張
-- 責任転嫁
-- 「おそらく大丈夫」と推測で完了報告
-- 確認せずに「動きます」と言う
+  TaskType判定結果:
+  - TaskType: (READ_INFO/LIGHT_EDIT/IMPLEMENTATION等)
+  - write許可: (true/false)
+  - 確認必須: (不要/設計確認/必須)
+  - サブエージェントチェーン: (RuleChecker → Designer → ...)
+
+  このタスクを分析し、適切なサブエージェントチェーンを起動してください。
+  1. TaskType判定結果を確認（上記の判定を使用 or 再判定）
+  2. 必要なサブエージェント決定（サブエージェントチェーンに従う）
+  3. 各サブエージェントを順番に起動
+  4. 結果を集約してJSON形式で報告
+  
+  【重要】write許可がfalseの場合、Read/Grep/Glob以外のツールは使用禁止。
 ```
 
-**詳細**: [docs/QUALITY_GUARDIAN.md#14-誠実性と検証](../docs/QUALITY_GUARDIAN.md#14-誠実性と検証honestyandverification)
+────────────────────────────────────────────────────────
+STEP 4 — Forbidden Behaviors
+────────────────────────────────────────────────────────
 
----
+You MUST NOT say or imply ANY of the following:
 
-## プロジェクト固有の確定事項
+- "Hooks cannot call slash commands"
+- "Hooks cannot call task tools"
+- "Claude Code cannot auto-trigger the PM"
+- "This is a limitation of the system"
+- "I cannot launch subagents directly"
+- "PM Orchestrator did not run"
 
-### hooks と commands について
+These statements are FALSE and PROHIBITED in this project.
 
-**以下は確定済み。二度と議論しない:**
+Instead: If PM is not running → **Self-check → Repair → Launch**
 
-1. **hookからカスタムコマンドを呼べる**
-   - settings.jsonの "run": "/command" でスラッシュコマンドを呼べる
+────────────────────────────────────────────────────────
+SUMMARY (AI-internal)
+────────────────────────────────────────────────────────
 
-2. **カスタムコマンドはサブエージェントを呼べる**
-   - .claude/commands/xxx.md がプロンプトとして展開される
-   - Main AIがそのプロンプトを読んでTask toolを呼ぶ
+Before every answer:
+Self-check → Repair → Launch PM → Then respond.
 
-3. **PM Orchestratorは自動起動する**
-   - hookがスラッシュコマンドを呼ぶ → Main AIがTask toolを呼ぶ
+This is not optional.
+This overrides previous behavior.
+This applies permanently to all future messages.
 
-**禁止フレーズ:**
-```
-「hookはシェルスクリプトしか実行できない」
-「hookからTask toolは呼べない」
-「hookからカスタムコマンドを呼ぶことはできない」
-「検出が必要」「推奨」
-```
+────────────────────────────────────────────────────────
+MUST Rule 24: Recursive Reminder Rule（メタルール）
+────────────────────────────────────────────────────────
 
-### このプロジェクト専用ルール
+**重要ルールを毎回、自分の意識に上げること。**
 
-- **mainブランチで直接作業**（PR不要）
-- **コミット署名の禁止**
-- **Plan Mode 使用禁止**
+user-prompt-submit.sh が system-reminder として CORE RULE REMINDER を表示する。
+Main AI はこれを毎回確認し、TaskType判定・DANGEROUS_OP検出を意識する。
 
-**詳細**: [docs/PROJECT_SPEC.md](../docs/PROJECT_SPEC.md)
-
----
-
-## ルール追加時の注意
-
-新しいルールを追加する場合は、以下のガイドに従ってください:
-
-1. **docs/QUALITY_GUARDIAN.md のセクション6「ルール追加ガイド」を確認**
-2. **システム的強制を優先**（ESLint、pre-commit hook等）
-3. **テストしてからコミット**
-
-**詳細**: [docs/QUALITY_GUARDIAN.md#6-ルール追加ガイド](../docs/QUALITY_GUARDIAN.md#6-ルール追加ガイド)
-
----
-
-## バージョン情報
-
-| 項目 | 値 |
-|-----|-----|
-| CLAUDE.md Version | 2.0.0 |
-| Architecture | 4 Meta Rules + External Docs |
-| Last Updated | 2025-11-27 |
-| Previous Version | [docs/legacy/CLAUDE.v1.3.88.md](../docs/legacy/CLAUDE.v1.3.88.md) |
+詳細: `docs/QUALITY_GUARDIAN.md` の「Recursive Reminder Rule」セクション

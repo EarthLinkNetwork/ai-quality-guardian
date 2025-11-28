@@ -997,6 +997,53 @@ AIアシスタントがこれらのルールを守るように、`/remind`コマ
 
 ## 変更履歴
 
+### v1.3.89 (2025-01-26)
+
+**PM Orchestrator System Enforcement: 「口約束」から「システム的強制」へ**
+
+**問題の本質:**
+- v1.3.79-v1.3.83で「今後はPM Orchestratorを起動します」という口約束を守れなかった
+- Main AIは「気をつけます」を実行できない（MUST Rule 21の教訓）
+- TaskType判定を実装しても、Main AIが無視して起動しない
+
+**実装した対策:**
+
+1. **hookの出力で強制ブロック**
+   - `user-prompt-submit.sh` が `🚨🚨🚨 STOP - 以下を読むまで応答禁止 🚨🚨🚨` を出力
+   - Main AIに「今すぐTask toolを呼ぶ」ことを命令
+   - 「今後は〜します」「hookからは起動できない」等の言い訳を禁止
+
+2. **禁止フレーズの明記**
+   - 「今後は〜します」（口約束）
+   - 「hookからは起動できない」（言い訳）
+   - 「制約でできない」（言い訳）
+   - 「動いていないかもしれない」（推測）
+   - これらを使う代わりに、**今すぐTask toolを呼ぶ**
+
+3. **自己修復の自動実行**
+   - Task toolで起動できない場合、Main AIが自己修復してから再起動
+   - ユーザーに「できません」と報告するのではなく、自己修復してから起動
+
+4. **CLAUDE.mdに強制ルール追加**
+   - 「口約束は無効 - システム的強制を実装」セクションを追加
+   - v1.3.79-v1.3.83の失敗事例を記録
+   - システム的強制の実装方法を明記
+
+**技術的変更:**
+- `.claude/hooks/user-prompt-submit.sh`: 強制ブロック出力を追加
+- `quality-guardian/templates/hooks/user-prompt-submit.sh`: 同期（MUST Rule 16）
+- `.claude/CLAUDE.md`: システム的強制セクションを追加
+- バージョン更新: 1.3.88 → 1.3.89
+
+**期待される効果:**
+- Main AIが「口約束」を破れないよう、システム的に強制
+- PM Orchestratorが確実に起動されるようになる
+- TaskType判定に基づいた適切なサブエージェント起動
+
+---
+
+## 変更履歴
+
 ### v1.3.85 (2025-01-26)
 
 **PM Orchestrator Enhancement: Context Sharing & Security System (Tasks 11, 12)**
