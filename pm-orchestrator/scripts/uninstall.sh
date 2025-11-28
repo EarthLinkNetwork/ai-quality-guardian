@@ -29,7 +29,8 @@ TARGET_DIR="${1:-.}"
 CLAUDE_DIR="$TARGET_DIR/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
-COMMAND_FILE="$CLAUDE_DIR/commands/pm-orchestrator.md"
+COMMAND_FILE="$CLAUDE_DIR/commands/pm.md"
+HOOK_FILE="$CLAUDE_DIR/hooks/user-prompt-submit.sh"
 
 echo -e "${BLUE}=== PM Orchestrator Uninstallation ===${NC}"
 echo "Target directory: $TARGET_DIR"
@@ -59,8 +60,16 @@ clean_settings_json() {
     exit 1
   fi
 
-  # _pmOrchestratorManaged フラグを持つエントリを削除
-  jq 'if .hooks.UserPromptSubmit then .hooks.UserPromptSubmit |= map(select(._pmOrchestratorManaged != true)) else . end' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp"
+  # _pmOrchestratorManaged フラグを持つエントリを削除（ネスト構造対応）
+  # 新構造: hooks.UserPromptSubmit[].hooks[] の中にマーカーがある
+  jq 'if .hooks.UserPromptSubmit then .hooks.UserPromptSubmit |= map(
+    if .hooks then
+      .hooks |= map(select(._pmOrchestratorManaged != true)) |
+      if .hooks == [] then empty else . end
+    elif ._pmOrchestratorManaged == true then empty
+    else .
+    end
+  ) else . end' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp"
 
   # 空の配列になったら hooks.UserPromptSubmit を削除
   jq 'if .hooks.UserPromptSubmit == [] then del(.hooks.UserPromptSubmit) else . end' "$SETTINGS_FILE.tmp" > "$SETTINGS_FILE.tmp2"
@@ -136,6 +145,33 @@ clean_claude_md() {
 }
 
 # ========================================
+# hookスクリプトの削除
+# ========================================
+remove_hook_script() {
+  echo "Removing hook script..."
+
+  if [[ ! -f "$HOOK_FILE" ]]; then
+    echo -e "   ${YELLOW}[SKIP]${NC} Hook script not found"
+    return
+  fi
+
+  # PM Orchestratorが作成したものか確認
+  if ! grep -q "$MARKER_START" "$HOOK_FILE" 2>/dev/null; then
+    echo -e "   ${YELLOW}[SKIP]${NC} Hook script not managed by PM Orchestrator"
+    return
+  fi
+
+  rm "$HOOK_FILE"
+  echo -e "   ${GREEN}[REMOVED]${NC} $HOOK_FILE"
+
+  # hooks ディレクトリが空なら削除
+  if [[ -d "$CLAUDE_DIR/hooks" ]] && [[ -z "$(ls -A "$CLAUDE_DIR/hooks")" ]]; then
+    rmdir "$CLAUDE_DIR/hooks"
+    echo -e "   ${GREEN}[REMOVED]${NC} $CLAUDE_DIR/hooks/ (was empty)"
+  fi
+}
+
+# ========================================
 # コマンドファイルの削除
 # ========================================
 remove_command_file() {
@@ -160,6 +196,7 @@ remove_command_file() {
 # メイン処理
 # ========================================
 clean_settings_json
+remove_hook_script
 clean_claude_md
 remove_command_file
 

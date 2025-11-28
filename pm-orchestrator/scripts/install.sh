@@ -54,9 +54,13 @@ update_settings_json() {
   "hooks": {
     "UserPromptSubmit": [
       {
-        "_pmOrchestratorManaged": true,
-        "type": "command",
-        "command": "/pm-orchestrator $PROMPT"
+        "hooks": [
+          {
+            "_pmOrchestratorManaged": true,
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh"
+          }
+        ]
       }
     ]
   }
@@ -80,7 +84,7 @@ EOF
   fi
 
   # hooks.UserPromptSubmit 配列に追加
-  local NEW_HOOK='{"_pmOrchestratorManaged":true,"type":"command","command":"/pm-orchestrator $PROMPT"}'
+  local NEW_HOOK='{"hooks":[{"_pmOrchestratorManaged":true,"type":"command","command":"$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh"}]}'
 
   # UserPromptSubmit が存在するか確認
   if jq -e '.hooks.UserPromptSubmit' "$SETTINGS_FILE" > /dev/null 2>&1; then
@@ -139,7 +143,7 @@ PM Orchestratorが自動的に起動し、適切なサブエージェントを�
 ## 手動起動
 
 \`\`\`
-/pm-orchestrator [タスク説明]
+/pm [タスク説明]
 \`\`\`
 
 ## アンインストール
@@ -163,13 +167,61 @@ $MD_MARKER_END
 }
 
 # ========================================
+# hookスクリプトの作成
+# ========================================
+create_hook_script() {
+  echo "Creating hook script..."
+
+  local HOOKS_DIR="$CLAUDE_DIR/hooks"
+  local HOOK_FILE="$HOOKS_DIR/user-prompt-submit.sh"
+
+  mkdir -p "$HOOKS_DIR"
+
+  if [[ -f "$HOOK_FILE" ]] && grep -q "$MARKER_START" "$HOOK_FILE" 2>/dev/null; then
+    echo -e "   ${YELLOW}[SKIP]${NC} Hook script already exists"
+    return
+  fi
+
+  cat > "$HOOK_FILE" << 'HOOKEOF'
+#!/bin/bash
+# _pmOrchestratorManaged: true
+# PM Orchestrator hook script
+
+set -e
+
+cat <<'EOF'
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 PM Orchestrator 起動（必須）
+
+Main AIへ:
+  Task tool で pm-orchestrator を即座に起動せよ
+  検出・確認は不要
+  毎回起動する
+
+起動方法:
+  subagent_type: "pm-orchestrator"
+  description: "タスク管理"
+  prompt: ユーザー入力をそのまま渡す
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EOF
+
+exit 0
+HOOKEOF
+
+  chmod +x "$HOOK_FILE"
+  echo -e "   ${GREEN}[CREATED]${NC} $HOOK_FILE"
+}
+
+# ========================================
 # コマンドファイルの作成
 # ========================================
 create_command_file() {
   echo "Creating command file..."
 
   local COMMANDS_DIR="$CLAUDE_DIR/commands"
-  local COMMAND_FILE="$COMMANDS_DIR/pm-orchestrator.md"
+  local COMMAND_FILE="$COMMANDS_DIR/pm.md"
 
   mkdir -p "$COMMANDS_DIR"
 
@@ -179,20 +231,60 @@ create_command_file() {
   fi
 
   cat > "$COMMAND_FILE" << 'EOF'
-# PM Orchestrator Command
+# PM Orchestrator - 100% Always-On（毎回起動）
 
-このコマンドはPM Orchestratorサブエージェントを起動します。
+このプロジェクトでは、PM Orchestratorは**100%常時起動**です。
 
-## 使用方法
+---
 
-Task toolで `pm-orchestrator` サブエージェントを起動してください:
+## 設計原則
+
+- **全てのユーザー入力でPM Orchestratorを起動する**
+- TaskType判定・writeガード・サブエージェントチェーンはPM側で決定
+- Main AIは判断せず、PMに全てを委譲する
+- hookは「PMを起動せよ」というトリガーのみを出力
+
+---
+
+## Main AIの義務
+
+1. **ユーザー入力を受け取ったら、即座にTask toolでpm-orchestratorを起動**
+2. 自分で応答を作成しない
+3. PMの判定結果に従う
+4. PMの結果をユーザーに報告
+
+---
+
+## Task tool 呼び出し形式
 
 ```
-subagent_type: pm-orchestrator
-prompt: ユーザー入力: $ARGUMENTS
+subagent_type: "pm-orchestrator"
+description: "タスク分析と実行"
+prompt: |
+  ユーザー入力:
+  $ARGUMENTS
 
-このタスクを分析し、適切なサブエージェントチェーンを起動してください。
+  このタスクを分析し、以下を実行してください:
+  1. TaskType判定（READ_INFO/LIGHT_EDIT/IMPLEMENTATION/REVIEW_RESPONSE/CONFIG_CI_CHANGE/DANGEROUS_OP）
+  2. write許可判定
+  3. 必要なサブエージェントチェーン決定
+  4. サブエージェント起動または直接実行
+  5. 結果をJSON形式で報告
 ```
+
+---
+
+## 絶対禁止
+
+Main AIは以下を絶対にしてはいけない:
+
+- PM Orchestratorを起動せずに回答する
+- 「今後は起動します」と言う（口約束）
+- 自分でTaskType判定をする
+- 「hookからは起動できない」と言う
+- 「制約でできない」と言う
+
+---
 
 ## 入力
 
@@ -206,6 +298,7 @@ EOF
 # メイン処理
 # ========================================
 update_settings_json
+create_hook_script
 update_claude_md
 create_command_file
 

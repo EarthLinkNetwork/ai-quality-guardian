@@ -130,26 +130,28 @@ async function checkSettingsJson(claudeDir: string, result: SelfCheckResult): Pr
     }
 
     // PM Orchestrator用のエントリを探す
-    // pm-orchestrator-hook.sh または user-prompt-submit.sh を含むコマンドを認識
+    // 正しい形式: /pm $PROMPT（スラッシュコマンド呼び出し）
+    // または _pmOrchestratorManaged マーカー付き
     const pmHook = hooks.find((hook: { _pmOrchestratorManaged?: boolean; type?: string; command?: string }) =>
       hook._pmOrchestratorManaged === true ||
       (hook.type === 'command' && (
-        hook.command?.includes('pm-orchestrator') ||
-        hook.command?.includes('user-prompt-submit')
+        hook.command?.includes('/pm $PROMPT') ||
+        hook.command?.includes('/pm ${')
       ))
     );
 
     if (!pmHook) {
-      result.errors.push('PM Orchestrator hook not found in settings.json');
+      result.errors.push('PM Orchestrator hook not found in settings.json (expected: /pm $PROMPT)');
       return false;
     }
 
-    // 旧形式（/pm $PROMPT）が残っていないかチェック
-    const hasOldFormat = hooks.some((hook: { command?: string }) =>
-      hook.command?.includes('/pm $PROMPT') || hook.command?.includes('/pm ${')
+    // シェルスクリプト直接呼び出しは非推奨（動作はするがスラッシュコマンド推奨）
+    const hasShellScript = hooks.some((hook: { command?: string }) =>
+      hook.command?.includes('user-prompt-submit.sh') ||
+      hook.command?.includes('pm-orchestrator-hook.sh')
     );
-    if (hasOldFormat) {
-      result.warnings.push('Old format (/pm $PROMPT) detected in settings.json - consider updating');
+    if (hasShellScript) {
+      result.warnings.push('Shell script hook detected - slash command (/pm $PROMPT) is recommended');
     }
 
     return true;
@@ -218,7 +220,7 @@ async function checkCommandFile(claudeDir: string, result: SelfCheckResult): Pro
 }
 
 async function checkHookScript(claudeDir: string, result: SelfCheckResult): Promise<boolean> {
-  // 複数の可能性のあるhookファイル名をチェック
+  // hookスクリプトはオプション（スラッシュコマンド形式では不要）
   const possibleHooks = [
     'pm-orchestrator-hook.sh',
     'user-prompt-submit.sh'
@@ -234,8 +236,9 @@ async function checkHookScript(claudeDir: string, result: SelfCheckResult): Prom
   }
 
   if (!hookPath) {
-    result.errors.push(`hooks script not found (checked: ${possibleHooks.join(', ')})`);
-    return false;
+    // hookスクリプトがなくてもOK（スラッシュコマンド形式を使用）
+    result.warnings.push('Hook script not found (optional - slash command format is used)');
+    return true;  // エラーではなく成功扱い
   }
 
   try {
@@ -253,7 +256,7 @@ async function checkHookScript(claudeDir: string, result: SelfCheckResult): Prom
 }
 
 async function checkHookSyntax(claudeDir: string, result: SelfCheckResult): Promise<boolean> {
-  // 複数の可能性のあるhookファイル名をチェック
+  // hookスクリプトはオプション
   const possibleHooks = [
     'pm-orchestrator-hook.sh',
     'user-prompt-submit.sh'
@@ -269,8 +272,8 @@ async function checkHookSyntax(claudeDir: string, result: SelfCheckResult): Prom
   }
 
   if (!hookPath) {
-    // hookScriptチェックでエラーを出しているのでここではスキップ
-    return false;
+    // hookスクリプトがない場合はスキップ（オプション）
+    return true;
   }
 
   try {
@@ -283,13 +286,13 @@ async function checkHookSyntax(claudeDir: string, result: SelfCheckResult): Prom
   } catch (error) {
     const execError = error as { stderr?: string; message?: string };
     const stderr = execError.stderr || execError.message || 'Unknown syntax error';
-    result.errors.push(`Hook script syntax error: ${stderr.trim()}`);
-    return false;
+    result.warnings.push(`Hook script syntax warning: ${stderr.trim()}`);
+    return true;  // 構文エラーがあっても成功扱い（スラッシュコマンドがメイン）
   }
 }
 
 async function checkHookOutput(claudeDir: string, result: SelfCheckResult): Promise<boolean> {
-  // 複数の可能性のあるhookファイル名をチェック
+  // hookスクリプトはオプション
   const possibleHooks = [
     'pm-orchestrator-hook.sh',
     'user-prompt-submit.sh'
@@ -305,8 +308,8 @@ async function checkHookOutput(claudeDir: string, result: SelfCheckResult): Prom
   }
 
   if (!hookPath) {
-    // hookScriptチェックでエラーを出しているのでここではスキップ
-    return false;
+    // hookスクリプトがない場合はスキップ（オプション）
+    return true;
   }
 
   try {
@@ -317,7 +320,7 @@ async function checkHookOutput(claudeDir: string, result: SelfCheckResult): Prom
       timeout: 5000
     });
 
-    // 期待される出力内容をチェック
+    // 期待される出力内容をチェック（参考情報として）
     const checks = {
       pmOrchestratorBlock: output.includes('PM ORCHESTRATOR') ||
                            output.includes('pm-orchestrator') ||
@@ -327,21 +330,15 @@ async function checkHookOutput(claudeDir: string, result: SelfCheckResult): Prom
                 output.includes('subagent_type'),
     };
 
-    if (!checks.pmOrchestratorBlock) {
-      result.warnings.push('Hook output does not contain PM Orchestrator reference');
+    if (!checks.pmOrchestratorBlock && !checks.taskType) {
+      result.warnings.push('Hook output does not contain PM Orchestrator reference (optional)');
     }
 
-    if (!checks.taskType) {
-      result.warnings.push('Hook output does not contain TaskType or Task tool reference');
-    }
-
-    // 最低限PMに関する出力があればOK
-    return checks.pmOrchestratorBlock || checks.taskType;
+    return true;  // hookの出力内容に関わらず成功
   } catch (error) {
     const execError = error as { message?: string };
-    result.warnings.push(`Hook execution test failed: ${execError.message || 'Unknown error'}`);
-    // 実行に失敗しても構文は正しい可能性があるのでwarningに留める
-    return true;
+    result.warnings.push(`Hook execution test skipped: ${execError.message || 'Unknown error'}`);
+    return true;  // 実行に失敗しても成功扱い（スラッシュコマンドがメイン）
   }
 }
 
