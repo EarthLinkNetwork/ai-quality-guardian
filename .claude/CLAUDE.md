@@ -99,65 +99,38 @@ You MUST repair automatically.
 
 ────────────────────────────────────────────────────────
 ────────────────────────────────────────────────────────
-STEP 3 — Automatic PM Orchestrator Launch (TaskType-Based)
+STEP 3 — PM Orchestrator 100% Always-On
 ────────────────────────────────────────────────────────
 
-**PM起動判定ルール（Phase 9-3）:**
+**全てのユーザー入力でPM Orchestratorを起動する。**
 
-user-prompt-submit.sh が TaskType を判定し、system-reminder で表示する。
-Main AI はこの判定結果に基づいて PM Orchestrator を起動するか決定する。
+設計原則:
+- TaskType判定はMain AIではなくPM Orchestratorが行う
+- Main AIは判断せず、PMに全てを委譲する
+- hookは「PMを起動せよ」というトリガーのみを出力
 
-**PM起動必須のTaskType:**
-- `IMPLEMENTATION`（複数ファイル実装）
-- `REVIEW_RESPONSE`（PRレビュー対応）
-- `CONFIG_CI_CHANGE`（設定・CI変更）
-- `DANGEROUS_OP`（危険な操作）
+**Main AIの義務:**
 
-**PM起動不要のTaskType:**
-- `READ_INFO`（情報読み取り専用）
-- `LIGHT_EDIT`（1ファイル内の軽微な修正）
-
-**例外ルール:**
-- READ_INFOでも DANGEROUS_OP=1 or CONFIG_CI_CHANGE=1 なら PM起動必須
-- LIGHT_EDITでも複数ファイルに影響する場合は IMPLEMENTATION に昇格してPM起動
-
-**PM起動時の処理:**
-
-IF system-reminder に「PM起動: ✅ 必須」が表示されている THEN
-  → 応答より先に Task tool で pm-orchestrator を起動せよ
-  → 以下の説明をすることは禁止:
-    - 「hookからは起動できない」
-    - 「制約でできない」
-    - 「動いていないかもしれない」
-  → 起動できない場合は自己修復してから再起動せよ
-
-IF system-reminder に「PM起動: ❌ 不要」が表示されている THEN
-  → Main AIが直接応答してよい
-  → READ_INFOの場合はRead/Grep/Globのみ使用
-  → LIGHT_EDITの場合はImplementer起動は任意
+1. ユーザー入力を受け取ったら、即座にTask toolでpm-orchestratorを起動
+2. 自分で応答を作成しない
+3. PMの判定結果に従う
+4. PMの結果をユーザーに報告
 
 **Task Tool Invocation:**
 
 ```
 subagent_type: "pm-orchestrator"
-description: "タスク管理とサブエージェント起動"
+description: "タスク分析と実行"
 prompt: |
   ユーザー入力:
   (ユーザーのメッセージ本文)
 
-  TaskType判定結果:
-  - TaskType: (READ_INFO/LIGHT_EDIT/IMPLEMENTATION等)
-  - write許可: (true/false)
-  - 確認必須: (不要/設計確認/必須)
-  - サブエージェントチェーン: (RuleChecker → Designer → ...)
-
-  このタスクを分析し、適切なサブエージェントチェーンを起動してください。
-  1. TaskType判定結果を確認（上記の判定を使用 or 再判定）
-  2. 必要なサブエージェント決定（サブエージェントチェーンに従う）
-  3. 各サブエージェントを順番に起動
-  4. 結果を集約してJSON形式で報告
-  
-  【重要】write許可がfalseの場合、Read/Grep/Glob以外のツールは使用禁止。
+  このタスクを分析し、以下を実行してください:
+  1. TaskType判定（READ_INFO/LIGHT_EDIT/IMPLEMENTATION/REVIEW_RESPONSE/CONFIG_CI_CHANGE/DANGEROUS_OP）
+  2. write許可判定
+  3. 必要なサブエージェントチェーン決定
+  4. サブエージェント起動または直接実行
+  5. 結果をJSON形式で報告
 ```
 
 ────────────────────────────────────────────────────────
@@ -189,12 +162,13 @@ This overrides previous behavior.
 This applies permanently to all future messages.
 
 ────────────────────────────────────────────────────────
-MUST Rule 24: Recursive Reminder Rule（メタルール）
+MUST Rule 24: PM Orchestrator 100% Always-On
 ────────────────────────────────────────────────────────
 
-**重要ルールを毎回、自分の意識に上げること。**
+**全てのユーザー入力でPM Orchestratorを起動すること。**
 
-user-prompt-submit.sh が system-reminder として CORE RULE REMINDER を表示する。
-Main AI はこれを毎回確認し、TaskType判定・DANGEROUS_OP検出を意識する。
+user-prompt-submit.sh が PM起動トリガーを表示する。
+Main AI は即座に Task tool で pm-orchestrator を起動する。
+TaskType判定・writeガードはPM側で実行される。
 
-詳細: `docs/QUALITY_GUARDIAN.md` の「Recursive Reminder Rule」セクション
+詳細: `.claude/agents/pm-orchestrator.md`
