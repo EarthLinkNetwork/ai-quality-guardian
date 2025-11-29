@@ -130,28 +130,31 @@ async function checkSettingsJson(claudeDir: string, result: SelfCheckResult): Pr
     }
 
     // PM Orchestrator用のエントリを探す
-    // 正しい形式: /pm $PROMPT（スラッシュコマンド呼び出し）
-    // または _pmOrchestratorManaged マーカー付き
-    const pmHook = hooks.find((hook: { _pmOrchestratorManaged?: boolean; type?: string; command?: string }) =>
-      hook._pmOrchestratorManaged === true ||
-      (hook.type === 'command' && (
-        hook.command?.includes('/pm $PROMPT') ||
-        hook.command?.includes('/pm ${')
-      ))
-    );
+    // 正しい形式: シェルスクリプト呼び出し（user-prompt-submit.sh）
+    // または _pmOrchestratorManaged マーカー付き（ネスト構造も対応）
+    const findPmHook = (hookArray: unknown[]): boolean => {
+      for (const hook of hookArray) {
+        if (typeof hook !== 'object' || hook === null) continue;
+        const h = hook as Record<string, unknown>;
 
-    if (!pmHook) {
-      result.errors.push('PM Orchestrator hook not found in settings.json (expected: /pm $PROMPT)');
+        // マーカー付きのエントリ
+        if (h._pmOrchestratorManaged === true) return true;
+
+        // シェルスクリプト呼び出し形式
+        if (h.type === 'command' && typeof h.command === 'string' && (
+          h.command.includes('user-prompt-submit.sh') ||
+          h.command.includes('pm-orchestrator-hook.sh')
+        )) return true;
+
+        // ネスト構造（hooks配列内にhooksがある場合）
+        if (Array.isArray(h.hooks) && findPmHook(h.hooks)) return true;
+      }
       return false;
-    }
+    };
 
-    // シェルスクリプト直接呼び出しは非推奨（動作はするがスラッシュコマンド推奨）
-    const hasShellScript = hooks.some((hook: { command?: string }) =>
-      hook.command?.includes('user-prompt-submit.sh') ||
-      hook.command?.includes('pm-orchestrator-hook.sh')
-    );
-    if (hasShellScript) {
-      result.warnings.push('Shell script hook detected - slash command (/pm $PROMPT) is recommended');
+    if (!findPmHook(hooks)) {
+      result.errors.push('PM Orchestrator hook not found in settings.json (expected: user-prompt-submit.sh or _pmOrchestratorManaged marker)');
+      return false;
     }
 
     return true;

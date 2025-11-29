@@ -122,12 +122,16 @@ clean_claude_md() {
     sed -i "/$MD_MARKER_START/,/$MD_MARKER_END/d" "$CLAUDE_MD"
   fi
 
-  # 末尾の空行を整理
+  # 先頭と末尾の空行を整理
   if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS - 末尾の連続空行を1つに
+    # macOS - 先頭の空行を削除
+    sed -i '' '/./,$!d' "$CLAUDE_MD" 2>/dev/null || true
+    # 末尾の連続空行を1つに
     sed -i '' -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD" 2>/dev/null || true
   else
-    # Linux
+    # Linux - 先頭の空行を削除
+    sed -i '/./,$!d' "$CLAUDE_MD" 2>/dev/null || true
+    # 末尾の連続空行を1つに
     sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD" 2>/dev/null || true
   fi
 

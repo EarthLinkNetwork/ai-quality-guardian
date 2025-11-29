@@ -8,6 +8,7 @@
 import { PMOrchestrator } from '../orchestrator/pm-orchestrator';
 // import { ExecutionLogger } from '../logger/execution-logger';
 import { ProgressTracker, TerminalUI } from '../visualization';
+import { runSelfCheck, formatResult } from '../install/selfCheck';
 import { execSync } from 'child_process';
 import * as path from 'path';
 
@@ -53,6 +54,9 @@ async function main() {
     case 'qa':
       await runQA(args.slice(1));
       break;
+    case 'selfcheck':
+      await runSelfCheckCommand(args.slice(1));
+      break;
     default:
       console.error(`Unknown command: ${command}`);
       console.error('Run "pm-orchestrator --help" for usage information');
@@ -70,6 +74,7 @@ Usage:
 Commands:
   install     Install PM Orchestrator to a project (.claude/ directory)
   uninstall   Remove PM Orchestrator from a project
+  selfcheck   Verify installation integrity (8 checks)
   execute     Execute a complete task with automatic subagent selection
   analyze     Analyze code quality, similarity, or architecture
   design      Create design documents based on requirements
@@ -184,6 +189,16 @@ async function runTests(args: string[]) {
 async function runQA(args: string[]) {
   console.log('QA checks feature coming soon...');
   console.log('Arguments:', args);
+}
+
+async function runSelfCheckCommand(args: string[]) {
+  const targetDir = args[0] || '.';
+  console.log(`Running self-check on ${targetDir}...\n`);
+
+  const result = await runSelfCheck(targetDir);
+  console.log(formatResult(result));
+
+  process.exit(result.success ? 0 : 1);
 }
 
 // Run CLI
