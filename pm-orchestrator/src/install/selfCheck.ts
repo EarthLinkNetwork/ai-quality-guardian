@@ -1,6 +1,6 @@
 /**
  * Self-Check Module
- * インストール後の自己診断・動作チェック
+ * インストール後の自己診断・動作チェック + 自動修復機能
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -21,9 +21,17 @@ export interface SelfCheckResult {
   };
   errors: string[];
   warnings: string[];
+  repaired: string[];
 }
 
-export async function runSelfCheck(targetDir: string = '.'): Promise<SelfCheckResult> {
+export interface SelfCheckOptions {
+  autoRepair?: boolean;
+}
+
+export async function runSelfCheck(
+  targetDir: string = '.',
+  options: SelfCheckOptions = {}
+): Promise<SelfCheckResult> {
   const result: SelfCheckResult = {
     success: false,
     mode: 'unknown',
@@ -39,7 +47,10 @@ export async function runSelfCheck(targetDir: string = '.'): Promise<SelfCheckRe
     },
     errors: [],
     warnings: [],
+    repaired: [],
   };
+
+  const autoRepair = options.autoRepair ?? false;
 
   try {
     const mode = await detectMode(targetDir);
@@ -49,18 +60,13 @@ export async function runSelfCheck(targetDir: string = '.'): Promise<SelfCheckRe
       ? path.resolve(targetDir, '..', '.claude')
       : path.resolve(targetDir, '.claude');
 
-    // 基本的なファイル存在チェック
-    result.checks.claudeDir = await checkClaudeDir(claudeDir, result);
-    result.checks.settingsJson = await checkSettingsJson(claudeDir, result);
+    result.checks.claudeDir = await checkClaudeDir(claudeDir, result, autoRepair);
+    result.checks.settingsJson = await checkSettingsJson(claudeDir, result, autoRepair);
     result.checks.claudeMd = await checkClaudeMd(claudeDir, result);
     result.checks.agentFile = await checkAgentFile(claudeDir, result);
     result.checks.commandFile = await checkCommandFile(claudeDir, result);
     result.checks.hookScript = await checkHookScript(claudeDir, result);
-
-    // hook構文チェック（bash -n）
     result.checks.hookSyntax = await checkHookSyntax(claudeDir, result);
-
-    // hook動作確認（出力内容チェック）
     result.checks.hookOutput = await checkHookOutput(claudeDir, result);
 
     result.success = Object.values(result.checks).every(check => check) && result.errors.length === 0;
@@ -88,7 +94,6 @@ async function detectMode(targetDir: string): Promise<'team' | 'personal' | 'unk
     }
   }
 
-  // マーカーがなくても.claudeディレクトリがあればteamと判定
   if (fs.existsSync(path.resolve(targetDir, '.claude'))) {
     return 'team';
   }
@@ -96,10 +101,25 @@ async function detectMode(targetDir: string): Promise<'team' | 'personal' | 'unk
   return 'unknown';
 }
 
-async function checkClaudeDir(claudeDir: string, result: SelfCheckResult): Promise<boolean> {
+async function checkClaudeDir(
+  claudeDir: string,
+  result: SelfCheckResult,
+  autoRepair: boolean
+): Promise<boolean> {
   if (!fs.existsSync(claudeDir)) {
-    result.errors.push(`.claude/ directory not found: ${claudeDir}`);
-    return false;
+    if (autoRepair) {
+      try {
+        fs.mkdirSync(claudeDir, { recursive: true });
+        result.repaired.push('.claude/ directory created');
+        return true;
+      } catch (error) {
+        result.errors.push(`Failed to create .claude/ directory: ${(error as Error).message}`);
+        return false;
+      }
+    } else {
+      result.errors.push(`.claude/ directory not found: ${claudeDir}`);
+      return false;
+    }
   }
 
   if (!fs.statSync(claudeDir).isDirectory()) {
@@ -110,51 +130,173 @@ async function checkClaudeDir(claudeDir: string, result: SelfCheckResult): Promi
   return true;
 }
 
-async function checkSettingsJson(claudeDir: string, result: SelfCheckResult): Promise<boolean> {
+async function checkSettingsJson(
+  claudeDir: string,
+  result: SelfCheckResult,
+  autoRepair: boolean
+): Promise<boolean> {
   const settingsPath = path.join(claudeDir, 'settings.json');
 
   if (!fs.existsSync(settingsPath)) {
-    result.errors.push('settings.json not found');
-    return false;
+    if (autoRepair) {
+      try {
+        const defaultSettings = {
+          hooks: {
+            UserPromptSubmit: [
+              {
+                hooks: [
+                  {
+                    _pmOrchestratorManaged: true,
+                    type: 'command',
+                    command: '$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh'
+                  }
+                ]
+              }
+            ]
+          }
+        };
+        fs.writeFileSync(settingsPath, JSON.stringify(defaultSettings, null, 2), 'utf-8');
+        result.repaired.push('settings.json created');
+        return true;
+      } catch (error) {
+        result.errors.push(`Failed to create settings.json: ${(error as Error).message}`);
+        return false;
+      }
+    } else {
+      result.errors.push('settings.json not found');
+      return false;
+    }
   }
 
   try {
     const content = fs.readFileSync(settingsPath, 'utf-8');
     const json = JSON.parse(content);
 
-    // UserPromptSubmit hookが設定されているか確認
     const hooks = json.hooks?.UserPromptSubmit;
     if (!hooks || !Array.isArray(hooks) || hooks.length === 0) {
-      result.errors.push('UserPromptSubmit hook not configured in settings.json');
-      return false;
+      if (autoRepair) {
+        if (!json.hooks) json.hooks = {};
+        json.hooks.UserPromptSubmit = [
+          {
+            hooks: [
+              {
+                _pmOrchestratorManaged: true,
+                type: 'command',
+                command: '$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh'
+              }
+            ]
+          }
+        ];
+        fs.writeFileSync(settingsPath, JSON.stringify(json, null, 2), 'utf-8');
+        result.repaired.push('UserPromptSubmit hook added to settings.json');
+        return true;
+      } else {
+        result.errors.push('UserPromptSubmit hook not configured in settings.json');
+        return false;
+      }
     }
 
-    // PM Orchestrator用のエントリを探す
-    // 正しい形式: シェルスクリプト呼び出し（user-prompt-submit.sh）
-    // または _pmOrchestratorManaged マーカー付き（ネスト構造も対応）
     const findPmHook = (hookArray: unknown[]): boolean => {
       for (const hook of hookArray) {
         if (typeof hook !== 'object' || hook === null) continue;
         const h = hook as Record<string, unknown>;
 
-        // マーカー付きのエントリ
         if (h._pmOrchestratorManaged === true) return true;
 
-        // シェルスクリプト呼び出し形式
         if (h.type === 'command' && typeof h.command === 'string' && (
           h.command.includes('user-prompt-submit.sh') ||
           h.command.includes('pm-orchestrator-hook.sh')
         )) return true;
 
-        // ネスト構造（hooks配列内にhooksがある場合）
         if (Array.isArray(h.hooks) && findPmHook(h.hooks)) return true;
       }
       return false;
     };
 
     if (!findPmHook(hooks)) {
-      result.errors.push('PM Orchestrator hook not found in settings.json (expected: user-prompt-submit.sh or _pmOrchestratorManaged marker)');
-      return false;
+      if (autoRepair) {
+        hooks.push({
+          hooks: [
+            {
+              _pmOrchestratorManaged: true,
+              type: 'command',
+              command: '$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh'
+            }
+          ]
+        });
+        fs.writeFileSync(settingsPath, JSON.stringify(json, null, 2), 'utf-8');
+        result.repaired.push('PM Orchestrator hook entry added to settings.json');
+        return true;
+      } else {
+        result.errors.push('PM Orchestrator hook not found in settings.json');
+        return false;
+      }
+    }
+
+    let pmHookCount = 0;
+    const countPmHooks = (hookArray: unknown[]): void => {
+      for (const hook of hookArray) {
+        if (typeof hook !== 'object' || hook === null) continue;
+        const h = hook as Record<string, unknown>;
+
+        if (h._pmOrchestratorManaged === true) {
+          pmHookCount++;
+        }
+        if (h.type === 'command' && typeof h.command === 'string' && (
+          h.command.includes('user-prompt-submit.sh') ||
+          h.command.includes('pm-orchestrator-hook.sh')
+        )) {
+          pmHookCount++;
+        }
+        if (Array.isArray(h.hooks)) {
+          countPmHooks(h.hooks);
+        }
+      }
+    };
+
+    countPmHooks(hooks);
+
+    if (pmHookCount > 1) {
+      if (autoRepair) {
+        const cleanedHooks: unknown[] = [];
+        let foundFirst = false;
+
+        const cleanArray = (hookArray: unknown[]): unknown[] => {
+          const cleaned: unknown[] = [];
+          for (const hook of hookArray) {
+            if (typeof hook !== 'object' || hook === null) {
+              cleaned.push(hook);
+              continue;
+            }
+            const h = hook as Record<string, unknown>;
+
+            const isPmHook = h._pmOrchestratorManaged === true ||
+              (h.type === 'command' && typeof h.command === 'string' && (
+                h.command.includes('user-prompt-submit.sh') ||
+                h.command.includes('pm-orchestrator-hook.sh')
+              ));
+
+            if (isPmHook) {
+              if (!foundFirst) {
+                foundFirst = true;
+                cleaned.push(hook);
+              }
+            } else if (Array.isArray(h.hooks)) {
+              const nestedCleaned = cleanArray(h.hooks);
+              cleaned.push({ ...h, hooks: nestedCleaned });
+            } else {
+              cleaned.push(hook);
+            }
+          }
+          return cleaned;
+        };
+
+        json.hooks.UserPromptSubmit = cleanArray(hooks);
+        fs.writeFileSync(settingsPath, JSON.stringify(json, null, 2), 'utf-8');
+        result.repaired.push(`Removed ${pmHookCount - 1} duplicate PM Orchestrator hook entries`);
+      } else {
+        result.warnings.push(`Found ${pmHookCount} PM Orchestrator hook entries (expected: 1)`);
+      }
     }
 
     return true;
@@ -176,7 +318,6 @@ async function checkClaudeMd(claudeDir: string, result: SelfCheckResult): Promis
 
   if (!content.includes('<!-- PM-ORCHESTRATOR-START -->')) {
     result.warnings.push('PM Orchestrator section marker not found in CLAUDE.md (optional)');
-    // マーカーがなくてもPM関連の内容があればOK
     if (!content.toLowerCase().includes('pm orchestrator') && !content.toLowerCase().includes('pm-orchestrator')) {
       result.errors.push('PM Orchestrator configuration not found in CLAUDE.md');
       return false;
@@ -196,7 +337,6 @@ async function checkAgentFile(claudeDir: string, result: SelfCheckResult): Promi
 
   const content = fs.readFileSync(agentPath, 'utf-8');
 
-  // Task toolで起動する内容があるか確認
   if (!content.toLowerCase().includes('task') && !content.toLowerCase().includes('orchestrator')) {
     result.warnings.push('agents/pm-orchestrator.md may not contain expected content');
   }
@@ -214,7 +354,6 @@ async function checkCommandFile(claudeDir: string, result: SelfCheckResult): Pro
 
   const content = fs.readFileSync(commandPath, 'utf-8');
 
-  // pm-orchestrator を Task tool で起動する内容があるか確認
   if (!content.toLowerCase().includes('task') || !content.toLowerCase().includes('pm-orchestrator')) {
     result.warnings.push('commands/pm.md may not contain Task tool invocation for pm-orchestrator');
   }
@@ -223,7 +362,6 @@ async function checkCommandFile(claudeDir: string, result: SelfCheckResult): Pro
 }
 
 async function checkHookScript(claudeDir: string, result: SelfCheckResult): Promise<boolean> {
-  // hookスクリプトはオプション（スラッシュコマンド形式では不要）
   const possibleHooks = [
     'pm-orchestrator-hook.sh',
     'user-prompt-submit.sh'
@@ -239,9 +377,8 @@ async function checkHookScript(claudeDir: string, result: SelfCheckResult): Prom
   }
 
   if (!hookPath) {
-    // hookスクリプトがなくてもOK（スラッシュコマンド形式を使用）
     result.warnings.push('Hook script not found (optional - slash command format is used)');
-    return true;  // エラーではなく成功扱い
+    return true;
   }
 
   try {
@@ -259,7 +396,6 @@ async function checkHookScript(claudeDir: string, result: SelfCheckResult): Prom
 }
 
 async function checkHookSyntax(claudeDir: string, result: SelfCheckResult): Promise<boolean> {
-  // hookスクリプトはオプション
   const possibleHooks = [
     'pm-orchestrator-hook.sh',
     'user-prompt-submit.sh'
@@ -275,12 +411,10 @@ async function checkHookSyntax(claudeDir: string, result: SelfCheckResult): Prom
   }
 
   if (!hookPath) {
-    // hookスクリプトがない場合はスキップ（オプション）
     return true;
   }
 
   try {
-    // bash -n で構文チェック
     execSync(`bash -n "${hookPath}"`, {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -290,12 +424,11 @@ async function checkHookSyntax(claudeDir: string, result: SelfCheckResult): Prom
     const execError = error as { stderr?: string; message?: string };
     const stderr = execError.stderr || execError.message || 'Unknown syntax error';
     result.warnings.push(`Hook script syntax warning: ${stderr.trim()}`);
-    return true;  // 構文エラーがあっても成功扱い（スラッシュコマンドがメイン）
+    return true;
   }
 }
 
 async function checkHookOutput(claudeDir: string, result: SelfCheckResult): Promise<boolean> {
-  // hookスクリプトはオプション
   const possibleHooks = [
     'pm-orchestrator-hook.sh',
     'user-prompt-submit.sh'
@@ -311,19 +444,16 @@ async function checkHookOutput(claudeDir: string, result: SelfCheckResult): Prom
   }
 
   if (!hookPath) {
-    // hookスクリプトがない場合はスキップ（オプション）
     return true;
   }
 
   try {
-    // テスト入力でhookを実行
     const output = execSync(`echo '{"prompt": "テストでーす"}' | bash "${hookPath}"`, {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 5000
     });
 
-    // 期待される出力内容をチェック（参考情報として）
     const checks = {
       pmOrchestratorBlock: output.includes('PM ORCHESTRATOR') ||
                            output.includes('pm-orchestrator') ||
@@ -337,11 +467,11 @@ async function checkHookOutput(claudeDir: string, result: SelfCheckResult): Prom
       result.warnings.push('Hook output does not contain PM Orchestrator reference (optional)');
     }
 
-    return true;  // hookの出力内容に関わらず成功
+    return true;
   } catch (error) {
     const execError = error as { message?: string };
     result.warnings.push(`Hook execution test skipped: ${execError.message || 'Unknown error'}`);
-    return true;  // 実行に失敗しても成功扱い（スラッシュコマンドがメイン）
+    return true;
   }
 }
 
@@ -361,6 +491,14 @@ export function formatResult(result: SelfCheckResult): string {
     lines.push(`  ${value ? '✅' : '❌'} ${key}`);
   }
   lines.push('');
+
+  if (result.repaired.length > 0) {
+    lines.push('Auto-Repaired:');
+    for (const repair of result.repaired) {
+      lines.push(`  🔧 ${repair}`);
+    }
+    lines.push('');
+  }
 
   if (result.errors.length > 0) {
     lines.push('Errors:');

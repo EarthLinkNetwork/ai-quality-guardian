@@ -12,7 +12,7 @@ import { runSelfCheck, formatResult } from '../install/selfCheck';
 import { execSync } from 'child_process';
 import * as path from 'path';
 
-const VERSION = '1.0.3';
+const VERSION = '1.0.18';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -75,6 +75,7 @@ Commands:
   install     Install PM Orchestrator to a project (.claude/ directory)
   uninstall   Remove PM Orchestrator from a project
   selfcheck   Verify installation integrity (8 checks)
+              --repair: Auto-repair detected issues
   execute     Execute a complete task with automatic subagent selection
   analyze     Analyze code quality, similarity, or architecture
   design      Create design documents based on requirements
@@ -192,10 +193,12 @@ async function runQA(args: string[]) {
 }
 
 async function runSelfCheckCommand(args: string[]) {
-  const targetDir = args[0] || '.';
-  console.log(`Running self-check on ${targetDir}...\n`);
+  const hasRepairFlag = args.includes('--repair');
+  const targetDir = args.find(arg => !arg.startsWith('--')) || '.';
+  
+  console.log(`Running self-check on ${targetDir}...${hasRepairFlag ? ' (auto-repair enabled)' : ''}\n`);
 
-  const result = await runSelfCheck(targetDir);
+  const result = await runSelfCheck(targetDir, { autoRepair: hasRepairFlag });
   console.log(formatResult(result));
 
   process.exit(result.success ? 0 : 1);

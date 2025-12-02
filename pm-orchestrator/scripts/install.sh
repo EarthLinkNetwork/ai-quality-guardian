@@ -14,7 +14,7 @@
 #   --team     : プロジェクト直接インストール（デフォルト）
 #   --personal : 親ディレクトリにインストール（プロジェクトを汚さない）
 #
-# Version: 1.0.17
+# Version: 1.0.18
 
 set -e
 
@@ -194,6 +194,52 @@ if [[ ! -d "$CLAUDE_DIR" ]]; then
 fi
 
 # ========================================
+# 既存エントリの存在チェック（jqを使った正確な検査）
+# ========================================
+check_pm_hook_exists() {
+  local settings_file="$1"
+  
+  if [[ ! -f "$settings_file" ]]; then
+    return 1  # ファイルが存在しない = エントリなし
+  fi
+
+  if ! command -v jq &> /dev/null; then
+    # jqがない場合は単純なgrep検索にフォールバック
+    grep -q "$MARKER_START" "$settings_file" 2>/dev/null
+    return $?
+  fi
+
+  # jqで構造的に検査
+  # hooks.UserPromptSubmit配列を再帰的に調べる
+  local has_hook=$(jq -r '
+    def find_pm_hook:
+      if type == "array" then
+        .[] | find_pm_hook
+      elif type == "object" then
+        if ._pmOrchestratorManaged == true then
+          true
+        elif .hooks then
+          .hooks | find_pm_hook
+        elif .command and (.command | contains("user-prompt-submit.sh") or contains("pm-orchestrator-hook.sh")) then
+          true
+        else
+          false
+        end
+      else
+        false
+      end;
+    
+    .hooks.UserPromptSubmit // [] | find_pm_hook
+  ' "$settings_file" 2>/dev/null)
+
+  if [[ "$has_hook" == "true" ]]; then
+    return 0  # エントリあり
+  else
+    return 1  # エントリなし
+  fi
+}
+
+# ========================================
 # settings.json の更新
 # ========================================
 update_settings_json() {
@@ -222,8 +268,8 @@ EOF
     return
   fi
 
-  # 既存ファイルの場合、マーカーが既にあるか確認
-  if grep -q "$MARKER_START" "$SETTINGS_FILE" 2>/dev/null; then
+  # 既存ファイルの場合、エントリが既にあるか確認
+  if check_pm_hook_exists "$SETTINGS_FILE"; then
     echo -e "   ${YELLOW}[SKIP]${NC} PM Orchestrator hook already exists"
     return
   fi
