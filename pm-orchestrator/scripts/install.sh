@@ -14,6 +14,7 @@
 #   --team     : プロジェクト直接インストール（デフォルト）
 #   --personal : 親ディレクトリにインストール（プロジェクトを汚さない）
 #
+# Version: 1.0.17
 
 set -e
 
@@ -252,13 +253,14 @@ EOF
 }
 
 # ========================================
-# hookスクリプトの作成
+# hookスクリプトの作成（templates/から読み込む）
 # ========================================
 create_hook_script() {
-  echo "Creating hook script..."
+  echo "Creating hook script from template..."
 
   local HOOKS_DIR="$CLAUDE_DIR/hooks"
   local HOOK_FILE="$HOOKS_DIR/user-prompt-submit.sh"
+  local TEMPLATE_FILE="$PM_ORCHESTRATOR_ROOT/templates/.claude/hooks/user-prompt-submit.sh"
 
   mkdir -p "$HOOKS_DIR"
 
@@ -267,36 +269,16 @@ create_hook_script() {
     return
   fi
 
-  cat > "$HOOK_FILE" << 'HOOKEOF'
-#!/bin/bash
-# _pmOrchestratorManaged: true
-# PM Orchestrator hook script
+  # テンプレートファイルの存在確認
+  if [[ ! -f "$TEMPLATE_FILE" ]]; then
+    echo -e "   ${RED}[ERROR]${NC} Template file not found: $TEMPLATE_FILE"
+    exit 1
+  fi
 
-set -e
-
-cat <<'EOF'
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PM Orchestrator 起動（必須）
-
-Main AIへ:
-  Task tool で pm-orchestrator を即座に起動せよ
-  検出・確認は不要
-  毎回起動する
-
-起動方法:
-  subagent_type: "pm-orchestrator"
-  description: "タスク管理"
-  prompt: ユーザー入力をそのまま渡す
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-EOF
-
-exit 0
-HOOKEOF
-
+  # テンプレートをコピー
+  cp "$TEMPLATE_FILE" "$HOOK_FILE"
   chmod +x "$HOOK_FILE"
-  echo -e "   ${GREEN}[CREATED]${NC} $HOOK_FILE"
+  echo -e "   ${GREEN}[CREATED]${NC} $HOOK_FILE (from template)"
 }
 
 # ========================================
@@ -566,3 +548,4 @@ echo "To uninstall, run:"
 echo "  npx pm-orchestrator-enhancement uninstall"
 echo "  or"
 echo "  ./scripts/uninstall.sh $TARGET_DIR"
+echo ""
