@@ -1,4 +1,4 @@
-# PM Orchestrator Automatic Boot - System Enforcement (v1.3.84)
+# PM Orchestrator Automatic Boot - System Enforcement (v1.3.88)
 
 **【重要】「口約束」は無効 - システム的強制を実装**
 
@@ -162,13 +162,90 @@ This overrides previous behavior.
 This applies permanently to all future messages.
 
 ────────────────────────────────────────────────────────
-MUST Rule 24: PM Orchestrator 100% Always-On
+MUST Rule 24: PM Orchestrator 100% Always-On（最優先）
 ────────────────────────────────────────────────────────
 
-**全てのユーザー入力でPM Orchestratorを起動すること。**
+**全てのユーザー入力でPM Orchestratorを起動すること。例外なし。**
 
-user-prompt-submit.sh が PM起動トリガーを表示する。
-Main AI は即座に Task tool で pm-orchestrator を起動する。
-TaskType判定・writeガードはPM側で実行される。
+### 起動手順
+
+1. ユーザー入力を受け取る
+2. **即座に** Task tool で pm-orchestrator を起動
+3. 自分で判断・応答しない
+4. PMの結果をユーザーに報告
+
+### 絶対禁止
+
+- 「起動します」と言うだけで終わること
+- 自分で TaskType を判定すること
+- PMを起動せずに応答すること
+- 「今後は起動します」と口約束すること
+
+### 検証方法
+
+応答の最初に以下を表示すること:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PM Orchestrator 起動確認
+Task tool: 実行済み
+subagent_type: pm-orchestrator
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+この表示がない応答は全て MUST Rule 24 違反。
+
+詳細: `.claude/agents/pm-orchestrator.md`
+
+────────────────────────────────────────────────────────
+MUST Rule 25: CRITICAL Rulesの再帰的表示義務
+────────────────────────────────────────────────────────
+
+**全ての応答の最初にCRITICAL Rulesを表示すること。**
+
+hook出力（user-prompt-submit.sh）に含まれるCRITICAL Rulesを、
+Main AIの応答の最初に再表示する義務がある。
+
+### 絶対禁止
+
+- ルールを省略すること
+- 1行に簡略化すること
+- 「ルールは確認しました」と言うだけで終わること
+
+### 検証方法
+
+応答に「CRITICAL Rules」セクションが含まれていること。
+
+────────────────────────────────────────────────────────
+MUST Rule 0: PM Orchestrator 必須実行（hookで強制）
+────────────────────────────────────────────────────────
+
+**全てのユーザー入力で PM Orchestrator を起動する。例外なし。**
+
+user-prompt-submit.sh が CRITICAL Rules の Rule 0 として出力する。
+Main AI はこのルールに従い、必ず Task tool で pm-orchestrator を起動する。
+
+### hookでの表示内容
+
+```
+【Rule 0: PM Orchestrator 必須実行】
+全てのユーザー入力で PM Orchestrator を起動すること。例外なし。
+Main AI が独断で応答を作成することは絶対禁止。
+詳細: `.claude/agents/pm-orchestrator.md`
+```
+
+### Main AIの義務
+
+1. CRITICAL Rules の Rule 0 を確認
+2. 即座に Task tool で pm-orchestrator を起動
+3. PMの指示に従って作業
+4. 自分で勝手に判断しない
+
+### 絶対禁止
+
+- Rule 0 を無視すること
+- 「PMを起動します」と言うだけで終わること
+- PM起動せずに応答を作成すること
+- 「できません」と言い訳すること
 
 詳細: `.claude/agents/pm-orchestrator.md`

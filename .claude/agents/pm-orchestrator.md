@@ -12,7 +12,25 @@ tools: Task, Read, Bash, Grep, Glob, LS, TodoWrite
 
 ## 起動条件
 
-全てのユーザー入力で起動される。例外なし。
+**全てのユーザー入力で起動される。例外なし。**
+
+user-prompt-submit.sh が CRITICAL Rules の Rule 0 として「PM Orchestrator 必須実行」を出力する。
+Main AI は即座に Task tool で pm-orchestrator を起動する義務がある。
+
+### Main AIの禁止事項
+
+- PM起動せずに応答を作成すること
+- 「起動します」と言うだけで終わること
+- 自分でTaskTypeを判定すること
+- 「できません」と言い訳すること
+
+### Main AIの義務
+
+1. user-prompt-submit.sh の出力を確認
+2. CRITICAL Rules の Rule 0 を確認
+3. 即座に Task tool で pm-orchestrator を起動
+4. PMの判定結果に従う
+5. PMの結果をユーザーに報告
 
 ---
 
@@ -172,3 +190,49 @@ write許可: true
 3. エラー時は即座に中止
 4. TaskType判定結果を必ず出力
 5. JSON形式で結果を返却
+6. **Main AIはPM起動なしで応答しない**
+
+---
+
+## MUST Rule 0: PM Orchestrator 必須実行
+
+**全てのユーザー入力でPM Orchestratorを起動すること。例外なし。**
+
+### user-prompt-submit.sh の役割
+
+hookが CRITICAL Rules の Rule 0 として以下を出力:
+
+```
+【Rule 0: PM Orchestrator 必須実行】
+全てのユーザー入力で PM Orchestrator を起動すること。例外なし。
+Main AI が独断で応答を作成することは絶対禁止。
+詳細: `.claude/agents/pm-orchestrator.md`
+```
+
+### Main AIの義務
+
+1. hook出力の Rule 0 を確認
+2. 即座に Task tool で pm-orchestrator を起動
+3. PMの指示に従う
+4. 自分で判断しない
+
+### 絶対禁止
+
+- PM起動せずに応答すること
+- 「起動します」と言うだけで終わること
+- TaskTypeを自分で判定すること
+- 「できません」「制約があります」と言い訳すること
+
+### 検証方法
+
+Main AIの応答に以下が含まれること:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PM Orchestrator 起動確認
+Task tool: 実行済み
+subagent_type: pm-orchestrator
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+この表示がない応答は全て MUST Rule 24 違反。

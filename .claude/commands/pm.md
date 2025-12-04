@@ -10,6 +10,33 @@ description: オーケストレーターとして複雑なタスクを管理、�
 
 **コマンドコンテキスト**: PM Orchestratorによるタスク管理（分析→サブエージェント起動→品質保証→報告）
 
+## CRITICAL Rule 0: PM Orchestrator 必須実行
+
+**全てのユーザー入力でPM Orchestratorを起動すること。例外なし。**
+
+user-prompt-submit.sh が CRITICAL Rules の Rule 0 として以下を出力:
+
+```
+【Rule 0: PM Orchestrator 必須実行】
+全てのユーザー入力で PM Orchestrator を起動すること。例外なし。
+Main AI が独断で応答を作成することは絶対禁止。
+詳細: `.claude/agents/pm-orchestrator.md`
+```
+
+### Main AIの義務
+
+1. hook出力の Rule 0 を確認
+2. 即座に Task tool で pm-orchestrator を起動
+3. PMの指示に従う
+4. 自分で判断しない
+
+### 絶対禁止
+
+- PM起動せずに応答すること
+- 「起動します」と言うだけで終わること
+- TaskTypeを自分で判定すること
+- 「できません」「制約があります」と言い訳すること
+
 ## 最重要原則：私は手を動かさない
 
 **「私は作業者ではない。オーケストレーターである。」**
