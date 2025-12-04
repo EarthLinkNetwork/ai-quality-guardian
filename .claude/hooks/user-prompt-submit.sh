@@ -1,8 +1,32 @@
 #!/bin/bash
-# quality-guardian用 user-prompt-submit hook
-# 別プロジェクトのログを検出して、修正ではなく分析を促す
+# ============================================================================
+# PM Orchestrator 100% Always-On - Stable Output Order
+# ============================================================================
+# 
+# 出力順序（安定化）:
+# 1. 固定ヘッダ（プロジェクト識別）
+# 2. CRITICAL Rules（最優先表示）
+# 3. PM Orchestrator起動指示（1回のみ）
+# 4. パターン検出結果（PMに渡すコンテキスト）
+#
+# ============================================================================
 
 set -e
+
+# ============================================================================
+# Section 1: 固定ヘッダ（プロジェクト識別）
+# ============================================================================
+cat <<'FIXED_HEADER_EOF'
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+scripts: PM ORCHESTRATOR 起動ルール（固定ヘッダ）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. このプロジェクトでは、ユーザー入力ごとに必ず pm-orchestrator を Task tool で起動する。
+2. TaskType と risk_level（リスク判定）を、毎回ユーザーに見える形で表示する。
+3. 「今回は軽い内容だから起動しない」など、自分の最適化判断で PM を省略してはならない。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FIXED_HEADER_EOF
 
 # 入力を読み取る（JSON形式）
 INPUT=$(cat)
@@ -23,415 +47,18 @@ else
     THIS_PROJECT="$(cd "$(dirname "$0")/../.." && pwd)"
 fi
 
-# 検出パターン
-DETECTED=0
-CODERABBIT_RESOLVE=0
-LIST_MODIFICATION=0
-PR_REVIEW_RESPONSE=0
-
-# 1. 別プロジェクトのパス検出
-if echo "$USER_MESSAGE" | grep -qE '(/[a-zA-Z0-9_/.+-]+)' && ! echo "$USER_MESSAGE" | grep -qE "$THIS_PROJECT"; then
-  DETECTED=1
-fi
-
-# 2. データベース・サーバーエラー検出
-if echo "$USER_MESSAGE" | grep -qE 'password authentication failed|FATAL.*password|pg_hba.conf|Connection terminated|cloudsqlsuperuser'; then
-  DETECTED=1
-fi
-
-# 3. Git worktree違反検出
-if echo "$USER_MESSAGE" | grep -qE 'git checkout -b|ブランチはw[or]ktreeで対応'; then
-  DETECTED=1
-fi
-
-# 4. Claude Code実行ログ検出（⏺マーク）
-if echo "$USER_MESSAGE" | grep -qE '⏺|Bash\(|Read\(|Edit\(|Write\('; then
-  DETECTED=1
-fi
-
-# 5. Bitbucket/GitHub URL検出
-if echo "$USER_MESSAGE" | grep -qE 'bitbucket\.org|github\.com.*pull/[0-9]+'; then
-  DETECTED=1
-fi
-
 # ============================================================================
-# インテリジェントパターン検出（Phase 1-3: AI Control System Extended）
+# Section 2: CRITICAL Rules（最優先表示）
 # ============================================================================
 
-# 6. CodeRabbit Resolve Pattern Detection
-if echo "$USER_MESSAGE" | grep -qiE 'coderabbit|resolve|resolved|review.*comment|PR.*comment|プルリク.*コメント'; then
-  CODERABBIT_RESOLVE=1
-fi
+cat <<'CRITICAL_RULES_EOF'
 
-# 7. List Modification Pattern Detection
-if echo "$USER_MESSAGE" | grep -qiE 'バージョン.*更新|version.*update|全.*箇所|5箇所|チェックリスト|一覧.*修正|複数.*ファイル.*更新'; then
-  LIST_MODIFICATION=1
-fi
+# 🔴 CRITICAL Rules（最重要・13個）- 毎回確認
 
-# 8. PR Review Response Pattern Detection
-if echo "$USER_MESSAGE" | grep -qiE 'PR.*レビュー|プルリク.*レビュー|review.*指摘|レビュー.*指摘|全.*指摘.*対応|指摘.*漏れ'; then
-  PR_REVIEW_RESPONSE=1
-fi
-
-# 9. Complex Implementation Pattern Detection（Phase 9-3追加）
-COMPLEX_IMPLEMENTATION=0
-if echo "$USER_MESSAGE" | grep -qiE '新機能|新しい機能|リファクタリング|複数ファイル|設計.*必要|アーキテクチャ|実装.*してください|機能.*追加'; then
-  COMPLEX_IMPLEMENTATION=1
-fi
-
-# 10. Quality Check Pattern Detection（Phase 9-3追加）
-QUALITY_CHECK=0
-if echo "$USER_MESSAGE" | grep -qiE '品質チェック|quality.*check|lint.*test|全.*チェック|検証.*実行|テスト.*実行|ビルド.*確認'; then
-  QUALITY_CHECK=1
-fi
-
-# 検出時の対応
-if [ $DETECTED -eq 1 ]; then
-  # 別プロジェクトのパスを抽出
-  PROJECT_PATH=$(echo "$USER_MESSAGE" | grep -oE '/[a-zA-Z0-9_/.+-]+' | grep -vE "^$THIS_PROJECT" | head -1 | sed 's:/$::')
-
-  cat <<EOF
-
-🚨🚨🚨 BLOCKER: 別プロジェクトのログを検出しました 🚨🚨🚨
-
-このメッセージには、このプロジェクト（quality-guardian）以外の情報が含まれています。
-
-【重要】
-- このプロジェクトのパス: $THIS_PROJECT
-- 別プロジェクトの問題を修正してはいけません
-- AI guardianとして分析のみ行ってください
-
-【検出されたパターン】
-以下のいずれかが検出されました：
-- 別プロジェクトのファイルパス
-- データベース・サーバーエラー（password authentication failed等）
-- Git worktree使用違反（git checkout -b等）
-- Claude Code実行ログ（⏺マーク等）
-- Bitbucket/GitHub URL
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔴 MUST Rule 0: 別プロジェクトCLAUDE.md確認義務（最優先）
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-【作業開始前に必ず実行】
-EOF
-
-  # 別プロジェクトのパスが特定できた場合
-  if [ -n "$PROJECT_PATH" ]; then
-    cat <<EOF
-1. Read ${PROJECT_PATH}/.claude/CLAUDE.md
-   （このファイルにプロジェクト固有のルールが記載されている）
-2. リポジトリ使い分けルールを確認
-3. 開発ワークフローを確認
-4. 禁止事項を確認
-5. 上記の確認完了を応答で明示
-6. 確認完了後に作業開始
-
-❌ CLAUDE.md確認なしで作業開始は絶対禁止
-❌ 「ルールが既に存在しているのに無視」は重大なMUST Rule 0違反
-
-例（過去の違反例）：
-- EarthLinkNetwork/eventsystemのCLAUDE.mdに「indigonote/eventsystemは全て終わるまで触るな」と明記
-- しかしCLAUDE.mdを確認せず、indigonote/eventsystemを確認しようとした
-- 結果：「何回いったら、記憶してもらえるのですか?」とユーザーから指摘
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-【正しい対応】
-1. 別プロジェクトのCLAUDE.mdを確認（最優先）
-2. 「これは別プロジェクトのログです」と宣言
-3. project-context-guardianを起動してルール違反を分析
-4. quality-guardian自体を強化（ルール追加、サブエージェント改善）
-5. バージョン更新とコミット
-
-【絶対禁止】
-❌ 別プロジェクトのファイルを修正
-❌ 別プロジェクトのブランチを作成
-❌ 別プロジェクトの問題を解決
-❌ 「修正します」と反応
-❌ CLAUDE.md確認なしで作業開始
-
-EOF
-  else
-    cat <<'EOF'
-1. 別プロジェクトのパスを特定
-2. そのプロジェクトの .claude/CLAUDE.md を確認
-3. プロジェクト固有のルール・制約を確認
-4. 上記の確認完了を応答で明示
-5. 確認完了後に作業開始
-
-❌ CLAUDE.md確認なしで作業開始は絶対禁止
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-【正しい対応】
-1. 別プロジェクトのCLAUDE.mdを確認（最優先）
-2. 「これは別プロジェクトのログです」と宣言
-3. project-context-guardianを起動してルール違反を分析
-4. quality-guardian自体を強化（ルール追加、サブエージェント改善）
-5. バージョン更新とコミット
-
-【絶対禁止】
-❌ 別プロジェクトのファイルを修正
-❌ 別プロジェクトのブランチを作成
-❌ 別プロジェクトの問題を解決
-❌ 「修正します」と反応
-❌ CLAUDE.md確認なしで作業開始
-
-EOF
-  fi
-fi
-
-# ============================================================================
-# パターン別の具体的指示表示（AI Control System）
-# ============================================================================
-
-# CodeRabbit Resolve Pattern が検出された場合
-if [ $CODERABBIT_RESOLVE -eq 1 ]; then
-  cat <<'EOF'
-
-🎯 PATTERN DETECTED: CodeRabbit Resolve
-
-【即座に実行すべきこと】
-修正完了後、gh api graphql でコメントをResolveする。説明不要。
-
-# 手順1: Thread IDを取得
-gh api graphql -f query='
-query {
-  repository(owner: "OWNER", name: "REPO") {
-    pullRequest(number: PR番号) {
-      reviewThreads(first: 100) {
-        nodes {
-          id
-          isResolved
-          comments(first: 1) {
-            nodes {
-              body
-            }
-          }
-        }
-      }
-    }
-  }
-}'
-
-# 手順2: Resolveを実行
-gh api graphql -f query='
-mutation {
-  resolveReviewThread(input: {threadId: "Thread ID"}) {
-    thread {
-      id
-      isResolved
-    }
-  }
-}'
-
-❌ 禁止事項:
-- 「CodeRabbitが自動でResolveします」と説明
-- 「できない場合は」と説明
-- ユーザーに「Resolveしてください」と依頼
-- @coderabbitai に依頼して逃げる
-
-✅ 正しい対応:
-1. 修正完了
-2. 即座に gh api graphql で Resolve
-3. 「Resolveしました」と報告
-4. 説明不要、実行のみ
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EOF
-fi
-
-# List Modification Pattern が検出された場合
-if [ $LIST_MODIFICATION -eq 1 ]; then
-  cat <<'EOF'
-
-🎯 PATTERN DETECTED: List Modification (複数箇所の更新)
-
-【即座に実行すべきこと】
-全箇所を先にカウント、一気に全て完了、途中で停止禁止。
-
-# 手順1: 全箇所を grep で確認
-grep -r "検索対象" .
-
-# 手順2: 件数をカウント
-grep -r "検索対象" . | wc -l
-
-# 手順3: TodoList作成（全箇所を列挙）
-TodoWrite で全箇所をリストアップ
-
-# 手順4: 全箇所を一気に更新
-for file in $(grep -rl "検索対象" .); do
-  # 各ファイルを更新
-done
-
-# 手順5: 全て完了を確認
-grep -r "検索対象" . | wc -l
-# → 0件になっていることを確認
-
-❌ 禁止事項:
-- 1箇所だけ更新して「完了しました」
-- 途中で「続けますか？」と質問
-- 一部だけ対応して終了
-- 件数を数えずに開始
-
-✅ 正しい対応:
-1. grep で全箇所を確認（件数カウント）
-2. TodoList で全箇所を列挙
-3. 一気に全て更新
-4. 再度 grep で0件確認
-5. 「全○件を更新しました」と報告
-
-詳細: .claude/agents/pr-review-response-guardian.md
-MAY Rule 7: 一覧修正作業の完遂義務
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EOF
-fi
-
-# PR Review Response Pattern が検出された場合
-if [ $PR_REVIEW_RESPONSE -eq 1 ]; then
-  cat <<'EOF'
-
-🎯 PATTERN DETECTED: PR Review Response
-
-【即座に実行すべきこと】
-全指摘をTodoListにして、全て対応完了まで継続。
-
-# 手順1: PRのレビューコメントを全て取得
-gh pr view PR番号 --comments
-
-# 手順2: TodoList作成（全指摘を列挙）
-TodoWrite で以下を作成:
-- [ ] 指摘1の内容
-- [ ] 指摘2の内容
-- [ ] 指摘3の内容
-...全ての指摘を列挙
-
-# 手順3: 全指摘に対応
-for 指摘 in 全指摘; do
-  # 対応実施
-  # TodoList更新
-done
-
-# 手順4: 全て対応完了を確認
-TodoList で全てが完了していることを確認
-
-# 手順5: 各コメントをResolve
-gh api graphql で全てのthreadをResolve
-
-❌ 禁止事項:
-- 一部の指摘だけ対応
-- 「主要な指摘は対応しました」
-- TodoListなしで対応
-- 対応漏れがあるのに「完了」
-
-✅ 正しい対応:
-1. 全指摘をTodoListに列挙
-2. 全指摘に順番に対応
-3. 対応ごとにTodoList更新
-4. 全て完了してから「完了」報告
-5. 全コメントをResolve
-
-詳細: .claude/agents/pr-review-response-guardian.md
-MUST Rule 14: PRレビュー指摘への完全対応義務
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EOF
-fi
-
-# ============================================================================
-# PM Orchestrator 起動判定（Phase 2-3: AI Control System Extended）
-# ============================================================================
-
-# Phase 9-5: 全ての応答で PM Orchestrator 起動を推奨
-# ユーザー指示：「パターンではなく全ての応答で PM Orchestrator 起動」
-LAUNCH_PM=1
-
-# パターン検出（PM Orchestratorに渡す参考情報として記録）
-# PM Orchestratorがタスク分析時に利用
-
-if [ $LAUNCH_PM -eq 1 ]; then
-  echo -e "$(cat <<PMEOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 PM Orchestrator 起動
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-\033[33m████████████████████████████████████████████████████████████\033[0m
-\033[33m█                                                            █\033[0m
-\033[33m█  🎯 PM ORCHESTRATOR - タスク分析・サブエージェント起動   █\033[0m
-\033[33m█                                                            █\033[0m
-\033[33m████████████████████████████████████████████████████████████\033[0m
-
-このタスクは複雑なため、PM Orchestrator サブエージェントを起動します。
-
-【PM Orchestrator の役割】
-- タスク分析
-- 適切なサブエージェントの起動
-- チェックポイント管理
-- 最終報告
-
-【実行フロー】
-1. \033[33mPM\033[0m → \033[31mRuleChecker\033[0m（ルールチェック）
-2. \033[33mPM\033[0m → \033[32mImplementer\033[0m（実装実行）
-3. \033[33mPM\033[0m → \033[34mReporter\033[0m（結果まとめ）
-4. \033[33mPM\033[0m → ユーザー報告
-
-【サブエージェントカラーコード】
-- \033[33m🎯 PM Orchestrator\033[0m (Yellow)
-- \033[31m🔴 RuleChecker\033[0m (Red)
-- \033[32m🟢 Implementer\033[0m (Green)
-- \033[34m🔵 Reporter\033[0m (Blue)
-- \033[35m🟣 Designer\033[0m (Purple)
-- \033[36m🔵 QA\033[0m (Cyan)
-
-【重要】
-全てのサブエージェントはPMを経由します。
-PMが全チェックOKを確認してから次に進みます。
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-【Main AIへの指示】
-以下のコマンドでPM Orchestratorを起動してください：
-
-Task tool を使用:
-  subagent_type: "pm-orchestrator"
-  description: "Complex task orchestration"
-  prompt: "ユーザー入力を分析し、適切なサブエージェントチェーンを起動してください。
-
-          検出されたパターン:
-          - CodeRabbit Resolve: $CODERABBIT_RESOLVE
-          - List Modification: $LIST_MODIFICATION
-          - PR Review Response: $PR_REVIEW_RESPONSE
-          - Complex Implementation: $COMPLEX_IMPLEMENTATION
-          - Quality Check: $QUALITY_CHECK
-
-          PMとして、以下を実行してください：
-          1. タスクタイプを決定
-          2. 必要なサブエージェントを決定（RuleChecker, Implementer, Reporter）
-          3. 各サブエージェントを順番に起動（Task tool使用）
-          4. 各結果を集約
-          5. 最終報告をユーザーに提示
-
-          【厳守事項】
-          - 全てのサブエージェント間の通信はPMを経由
-          - 各サブエージェントの結果を必ずPMが確認
-          - エラーがあれば即座に停止してユーザーに報告
-          - 全チェックOKの場合のみ次に進む"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PMEOF
-)"
-fi
-
-# ============================================================================
-# 全MUST Rulesを毎回プロンプトに再表示（再帰的ルール表示）
-# ============================================================================
-
-cat <<'EOF'
-
-# 🔴 CRITICAL Rules（最重要・12個）- 毎回確認
+【Rule 0: PM Orchestrator 必須実行】
+全てのユーザー入力で PM Orchestrator を起動すること。例外なし。
+Main AI が独断で応答を作成することは絶対禁止。
+詳細: `.claude/agents/pm-orchestrator.md`
 
 【Rule 1: ユーザー指示の厳守】
 指示されたことだけを実行。指示以外は一切禁止。
@@ -490,29 +117,208 @@ Playwrightで自分で確認。ユーザーに依頼禁止。
 ✅ 上記の複数行形式を完全に再現
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-EOF
+CRITICAL_RULES_EOF
 
 # ============================================================================
-# PM Orchestrator 必須起動（v1.3.86）
-# 検出は不要。毎回起動する。
+# Section 3: PM Orchestrator起動指示（1回のみ・明確）
 # ============================================================================
 
-cat <<'EOF'
+cat <<'PM_LAUNCH_EOF'
+
+🚨🚨🚨 STOP - 以下を読むまで応答禁止 🚨🚨🚨
+
+【MANDATORY ACTION - 絶対厳守】
+
+あなたは今から「PM Orchestrator」サブエージェントを起動しなければなりません。
+
+【禁止事項】
+以下の行動は全て禁止:
+  ❌ Main AIが独断で応答を作成する
+  ❌ 「hookからは起動できない」と説明する
+  ❌ 「制約でできない」と説明する
+  ❌ 「今後は〜します」と口約束する
+  ❌ PM Orchestratorを起動せずに応答する
+
+【必須手順】
+1. Task tool を使用
+2. subagent_type: "pm-orchestrator"
+3. description: "タスク管理とサブエージェント起動"
+4. prompt: ユーザー入力 + 以下のパターン検出結果
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 PM Orchestrator 起動（必須）
 
-Main AIへ:
-  Task tool で pm-orchestrator を即座に起動せよ
-  検出・確認は不要
-  毎回起動する
+PM_LAUNCH_EOF
 
-起動方法:
-  subagent_type: "pm-orchestrator"
-  description: "タスク管理"
-  prompt: ユーザー入力をそのまま渡す
+# ============================================================================
+# Section 4: パターン検出（PMに渡すコンテキスト）
+# ============================================================================
+
+# 検出パターン初期化
+DETECTED=0
+CODERABBIT_RESOLVE=0
+LIST_MODIFICATION=0
+PR_REVIEW_RESPONSE=0
+COMPLEX_IMPLEMENTATION=0
+QUALITY_CHECK=0
+
+# 1. 別プロジェクトのパス検出
+if echo "$USER_MESSAGE" | grep -qE '(/[a-zA-Z0-9_/.+-]+)' && ! echo "$USER_MESSAGE" | grep -qE "$THIS_PROJECT"; then
+  DETECTED=1
+fi
+
+# 2. データベース・サーバーエラー検出
+if echo "$USER_MESSAGE" | grep -qE 'password authentication failed|FATAL.*password|pg_hba.conf|Connection terminated|cloudsqlsuperuser'; then
+  DETECTED=1
+fi
+
+# 3. Git worktree違反検出
+if echo "$USER_MESSAGE" | grep -qE 'git checkout -b|ブランチはw[or]ktreeで対応'; then
+  DETECTED=1
+fi
+
+# 4. Claude Code実行ログ検出（\xE2\x8F\xBAマーク）
+if echo "$USER_MESSAGE" | grep -qE '\xE2\x8F\xBA|Bash\(|Read\(|Edit\(|Write\('; then
+  DETECTED=1
+fi
+
+# 5. Bitbucket/GitHub URL検出
+if echo "$USER_MESSAGE" | grep -qE 'bitbucket\.org|github\.com.*pull/[0-9]+'; then
+  DETECTED=1
+fi
+
+# 6. CodeRabbit Resolve Pattern Detection
+if echo "$USER_MESSAGE" | grep -qiE 'coderabbit|resolve|resolved|review.*comment|PR.*comment|プルリク.*コメント'; then
+  CODERABBIT_RESOLVE=1
+fi
+
+# 7. List Modification Pattern Detection
+if echo "$USER_MESSAGE" | grep -qiE 'バージョン.*更新|version.*update|全.*箇所|5箇所|チェックリスト|一覧.*修正|複数.*ファイル.*更新'; then
+  LIST_MODIFICATION=1
+fi
+
+# 8. PR Review Response Pattern Detection
+if echo "$USER_MESSAGE" | grep -qiE 'PR.*レビュー|プルリク.*レビュー|review.*指摘|レビュー.*指摘|全.*指摘.*対応|指摘.*漏れ'; then
+  PR_REVIEW_RESPONSE=1
+fi
+
+# 9. Complex Implementation Pattern Detection
+if echo "$USER_MESSAGE" | grep -qiE '新機能|新しい機能|リファクタリング|複数ファイル|設計.*必要|アーキテクチャ|実装.*してください|機能.*追加'; then
+  COMPLEX_IMPLEMENTATION=1
+fi
+
+# 10. Quality Check Pattern Detection
+if echo "$USER_MESSAGE" | grep -qiE '品質チェック|quality.*check|lint.*test|全.*チェック|検証.*実行|テスト.*実行|ビルド.*確認'; then
+  QUALITY_CHECK=1
+fi
+
+# パターン検出結果を表示
+cat <<PATTERN_EOF
+
+【パターン検出結果】（PMに渡すコンテキスト）
+- 別プロジェクト検出: $DETECTED
+- CodeRabbit Resolve: $CODERABBIT_RESOLVE
+- List Modification: $LIST_MODIFICATION
+- PR Review Response: $PR_REVIEW_RESPONSE
+- Complex Implementation: $COMPLEX_IMPLEMENTATION
+- Quality Check: $QUALITY_CHECK
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PATTERN_EOF
+
+# 別プロジェクト検出時の警告
+if [ $DETECTED -eq 1 ]; then
+  PROJECT_PATH=$(echo "$USER_MESSAGE" | grep -oE '/[a-zA-Z0-9_/.+-]+' | grep -vE "^$THIS_PROJECT" | head -1 | sed 's:/$::')
+
+  cat <<EOF
+
+🚨 別プロジェクト検出 🚨
+
+このメッセージには、このプロジェクト（scripts）以外の情報が含まれています。
+
+【重要】
+- このプロジェクトのパス: $THIS_PROJECT
+- 別プロジェクトの問題を修正してはいけません
+- PM Orchestratorに分析を委譲してください
+
+EOF
+
+  if [ -n "$PROJECT_PATH" ]; then
+    cat <<EOF
+【作業開始前に必ず実行】
+1. Read ${PROJECT_PATH}/.claude/CLAUDE.md
+2. プロジェクト固有のルール・制約を確認
+3. 確認完了を応答で明示
+4. 確認完了後に作業開始
+
+EOF
+  fi
+
+  cat <<'EOF'
+【絶対禁止】
+❌ 別プロジェクトのファイルを修正
+❌ 別プロジェクトのブランチを作成
+❌ 別プロジェクトの問題を解決
+❌ CLAUDE.md確認なしで作業開始
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 EOF
+fi
+
+# パターン別の具体的指示
+if [ $CODERABBIT_RESOLVE -eq 1 ]; then
+  cat <<'EOF'
+
+🎯 PATTERN: CodeRabbit Resolve
+修正完了後、gh api graphql でコメントをResolveする。説明不要。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EOF
+fi
+
+if [ $LIST_MODIFICATION -eq 1 ]; then
+  cat <<'EOF'
+
+🎯 PATTERN: List Modification
+全箇所を先にカウント、一気に全て完了、途中で停止禁止。
+
+詳細: .claude/agents/pr-review-response-guardian.md
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EOF
+fi
+
+if [ $PR_REVIEW_RESPONSE -eq 1 ]; then
+  cat <<'EOF'
+
+🎯 PATTERN: PR Review Response
+全指摘をTodoListにして、全て対応完了まで継続。
+
+詳細: .claude/agents/pr-review-response-guardian.md
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EOF
+fi
+
+# 最終確認メッセージ
+cat <<'FINAL_EOF'
+
+【検証】
+応答の最初に以下を表示すること:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PM Orchestrator 起動確認
+Task tool: 実行済み
+subagent_type: pm-orchestrator
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+この表示がない応答は全て MUST Rule 0 違反。
+
+🚨🚨🚨 この指示を実行するまで、他の応答は禁止 🚨🚨🚨
+
+FINAL_EOF
 
 exit 0
