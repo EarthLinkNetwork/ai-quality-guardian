@@ -24,6 +24,36 @@ PM Orchestrator Enhancementは、複雑な開発タスクを複数の専門サ�
 - Main AIは「hookからサブエージェントは呼べない」等の説明をしてはならない
 - 例外は存在しない
 
+### CRITICAL Rule 0: PM Orchestrator 必須実行
+
+全てのユーザー入力で PM Orchestrator を起動することが **CRITICAL Rules の Rule 0** として定義されています。
+
+**hookによる強制:**
+
+user-prompt-submit.sh が以下を出力:
+
+```
+【Rule 0: PM Orchestrator 必須実行】
+全てのユーザー入力で PM Orchestrator を起動すること。例外なし。
+Main AI が独断で応答を作成することは絶対禁止。
+詳細: `.claude/agents/pm-orchestrator.md`
+```
+
+**Main AIの義務:**
+
+1. CRITICAL Rules の Rule 0 を確認
+2. 即座に Task tool で pm-orchestrator を起動
+3. PMの指示に従う
+4. 自分で勝手に判断しない
+
+**絶対禁止:**
+
+- PM起動せずに応答すること
+- 「起動します」と言うだけで終わること
+- TaskTypeを自分で判定すること
+- 「できません」「制約があります」と言い訳すること
+
+
 ## 主要機能
 
 ### 1. コア機能
@@ -375,6 +405,14 @@ MIT
 PM Orchestrator Enhancement Team
 
 ## バージョン履歴
+
+- 2.0.0: メジャーリリース - PM Orchestrator アーキテクチャの完全実装
+  - **システム的強制の完全実装**: hookからのPM Orchestrator自動起動を100%保証
+  - **TaskType判定の完全自動化**: 6種類のタスク分類と自動ガード適用
+  - **サブエージェント実行チェーン**: 直列・並列実行の最適化
+  - **エラーハンドリング強化**: 自動リトライ・ロールバック・3回失敗時の自動中止
+  - **MUST Rule 24の実装**: 全ユーザー入力でPM Orchestratorが起動する設計
+  - **自己修復機構の完全統合**: 環境破損時の自動検出・修復・復旧
 
 - 1.0.15: 自己修復機構の実装と100% Always-On設計の確立
   - **自己修復機構**: PM Orchestrator環境の破損を自動検出・修復
