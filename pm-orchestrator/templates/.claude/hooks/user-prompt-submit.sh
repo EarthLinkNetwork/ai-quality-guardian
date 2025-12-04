@@ -1,7 +1,7 @@
 #!/bin/bash
 # _pmOrchestratorManaged: true
 # PM Orchestrator hook script
-# Version: 1.0.17
+# Version: 1.0.19
 
 set -e
 

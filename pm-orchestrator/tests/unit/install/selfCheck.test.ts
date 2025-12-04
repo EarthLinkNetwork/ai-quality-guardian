@@ -78,6 +78,7 @@ describe('SelfCheck Module', () => {
         },
         errors: [],
         warnings: [],
+        repaired: [],
       };
 
       const formatted = formatResult(result);

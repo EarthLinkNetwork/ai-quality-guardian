@@ -258,7 +258,6 @@ async function checkSettingsJson(
 
     if (pmHookCount > 1) {
       if (autoRepair) {
-        const cleanedHooks: unknown[] = [];
         let foundFirst = false;
 
         const cleanArray = (hookArray: unknown[]): unknown[] => {
@@ -322,6 +321,30 @@ async function checkClaudeMd(claudeDir: string, result: SelfCheckResult): Promis
       result.errors.push('PM Orchestrator configuration not found in CLAUDE.md');
       return false;
     }
+  }
+
+
+  // CRITICAL MUST Rulesの検証
+  const criticalRulesKeywords = [
+    'CRITICAL MUST Rules',
+    'MUST 3',
+    'MUST 7',
+    'MUST 9',
+    'MUST 10',
+    'MUST 21',
+    'MUST 22',
+    'MUST 24'
+  ];
+
+  const missingRules: string[] = [];
+  for (const keyword of criticalRulesKeywords) {
+    if (!content.includes(keyword)) {
+      missingRules.push(keyword);
+    }
+  }
+
+  if (missingRules.length > 0) {
+    result.warnings.push(`CRITICAL MUST Rules missing or incomplete in CLAUDE.md: ${missingRules.join(', ')}`);
   }
 
   return true;
@@ -461,10 +484,17 @@ async function checkHookOutput(claudeDir: string, result: SelfCheckResult): Prom
       taskType: output.includes('TaskType') ||
                 output.includes('Task tool') ||
                 output.includes('subagent_type'),
+      criticalRules: output.includes('CRITICAL MUST Rules') ||
+                     output.includes('MUST 3') ||
+                     output.includes('MUST 7')
     };
 
     if (!checks.pmOrchestratorBlock && !checks.taskType) {
       result.warnings.push('Hook output does not contain PM Orchestrator reference (optional)');
+    }
+
+    if (!checks.criticalRules) {
+      result.warnings.push('Hook output does not contain CRITICAL MUST Rules (optional)');
     }
 
     return true;
