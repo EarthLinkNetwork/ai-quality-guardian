@@ -1,7 +1,7 @@
 #!/bin/bash
 # _pmOrchestratorManaged: true
 # PM Orchestrator hook script
-# Version: 1.0.20
+# Version: 1.0.21
 
 set -e
 
@@ -56,8 +56,24 @@ echo ""
 # TaskType推定ロジック
 # ========================================
 
-# ユーザー入力を取得（引数から）
-USER_INPUT="$*"
+# ユーザー入力を取得（JSON形式または従来形式両方に対応）
+if [ $# -eq 0 ]; then
+  # 引数がない場合、stdinからJSON入力を試みる
+  INPUT_JSON=$(cat)
+  if [ -n "$INPUT_JSON" ]; then
+    # jqが利用可能ならJSON解析
+    if command -v jq &> /dev/null; then
+      USER_INPUT=$(echo "$INPUT_JSON" | jq -r '.prompt // empty')
+    fi
+    # jqがないか、解析に失敗した場合は全体を入力として扱う
+    if [ -z "$USER_INPUT" ]; then
+      USER_INPUT="$INPUT_JSON"
+    fi
+  fi
+else
+  # 引数がある場合は従来通り
+  USER_INPUT="$*"
+fi
 
 # TaskType判定
 TASK_TYPE="UNKNOWN"

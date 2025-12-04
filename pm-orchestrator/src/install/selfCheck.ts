@@ -487,7 +487,7 @@ async function checkHookOutput(claudeDir: string, result: SelfCheckResult): Prom
   }
 
   try {
-    const output = execSync(`echo '{"prompt": "テストでーす"}' | bash "${hookPath}"`, {
+    const output = execSync(`echo '{"prompt": "テスト入力です"}' | bash "${hookPath}"`, {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 5000
