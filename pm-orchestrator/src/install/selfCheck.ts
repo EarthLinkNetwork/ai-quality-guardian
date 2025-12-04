@@ -18,6 +18,7 @@ export interface SelfCheckResult {
     hookScript: boolean;
     hookSyntax: boolean;
     hookOutput: boolean;
+    rulesFile: boolean;
   };
   errors: string[];
   warnings: string[];
@@ -44,6 +45,7 @@ export async function runSelfCheck(
       hookScript: false,
       hookSyntax: false,
       hookOutput: false,
+      rulesFile: false,
     },
     errors: [],
     warnings: [],
@@ -68,6 +70,7 @@ export async function runSelfCheck(
     result.checks.hookScript = await checkHookScript(claudeDir, result);
     result.checks.hookSyntax = await checkHookSyntax(claudeDir, result);
     result.checks.hookOutput = await checkHookOutput(claudeDir, result);
+    result.checks.rulesFile = await checkRulesFile(claudeDir, result);
 
     result.success = Object.values(result.checks).every(check => check) && result.errors.length === 0;
   } catch (error) {
@@ -323,6 +326,18 @@ async function checkClaudeMd(claudeDir: string, result: SelfCheckResult): Promis
     }
   }
 
+  return true;
+}
+
+async function checkRulesFile(claudeDir: string, result: SelfCheckResult): Promise<boolean> {
+  const rulesPath = path.join(claudeDir, 'rules', 'critical-must.md');
+
+  if (!fs.existsSync(rulesPath)) {
+    result.errors.push('rules/critical-must.md not found');
+    return false;
+  }
+
+  const content = fs.readFileSync(rulesPath, 'utf-8');
 
   // CRITICAL MUST Rulesの検証
   const criticalRulesKeywords = [
@@ -344,7 +359,8 @@ async function checkClaudeMd(claudeDir: string, result: SelfCheckResult): Promis
   }
 
   if (missingRules.length > 0) {
-    result.warnings.push(`CRITICAL MUST Rules missing or incomplete in CLAUDE.md: ${missingRules.join(', ')}`);
+    result.errors.push(`CRITICAL MUST Rules missing or incomplete in rules file: ${missingRules.join(', ')}`);
+    return false;
   }
 
   return true;

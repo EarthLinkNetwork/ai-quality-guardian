@@ -49,6 +49,7 @@ describe('SelfCheck Module', () => {
       expect(result.checks.hookScript).toBe(true);
       expect(result.checks.hookSyntax).toBe(true);
       expect(result.checks.hookOutput).toBe(true);
+      expect(result.checks.rulesFile).toBe(true);
       expect(result.errors).toHaveLength(0);
     });
 
@@ -75,6 +76,7 @@ describe('SelfCheck Module', () => {
           hookScript: true,
           hookSyntax: true,
           hookOutput: true,
+          rulesFile: true,
         },
         errors: [],
         warnings: [],
@@ -94,6 +96,7 @@ function createTeamModeEnvironment() {
   fs.mkdirSync(path.join(TEAM_CLAUDE_DIR, 'agents'), { recursive: true });
   fs.mkdirSync(path.join(TEAM_CLAUDE_DIR, 'commands'), { recursive: true });
   fs.mkdirSync(path.join(TEAM_CLAUDE_DIR, 'hooks'), { recursive: true });
+  fs.mkdirSync(path.join(TEAM_CLAUDE_DIR, 'rules'), { recursive: true });
 
   const settingsJson = {
     hooks: {
@@ -115,7 +118,7 @@ function createTeamModeEnvironment() {
 _pmOrchestratorMode: team
 # PM Orchestrator Integration
 <!-- PM-ORCHESTRATOR-END -->`;
-  
+
   fs.writeFileSync(path.join(TEAM_CLAUDE_DIR, 'CLAUDE.md'), claudeMd);
 
   fs.writeFileSync(
@@ -127,6 +130,19 @@ _pmOrchestratorMode: team
     path.join(TEAM_CLAUDE_DIR, 'commands', 'pm.md'),
     '# PM Command'
   );
+
+  // rulesファイルを作成
+  const rulesContent = `# CRITICAL MUST Rules（絶対厳守）
+
+## MUST 3: ユーザー指示の厳守
+## MUST 7: 不可逆な操作の事前確認
+## MUST 9: Git操作時に意図しないファイルの混入を防ぐ
+## MUST 10: AIの透明性と誠実性
+## MUST 21: 確認指示の厳守と表示義務
+## MUST 22: 過去の合意・仕様の確認義務
+## MUST 24: PM Orchestrator 100% Always-On
+`;
+  fs.writeFileSync(path.join(TEAM_CLAUDE_DIR, 'rules', 'critical-must.md'), rulesContent);
 
   const hookScript = `#!/bin/bash
 echo "PM Orchestrator TaskType: READ_INFO"

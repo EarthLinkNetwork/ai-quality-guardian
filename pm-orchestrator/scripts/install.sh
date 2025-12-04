@@ -14,7 +14,7 @@
 #   --team     : プロジェクト直接インストール（デフォルト）
 #   --personal : 親ディレクトリにインストール（プロジェクトを汚さない）
 #
-# Version: 1.0.19
+# Version: 1.0.20
 
 set -e
 
@@ -328,6 +328,32 @@ create_hook_script() {
 }
 
 # ========================================
+# rulesディレクトリのコピー
+# ========================================
+copy_rules_directory() {
+  echo "Copying rules directory from template..."
+
+  local RULES_DIR="$CLAUDE_DIR/rules"
+  local TEMPLATE_RULES_DIR="$PM_ORCHESTRATOR_ROOT/templates/.claude/rules"
+
+  if [[ ! -d "$TEMPLATE_RULES_DIR" ]]; then
+    echo -e "   ${YELLOW}[SKIP]${NC} Template rules directory not found"
+    return
+  fi
+
+  mkdir -p "$RULES_DIR"
+
+  # rulesディレクトリ内のファイルをコピー
+  for file in "$TEMPLATE_RULES_DIR"/*; do
+    if [[ -f "$file" ]]; then
+      local filename=$(basename "$file")
+      cp "$file" "$RULES_DIR/$filename"
+      echo -e "   ${GREEN}[CREATED]${NC} $RULES_DIR/$filename"
+    fi
+  done
+}
+
+# ========================================
 # CLAUDE.md の更新
 # ========================================
 update_claude_md() {
@@ -345,47 +371,15 @@ update_claude_md() {
     CLAUDE_MD_CREATED=true
   fi
 
-  # 追加するコンテンツ（モード情報も記録 + 強制起動指示 + CRITICAL Rules）
-  # 見出しを先頭に配置（Claude Codeは先頭の指示を優先する）
-  # マーカーはメタデータとして内部に配置
+  # 追加するコンテンツ（モード情報も記録 + 強制起動指示）
+  # CRITICAL Rules は外部ファイル(.claude/rules/critical-must.md)で管理
+  # hookが毎回catして出力するため、CLAUDE.mdには記載不要
   local CONTENT="# PM Orchestrator - 100% Always-On（毎回起動）
 
 **重要: このプロジェクトでは、全てのユーザー入力でPM Orchestratorを起動する。**
 
-## CRITICAL MUST Rules（絶対厳守）
-
-以下のルールはPM Orchestratorを使用する全てのプロジェクトで厳守されます。
-
-### MUST 3: ユーザー指示の厳守
-- 指示されたことだけを実行
-- 「良かれと思って」の追加作業は全て禁止
-- 不明な点は確認
-
-### MUST 7: 不可逆な操作の事前確認
-- Slack通知、ファイル削除、DB操作、デプロイ等
-- 必ずユーザーに確認
-
-### MUST 9: Git操作時に意図しないファイルの混入を防ぐ
-- git add . 禁止
-- ファイルを明示的に指定してadd
-- commit前にgit statusとgit diff --cachedで確認
-
-### MUST 10: AIの透明性と誠実性
-- 推測で回答しない
-- 証拠に基づいて説明
-- 自分のミスは即座に認める
-- git blameで確認してから説明
-
-### MUST 21: 確認指示の厳守と表示義務
-- 「確認してください」「見せて」等の指示があったら
-- 必ず内容を表示してユーザーの承認を得る
-
-### MUST 22: 過去の合意・仕様の確認義務
-- 実装前に過去の会話で合意した仕様・形式を確認
-- 「より良い」と思っても過去の合意を尊重
-
-### MUST 24: PM Orchestrator 100% Always-On
-- 全てのユーザー入力でPM Orchestratorを起動すること
+CRITICAL MUST Rulesは \`.claude/rules/critical-must.md\` に定義されており、
+hookが毎回出力するため、必ずMain AIに伝達される。
 
 ---
 
@@ -617,6 +611,7 @@ EOF
 # ========================================
 update_settings_json
 create_hook_script
+copy_rules_directory
 update_claude_md
 create_command_file
 create_agent_file
