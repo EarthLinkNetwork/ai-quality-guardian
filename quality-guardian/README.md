@@ -419,16 +419,35 @@ quality-check:
     - merge_requests
 ```
 
+## Related Packages
+
+- **[pm-orchestrator-enhancement](https://www.npmjs.com/package/pm-orchestrator-enhancement)**: Multi-agent parallel execution system (complementary tool in same repository)
+
+## Repository Structure
+
+This package is part of the [ai-quality-guardian](https://github.com/EarthLinkNetwork/ai-quality-guardian) monorepo:
+
+```
+ai-quality-guardian/
+├── .claude/                  # Shared configuration
+│   ├── skills/              # Skill definitions
+│   ├── agents/              # Agent definitions
+│   └── hooks/               # Git/Claude hooks
+├── pm-orchestrator/         # pm-orchestrator-enhancement package
+└── quality-guardian/        # This package (quality-guardian)
+```
+
 ## License
 
 MIT
 
 ## Contributors
 
-Quality Guardian Team
+Quality Guardian Team / chooser
 
 ## Version History
 
-- 1.3.91: Current version - Latest PM Orchestrator integration
+- 1.3.92: Current version - Evidence-Based Completion integration
+- 1.3.91: Latest PM Orchestrator integration
 - 1.3.63: PM Orchestrator Architecture adoption
 - 1.0.0: Initial release
