@@ -63,7 +63,10 @@ subagent_type: "pm-orchestrator"
 description: "タスク分析と実行"
 prompt: |
   ユーザー入力:
-  (ユーザーのメッセージ本文)
+  (hook出力の【ユーザー入力】セクションからコピー、または元のユーザーメッセージ)
+
+  パターン検出結果:
+  (hook出力の【パターン検出結果】セクションからコピー)
 
   このタスクを分析し、以下を実行してください:
   1. TaskType判定（READ_INFO/LIGHT_EDIT/IMPLEMENTATION/REVIEW_RESPONSE/CONFIG_CI_CHANGE/DANGEROUS_OP）
@@ -71,6 +74,10 @@ prompt: |
   3. 必要なサブエージェントチェーン決定
   4. サブエージェント起動または直接実行
   5. 結果をJSON形式で報告
+
+【重要】ユーザー入力が空の場合
+- hook出力に【ユーザー入力】が含まれていない場合は、元のユーザーメッセージを使用
+- それも取得できない場合は "EMPTY_INPUT" として渡す
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 </every_chat>
