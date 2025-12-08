@@ -1,8 +1,8 @@
-# PM Orchestrator Architecture v3.0.0 Design Document
+# PM Orchestrator Architecture v2.1.0 Design Document
 
 ## Overview
 
-This document defines the architecture for PM Orchestrator v3.0.0, which extends the Skills-First with Fallback Architecture v2.1.0 with:
+This document defines the architecture for PM Orchestrator v2.1.0, which extends the Skills-First with Fallback Architecture v2.1.0 with:
 
 1. Session and TaskRun management
 2. Task continuation detection
@@ -29,7 +29,7 @@ This document defines the architecture for PM Orchestrator v3.0.0, which extends
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         PM Orchestrator v3.0.0                               │
+│                         PM Orchestrator v2.1.0                               │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
 │  │ Session Manager                                                      │    │
 │  │  - sessionId management                                              │    │
@@ -107,7 +107,7 @@ This document defines the architecture for PM Orchestrator v3.0.0, which extends
 │   ├── task-run-watcher.sh            # Background watcher
 │   └── generate-session-id.sh         # Session ID generator
 ├── skills/
-│   ├── pm-orchestrator.md             # UPDATED: v3.0.0
+│   ├── pm-orchestrator.md             # UPDATED: v2.1.0
 │   ├── task-tracker-sync.md           # NEW: Task tracker integration
 │   ├── task-run-monitor.md            # NEW: Stale task monitor
 │   ├── e2e-test-runner.md             # NEW: E2E test execution
@@ -121,7 +121,7 @@ This document defines the architecture for PM Orchestrator v3.0.0, which extends
 ├── hooks/
 │   └── user-prompt-submit.sh          # UPDATED: Watcher startup
 ├── project-config.json                 # NEW: Project configuration
-└── CLAUDE.md                          # UPDATED: v3.0.0
+└── CLAUDE.md                          # UPDATED: v2.1.0
 ```
 
 ### New Skills
@@ -178,7 +178,7 @@ This document defines the architecture for PM Orchestrator v3.0.0, which extends
 
 ```json
 {
-  "version": "3.0.0",
+  "version": "2.1.0",
   "e2eTest": {
     "enabled": true,
     "browser": "chrome | firefox | webkit",
@@ -381,7 +381,7 @@ QA Phase Start
 - [ ] sessionId generation
 - [ ] taskRunId generation
 - [ ] Continuation detection logic
-- [ ] pm-orchestrator v3.0.0 update
+- [ ] pm-orchestrator v2.1.0 update
 
 ### Phase 3: Task Tracker Integration
 - [ ] task-tracker-sync Skill
@@ -413,7 +413,7 @@ QA Phase Start
 - [ ] Role display
 
 ### Phase 8: Documentation and Testing
-- [ ] Update CLAUDE.md to v3.0.0
+- [ ] Update CLAUDE.md to v2.1.0
 - [ ] Update WORKFLOWS.md
 - [ ] Integration testing
 - [ ] Final report

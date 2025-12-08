@@ -1,4 +1,4 @@
-# PM Orchestrator Automatic Boot - Skills-First Architecture (v3.0.0)
+# PM Orchestrator Automatic Boot - Skills-First Architecture (v2.1.0)
 
 <law>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -321,7 +321,7 @@ This applies permanently to all future messages.
 - All 9 core skills converted
 - Settings.json configuration
 
-### v3.0.0: ✅ COMPLETED (2025-12-08)
+### v2.1.0: ✅ COMPLETED (2025-12-08)
 - Session management (sessionId / taskRunId separation)
 - Continuation detection (same_task / new_task / unknown)
 - Task tracker integration (ClickUp/Asana via MCP)
@@ -332,7 +332,7 @@ This applies permanently to all future messages.
 
 ---
 
-## v3.0.0 New Features
+## v2.1.0 New Features
 
 ### Session Management
 - `sessionId`: Claude Code の会話単位（session-YYYY-MM-DD-XXXXXX）
@@ -377,7 +377,7 @@ This applies permanently to all future messages.
 
 ---
 
-## v3.0.0 Directory Structure
+## v2.1.0 Directory Structure
 
 ```
 .claude/
@@ -414,6 +414,6 @@ This applies permanently to all future messages.
 
 ---
 
-**Current Version: 3.0.0**
+**Current Version: 2.1.0**
 **Last Updated: 2025-12-08**
 **Architecture: Skills-First with Fallback + Advanced Workflows**

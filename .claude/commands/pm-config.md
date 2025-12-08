@@ -1,6 +1,6 @@
 # /pm-config - プロジェクト設定管理コマンド
 
-PM Orchestrator v3.0.0 のプロジェクト設定を管理するコマンドです。
+PM Orchestrator v2.1.0 のプロジェクト設定を管理するコマンドです。
 
 ## Usage
 
@@ -149,4 +149,4 @@ PM Orchestrator v3.0.0 のプロジェクト設定を管理するコマンドで
 
 ---
 
-**PM Orchestrator v3.0.0**
+**PM Orchestrator v2.1.0**

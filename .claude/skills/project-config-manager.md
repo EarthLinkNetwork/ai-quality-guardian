@@ -54,7 +54,7 @@ dependencies:
 
 ```json
 {
-  "version": "3.0.0",
+  "version": "2.1.0",
   "e2eTest": {
     "enabled": false,
     "browser": "chrome",
@@ -420,7 +420,7 @@ Status: completed
 
 ```json
 {
-  "version": "3.0.0",
+  "version": "2.1.0",
   "e2eTest": {
     "enabled": false,
     "browser": "chrome",

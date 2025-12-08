@@ -2,7 +2,7 @@
 
 This directory contains Claude Code Skills in the new SKILL.md format.
 
-## Skills-First with Fallback Architecture v3.0.0
+## Skills-First with Fallback Architecture v2.1.0
 
 1. **Skills (.claude/skills/)**: Primary location for agent definitions
 2. **Agents (.claude/agents/)**: Fallback location for backward compatibility
@@ -23,7 +23,7 @@ All Skills migrated with metadata (category, risk_level, color_tag):
 | code-reviewer | v1.1.0 | review | medium | 🟢 GREEN | ✅ |
 | reporter | v1.1.0 | reporting | low | 🟡 YELLOW | ✅ |
 
-## v3.0.0 New Skills
+## v2.1.0 New Skills
 
 | Skill | Version | Category | Risk | Color | Description |
 |-------|---------|----------|------|-------|-------------|
@@ -42,7 +42,7 @@ All Skills migrated with metadata (category, risk_level, color_tag):
 | SKILL_METADATA_FORMAT.md | Metadata (color, risk, category) specification |
 | WORKFLOWS.md | TaskType workflow definitions |
 | MIGRATION_GUIDE.md | Migration guide from agents |
-| ARCHITECTURE_V3_DESIGN.md | v3.0.0 Architecture design document |
+| ARCHITECTURE_V3_DESIGN.md | v2.1.0 Architecture design document |
 
 ## Color Legend
 
@@ -54,7 +54,7 @@ All Skills migrated with metadata (category, risk_level, color_tag):
 | ORANGE | 🟠 | Implementation/Execution | Medium |
 | RED_DANGER | ⛔ | Dangerous Operations | High |
 
-## v3.0.0 Feature Summary
+## v2.1.0 Feature Summary
 
 ### Session Management
 - `sessionId`: Claude Code 会話単位
