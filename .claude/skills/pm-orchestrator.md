@@ -485,3 +485,97 @@ subagent_type: pm-orchestrator
 ```
 
 Any response without this display violates MUST Rule 24.
+
+## TodoWrite 使用ルール
+
+### 基本原則
+
+PM Orchestrator は **TodoWrite** と **task-decomposer** の2つのタスク管理メカニズムを使い分ける。
+
+### TodoWrite と task-decomposer の違い
+
+| 項目 | TodoWrite | task-decomposer |
+|------|-----------|-----------------|
+| 実行主体 | Main AI / PM Orchestrator | サブエージェント |
+| 目的 | **ユーザー向け進捗可視化** | **PM内部の詳細分解** |
+| 出力形式 | ステータス付きTodoリスト | 箇条書きタスクリスト |
+| タイミング | PM起動直後、TaskType判定後 | サブエージェントチェーン内 |
+| 更新頻度 | 各ステップ完了時に即時更新 | 一度のみ（分解時） |
+| ユーザー可視性 | ✅ 高（常に表示） | ❌ 低（内部処理） |
+
+### TodoWrite 使用判定基準
+
+以下の条件に**1つでも該当**する場合、TodoWrite を使用する:
+
+1. **複数ステップのタスク**: 3ステップ以上の作業が必要
+2. **非自明なタスク**: 複雑な実装、設計判断が必要
+3. **ユーザー要求**: ユーザーが明示的にTodoリストを要求
+4. **複数サブエージェント連携**: 2つ以上のサブエージェントが実行される
+
+### TodoWrite を使用しないケース
+
+1. **単一の簡単なタスク**: 1ファイルの軽微な修正
+2. **自明なタスク**: 「この関数の戻り値を教えて」など
+3. **会話的なタスク**: 挨拶、確認、質問への回答
+
+### 処理フロー（TodoWrite あり）
+
+```
+1. PM Orchestrator 起動
+2. TaskType 判定
+3. 【TodoWrite】タスク整理（3ステップ以上の場合）
+   - 各タスクを pending で登録
+   - content と activeForm の両方を設定
+4. サブエージェントチェーン実行
+   - 各ステップ開始時: in_progress に更新
+   - 各ステップ完了時: completed に更新
+5. 結果報告
+```
+
+### TodoWrite の状態管理
+
+#### 状態定義
+
+| Status | 意味 | 使用タイミング |
+|--------|------|----------------|
+| pending | 未着手 | 初期登録時 |
+| in_progress | 実行中 | タスク開始時（**1つのみ**） |
+| completed | 完了 | タスク成功時 |
+
+#### 必須ルール
+
+1. **即時更新**: タスク完了後、次の処理の前に必ず TodoWrite で更新
+2. **1つの in_progress**: 同時に in_progress は1つのみ
+3. **完了条件**: 実際に成功した場合のみ completed にする
+4. **失敗時**: in_progress のまま維持し、新しいタスク「[問題の修正]」を追加
+
+### 実装例
+
+#### IMPLEMENTATION の場合
+
+```
+TodoWrite:
+1. [pending] コードベース調査
+2. [pending] 設計メモ作成
+3. [pending] 実装
+4. [pending] テスト実行
+5. [pending] コードレビュー
+
+→ Step 1 開始
+TodoWrite:
+1. [in_progress] コードベース調査  ← 更新
+2. [pending] 設計メモ作成
+...
+
+→ Step 1 完了
+TodoWrite:
+1. [completed] コードベース調査  ← 更新
+2. [in_progress] 設計メモ作成  ← 更新
+...
+```
+
+#### READ_INFO の場合（TodoWrite 不要）
+
+```
+単純な質問 → TodoWrite なし → 直接回答
+```
