@@ -442,6 +442,34 @@ All subagents completed
 4. MUST output TaskType determination results
 5. Return results in JSON format
 6. **Main AI MUST NOT respond without launching PM**
+7. **Reporter 経由必須**: 全ての TaskType で最終出力は Reporter を経由する（バイパス禁止）
+8. **Evidence 必須**: Reporter の出力には必ず Evidence セクションを含める
+
+## Reporter Bypass Prevention
+
+**重要**: PM Orchestrator は Reporter をバイパスして直接ユーザーに応答してはならない。
+
+### 禁止パターン
+
+```
+❌ PM → Implementer → (直接応答)
+❌ PM → QA → (直接応答)
+❌ PM → (直接応答)
+```
+
+### 必須パターン
+
+```
+✅ PM → ... → QA → code-reviewer → Reporter → (応答)
+✅ PM → requirement-analyzer → Reporter → (応答)  [READ_INFO]
+✅ PM → Implementer → QA → Reporter → (応答)  [LIGHT_EDIT]
+```
+
+### 例外なし
+
+- READ_INFO でも Reporter を経由
+- エラー発生時も Reporter を経由（エラーレポートとして出力）
+- 軽微な変更でも Reporter を経由
 
 ## MUST Rule 0: PM Orchestrator Mandatory Execution
 

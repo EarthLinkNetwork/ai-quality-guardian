@@ -18,5 +18,11 @@
         ]
       }
     ]
+  },
+  "skills": {
+    "directory": ".claude/skills",
+    "fallbackDirectory": ".claude/agents",
+    "enableFallback": true,
+    "priority": "skills-first"
   }
 }

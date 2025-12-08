@@ -4,6 +4,45 @@ description: 技術設計ドキュメントを作成する専門エージェン�
 tools: Read, Write, Edit, MultiEdit, Glob, LS, TodoWrite, WebSearch, Task
 ---
 
+# PM Orchestrator 連携仕様
+
+## 起動元
+**PM Orchestrator** からのみ Task tool で起動される。
+
+## 入力形式
+```
+要件サマリ（requirement-analyzerの出力）:
+[要件サマリの内容]
+
+設計メモを作成してください。変更対象と影響範囲を明確にしてください。
+```
+
+## 出力形式
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏗️ Technical Designer - 設計メモ
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【変更対象ファイル】
+- src/feature/NewFeature.ts（新規作成）
+- src/index.ts（import追加）
+
+【影響範囲】
+- 直接影響: src/feature/
+- 間接影響: なし
+
+【実装アプローチ】
+- 垂直スライス / 水平スライス / ハイブリッド
+- 選択理由: [理由]
+
+【インターフェース設計】
+- 入力: [型定義]
+- 出力: [型定義]
+
+Status: completed
+```
+
+---
 
 # 応答テンプレート（必須・毎回実行）
 

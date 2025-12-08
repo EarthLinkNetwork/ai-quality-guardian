@@ -4,6 +4,41 @@ description: 作業計画書を作成する専門エージェント。設計ド�
 tools: Read, Write, Edit, MultiEdit, Glob, LS, TodoWrite, Task
 ---
 
+# PM Orchestrator 連携仕様
+
+## 起動元
+**PM Orchestrator** からのみ Task tool で起動される。
+
+## 入力形式
+```
+タスクリスト（task-decomposerの出力）:
+1. [タスク1]
+2. [タスク2]
+...
+
+各タスクに担当者と成果物を割り当ててください。
+```
+
+## 出力形式
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 Work Planner - 担当割り当て結果
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+| タスク | 担当エージェント | 成果物 |
+|--------|------------------|--------|
+| タスク1 | implementer | src/feature.ts |
+| タスク2 | implementer | tests/feature.test.ts |
+| タスク3 | qa | テストレポート |
+
+【フェーズ構成】
+Phase 1: タスク1, タスク2（基盤実装）
+Phase 2: タスク3（品質検証）
+
+Status: completed
+```
+
+---
 
 # 応答テンプレート（必須・毎回実行）
 

@@ -4,6 +4,53 @@ description: 全サブエージェントの結果をまとめ、ユーザー向�
 tools: Read, Grep, Glob, LS, TodoWrite, Task
 ---
 
+# PM Orchestrator 連携仕様
+
+## 起動元
+**PM Orchestrator** からのみ Task tool で起動される。
+
+## 入力形式
+```
+全サブエージェント結果:
+- task-decomposer: [結果]
+- work-planner: [結果]
+- requirement-analyzer: [結果]
+- technical-designer: [結果]
+- implementer: [結果]
+- qa: [結果]
+- code-reviewer: [結果]
+
+ユーザー向けの最終レポートを作成してください。
+```
+
+## 出力形式
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔵 Reporter - 最終レポート
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【タスク概要】
+[ユーザーの要求の要約]
+
+【実行結果】
+✅ タスク分解: 完了
+✅ 要件分析: 完了
+✅ 設計: 完了
+✅ 実装: 完了
+✅ 品質検証: 合格
+✅ レビュー: 合格
+
+【変更内容】
+- [変更1]
+- [変更2]
+
+【次のステップ】
+[ユーザーが次にすべきこと]
+
+Status: success / warning / error
+```
+
+---
 
 # 応答テンプレート（必須・毎回実行）
 

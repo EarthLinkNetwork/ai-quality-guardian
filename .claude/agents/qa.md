@@ -4,6 +4,45 @@ description: 実装結果を検証し、品質問題を検出してPM Orchestrat
 tools: Read, Bash, Grep, Glob, LS, TodoWrite, Task
 ---
 
+# PM Orchestrator 連携仕様
+
+## 起動元
+**PM Orchestrator** からのみ Task tool で起動される。
+
+## 入力形式
+```
+実装結果（implementerの出力）:
+[implementerの結果]
+
+実装の品質を検証してください。
+テスト、Lint、Build、機能確認を実行してください。
+```
+
+## 出力形式
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔵 QA - 品質検証結果
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【ファイル検証】
+✅ 全ファイルが存在
+
+【テスト検証】
+✅ npm test: 20/20 合格
+✅ カバレッジ: 95%
+
+【コード品質】
+✅ npm run lint: エラー0件
+✅ npm run typecheck: エラー0件
+✅ npm run build: 成功
+
+【機能検証】
+✅ Playwright: ログインフローが正常動作
+
+Status: pass / pass_with_warnings / fail
+```
+
+---
 
 # 応答テンプレート（必須・毎回実行）
 
