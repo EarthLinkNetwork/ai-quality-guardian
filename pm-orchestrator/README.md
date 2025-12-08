@@ -19,14 +19,20 @@ PM Orchestrator Enhancement is a TypeScript-based multi-agent orchestration syst
 
 ## Installation
 
+This package is published under two names with identical content:
+
 ```bash
+# Either of these will install the same package:
 npm install -g pm-orchestrator-enhancement
+npm install -g quality-guardian
 ```
 
 Or use without installation:
 
 ```bash
 npx pm-orchestrator-enhancement install
+# or
+npx quality-guardian install
 ```
 
 ## Architecture
@@ -142,9 +148,19 @@ This creates:
 }
 ```
 
-## Related Packages
+## Publishing (for maintainers)
 
-- **[quality-guardian](https://www.npmjs.com/package/quality-guardian)**: AI Quality Management System (complementary tool in same repository)
+This package is published under two npm names simultaneously. Always use the dual-publish script:
+
+```bash
+# Dry run (test without publishing)
+npm run publish:dry-run
+
+# Actual publish (publishes both pm-orchestrator-enhancement and quality-guardian)
+npm run publish:dual
+```
+
+**Important**: Do NOT use `npm publish` directly. Always use `npm run publish:dual` to ensure both packages are updated.
 
 ## Repository Structure
 

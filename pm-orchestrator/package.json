@@ -14,7 +14,9 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "cli": "node dist/cli/index.js",
-    "prepublishOnly": "npm run build && npm run typecheck"
+    "prepublishOnly": "npm run build && npm run typecheck",
+    "publish:dual": "./scripts/dual-publish.sh",
+    "publish:dry-run": "./scripts/dual-publish.sh --dry-run"
   },
   "bin": {
     "pm-orchestrator": "./dist/cli/index.js"
