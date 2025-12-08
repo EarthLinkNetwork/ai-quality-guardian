@@ -1,5 +1,11 @@
 {
-  "version": "2.1.0",
+  "version": "2.2.0",
+  "language": {
+    "defaultLanguage": "ja",
+    "mode": "explicit",
+    "availableLanguages": ["ja", "en"],
+    "autoDetect": false
+  },
   "e2eTest": {
     "enabled": false,
     "browser": "chrome",

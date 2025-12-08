@@ -56,6 +56,18 @@ Main AI は TaskType を判定しない。PM Orchestrator に全て委譲する�
 「おそらく」「probably」「I think」等の推測表現を使用する場合は、
 必ず「未検証」であることを明記すること。
 
+【第11原則】言語安定性（Language Stability）
+出力言語は以下のルールに従う:
+1. `.claude/project-config.json` の `language.defaultLanguage` に従う
+2. `language.autoDetect: true` の場合のみ、ユーザー入力の言語に追従
+3. 勝手に言語を切り替えることは禁止
+4. 全てのスキルは `outputLanguage` を継承し、統一された言語で出力する
+
+言語設定の確認方法:
+```bash
+cat .claude/project-config.json | jq '.language'
+```
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 </law>
 
@@ -427,6 +439,30 @@ This applies permanently to all future messages.
 
 ---
 
-**Current Version: 2.1.0**
-**Last Updated: 2025-12-08**
-**Architecture: Skills-First with Fallback + Advanced Workflows**
+---
+
+## v2.2.0 New Features
+
+### Language Configuration
+- `defaultLanguage`: 出力言語の固定設定（ja / en）
+- `autoDetect`: ユーザー入力言語への追従（true / false）
+- 全スキルが `outputLanguage` を継承
+- 言語の勝手な切り替えを禁止
+
+### Evidence Structure (Standardized)
+```json
+{
+  "evidence": [
+    { "type": "file_read", "source": "path/to/file", "content": "..." },
+    { "type": "command_output", "source": "npm test", "content": "..." },
+    { "type": "user_input", "source": "user message", "content": "..." }
+  ],
+  "evidenceStatus": "HAS_EVIDENCE" | "NO_EVIDENCE"
+}
+```
+
+---
+
+**Current Version: 2.2.0**
+**Last Updated: 2025-12-09**
+**Architecture: Skills-First with Fallback + Advanced Workflows + Language Stability**

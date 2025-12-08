@@ -1,6 +1,6 @@
 ---
 skill: implementer
-version: 1.1.0
+version: 2.2.0
 category: execution
 description: PMの指示に従い具体的な実装を実行する。permission_to_edit制御による実行/提案モード切替
 metadata:
@@ -109,9 +109,79 @@ evidenceStatus: HAS_EVIDENCE
 Status: success
 ```
 
-## Evidence 構造体
+## Language Inheritance (v2.2.0)
 
-Implementer は必ず以下の形式で Evidence を出力すること:
+Implementer は PM から渡された `outputLanguage` に従って出力する。
+
+### Input Context
+
+PM から以下の形式で言語設定を受け取る:
+
+```yaml
+outputLanguage: "ja"  # または "en"
+languageMode: "explicit"  # または "auto-detect"
+```
+
+### Output Requirement
+
+全ての出力に `outputLanguage` を含める:
+
+```json
+{
+  "evidenceStatus": "HAS_EVIDENCE",
+  "outputLanguage": "ja",
+  "evidence": [...]
+}
+```
+
+### Language Switching Prohibition
+
+- PM から指定された言語以外で出力しない
+- ユーザー入力が英語でも、outputLanguage: ja なら日本語で出力
+
+## Evidence 構造体 (Standardized v2.2.0)
+
+Implementer は必ず以下の**標準化された JSON 形式**で Evidence を出力すること:
+
+```json
+{
+  "evidence": [
+    { "type": "file_read", "source": "path/to/file.ts", "content": "relevant snippet" },
+    { "type": "command_output", "source": "npm test", "content": "15/15 passed" },
+    { "type": "diff_inspection", "source": "git diff", "content": "+5 -2 lines" },
+    { "type": "user_input", "source": "user message", "content": "..." },
+    { "type": "external_spec", "source": "https://...", "content": "..." }
+  ],
+  "evidenceStatus": "HAS_EVIDENCE",
+  "outputLanguage": "ja"
+}
+```
+
+### Evidence Types
+
+| type | 説明 | 必須フィールド |
+|------|------|---------------|
+| `file_read` | ファイル読み取り結果 | source (パス), content (内容) |
+| `command_output` | コマンド実行結果 | source (コマンド), content (出力) |
+| `diff_inspection` | 差分検査結果 | source (対象), content (変更内容) |
+| `user_input` | ユーザー入力からの情報 | source, content |
+| `external_spec` | 外部仕様（URLを明示） | source (URL), content |
+
+### 受け入れられる Evidence
+
+- ファイル読み取り (Read tool)
+- コマンド出力 (Bash tool)
+- 差分検査 (git diff)
+- ユーザー提供データ
+- 外部仕様（URL を明示的に引用）
+
+### 受け入れられない Evidence
+
+- 内部推論 / hallucination
+- 存在しないパス、値、npm スコープの捏造
+- 未確認の設定値
+
+### YAML 形式（後方互換）
 
 ```yaml
 【Evidence】

@@ -1,6 +1,6 @@
 ---
 skill: qa
-version: 1.1.0
+version: 2.2.0
 category: quality
 description: 実装結果を検証し、品質問題を検出してPM Orchestratorに報告する
 metadata:
@@ -152,6 +152,68 @@ npx playwright test
 1. **検証のみ実行**: 修正は行わない（implementerの役割）
 2. **エラー発見時**: PMに報告するだけ
 3. **全検証結果を記録**: テスト/Lint/Build/機能確認
+4. **Evidence 検証必須**: Implementer の evidence 配列が空なら fail
+5. **言語継承**: PM から渡された outputLanguage で出力
+
+## Language Inheritance (v2.2.0)
+
+QA は PM から渡された `outputLanguage` に従って出力する。
+
+### Input Context
+
+```yaml
+outputLanguage: "ja"
+languageMode: "explicit"
+implementerOutput: { ... }
+```
+
+### Output Requirement
+
+```json
+{
+  "status": "pass",
+  "outputLanguage": "ja",
+  "evidenceVerification": { ... }
+}
+```
+
+## Standardized Evidence Verification (v2.2.0)
+
+QA は Implementer の出力に含まれる標準化された `evidence` 配列を検証する。
+
+### Evidence Array Check
+
+```
+1. Implementer 出力を受け取る
+2. evidence 配列を確認
+3. evidence が空配列 [] → fail (NO_EVIDENCE)
+4. evidence 配列に要素あり → 各要素を検証
+5. 各要素に type, source, content が揃っているか確認
+6. 不備あり → fail (INSUFFICIENT_EVIDENCE)
+```
+
+### QA Failure Conditions (v2.2.0)
+
+以下のいずれかに該当する場合、QA は **必ず** タスクを fail にする:
+
+| 条件 | 結果 | 出力 |
+|------|------|------|
+| `evidenceStatus: NO_EVIDENCE` | fail | "Evidence 不足" |
+| `evidence: []` (空配列) | fail | "Evidence 配列が空" |
+| 推測表現あり + Evidence なし | fail | "推測表現検出" |
+| type/source/content 不備 | fail | "Evidence 形式不正" |
+
+### Evidence Gathering Request
+
+QA が fail を出力する場合、必ず Evidence 収集ステップを要求する:
+
+```
+【必要なアクション】
+1. 実際にコマンドを実行して結果を確認する
+2. 関連ファイルを Read tool で読み取る
+3. 存在確認を Glob/LS tool で行う
+4. Evidence 配列に type/source/content を含む要素を追加する
+```
 
 ## Evidence Verification (Reporter出力チェック)
 

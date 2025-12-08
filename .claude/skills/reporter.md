@@ -1,6 +1,6 @@
 ---
 skill: reporter
-version: 1.1.0
+version: 2.2.0
 category: reporting
 description: 全サブエージェントの結果をまとめ、ユーザー向けの分かりやすいレポートを作成する
 metadata:
@@ -181,6 +181,44 @@ evidenceStatus: NO_EVIDENCE
 reason: [理由]
 
 Status: uncertain
+```
+
+## Language Inheritance (v2.2.0)
+
+Reporter は PM から渡された `outputLanguage` に従って出力する。
+
+### Input Context
+
+```yaml
+outputLanguage: "ja"  # または "en"
+languageMode: "explicit"  # または "auto-detect"
+subagentResults: { ... }
+```
+
+### Output Requirement
+
+全ての出力に以下のフィールドを含める:
+
+```json
+{
+  "finalStatus": "success" | "warning" | "uncertain" | "error",
+  "evidenceSummary": {
+    "hasEvidence": true | false,
+    "evidenceCount": 5,
+    "sources": ["npm test", "npm run build", "src/feature.ts"]
+  },
+  "outputLanguage": "ja"
+}
+```
+
+### Mandatory Warning (NO_EVIDENCE)
+
+`evidenceSummary.hasEvidence: false` の場合、以下の警告を必ず含める:
+
+```
+【警告】
+この出力は Evidence によって検証されていません。
+推論に基づく結果であり、実際の動作確認は行われていません。
 ```
 
 ## Integration Points

@@ -1,6 +1,6 @@
 ---
 skill: pm-orchestrator
-version: 2.1.0
+version: 2.2.0
 category: orchestration
 description: Central hub for all user inputs. Handles TaskType determination, write guards, and subagent orchestration. Always active 100% of the time.
 metadata:
@@ -446,6 +446,55 @@ All subagents completed
 8. **Evidence 必須**: Reporter の出力には必ず Evidence セクションを含める
 9. **推測禁止**: 具体的な値（パッケージ名、URL、ポート等）をファイル確認なしに推測しない
 10. **evidenceStatus チェック**: Implementer の evidenceStatus が NO_EVIDENCE の場合、done 報告禁止
+11. **言語継承必須**: 全てのサブエージェントに outputLanguage を渡す
+12. **言語安定性**: 勝手に出力言語を切り替えない
+
+## Language Configuration (v2.2.0)
+
+### Language Resolution Flow
+
+```
+1. PM 起動時に project-config.json を読む
+2. language.defaultLanguage を取得 (ja / en)
+3. language.autoDetect を確認
+   - true: ユーザー入力の言語を検出して追従
+   - false: defaultLanguage を固定使用
+4. 解決された outputLanguage を全サブエージェントに渡す
+```
+
+### Subagent Context Template
+
+サブエージェント起動時、必ず以下を context に含める:
+
+```yaml
+outputLanguage: "ja"  # または "en"
+languageMode: "explicit"  # または "auto-detect"
+```
+
+### Language Switching Prohibition
+
+PM Orchestrator は以下を禁止する:
+
+- ユーザーが英語で入力しても、defaultLanguage: ja なら日本語で応答
+- 途中で言語を切り替えること
+- サブエージェントごとに異なる言語で出力すること
+
+### Language Config Location
+
+```
+.claude/project-config.json → language セクション
+```
+
+```json
+{
+  "language": {
+    "defaultLanguage": "ja",
+    "mode": "explicit",
+    "availableLanguages": ["ja", "en"],
+    "autoDetect": false
+  }
+}
+```
 
 ## Evidence-Based Completion Flow
 
