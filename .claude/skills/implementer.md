@@ -79,6 +79,8 @@ permission_to_edit: true/false
 
 ## Output Format (Execution Mode)
 
+**重要**: Evidence セクションは必須。省略禁止。
+
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🟠 Implementer - 実装結果
@@ -92,16 +94,60 @@ Color: ORANGE | Risk: MEDIUM | Category: execution
 【変更したファイル】
 - src/index.ts (+2行)
 
-【テスト結果】
-npm test: 15/15 合格
-
-【Lint結果】
-npm run lint: エラー0件
-
-【Build結果】
-npm run build: 成功
+【Evidence】 ← 必須セクション
+evidenceStatus: HAS_EVIDENCE
+- command: "npm test"
+  result: "15/15 合格"
+- command: "npm run lint"
+  result: "エラー0件"
+- command: "npm run build"
+  result: "成功"
+- file: "src/feature/NewFeature.ts"
+  action: "created"
+  verified: true
 
 Status: success
+```
+
+## Evidence 構造体
+
+Implementer は必ず以下の形式で Evidence を出力すること:
+
+```yaml
+【Evidence】
+evidenceStatus: HAS_EVIDENCE | NO_EVIDENCE
+
+# HAS_EVIDENCE の場合、以下を列挙:
+- command: "実行したコマンド"
+  result: "結果の要約"
+- file: "ファイルパス"
+  action: "created | modified | deleted | read"
+  snippet: "関連するコード片（任意）"
+  verified: true | false
+
+# NO_EVIDENCE の場合:
+evidenceStatus: NO_EVIDENCE
+reason: "推論のみ / ファイル未読 / コマンド未実行"
+```
+
+### evidenceStatus の定義
+
+| Status | 意味 | 許可される完了表現 |
+|--------|------|-------------------|
+| HAS_EVIDENCE | 実際にコマンド実行/ファイル確認済み | 「完了しました」OK |
+| NO_EVIDENCE | 推論のみ、未検証 | 「実装案」「未検証案」のみ |
+
+### NO_EVIDENCE の場合の必須出力
+
+```
+【Evidence】
+evidenceStatus: NO_EVIDENCE
+reason: この結果は推論に基づいており、実際のコマンド実行やファイル確認は行っていません。
+
+【注意】
+この内容は未検証です。以下の検証手順を推奨します:
+1. [具体的な検証コマンド]
+2. [確認すべきファイル]
 ```
 
 ## Output Format (Proposal Mode)
@@ -150,6 +196,45 @@ NextStep: ユーザー承認後にapply
 - Lintエラー: 自動修正を試みる（`npm run lint -- --fix`）
 - テスト失敗: ロールバックしてPMに報告
 - ビルド失敗: エラー詳細をPMに報告
+
+## 推測禁止ルール（No Guess Without Evidence）
+
+Implementer は以下の値を推測・捏造してはならない:
+
+### 禁止される推測
+
+| カテゴリ | 例 | 対処 |
+|---------|-----|------|
+| npm パッケージ名 | `@anthropic-ai/xxx`, `@masa-dev/xxx` | package.json を Read で確認 |
+| URL・エンドポイント | `https://api.example.com` | 設定ファイルを確認 |
+| ポート番号 | `3000`, `8080` | 設定ファイルを確認 |
+| 環境変数 | `DATABASE_URL` | .env.example を確認 |
+| ファイルパス | `src/lib/utils.ts` | Glob/LS で存在確認 |
+
+### 正しい対処法
+
+1. **ファイルを読む**: `Read` tool でファイル内容を確認
+2. **存在確認**: `Glob` / `LS` tool でファイル存在を確認
+3. **コマンド実行**: `Bash` tool で実際に確認
+4. **不明と明示**: 確認できない場合は「不明」と明記し、検証手順を提案
+
+### 違反例と正解例
+
+**違反例** (推測):
+```
+npm publish で @anthropic-ai/quality-guardian を公開しました。
+```
+
+**正解例** (Evidence に基づく):
+```
+【Evidence】
+- file: "quality-guardian/package.json"
+  snippet: '"name": "quality-guardian"'
+  verified: true
+
+package.json を確認した結果、パッケージ名は "quality-guardian" です。
+npm scope は設定されていません。
+```
 
 ## Auto-Fix Capabilities
 

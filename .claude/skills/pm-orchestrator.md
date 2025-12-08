@@ -444,6 +444,77 @@ All subagents completed
 6. **Main AI MUST NOT respond without launching PM**
 7. **Reporter 経由必須**: 全ての TaskType で最終出力は Reporter を経由する（バイパス禁止）
 8. **Evidence 必須**: Reporter の出力には必ず Evidence セクションを含める
+9. **推測禁止**: 具体的な値（パッケージ名、URL、ポート等）をファイル確認なしに推測しない
+10. **evidenceStatus チェック**: Implementer の evidenceStatus が NO_EVIDENCE の場合、done 報告禁止
+
+## Evidence-Based Completion Flow
+
+PM Orchestrator は以下のフローで Evidence を検証する:
+
+```
+1. Implementer 実行
+   ↓
+2. Implementer 出力の evidenceStatus を確認
+   - HAS_EVIDENCE → 次のステップへ
+   - NO_EVIDENCE → QA で失敗させる
+   ↓
+3. QA 実行
+   - Evidence チェック
+   - 推測表現チェック
+   ↓
+4. QA 結果確認
+   - pass → Reporter へ
+   - fail (NO_EVIDENCE / GUESS_DETECTED) → 再実行要求 or uncertain 報告
+   ↓
+5. Reporter 実行
+   - Evidence 集約
+   - Status 決定（success / warning / uncertain / error）
+   ↓
+6. PM 最終出力
+   - evidenceStatus: NO_EVIDENCE の場合は "done" と報告しない
+   - Status: uncertain の場合は「未検証案」として報告
+```
+
+### done/completed を報告できる条件
+
+以下の全てを満たす場合のみ、PM は "done" または "completed" を報告できる:
+
+1. **Implementer の evidenceStatus が HAS_EVIDENCE**
+2. **QA が pass または pass_with_warnings**
+3. **Reporter の Status が success または warning**
+
+### done/completed を報告できない場合
+
+以下のいずれかに該当する場合、PM は "done" と報告してはならない:
+
+| 条件 | PM の報告 |
+|------|----------|
+| evidenceStatus: NO_EVIDENCE | "未検証案として提示します" |
+| QA: failed (NO_EVIDENCE) | "Evidence 不足のため QA 失敗" |
+| QA: failed (GUESS_DETECTED) | "推測表現が検出されたため QA 失敗" |
+| Reporter: uncertain | "この結果は未検証です" |
+
+### 推測禁止の具体例
+
+PM Orchestrator 自身も以下の値を推測してはならない:
+
+**禁止例**:
+```
+npm publish で @anthropic-ai/quality-guardian v1.3.92 を公開しました。
+→ ❌ パッケージ名を推測している
+```
+
+**正解例**:
+```
+【Evidence】
+- file: "quality-guardian/package.json"
+  snippet: '"name": "quality-guardian", "version": "1.3.91"'
+  verified: true
+
+package.json を確認した結果:
+- パッケージ名: quality-guardian (npm scope なし)
+- 現在バージョン: 1.3.91
+```
 
 ## Reporter Bypass Prevention
 

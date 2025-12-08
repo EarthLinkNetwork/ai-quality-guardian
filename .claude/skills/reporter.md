@@ -149,11 +149,39 @@ Status: success / warning / error
 
 ## Report Status
 
-| Status | 意味 | 表示 |
-|--------|------|------|
-| success | 全て成功 | 🎉 タスク完了 |
-| warning | 成功だが警告あり | ⚠️ タスク完了（警告あり） |
-| error | 失敗 | ❌ タスク失敗 |
+| Status | 意味 | 表示 | Evidence 要件 |
+|--------|------|------|--------------|
+| success | 全て成功、Evidence あり | 🎉 タスク完了 | evidenceStatus: HAS_EVIDENCE 必須 |
+| warning | 成功だが警告あり | ⚠️ タスク完了（警告あり） | Evidence あり |
+| uncertain | 未検証、推論のみ | 📝 未検証案 | evidenceStatus: NO_EVIDENCE |
+| error | 失敗 | ❌ タスク失敗 | - |
+
+### uncertain ステータスの使用条件
+
+以下のいずれかに該当する場合、Status は `uncertain` とする:
+
+1. **evidenceStatus: NO_EVIDENCE** - Implementer が実際のコマンド実行/ファイル確認を行っていない
+2. **QA 未通過** - QA が Evidence 不足で失敗した
+3. **推測表現あり** - 「おそらく」「probably」等の推測表現が Evidence なしで使用されている
+
+### uncertain 時の必須出力
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 未検証案（Evidence なし）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【注意】
+この結果は未検証であり、推論に基づいています。
+実際のコマンド実行やファイル確認は行われていません。
+具体的な値（パッケージ名、URL等）が推測されている可能性があります。
+
+【Evidence】
+evidenceStatus: NO_EVIDENCE
+reason: [理由]
+
+Status: uncertain
+```
 
 ## Integration Points
 

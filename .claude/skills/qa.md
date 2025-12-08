@@ -208,6 +208,80 @@ NG パターン検出時、以下のメッセージで Reporter に差し戻す:
 2. **未検証明示**: Evidence に「未実行」と明記し、「実装案」等の表現を使用
 3. **情報提供のみ**: 完了表現を使用していない（READ_INFO等）
 
+## evidenceStatus 検証（Implementer 出力チェック）
+
+QA は Implementer の出力に含まれる `evidenceStatus` を検証する。
+
+### evidenceStatus チェックルール
+
+```
+1. Implementer 出力を受け取る
+2. evidenceStatus フィールドを確認
+3. evidenceStatus: NO_EVIDENCE の場合 → QA 結果を "failed" に設定
+4. evidenceStatus: HAS_EVIDENCE の場合 → Evidence 内容を検証
+5. Evidence が空または不十分 → QA 結果を "failed" に設定
+```
+
+### 推測表現の検出
+
+以下の表現が Evidence なしで使用されている場合、QA は失敗とする:
+
+| 言語 | 検出パターン |
+|------|-------------|
+| 日本語 | 「おそらく」「たぶん」「〜と思います」「〜のはずです」「〜かもしれません」 |
+| English | "probably", "maybe", "I think", "I guess", "should be", "might be" |
+
+### NO_EVIDENCE 検出時の QA 出力
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ QA Failed - Evidence 不足
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【検出された問題】
+- evidenceStatus: NO_EVIDENCE が検出されました
+- または: Evidence セクションが不十分です
+
+【失敗理由】
+Implementer の出力に具体的な Evidence（実行コマンド、ファイル確認結果）が
+含まれていません。推論のみに基づく結果は QA を通過できません。
+
+【必要なアクション】
+1. 実際にコマンドを実行して結果を確認する
+2. 関連ファイルを Read tool で読み取る
+3. 存在確認を Glob/LS tool で行う
+4. Evidence セクションに上記の結果を記載する
+
+Status: failed
+evidenceStatus: NO_EVIDENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### 推測表現検出時の QA 出力
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ QA Failed - 推測表現検出
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【検出された問題】
+- 推測表現 "おそらく" が Evidence なしで使用されています
+- 該当箇所: "[該当テキスト]"
+
+【失敗理由】
+具体的な値（パッケージ名、URL、ポート番号等）を推測で記載することは
+禁止されています（第10原則: No Guess Without Evidence）。
+
+【必要なアクション】
+1. 該当する値をファイルから確認する
+2. 確認結果を Evidence に記載する
+3. 確認できない場合は「不明」と明記する
+
+Status: failed
+evidenceStatus: GUESS_DETECTED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
 ## Examples
 
 ### Example 1: 全検証合格
