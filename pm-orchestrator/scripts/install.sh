@@ -539,20 +539,37 @@ EOF
 # ========================================
 # エージェント定義ファイルの作成
 # ========================================
-create_agent_file() {
-  echo "Creating agent definition file..."
+create_agent_files() {
+  echo "Creating agent definition files..."
 
   local AGENTS_DIR="$CLAUDE_DIR/agents"
-  local AGENT_FILE="$AGENTS_DIR/pm-orchestrator.md"
-
   mkdir -p "$AGENTS_DIR"
 
-  if [[ -f "$AGENT_FILE" ]]; then
-    echo -e "   ${YELLOW}[SKIP]${NC} Agent definition already exists"
-    return
-  fi
-
-  cat > "$AGENT_FILE" << 'EOF'
+  # テンプレートからagentsディレクトリをコピー
+  local TEMPLATES_DIR="$PM_ORCHESTRATOR_ROOT/templates/.claude"
+  
+  if [[ -d "$TEMPLATES_DIR/agents" ]]; then
+    # テンプレートから全agentsファイルをコピー
+    for agent_file in "$TEMPLATES_DIR/agents"/*.md; do
+      if [[ -f "$agent_file" ]]; then
+        local filename=$(basename "$agent_file")
+        local target_file="$AGENTS_DIR/$filename"
+        
+        if [[ -f "$target_file" ]]; then
+          echo -e "   ${YELLOW}[SKIP]${NC} $filename (already exists)"
+        else
+          cp "$agent_file" "$target_file"
+          echo -e "   ${GREEN}[CREATED]${NC} $target_file"
+        fi
+      fi
+    done
+  else
+    # テンプレートが見つからない場合は最小限のpm-orchestrator.mdのみ作成
+    echo -e "   ${YELLOW}[WARNING]${NC} Templates directory not found, creating minimal agent file"
+    
+    local AGENT_FILE="$AGENTS_DIR/pm-orchestrator.md"
+    if [[ ! -f "$AGENT_FILE" ]]; then
+      cat > "$AGENT_FILE" << 'EOF'
 ---
 name: pm-orchestrator
 description: 全サブエージェントの中心ハブ。ユーザー入力を分析し、適切なサブエージェントチェーンを起動・管理する。
@@ -602,8 +619,9 @@ UserPromptSubmit hook がパターンを検出した時、自動的に起動さ�
 3. **責任の明確化** - どのサブエージェントが何をチェックしたか記録
 4. **透明性** - 現在どのサブエージェントを実行中か表示
 EOF
-
-  echo -e "   ${GREEN}[CREATED]${NC} $AGENT_FILE"
+      echo -e "   ${GREEN}[CREATED]${NC} $AGENT_FILE"
+    fi
+  fi
 }
 
 # ========================================
@@ -614,7 +632,7 @@ create_hook_script
 copy_rules_directory
 update_claude_md
 create_command_file
-create_agent_file
+create_agent_files
 
 echo ""
 echo -e "${GREEN}=== Installation Complete ===${NC}"

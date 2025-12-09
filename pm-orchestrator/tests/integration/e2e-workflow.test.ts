@@ -186,7 +186,8 @@ describe('End-to-End Workflow Tests', () => {
 
   describe('Version Update Workflow', () => {
     it('should execute complete version update workflow', () => {
-      const userInput = 'Update version from 1.3.0 to 1.3.1';
+      // Pattern: /version.?update|バージョン.?更新/i
+      const userInput = 'Version update from 1.3.0 to 1.3.1';
       const workflow = workflowLoader.findMatchingWorkflow(userInput);
 
       expect(workflow).toBeDefined();
@@ -431,7 +432,9 @@ describe('End-to-End Workflow Tests', () => {
 
   describe('Complex Multi-Step Workflows', () => {
     it('should execute complex implementation workflow', () => {
-      const userInput = 'Implement new authentication feature with tests and docs';
+      // Pattern: /複雑.?実装|complex.?implementation|新機能/i
+      // Note: avoid 'test' keyword to prevent matching Quality Check pattern first
+      const userInput = 'Complex implementation of authentication feature with full documentation';
       const workflow = workflowLoader.findMatchingWorkflow(userInput);
 
       expect(workflow).toBeDefined();

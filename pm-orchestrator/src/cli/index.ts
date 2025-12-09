@@ -9,10 +9,12 @@ import { PMOrchestrator } from '../orchestrator/pm-orchestrator';
 // import { ExecutionLogger } from '../logger/execution-logger';
 import { ProgressTracker, TerminalUI } from '../visualization';
 import { runSelfCheck, formatResult } from '../install/selfCheck';
+import { checkLocalInstallation, formatLocalCheckResult } from '../install/localCheck';
+import { checkVersion, formatVersionCheckResult, getCurrentVersion } from '../version/versionCheck';
 import { execSync } from 'child_process';
 import * as path from 'path';
 
-const VERSION = '1.0.18';
+const VERSION = getCurrentVersion() || '2.3.0';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -24,6 +26,13 @@ async function main() {
 
   if (args.includes('--version') || args.includes('-v')) {
     console.log(`PM Orchestrator Enhancement v${VERSION}`);
+    
+    // バージョンチェック実行
+    const versionCheck = await checkVersion();
+    if (versionCheck.updateAvailable) {
+      console.log(`\n⚠️  Update available: v${versionCheck.latestVersion}`);
+      console.log(`Run: ${versionCheck.updateCommand}`);
+    }
     process.exit(0);
   }
 
@@ -31,7 +40,7 @@ async function main() {
 
   switch (command) {
     case 'install':
-      runInstall(args.slice(1));
+      await runInstall(args.slice(1));
       break;
     case 'uninstall':
       runUninstall(args.slice(1));
@@ -57,6 +66,12 @@ async function main() {
     case 'selfcheck':
       await runSelfCheckCommand(args.slice(1));
       break;
+    case 'check-version':
+      await runVersionCheck(args.slice(1));
+      break;
+    case 'check-local':
+      await runLocalCheck(args.slice(1));
+      break;
     default:
       console.error(`Unknown command: ${command}`);
       console.error('Run "pm-orchestrator --help" for usage information');
@@ -72,16 +87,18 @@ Usage:
   pm-orchestrator <command> [options]
 
 Commands:
-  install     Install PM Orchestrator to a project (.claude/ directory)
-  uninstall   Remove PM Orchestrator from a project
-  selfcheck   Verify installation integrity (8 checks)
-              --repair: Auto-repair detected issues
-  execute     Execute a complete task with automatic subagent selection
-  analyze     Analyze code quality, similarity, or architecture
-  design      Create design documents based on requirements
-  implement   Implement features based on design
-  test        Create and run tests
-  qa          Run quality checks (lint, test, typecheck, build)
+  install        Install PM Orchestrator to a project (.claude/ directory)
+  uninstall      Remove PM Orchestrator from a project
+  selfcheck      Verify installation integrity (8 checks)
+                 --repair: Auto-repair detected issues
+  check-version  Check for package updates on npm registry
+  check-local    Verify local installation (not global)
+  execute        Execute a complete task with automatic subagent selection
+  analyze        Analyze code quality, similarity, or architecture
+  design         Create design documents based on requirements
+  implement      Implement features based on design
+  test           Create and run tests
+  qa             Run quality checks (lint, test, typecheck, build)
 
 Options:
   -h, --help     Show this help message
@@ -91,6 +108,9 @@ Examples:
   pm-orchestrator install              Install to current directory
   pm-orchestrator install ./my-project Install to specific directory
   pm-orchestrator uninstall            Remove from current directory
+  pm-orchestrator selfcheck --repair   Run self-check with auto-repair
+  pm-orchestrator check-version        Check for npm updates
+  pm-orchestrator check-local          Verify local installation
   pm-orchestrator execute --task "Add user authentication"
   pm-orchestrator analyze --files "src/**/*.ts" --type quality
   pm-orchestrator design --requirements "User management system"
@@ -102,16 +122,35 @@ For more information, visit: https://github.com/pm-orchestrator/pm-orchestrator-
 `);
 }
 
-function runInstall(args: string[]) {
+async function runInstall(args: string[]) {
   const targetDir = args[0] || '.';
+  
+  // ローカルインストールチェック
+  const localCheck = checkLocalInstallation();
+  if (!localCheck.templatesExist) {
+    console.error('\n❌ Templates directory not found. Cannot install.');
+    console.error('This package may be corrupted. Try reinstalling:');
+    console.error('  npm uninstall pm-orchestrator-enhancement');
+    console.error('  npm install pm-orchestrator-enhancement\n');
+    process.exit(1);
+  }
+
+  // バージョンチェック（警告のみ）
+  const versionCheck = await checkVersion(targetDir);
+  if (versionCheck.updateAvailable) {
+    console.log(`\n⚠️  Update available: v${versionCheck.latestVersion} (current: v${versionCheck.currentVersion})`);
+    console.log(`Consider updating: ${versionCheck.updateCommand}\n`);
+  }
+
   const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'install.sh');
 
   console.log(`Installing PM Orchestrator to ${targetDir}...`);
 
   try {
     execSync(`bash "${scriptPath}" "${targetDir}"`, { stdio: 'inherit' });
+    console.log('\n✅ Installation complete!');
   } catch (error) {
-    console.error('Installation failed');
+    console.error('\n❌ Installation failed');
     process.exit(1);
   }
 }
@@ -124,8 +163,9 @@ function runUninstall(args: string[]) {
 
   try {
     execSync(`bash "${scriptPath}" "${targetDir}"`, { stdio: 'inherit' });
+    console.log('\n✅ Uninstallation complete!');
   } catch (error) {
-    console.error('Uninstallation failed');
+    console.error('\n❌ Uninstallation failed');
     process.exit(1);
   }
 }
@@ -202,6 +242,30 @@ async function runSelfCheckCommand(args: string[]) {
   console.log(formatResult(result));
 
   process.exit(result.success ? 0 : 1);
+}
+
+async function runVersionCheck(args: string[]) {
+  const targetDir = args.find(arg => !arg.startsWith('--')) || '.';
+  const skipCache = args.includes('--no-cache');
+  const offline = args.includes('--offline');
+  
+  console.log('Checking for updates...\n');
+
+  const result = await checkVersion(targetDir, { skipCache, offline });
+  console.log(formatVersionCheckResult(result));
+
+  process.exit(0);
+}
+
+async function runLocalCheck(args: string[]) {
+  const targetDir = args.find(arg => !arg.startsWith('--')) || __dirname;
+  
+  console.log('Checking local installation...\n');
+
+  const result = checkLocalInstallation(targetDir);
+  console.log(formatLocalCheckResult(result));
+
+  process.exit(result.isLocalInstall && result.templatesExist && result.errors.length === 0 ? 0 : 1);
 }
 
 // Run CLI

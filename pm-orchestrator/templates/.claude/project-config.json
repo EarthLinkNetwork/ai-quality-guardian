@@ -1,0 +1,37 @@
+{
+  "version": "3.1.0",
+  "language": {
+    "defaultLanguage": "ja",
+    "mode": "explicit",
+    "availableLanguages": ["ja", "en"],
+    "autoDetect": false
+  },
+  "e2eTest": {
+    "enabled": false,
+    "browser": "chrome",
+    "headless": true,
+    "extraBrowsers": []
+  },
+  "codeReview": {
+    "mode": "none",
+    "reviewRemoteName": "review-origin",
+    "autoResolve": false
+  },
+  "taskTracker": {
+    "provider": "none",
+    "projectId": "",
+    "defaultList": "",
+    "mcpServerName": ""
+  },
+  "monitor": {
+    "enabled": true,
+    "staleMinutes": 45,
+    "notifySlack": false,
+    "slackWebhook": ""
+  },
+  "session": {
+    "autoNewTaskOnTaskTypeChange": true,
+    "staleSessionMinutes": 60,
+    "defaultContinuationMode": "same_task"
+  }
+}

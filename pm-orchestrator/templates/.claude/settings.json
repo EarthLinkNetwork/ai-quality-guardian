@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "skills": {
+    "directory": ".claude/skills",
+    "fallbackDirectory": ".claude/agents",
+    "enableFallback": true,
+    "priority": "skills-first"
+  }
+}

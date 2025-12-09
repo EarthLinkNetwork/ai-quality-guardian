@@ -174,11 +174,11 @@ export class PermissionChecker {
       return true;
     }
 
-    // "**" は任意のディレクトリ深度にマッチ
+    // 変換順序に注意: まず . をエスケープ、次に ** と * を変換
     const regexPattern = pattern
-      .replace(/\*\*/g, '.*')       // ** → .*
-      .replace(/\*/g, '[^/]*')      // * → [^/]*
-      .replace(/\./g, '\\.');       // . → \.
+      .replace(/\./g, '\\.')        // . → \. (最初にエスケープ)
+      .replace(/\*\*/g, '.*')       // ** → .* (任意のパス深度)
+      .replace(/(?<!\.)(\*)(?!\*)/g, '[^/]*');  // 単独の * → [^/]* (1階層)
 
     const regex = new RegExp(`^${regexPattern}$`);
     return regex.test(resource);
