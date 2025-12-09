@@ -451,3 +451,26 @@ Quality Guardian Team / chooser
 - 1.3.91: Latest PM Orchestrator integration
 - 1.3.63: PM Orchestrator Architecture adoption
 - 1.0.0: Initial release
+
+## Git Operation Control (v2.3.0)
+
+Quality Guardian now includes **structural control** for git operations to prevent unintended commits and dangerous git actions.
+
+### Key Points
+
+1. **git-operator skill**: Only skill allowed to execute git commands
+2. **allow_git flag**: PM Orchestrator controls git execution permission per TaskType
+3. **Safety checks**: validate-commit.sh logic integrated into AI workflow
+4. **Skill prohibitions**: All other skills explicitly prohibited from git execution
+
+### Benefits
+
+- **Prevents git暴走**: AI cannot arbitrarily execute git commands
+- **Structured permission**: allow_git flag enforces execution control
+- **Redundant safety**: validate-commit.sh + git-operator provide dual protection
+- **Clear workflow**: Implementer edits files → git-operator commits
+
+### For More Details
+
+See `pm-orchestrator/README.md` for full documentation on git operation control.
+

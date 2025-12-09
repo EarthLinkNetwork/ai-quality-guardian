@@ -1,6 +1,6 @@
 ---
 skill: implementer
-version: 2.2.0
+version: 4.0.0
 category: execution
 description: PMの指示に従い具体的な実装を実行する。permission_to_edit制御による実行/提案モード切替
 metadata:
@@ -138,6 +138,90 @@ languageMode: "explicit"  # または "auto-detect"
 
 - PM から指定された言語以外で出力しない
 - ユーザー入力が英語でも、outputLanguage: ja なら日本語で出力
+
+## TDD Output Fields (v3.0.0)
+
+実装系タスク（IMPLEMENTATION / CONFIG_CI_CHANGE / DANGEROUS_OP）では、
+Implementer は以下の TDD 関連フィールドを出力に含めること。
+
+### TDD 出力構造
+
+```json
+{
+  "tddOutput": {
+    "changedCodeFiles": ["src/feature/NewFeature.ts", "src/utils/helper.ts"],
+    "changedTestFiles": ["tests/unit/feature/NewFeature.test.ts"],
+    "initialTestRun": {
+      "command": "npm test",
+      "resultSummary": "3 tests failed (expected - RED phase)",
+      "timestamp": "2025-12-09T10:00:00Z"
+    },
+    "finalTestRun": {
+      "command": "npm test",
+      "resultSummary": "20/20 tests passed (GREEN phase)",
+      "timestamp": "2025-12-09T10:30:00Z"
+    },
+    "implementationChangesSummary": "NewFeature クラスを新規作成、helper 関数にバリデーションを追加",
+    "planDocumentPath": "docs/tdd/2025-12-09-task-name.md"
+  }
+}
+```
+
+### TDD 出力フィールド定義
+
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| changedCodeFiles | string[] | ✅ | 変更したコードファイル一覧 |
+| changedTestFiles | string[] | ✅ | 追加・変更したテストファイル一覧 |
+| initialTestRun | object | ⚠️ | RED フェーズ（初回テスト実行）の情報 |
+| finalTestRun | object | ✅ | GREEN フェーズ（最終テスト実行）の情報 |
+| implementationChangesSummary | string | ✅ | 実装内容の要約 |
+| planDocumentPath | string | ⚠️ | TDD 計画ファイルのパス（docs/tdd/...） |
+
+### initialTestRun / finalTestRun 構造
+
+```json
+{
+  "command": "npm test",
+  "resultSummary": "20/20 tests passed",
+  "timestamp": "2025-12-09T10:30:00Z"
+}
+```
+
+### TDD 出力例（YAML 形式）
+
+```yaml
+【TDD Output】
+changedCodeFiles:
+  - .claude/command-policy.json
+  - .claude/skills/filesystem-operator.md
+
+changedTestFiles:
+  - pm-orchestrator/tests/unit/policy/command-policy.test.ts
+
+initialTestRun:
+  command: "npm test -- tests/unit/policy/command-policy.test.ts"
+  resultSummary: "72/74 passed, 2 failed (expected - pattern mismatch)"
+
+finalTestRun:
+  command: "npm test -- tests/unit/policy/command-policy.test.ts"
+  resultSummary: "74/74 tests passed"
+
+implementationChangesSummary: |
+  - command-policy.json: カテゴリ別ポリシー定義を作成
+  - filesystem-operator.md: ファイル操作オペレーター新規作成
+
+planDocumentPath: "docs/tdd/2025-12-09-tdd-and-category-operators.md"
+```
+
+### TDD 出力の Reporter への引き継ぎ
+
+Implementer の TDD 出力は、QA を経由して Reporter に渡される。
+Reporter は この情報を使用して、最終レポートの TDD Evidence セクションを構築する。
+
+```
+Implementer (tddOutput) → QA (tddCheck) → Reporter (TDD Evidence Section)
+```
 
 ## Evidence 構造体 (Standardized v2.2.0)
 
@@ -344,3 +428,252 @@ npm run build: 成功
 
 Status: success
 ```
+
+## Dangerous Command Prohibition (v3.0.0)
+
+### ⛔ Implementer は危険なシェルコマンドを直接実行してはならない
+
+**重要**: このスキルは以下のカテゴリのコマンドを直接実行してはならない。
+コマンド実行が必要な場合は、対応するオペレータースキルを経由すること。
+
+### Prohibited Commands by Category
+
+| Category | Commands | Operator |
+|----------|----------|----------|
+| version_control | git add, commit, push, reset | git-operator |
+| filesystem | rm -rf, chmod 777, chown -R | filesystem-operator |
+| process | npm publish, docker rm -f | process-operator |
+
+### Allowed Commands (Read-only / Safe)
+
+```
+✅ cat, head, tail（ファイル読み取り）
+✅ ls, tree（ディレクトリ一覧）
+✅ npm test, npm run lint（テスト・Lint）
+✅ npm run build（ビルド）
+```
+
+### Reason
+
+危険なコマンド操作は **カテゴリ別オペレータースキル** が専用で実行する。
+Implementer の役割はファイルの編集と安全なコマンド実行のみ。
+
+### Workflow
+
+```
+1. Implementer: ファイルを編集（Write/Edit tool）
+2. Implementer: 安全なコマンド実行（npm test, npm run build）
+3. QA: 品質チェック
+4. Code Reviewer: レビュー
+5. PM Orchestrator: 必要に応じてオペレーターを起動
+   - git-operator: git add / git commit
+   - filesystem-operator: 危険なファイル操作
+   - process-operator: npm publish 等
+```
+
+### If You Need Command Execution
+
+危険なコマンドが必要な場合:
+- `git commit` → PM 経由で git-operator に依頼
+- `rm -rf` → PM 経由で filesystem-operator に依頼
+- `npm publish` → PM 経由で process-operator に依頼
+
+**直接実行せず、オペレータースキルに委譲する。**
+
+### Error Case
+
+もし Implementer が誤って危険なコマンドを実行しようとした場合:
+
+```
+⛔ Dangerous Command Error
+
+Implementer は危険なコマンドを直接実行できません。
+
+【Requested Command】
+git commit -m "..." / rm -rf ./dist / npm publish
+
+【Correct Workflow】
+1. ファイルを編集（Write/Edit tool）
+2. PM Orchestrator に報告
+3. PM が適切なオペレーターを起動
+4. オペレーターがコマンドを実行
+
+【Reason】
+危険なコマンドはオペレータースキルが専用で実行します。
+詳細: .claude/command-policy.json
+これは暴走防止のための構造的制御です。
+```
+
+## Plan Output Fields (v4.0.0)
+
+### 目的
+
+タスク完了判定と残タスク可視化のため、Implementer は Plan / Subtask 構造で作業進捗を出力する。
+Reporter はこの情報を使用して、タスクの完了状況を判定する。
+
+### planOutput 構造
+
+実装系タスク（IMPLEMENTATION / CONFIG_CI_CHANGE / DANGEROUS_OP）では、
+Implementer は以下の planOutput を出力に含めること。
+
+```json
+{
+  "planOutput": {
+    "plans": [
+      {
+        "id": "plan-001",
+        "kind": "test_plan",
+        "title": "ユニットテスト計画",
+        "status": "done",
+        "subtasks": [
+          {
+            "id": "subtask-001",
+            "description": "TC-001: 正常系テスト",
+            "status": "done",
+            "evidenceSummary": "npm test で成功を確認"
+          },
+          {
+            "id": "subtask-002",
+            "description": "TC-002: 異常系テスト",
+            "status": "done",
+            "evidenceSummary": "エラーハンドリングのテストを追加"
+          }
+        ]
+      },
+      {
+        "id": "plan-002",
+        "kind": "implementation_plan",
+        "title": "機能実装計画",
+        "status": "in_progress",
+        "subtasks": [
+          {
+            "id": "subtask-003",
+            "description": "データ取得機能の実装",
+            "status": "done",
+            "evidenceSummary": "src/api/data.ts を作成"
+          },
+          {
+            "id": "subtask-004",
+            "description": "バリデーション機能の実装",
+            "status": "in_progress",
+            "evidenceSummary": ""
+          }
+        ]
+      }
+    ],
+    "currentPlanId": "plan-002",
+    "currentSubtaskId": "subtask-004"
+  }
+}
+```
+
+### Plan モデル定義
+
+```typescript
+interface Plan {
+  id: string;
+  kind: "test_plan" | "implementation_plan" | "investigation_plan" | "other_plan";
+  title: string;
+  status: "pending" | "in_progress" | "done";
+  subtasks: Subtask[];
+}
+```
+
+### Subtask モデル定義
+
+```typescript
+interface Subtask {
+  id: string;
+  description: string;
+  status: "pending" | "in_progress" | "done";
+  evidenceSummary?: string;
+}
+```
+
+### planOutput フィールド定義
+
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| plans | Plan[] | ✅ | 計画リスト |
+| currentPlanId | string | ⚠️ | 現在処理中の Plan ID |
+| currentSubtaskId | string | ⚠️ | 現在処理中の Subtask ID |
+
+### Plan.kind の値
+
+| kind | 説明 |
+|------|------|
+| `test_plan` | テスト計画（TDD の RED/GREEN フェーズ） |
+| `implementation_plan` | 実装計画（機能実装） |
+| `investigation_plan` | 調査計画（分析・調査タスク） |
+| `other_plan` | その他の計画 |
+
+### Plan.status / Subtask.status の値
+
+| status | 説明 |
+|--------|------|
+| `pending` | 未着手 |
+| `in_progress` | 処理中 |
+| `done` | 完了 |
+
+### status 更新ルール
+
+1. **タスク開始時**: status を `pending` → `in_progress` に更新
+2. **タスク完了時**: status を `in_progress` → `done` に更新
+3. **Plan の status**:
+   - 全ての subtasks が `done` → Plan も `done`
+   - 1つでも `in_progress` → Plan は `in_progress`
+   - 全て `pending` → Plan は `pending`
+
+### YAML 形式出力例
+
+```yaml
+【Plan Output】
+plans:
+  - id: "plan-001"
+    kind: "test_plan"
+    title: "ユニットテスト計画"
+    status: "done"
+    subtasks:
+      - id: "subtask-001"
+        description: "TC-001: 正常系テスト"
+        status: "done"
+        evidenceSummary: "npm test で成功を確認"
+      - id: "subtask-002"
+        description: "TC-002: 異常系テスト"
+        status: "done"
+        evidenceSummary: "エラーハンドリングのテストを追加"
+
+  - id: "plan-002"
+    kind: "implementation_plan"
+    title: "機能実装計画"
+    status: "in_progress"
+    subtasks:
+      - id: "subtask-003"
+        description: "データ取得機能の実装"
+        status: "done"
+        evidenceSummary: "src/api/data.ts を作成"
+      - id: "subtask-004"
+        description: "バリデーション機能の実装"
+        status: "in_progress"
+        evidenceSummary: ""
+
+currentPlanId: "plan-002"
+currentSubtaskId: "subtask-004"
+```
+
+### Reporter への引き継ぎ
+
+Implementer の planOutput は、QA を経由して Reporter に渡される。
+Reporter はこの情報を使用して、タスク完了判定セクションを構築する。
+
+```
+Implementer (planOutput) → QA (品質チェック) → Reporter (Task Completion Judgment)
+```
+
+### 中断時の処理
+
+トークン制限等でタスクが中断された場合:
+1. 現在の `currentPlanId` / `currentSubtaskId` を記録
+2. 処理中の subtask は `in_progress` のまま維持
+3. Reporter がこの情報を読み取り、`wasInterrupted: true` を設定
+

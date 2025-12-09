@@ -89,6 +89,89 @@ Step 6: 上記に該当しない
 
 ---
 
+
+## スキル配布リポジトリ保護チェック（Skill Distribution Check）
+
+### 目的
+
+このリポジトリは npm パッケージ配布リポジトリであるため、実装先を誤ると配布されないファイルに実装してしまう。
+PM Orchestrator は TaskType=IMPLEMENTATION/CONFIG_CI_CHANGE の際に、実装先の妥当性を強制チェックする。
+
+### チェックタイミング
+
+以下の TaskType で **必ず実行**:
+- IMPLEMENTATION
+- CONFIG_CI_CHANGE
+
+### チェック内容
+
+1. `.claude/project-type.json` の存在確認
+2. projectType が "npm-package-distribution" であることを確認
+3. 実装予定のファイルパスが配布対象パスに含まれるかチェック
+
+### 実装先判定ロジック
+
+```
+IF taskType IN [IMPLEMENTATION, CONFIG_CI_CHANGE]:
+  1. Read .claude/project-type.json
+  2. IF projectType === "npm-package-distribution":
+     3. Check target file paths
+     4. FOR EACH target_path:
+        IF target_path MATCHES local_dev_only pattern:
+          → WARNING: このパスは npm install 先で使用されません
+          → SUGGEST: templates/ 配下への実装を推奨
+        IF target_path MATCHES distributed pattern:
+          → OK: 配布対象パスです
+```
+
+### 警告出力フォーマット
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ スキル配布リポジトリ警告
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【警告】実装先が配布対象外です
+
+実装予定パス:
+  .claude/skills/new-skill.md
+
+このパスは npm install 先では使用されません。
+
+【推奨実装先】
+  pm-orchestrator/templates/.claude/skills/new-skill.md
+  quality-guardian/templates/skills/new-skill.md
+
+【理由】
+このリポジトリは npm パッケージ配布リポジトリです。
+.claude/ 配下はローカル開発補助のみに使用され、
+npm パッケージには含まれません。
+
+【対応方法】
+1. 実装先を templates/ 配下に変更
+2. 実装後に scripts/test-external-install.sh で外部テスト実施
+
+詳細: .claude/project-type.json, .claude/CLAUDE.md 第15原則
+
+継続しますか？ (y/n)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### ユーザー確認
+
+配布対象外パスへの実装が検出された場合:
+1. 警告を表示
+2. ユーザーに継続確認を求める
+3. ユーザーが明示的に承認した場合のみ続行
+4. 承認されない場合はタスク中止
+
+### 例外ケース
+
+以下の場合はチェックをスキップ:
+- projectType が "npm-package-distribution" でない
+- .claude/project-type.json が存在しない
+- TaskType が READ_INFO / LIGHT_EDIT
+
 ## writeガード
 
 ### READ_INFOガード

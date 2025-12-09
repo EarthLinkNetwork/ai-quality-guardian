@@ -1,6 +1,6 @@
 ---
 skill: pm-orchestrator
-version: 2.2.0
+version: 3.0.0
 category: orchestration
 description: Central hub for all user inputs. Handles TaskType determination, write guards, and subagent orchestration. Always active 100% of the time.
 metadata:
@@ -180,6 +180,89 @@ Lightweight pipeline (no implementation):
 | 1 | rule-checker | Risk verification |
 | 2 | (User Confirmation) | Wait for explicit approval |
 | 3 | implementer | Execute |
+
+## TDD Enforcement Flow (v3.0.0)
+
+### 対象 TaskType
+
+以下の TaskType でコード変更がある場合、TDD フローは**必須**:
+
+- `IMPLEMENTATION`
+- `CONFIG_CI_CHANGE`
+- `DANGEROUS_OP`（コード変更を伴う場合）
+
+### TDD 強制パイプライン
+
+実装系タスクでは、以下のフローを必ず通ること:
+
+```
+Implementer (tddOutput) → QA (tddCheck) → Reporter (TDD Evidence Section)
+```
+
+### TDD 情報の流れ
+
+| ステップ | Agent | TDD 責務 |
+|---------|-------|----------|
+| 5 | Implementer | `tddOutput` を出力（changedTestFiles, finalTestRun 等） |
+| 6 | QA | `tddCheck` を実行（テスト検証、再実行） |
+| 8 | Reporter | `TDD Evidence Section` を構築（TDDCompliance 判定） |
+
+### Implementer → QA への TDD 引き継ぎ
+
+Implementer は以下のフィールドを QA に渡す:
+
+```yaml
+tddOutput:
+  changedCodeFiles: [...]
+  changedTestFiles: [...]
+  initialTestRun: { command, resultSummary }
+  finalTestRun: { command, resultSummary }
+  implementationChangesSummary: "..."
+  planDocumentPath: "docs/tdd/..."
+```
+
+### QA → Reporter への TDD 引き継ぎ
+
+QA は以下のフィールドを Reporter に渡す:
+
+```yaml
+tddCheck:
+  passed: true/false
+  issues: [...]
+  verifiedTestRun: { command, result, executedAt }
+```
+
+### Reporter の TDD Evidence Section
+
+Reporter は Implementer と QA の出力を統合して、
+最終レポートに TDD Evidence セクションを含める:
+
+```yaml
+【TDD Evidence】
+hasImplementationChanges: true
+tddRequired: true
+tddExecuted: true
+TDDCompliance: "yes" / "no" / "partial"
+
+testPlanSummary: "..."
+changedTestFiles: [...]
+testCommands: [...]
+redPhaseEvidence: "..."
+greenPhaseEvidence: "..."
+implementationChangesSummary: "..."
+planDocumentPath: "..."
+```
+
+### TDDCompliance: "no" の場合
+
+TDD 情報が不足している場合、Reporter は「完了」と報告してはならない:
+
+```yaml
+【警告】TDD 情報が不足しています
+TDDCompliance: "no"
+reason: "changedTestFiles が空 / greenPhaseEvidence が空"
+Status: warning
+```
 
 ## Subagent Execution Log Output Obligation (Enhanced v2)
 
@@ -727,3 +810,332 @@ TodoWrite:
 ```
 単純な質問 → TodoWrite なし → 直接回答
 ```
+
+## Command Category Control (v3.0.0)
+
+PM Orchestrator は `.claude/command-policy.json` を参照して、カテゴリ別のコマンド実行を制御する。
+
+### カテゴリ一覧
+
+| Category | Operator Skill | Risk | 説明 |
+|----------|----------------|------|------|
+| `version_control` | git-operator | high | VCS操作（git, hg, svn） |
+| `filesystem` | filesystem-operator | high | ファイル操作（rm, mv, cp, chmod） |
+| `process` | process-operator | medium | ビルドツール（npm, pnpm, yarn, make） |
+
+### TaskType → Category Permission Mapping
+
+| TaskType | version_control | filesystem | process | 備考 |
+|----------|-----------------|------------|---------|------|
+| READ_INFO | ❌ | ❌ | ❌ | 全カテゴリ禁止 |
+| LIGHT_EDIT | ❌ | ❌ | ❌ | 全カテゴリ禁止 |
+| REVIEW_RESPONSE | ❌ | ❌ | ❌ | 全カテゴリ禁止 |
+| IMPLEMENTATION | ✅ | ✅ | ✅ | 全カテゴリ許可 |
+| CONFIG_CI_CHANGE | ✅ | ❌ | ✅ | filesystem は不要 |
+| DANGEROUS_OP | ❌ | ❌ | ❌ | ユーザー確認必須 |
+
+### command-policy.json 参照
+
+```bash
+cat .claude/command-policy.json | jq '.taskTypePolicies'
+```
+
+### カテゴリ許可判定フロー
+
+```
+1. TaskType 判定
+2. command-policy.json から allowedCategories を取得
+3. 各 Operator Skill に allow_{category} フラグを設定
+4. Operator Skill が dangerousOperations / alwaysBlock をチェック
+5. 許可された操作のみ実行
+```
+
+### Operator Skill 起動条件
+
+以下の **全て** を満たす場合のみ、Operator Skill を起動する:
+
+1. **TaskType が許可カテゴリを含む**
+2. **QA の Status が pass または pass_with_warnings**
+3. **操作が dangerousOperations に含まれない**（含まれる場合はユーザー確認）
+
+## Git Operation Control (v2.3.0 → v3.0.0)
+
+### TaskType → allow_git Mapping (Backward Compatibility)
+
+`allow_git` は `allow_version_control` の別名として後方互換性を維持する。
+
+| TaskType | allow_git | git-operator起動 | 理由 |
+|----------|-----------|-----------------|------|
+| READ_INFO | `false` | しない | 読み取り専用タスク |
+| LIGHT_EDIT | `false` | しない | 軽微な編集（コミット不要） |
+| REVIEW_RESPONSE | `false` | しない | レビュー対応（別途コミット） |
+| IMPLEMENTATION | `true` | する | 実装完了後にコミット |
+| CONFIG_CI_CHANGE | `true` | する | 設定変更後にコミット |
+| DANGEROUS_OP | `false` | しない | 危険操作（ユーザー確認必須） |
+
+### git-operator Skill Integration
+
+IMPLEMENTATION / CONFIG_CI_CHANGE の場合、以下のフローで git-operator を起動する:
+
+```
+1. Implementer 実行（ファイル変更）
+2. QA 実行（品質確認）
+3. Code Reviewer 実行（レビュー）
+4. ✅ 全て合格
+5. git-operator 起動（allow_git: true）
+   - operation: "add"
+     files: [変更したファイルのリスト]
+   - operation: "commit"
+     message: "自動生成されたコミットメッセージ"
+6. Reporter 実行（最終報告）
+```
+
+### git-operator 起動条件
+
+以下の **全て** を満たす場合のみ、git-operator を起動する:
+
+1. **TaskType が IMPLEMENTATION または CONFIG_CI_CHANGE**
+2. **QA の Status が pass または pass_with_warnings**
+3. **Code Reviewer の判定が ✅ 合格 または ⚠️ 要改善**
+4. **ファイル変更がある**（git status で確認）
+
+起動しない場合:
+- QA が fail → Implementer に差し戻し
+- Code Reviewer が ❌ 要再設計 → 設計からやり直し
+- ファイル変更なし → コミット不要
+
+### Commit Message Generation
+
+PM Orchestrator は以下の情報からコミットメッセージを生成する:
+
+```
+1. TaskType に応じたプレフィックス:
+   - IMPLEMENTATION: "feat:" / "fix:" / "refactor:"
+   - CONFIG_CI_CHANGE: "chore:" / "ci:"
+
+2. 変更内容のサマリ（1行、50文字以内）:
+   - Implementer の変更内容から生成
+   - 日本語 → 英語に変換
+
+3. 詳細（任意）:
+   - 変更ファイルのリスト
+   - 変更理由（Requirement Analyzer の出力から）
+
+4. Co-Authored-By（禁止）:
+   - Claude 署名は含めない
+   - ユーザー名のみ
+```
+
+例:
+```
+feat: add git-operator skill for structural git control
+
+- Created .claude/skills/git-operator.md
+- Updated pm-orchestrator.md with allow_git mapping
+- Added git禁止 warnings to other skills
+```
+
+### git-operator への入力フォーマット
+
+```yaml
+allow_git: true
+operation: "commit"
+options:
+  files:
+    - ".claude/skills/git-operator.md"
+    - ".claude/skills/pm-orchestrator.md"
+  message: "feat: add git-operator skill for structural git control\n\n- Created .claude/skills/git-operator.md\n- Updated pm-orchestrator.md"
+```
+
+### git-operator からの出力処理
+
+```json
+{
+  "skill": "git-operator",
+  "operation": "commit",
+  "status": "success",
+  "details": {
+    "files": 2,
+    "commit_hash": "abc1234",
+    "branch": "feature/git-structure"
+  }
+}
+```
+
+PM はこの結果を Reporter に渡し、最終報告に含める。
+
+### エラーハンドリング
+
+git-operator が失敗した場合:
+
+1. **安全チェック失敗** (Large commit / Claude artifacts / Sensitive files):
+   - PM は Reporter を経由してユーザーに警告
+   - コミットは実行しない
+   - 手動対応を促す
+
+2. **git コマンドエラー** (Permission denied / Merge conflict):
+   - PM は Reporter を経由してエラー詳細を報告
+   - ロールバック手順を提示
+   - ユーザーに手動解決を依頼
+
+3. **allow_git: false** (TaskType不一致):
+   - PM は git-operator を起動しない
+   - Reporter に「コミット不要」と記載
+
+### 他 Skill への通知
+
+PM Orchestrator は以下の Skill に `allow_git: false` を明示的に渡す:
+
+- **Implementer**: `permission_to_edit: true, allow_git: false`
+- **QA**: `allow_git: false`
+- **Code Reviewer**: `allow_git: false`
+
+これにより、他 Skill が誤って git を実行することを防ぐ。
+
+### Strict Rules (Git Operation)
+
+1. **git-operator のみが git を実行**: 他 Skill は禁止
+2. **allow_git: false なら全拒否**: 例外なし
+3. **安全チェック必須**: commit/push の前に実行
+4. **破壊的操作は常に拒否**: force push, reset --hard 等
+5. **実行ログ必須**: 全ての git 操作を記録
+6. **Reporter 経由必須**: git 結果も Reporter を経由して報告
+
+## Task Completion Judgment Flow (v3.0.0)
+
+### 目的
+
+長いタスクや複雑なタスクで途中終了した場合でも、Reporter が「完了/未完了/要継続」を明確に報告できるようにする。
+
+### 対象 TaskType
+
+全ての TaskType で、最終出力に Task Completion Judgment を含める:
+
+- `READ_INFO`
+- `LIGHT_EDIT`
+- `IMPLEMENTATION`
+- `REVIEW_RESPONSE`
+- `CONFIG_CI_CHANGE`
+- `DANGEROUS_OP`
+
+### PM Orchestrator の責務
+
+1. **planOutput の管理**: Implementer からの planOutput を Reporter に引き継ぐ
+2. **中断検知**: トークン制限等による中断を検知し、wasInterrupted を設定
+3. **Reporter 呼び出し**: 必ず Reporter を経由して最終出力を生成
+4. **完了判定の検証**: Reporter の isTaskRunComplete を確認
+
+### Task Completion Judgment Pipeline
+
+```
+Implementer (planOutput) → QA (品質チェック) → Reporter (Task Completion Judgment)
+```
+
+### Reporter 必須出力フィールド
+
+PM Orchestrator は Reporter に以下のフィールドの出力を要求する:
+
+```yaml
+isTaskRunComplete: true | false
+hasRemainingWork: true | false
+remainingWorkSummary: |
+  [未完了の plan / subtask を人間可読なテキストで要約]
+canStartNewTask: true | false
+continuationRecommended: true | false
+suggestedNextUserPrompt: |
+  [未完了の場合、ユーザーが「続き」を依頼するための推奨プロンプト]
+wasInterrupted: true | false
+interruptionReason: "token_limit" | "time_limit" | "user_stop" | ""
+```
+
+### 完了判定ロジック
+
+```
+IF all plans have status = "done"
+   AND all subtasks in all plans have status = "done"
+THEN
+   isTaskRunComplete = true
+   hasRemainingWork = false
+   canStartNewTask = true
+   continuationRecommended = false
+ELSE
+   isTaskRunComplete = false
+   hasRemainingWork = true
+   canStartNewTask = false (実装系タスクの場合)
+   continuationRecommended = true
+```
+
+### Plan / Subtask モデル
+
+Implementer から渡される planOutput は以下の構造を持つ:
+
+```typescript
+interface Plan {
+  id: string;
+  kind: "test_plan" | "implementation_plan" | "investigation_plan" | "other_plan";
+  title: string;
+  status: "pending" | "in_progress" | "done";
+  subtasks: Subtask[];
+}
+
+interface Subtask {
+  id: string;
+  description: string;
+  status: "pending" | "in_progress" | "done";
+  evidenceSummary?: string;
+}
+```
+
+### 中断検知
+
+PM Orchestrator は以下の状況で中断を検知する:
+
+1. **トークン制限**: LLM のトークン制限に達した場合
+2. **タイムアウト**: 処理時間制限に達した場合
+3. **ユーザー中断**: ユーザーが明示的に中断した場合
+
+中断検知時、PM は Reporter に以下を渡す:
+
+```yaml
+wasInterrupted: true
+interruptionReason: "token_limit" | "time_limit" | "user_stop"
+```
+
+### TaskType 別の完了条件
+
+| TaskType | 完了条件 | canStartNewTask |
+|----------|---------|-----------------|
+| READ_INFO | 全ての情報提供が完了 | true |
+| LIGHT_EDIT | 編集が完了 | true |
+| IMPLEMENTATION | 全 plan/subtask が done かつ TDD 完了 | true |
+| REVIEW_RESPONSE | 全ての指摘への対応が完了 | true |
+| CONFIG_CI_CHANGE | 設定変更が完了 | true |
+| DANGEROUS_OP | 操作が完了 | true |
+
+### Reporter への Context 渡し
+
+PM Orchestrator は Reporter を起動する際、以下の context を渡す:
+
+```yaml
+planOutput: { ... }  # Implementer からの出力
+wasInterrupted: false
+interruptionReason: ""
+taskType: "IMPLEMENTATION"
+subagentResults: { ... }  # 全サブエージェントの結果
+```
+
+### Strict Rules (Task Completion)
+
+1. **Reporter 必須経由**: 全ての TaskType で Reporter を経由して最終出力を生成
+2. **完了判定必須**: Reporter は必ず isTaskRunComplete を出力
+3. **残タスク可視化必須**: 未完了の場合、remainingWorkSummary を出力
+4. **推奨プロンプト必須**: 未完了の場合、suggestedNextUserPrompt を出力
+5. **中断検知必須**: 中断が発生した場合、wasInterrupted を true に設定
+6. **Plan 構造必須**: 実装系タスクでは planOutput を Reporter に渡す
+
+### Error Handling
+
+1. **planOutput がない場合**: Reporter は isTaskRunComplete = true（簡易タスク）
+2. **中断検知エラー**: 検知できない場合は wasInterrupted = false
+3. **Reporter 失敗**: PM が直接 Task Completion Judgment を出力
+

@@ -69,6 +69,63 @@ cat .claude/project-config.json | jq '.language'
 ```
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【第12原則】コマンド実行の構造的制御（Structure First, Rules Second）
+危険なシェルコマンドは、カテゴリ別のオペレータースキルを通してのみ実行される。
+他のスキル（Implementer / QA / Code Reviewer）は直接シェルコマンドを実行してはならない。
+
+カテゴリ別オペレーター:
+- version_control → git-operator（git, hg, svn）
+- filesystem → filesystem-operator（rm, mv, cp, chmod）
+- process → process-operator（npm, pnpm, yarn, make, docker）
+
+構造的制御:
+- PM Orchestrator が TaskType に応じて allow_{category} フラグを設定
+- allow_{category}: false → オペレーターは全ての操作を拒否
+- allow_{category}: true → オペレーターのみが操作を実行
+- ポリシー定義: `.claude/command-policy.json`
+
+新カテゴリ追加時の手順:
+1. command-policy.json に categoryPolicies を追加
+2. 対応する {category}-operator.md を作成
+3. pm-orchestrator.md の TaskType マッピングを更新
+
+詳細: `.claude/skills/git-operator.md`, `.claude/skills/filesystem-operator.md`, `.claude/skills/process-operator.md`
+
+【第13原則】TDD 強制フロー（TDD Enforcement）
+コード変更を伴う TaskType（IMPLEMENTATION / CONFIG_CI_CHANGE / DANGEROUS_OP）では、
+最終レポートに TDD のエビデンスを必ず含めること。
+
+必須要件:
+1. Implementer は `tddOutput` を出力（changedTestFiles, finalTestRun 等）
+2. QA は `tddCheck` を実行（テスト検証）
+3. Reporter は `TDD Evidence Section` を構築
+
+TDD エビデンスなしの完了報告禁止:
+- tddRequired=true かつ hasImplementationChanges=true の場合
+- changedTestFiles が空 または greenPhaseEvidence が空 → TDDCompliance: "no"
+- Reporter は「完了」と報告せず、Status: "warning" を出力
+
+詳細: `.claude/skills/reporter.md`, `.claude/skills/implementer.md`, `.claude/skills/qa.md`
+
+【第14原則】タスク完了判定の義務化（Task Completion Judgment）
+全ての TaskType で、最終レポートに「タスク完了判定」を必ず含めること。
+Reporter は以下のフィールドを必ず出力する:
+
+必須フィールド:
+- `isTaskRunComplete`: boolean - 全 plan/subtask が完了なら true
+- `hasRemainingWork`: boolean - 未完了タスクがあれば true
+- `remainingWorkSummary`: string - 未完了タスクの要約
+- `canStartNewTask`: boolean - 新しいタスクを依頼してよい状態か
+- `continuationRecommended`: boolean - 続き依頼を推奨するか
+- `suggestedNextUserPrompt`: string - 続き依頼用の推奨プロンプト
+
+完了判定なしの最終レポート禁止:
+- 全ての TaskType で isTaskRunComplete を出力する
+- 未完了の場合、remainingWorkSummary と suggestedNextUserPrompt を出力
+- ユーザーが「新しいタスクに進んでよいか」「続き依頼をすべきか」を判断できる情報を必ず含める
+
+詳細: `.claude/skills/reporter.md`, `.claude/skills/pm-orchestrator.md`, `.claude/skills/implementer.md`
 </law>
 
 <every_chat>
@@ -463,6 +520,39 @@ This applies permanently to all future messages.
 
 ---
 
-**Current Version: 2.2.0**
+**Current Version: 3.1.0**
 **Last Updated: 2025-12-09**
-**Architecture: Skills-First with Fallback + Advanced Workflows + Language Stability**
+**Architecture: Skills-First with Fallback + Advanced Workflows + Language Stability + Task Completion Judgment**
+
+【第15原則】スキル配布リポジトリ保護（Skill Distribution Repository Protection）
+このリポジトリは「Claude Code 用スキルの npm パッケージ配布リポジトリ」である。
+`.claude/` 以下はローカル開発補助であり、npm パッケージとして配布されるスキルとは無関係。
+
+実装先の厳密な区別:
+- **配布対象（npm install 先で使用可能）**:
+  - `pm-orchestrator/templates/.claude/skills/**`
+  - `pm-orchestrator/templates/.claude/agents/**`
+  - `quality-guardian/templates/**`
+
+- **ローカル開発のみ（npm install 先では使用不可）**:
+  - `.claude/skills/**`
+  - `.claude/agents/**`
+
+禁止事項:
+1. `.claude/skills/` にスキルを新規実装すること
+2. `.claude/agents/` にエージェントを新規実装すること
+3. templates/ を経由せずに配布を想定した実装を行うこと
+
+必須確認:
+1. 実装前に `.claude/project-type.json` を確認
+2. 実装先が `templates/` 配下であることを確認
+3. 実装後に `scripts/test-external-install.sh` で外部テスト実施
+
+自己誤認防止（Self-Misleading Prevention）:
+- AI は `.claude/` 配下の存在から「ここに実装すればよい」と誤認しやすい
+- Session Manager は実装先の妥当性を毎回チェックし、警告を出す
+- PM Orchestrator は TaskType=IMPLEMENTATION 時に配布先チェックを強制
+
+詳細: `.claude/project-type.json`, `.claude/skills/session-manager.md`, `.claude/skills/pm-orchestrator.md`
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

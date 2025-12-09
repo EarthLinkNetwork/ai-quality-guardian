@@ -197,3 +197,50 @@ Status: completed
 
 Status: completed
 ```
+
+## Dangerous Command Prohibition (v3.0.0)
+
+### ⛔ Code Reviewer は危険なシェルコマンドを直接実行してはならない
+
+**重要**: このスキルは一切のコマンドを直接実行してはならない（読み取り専用コマンドを除く）。
+
+### Prohibited Commands (All Write Operations)
+
+| Category | Commands | Operator |
+|----------|----------|----------|
+| version_control | git add, commit, push | git-operator |
+| filesystem | rm, mv, cp, chmod, chown | filesystem-operator |
+| process | npm install, npm publish | process-operator |
+
+Code Reviewer の役割はレビューのみ。ファイル編集やコマンド実行は行わない。
+
+### Allowed Commands (Read-Only)
+
+Code Reviewer が使用可能なコマンドは読み取り専用に限定:
+```
+✅ git log（コミット履歴確認）
+✅ git blame（変更履歴確認）
+✅ git diff（変更内容確認）
+✅ cat, head, tail（ファイル確認）
+✅ ls, tree（ディレクトリ確認）
+```
+
+### Reason
+
+危険なコマンド操作は **カテゴリ別オペレータースキル** が専用で実行する。
+Code Reviewer の役割はレビューのみ。
+
+### Workflow
+
+```
+1. Implementer: ファイルを編集
+2. QA: 品質チェック
+3. Code Reviewer: レビュー（このスキル）
+4. PM Orchestrator: 必要に応じてオペレーターを起動
+5. git-operator / filesystem-operator / process-operator: コマンド実行
+```
+
+**Code Reviewer は読み取り専用。書き込み系コマンドは一切実行しない。**
+
+**書き込み系コマンドは git-operator に委譲する。**
+

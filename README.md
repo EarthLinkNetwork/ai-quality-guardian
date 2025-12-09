@@ -360,3 +360,63 @@ MIT License
 ---
 
 **Remember**: 品質は約束ではなく、技術的に強制されるものです。
+## ⚠️ Repository Protection Notice
+
+This repository is an **npm package distribution repository** for Claude Code skills.
+
+### Critical Directory Structure
+
+```
+.claude/                    ← Local development ONLY (NOT distributed)
+├── skills/                 ← For testing skills locally
+├── agents/                 ← Fallback (legacy)
+└── hooks/                  ← Local hooks only
+
+pm-orchestrator/
+└── templates/              ← DISTRIBUTED via npm install ✅
+    └── .claude/
+        ├── skills/         ← Install destination
+        ├── agents/         ← Install destination (fallback)
+        └── hooks/          ← Install destination
+
+quality-guardian/
+└── templates/              ← DISTRIBUTED via npm install ✅
+```
+
+### ⚠️ DANGER: Common Mistake
+
+**DO NOT implement new skills in `.claude/skills/`**
+
+❌ Wrong:
+```bash
+# This will NOT be distributed via npm install
+.claude/skills/my-new-skill.md
+```
+
+✅ Correct:
+```bash
+# This will be distributed via npm install
+pm-orchestrator/templates/.claude/skills/my-new-skill.md
+```
+
+### Testing Your Changes
+
+**Always test with external installation:**
+
+```bash
+# Test that your changes work after npm install
+./pm-orchestrator/scripts/test-external-install.sh
+```
+
+This script:
+1. Creates a fresh temporary directory
+2. Runs `npm install` from the local package
+3. Verifies all files are correctly installed
+4. Validates hooks and skills
+
+### More Information
+
+- See `.claude/CLAUDE.md` 第15原則「スキル配布リポジトリ保護」
+- See `.claude/project-type.json` for repository metadata
+- See `pm-orchestrator/scripts/test-external-install.sh` for testing
+

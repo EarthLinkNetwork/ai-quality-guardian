@@ -176,6 +176,17 @@ ai-quality-guardian/
 └── quality-guardian/        # quality-guardian package
 ```
 
+
+## ⚠️ For Contributors: Repository Protection
+
+This repository distributes Claude Code skills via npm. **DO NOT** implement new skills in `.claude/skills/`. Use `pm-orchestrator/templates/.claude/skills/` instead.
+
+**Test your changes:**
+```bash
+./scripts/test-external-install.sh
+```
+
+See the main README for details.
 ## License
 
 MIT
@@ -193,3 +204,119 @@ Current: 2.1.0
 - **2.1.0**: Evidence-Based Completion safeguards, Skills-First Architecture
 - **2.0.0**: Complete architecture rewrite with parallel execution
 - **1.0.0**: Initial release
+
+## Git Operation Control (v2.3.0)
+
+PM Orchestrator now includes **structural control** for git operations to prevent unintended commits, force pushes, and other dangerous git actions.
+
+### Design Philosophy: Structure First, Rules Second
+
+Instead of relying solely on written rules ("don't use git"), PM Orchestrator uses **structural permission control**:
+
+```
+Option A (Old): Rules only
+  → "Don't execute git commands"
+  → AI might ignore the rule
+
+Option B (New): Structure + Rules
+  → allow_git flag controls execution permission
+  → git-operator skill is the only executor
+  → Other skills have explicit prohibitions
+```
+
+### Architecture
+
+```
+                    ┌─────────────────────┐
+                    │   PM Orchestrator   │
+                    │  (TaskType → allow_git)│
+                    └──────────┬──────────┘
+                               │
+                ┌──────────────┼──────────────┐
+                │              │              │
+                ▼              ▼              ▼
+        ┌───────────┐  ┌───────────┐  ┌───────────┐
+        │Implementer│  │    QA     │  │git-operator│
+        │allow_git:×│  │allow_git:×│  │allow_git:○│
+        └───────────┘  └───────────┘  └───────────┘
+```
+
+### TaskType → allow_git Mapping
+
+| TaskType | allow_git | git-operator | Reason |
+|----------|-----------|--------------|--------|
+| READ_INFO | false | Not launched | Read-only task |
+| LIGHT_EDIT | false | Not launched | Minor edit (no commit) |
+| REVIEW_RESPONSE | false | Not launched | Review response (separate commit) |
+| IMPLEMENTATION | true | Launched | Commit after implementation |
+| CONFIG_CI_CHANGE | true | Launched | Commit after config change |
+| DANGEROUS_OP | false | Not launched | Dangerous (requires user confirmation) |
+
+### git-operator Skill
+
+The **git-operator** skill is the only skill allowed to execute git commands.
+
+Features:
+- **Permission check**: Blocks all git operations if `allow_git: false`
+- **Safety checks**: Validates commit size, Claude signatures, sensitive files
+- **Dangerous operation blocking**: Blocks force push, reset --hard, etc.
+- **Structured logging**: Records all git operations
+
+Example:
+```yaml
+allow_git: true
+operation: "commit"
+options:
+  files: ["src/feature.ts"]
+  message: "feat: add new feature"
+```
+
+### Safety Checks
+
+Before executing git commit/push, git-operator runs these checks:
+
+1. **Large commit check**: Blocks if >100 files staged
+2. **Claude artifacts check**: Warns if Claude signatures detected
+3. **Sensitive files check**: Blocks if .env, credentials.json, etc. detected
+4. **Dangerous pattern check**: Blocks force push, reset --hard, etc.
+
+### Integration with validate-commit.sh
+
+PM Orchestrator's git control works alongside the existing `validate-commit.sh`:
+
+- **validate-commit.sh**: Physical blocking via pre-commit hook
+- **git-operator**: Structural blocking during AI execution
+
+Both provide redundant safety layers.
+
+### Skill Prohibitions
+
+All skills except git-operator are prohibited from executing git:
+
+- **Implementer**: File editing only
+- **QA**: Quality verification only
+- **Code Reviewer**: Review only
+- **Reporter**: Reporting only
+
+Each skill explicitly states: "⛔ This skill must not execute git commands"
+
+### Configuration
+
+Enable git control in your project:
+
+```json
+{
+  "skills": {
+    "directory": ".claude/skills",
+    "enableGitControl": true
+  }
+}
+```
+
+### For More Details
+
+See:
+- `.claude/skills/git-operator.md` - Git operator skill definition
+- `.claude/skills/pm-orchestrator.md` - Git control section
+- `pm-orchestrator/scripts/validate-commit.sh` - Pre-commit validation
+

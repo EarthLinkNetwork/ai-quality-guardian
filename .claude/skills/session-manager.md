@@ -240,6 +240,92 @@ YYYY-MM-DD-NNN
 - **入力元**: pm-orchestrator
 - **出力先**: pm-orchestrator, task-tracker-sync
 
+
+## Self-Misleading Prevention（自己誤認防止）
+
+### 目的
+
+AI は `.claude/` 配下のディレクトリ構造から「ここに実装すればよい」と誤認しやすい。
+Session Manager は実装タスク開始時に、配布リポジトリ特有の注意喚起を行う。
+
+### 実行タイミング
+
+以下の条件を**全て満たす**場合に自動実行:
+1. continuationMode が `new_task` または `unknown`
+2. TaskType が `IMPLEMENTATION` または `CONFIG_CI_CHANGE`
+3. `.claude/project-type.json` の projectType が `"npm-package-distribution"`
+
+### チェック内容
+
+```
+1. Read .claude/project-type.json
+2. IF projectType === "npm-package-distribution":
+   3. Display warning banner
+   4. Suggest correct implementation paths
+   5. Recommend external test script usage
+```
+
+### 警告バナー出力
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🟡 Session Manager - 配布リポジトリ警告
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【重要】このリポジトリは npm パッケージ配布リポジトリです
+
+実装先を間違えると、npm install 先で動作しません。
+
+【正しい実装先】
+✅ pm-orchestrator/templates/.claude/skills/**
+✅ pm-orchestrator/templates/.claude/agents/**
+✅ quality-guardian/templates/**
+
+【間違った実装先（配布されない）】
+❌ .claude/skills/** (ローカル開発のみ)
+❌ .claude/agents/** (ローカル開発のみ)
+
+【テスト方法】
+実装後、必ず以下を実行してください:
+  scripts/test-external-install.sh
+
+詳細: .claude/CLAUDE.md 第15原則
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### Output Context に追加
+
+Session Manager が PM に返す context に以下を追加:
+
+```json
+{
+  "sessionId": "session-2025-12-09-xxx",
+  "taskRunId": "2025-12-09-001",
+  "continuationMode": "new_task",
+  "distributionRepositoryWarning": {
+    "isDistributionRepo": true,
+    "warningDisplayed": true,
+    "correctPaths": [
+      "pm-orchestrator/templates/.claude/skills/**",
+      "pm-orchestrator/templates/.claude/agents/**",
+      "quality-guardian/templates/**"
+    ],
+    "incorrectPaths": [
+      ".claude/skills/**",
+      ".claude/agents/**"
+    ]
+  }
+}
+```
+
+### PM Orchestrator への通知
+
+Session Manager からの context を受け取った PM Orchestrator は:
+1. `distributionRepositoryWarning.isDistributionRepo === true` を確認
+2. Implementer / Technical Designer に警告を伝達
+3. 実装先チェックロジックを強制的に有効化
+
 ## Error Handling
 
 - セッションファイルが破損: 新しいセッションを作成

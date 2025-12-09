@@ -177,6 +177,84 @@ implementerOutput: { ... }
 }
 ```
 
+## TDD Verification Logic (v3.0.0)
+
+実装系タスク（IMPLEMENTATION / CONFIG_CI_CHANGE / DANGEROUS_OP）において、
+QA は Implementer から渡された TDD 情報を検証する。
+
+### TDD 検証項目
+
+| 検証項目 | 条件 | 結果 |
+|---------|------|------|
+| テストファイル存在 | changedTestFiles が空でない | pass / fail |
+| テストコマンド存在 | finalTestRun.command が存在 | pass / fail |
+| テスト結果存在 | finalTestRun.resultSummary が存在 | pass / fail |
+| テスト実行 | 実際にテストを再実行して確認 | pass / fail |
+
+### TDD 検証出力構造
+
+```json
+{
+  "tddCheck": {
+    "passed": true,
+    "issues": [],
+    "verifiedTestRun": {
+      "command": "npm test",
+      "result": "74/74 tests passed",
+      "executedAt": "2025-12-09T10:30:00Z"
+    }
+  }
+}
+```
+
+### TDD 検証フロー
+
+```
+1. Implementer の tddOutput を受け取る
+2. changedTestFiles が空でないか確認
+3. finalTestRun が存在するか確認
+4. 可能であればテストコマンドを再実行
+5. tddCheck を構築して出力
+```
+
+### TDD 検証失敗時の出力
+
+```yaml
+【TDD 検証結果】
+tddCheck:
+  passed: false
+  issues:
+    - "changedTestFiles が空です"
+    - "finalTestRun が存在しません"
+  recommendation: |
+    実装系タスクにはテストが必須です。
+    1. テストファイルを作成してください
+    2. npm test を実行してください
+    3. 結果を tddOutput に記録してください
+```
+
+### TDD 検証成功時の出力
+
+```yaml
+【TDD 検証結果】
+tddCheck:
+  passed: true
+  issues: []
+  verifiedTestRun:
+    command: "npm test -- tests/unit/policy/command-policy.test.ts"
+    result: "74/74 tests passed"
+    executedAt: "2025-12-09T10:30:00Z"
+```
+
+### TDD 検証と Reporter の連携
+
+QA の tddCheck 出力は Reporter に渡され、
+最終レポートの TDD Evidence セクションに統合される。
+
+```
+Implementer (tddOutput) → QA (tddCheck) → Reporter (TDD Evidence Section)
+```
+
 ## Standardized Evidence Verification (v2.2.0)
 
 QA は Implementer の出力に含まれる標準化された `evidence` 配列を検証する。
@@ -394,3 +472,55 @@ Status: pass
 Status: fail
 Action required: テストエラーを修正してください
 ```
+
+## Dangerous Command Prohibition (v3.0.0)
+
+### ⛔ QA は危険なシェルコマンドを直接実行してはならない
+
+**重要**: このスキルは以下のカテゴリの危険なコマンドを直接実行してはならない。
+
+### Prohibited Commands by Category
+
+| Category | Commands | Operator |
+|----------|----------|----------|
+| version_control | git add, commit, push | git-operator |
+| filesystem | rm -rf, chmod 777 | filesystem-operator |
+| process | npm publish | process-operator |
+
+### Allowed Commands (QA Purpose)
+
+QA の役割上、以下のコマンドは直接実行可能:
+```
+✅ npm test, npm run test（テスト実行）
+✅ npm run lint（Lint 実行）
+✅ npm run typecheck（型チェック）
+✅ npm run build（ビルド確認）
+✅ npx playwright test（E2E テスト）
+✅ git status, git diff, git log（読み取り専用）
+```
+
+### Reason
+
+危険なコマンド操作は **カテゴリ別オペレータースキル** が専用で実行する。
+QA の役割は品質検証のみ。
+
+### Workflow
+
+```
+1. Implementer: ファイルを編集
+2. QA: 品質チェック（テスト/Lint/Build実行）
+3. Code Reviewer: レビュー
+4. PM Orchestrator: 必要に応じてオペレーターを起動
+5. git-operator / filesystem-operator / process-operator: コマンド実行
+```
+
+### Read-Only Commands (Always Allowed)
+
+以下の **読み取り専用** コマンドは常に使用可能:
+- `git status` → 変更ファイルの確認
+- `git diff` → 変更内容の確認
+- `git log` → コミット履歴の確認
+- `ls`, `cat`, `head`, `tail` → ファイル確認
+
+**書き込み系コマンドは git-operator に委譲する。**
+
