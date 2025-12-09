@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "description": "TaskCategory definitions for PM Orchestrator",
+  "categories": {
+    "BACKUP_MIGRATION": {
+      "description": "GCS バケットへのバックアップ取得、backupdata ディレクトリの更新、sandbox/production のバックアップ検証タスク",
+      "keywords": [
+        "backup", "バックアップ", "GCS", "gsutil", "gcloud",
+        "backupdata", "migration", "マイグレーション",
+        "sandbox", "production", "本番", "検証"
+      ],
+      "completionRequirements": {
+        "check_gcs_paths": {
+          "description": "実際に gsutil 等で ls した結果に基づき、存在するパスのみを採用。日付やファイル名を推測して回答してはならない",
+          "required": true,
+          "evidenceType": "command_output",
+          "validationRule": "must_have_actual_ls_output"
+        },
+        "check_backup_pairs": {
+          "description": "sandbox/production それぞれについて、対象のバックアップ日付、対応する検証ログパス、それらの対応関係を明示",
+          "required": true,
+          "evidenceType": "structured_data",
+          "validationRule": "must_have_environment_date_mapping"
+        },
+        "check_integrity": {
+          "description": "必要に応じてファイル数やサイズなど、最低限の整合性チェック",
+          "required": false,
+          "evidenceType": "command_output",
+          "validationRule": "optional_size_count_check"
+        }
+      },
+      "requiredEvidence": {
+        "executed_commands": {
+          "description": "実際に実行したコマンド例 (gsutil ls … など)",
+          "required": true,
+          "format": "array_of_strings"
+        },
+        "command_output_summary": {
+          "description": "コマンドの出力サマリ（存在確認の証拠になる範囲）",
+          "required": true,
+          "format": "string"
+        },
+        "gcs_paths_by_environment": {
+          "description": "sandbox/production ごとの GCS パス一覧",
+          "required": true,
+          "format": {
+            "sandbox": {
+              "fhir_validation_logs": ["gs://..."],
+              "database_validation_logs": ["gs://..."]
+            },
+            "production": {
+              "fhir_validation_logs": ["gs://..."],
+              "database_validation_logs": ["gs://..."]
+            }
+          }
+        }
+      },
+      "completionStatusRules": {
+        "COMPLETE": "全ての requiredEvidence が揃っており、check_gcs_paths と check_backup_pairs が OK",
+        "PARTIAL": "一部の evidence が欠けている、または一部の環境のみ確認済み",
+        "BLOCKED": "gcloud/gsutil が実行できない、認証エラー、ネットワークエラー等で確認不能"
+      },
+      "prohibitions": [
+        "推測で GCS パスを埋めて COMPLETE にすること",
+        "ls 結果なしに「たぶんこのパスだろう」と回答すること",
+        "sandbox/production の区別を曖昧にすること",
+        "日付の対応関係を明示しないまま完了報告すること"
+      ]
+    },
+    "CODE_CHANGE": {
+      "description": "ソースコードの追加・変更・削除を伴うタスク",
+      "keywords": [
+        "implement", "実装", "add", "追加", "modify", "変更",
+        "refactor", "リファクタ", "fix", "修正", "bug"
+      ],
+      "completionRequirements": {
+        "tests_pass": {
+          "description": "全てのテストが通過すること",
+          "required": true,
+          "evidenceType": "command_output"
+        },
+        "lint_pass": {
+          "description": "Lint エラーがないこと",
+          "required": true,
+          "evidenceType": "command_output"
+        },
+        "build_pass": {
+          "description": "ビルドが成功すること",
+          "required": true,
+          "evidenceType": "command_output"
+        }
+      },
+      "requiredEvidence": {
+        "test_output": {
+          "description": "テスト実行結果",
+          "required": true,
+          "format": "string"
+        },
+        "changed_files": {
+          "description": "変更されたファイル一覧",
+          "required": true,
+          "format": "array_of_strings"
+        }
+      }
+    },
+    "CONFIG_CHANGE": {
+      "description": "設定ファイルの変更タスク（CI/CD, hooks, settings 等）",
+      "keywords": [
+        "config", "設定", "CI", "CD", "hook", "settings",
+        "yaml", "yml", "json", ".github"
+      ],
+      "completionRequirements": {
+        "syntax_valid": {
+          "description": "設定ファイルの構文が有効であること",
+          "required": true,
+          "evidenceType": "command_output"
+        },
+        "template_sync": {
+          "description": "テンプレートとの同期が完了していること",
+          "required": true,
+          "evidenceType": "command_output"
+        }
+      }
+    },
+    "PACKAGE_UPDATE": {
+      "description": "npm パッケージの更新・配布に関するタスク",
+      "keywords": [
+        "npm", "publish", "package", "version", "バージョン",
+        "release", "リリース", "distribute", "配布"
+      ],
+      "completionRequirements": {
+        "local_tests_pass": {
+          "description": "ローカルでのテストが通過すること",
+          "required": true,
+          "evidenceType": "command_output"
+        },
+        "external_install_test": {
+          "description": "別リポジトリにインストールして動作確認",
+          "required": true,
+          "evidenceType": "command_output"
+        }
+      },
+      "requiredEvidence": {
+        "test_location": {
+          "description": "テスト実行場所（local / external）",
+          "required": true,
+          "format": "enum",
+          "values": ["local_only", "external_verified"]
+        },
+        "external_repo_path": {
+          "description": "外部テストを実行したリポジトリのパス",
+          "required": false,
+          "format": "string"
+        },
+        "install_log": {
+          "description": "npm install の実行ログ",
+          "required": true,
+          "format": "string"
+        }
+      },
+      "workflow": {
+        "steps": [
+          "1. このリポジトリ内でのコード・スキルの変更",
+          "2. npm pack または npm publish (dry-run)",
+          "3. 別のテスト用リポジトリにインストール",
+          "4. pm-orchestrator install を実行",
+          "5. 実際に1つタスクを回して動作確認",
+          "6. 結果とログを evidence として Reporter が出力"
+        ]
+      }
+    }
+  },
+  "defaultCategory": "CODE_CHANGE",
+  "categoryDetectionPriority": [
+    "BACKUP_MIGRATION",
+    "PACKAGE_UPDATE",
+    "CONFIG_CHANGE",
+    "CODE_CHANGE"
+  ]
+}
