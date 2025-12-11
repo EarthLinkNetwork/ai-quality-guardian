@@ -1,6 +1,6 @@
 {
   "name": "pm-orchestrator-enhancement",
-  "version": "2.3.0",
+  "version": "2.3.2",
   "description": "PM Orchestrator Enhancement - Multi-agent parallel execution system",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -37,6 +37,7 @@
     "@typescript-eslint/parser": "^6.17.0",
     "eslint": "^8.56.0",
     "jest": "^29.7.0",
+    "pm-orchestrator-enhancement": "^2.3.1",
     "ts-jest": "^29.1.1",
     "typescript": "^5.3.3"
   },

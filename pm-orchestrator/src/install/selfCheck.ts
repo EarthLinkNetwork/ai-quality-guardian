@@ -6,6 +6,43 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 
+/**
+ * PM Orchestrator 呼び出し証跡のインターフェース
+ * Task tool による実際の呼び出しがあったかを追跡する
+ *
+ * 【重要】v4.2.0 変更点:
+ * - 内部コードの状態ではなく、実際のTask toolログを確認する
+ * - ファイル内容のチェックだけでは true にならない
+ * - 実際の呼び出しログが存在する場合のみ true
+ */
+export interface OrchestratorCallEvidence {
+  /** 現在のセッションで Task tool により呼び出されたか（実ログベース） */
+  wasCalledInCurrentSession: boolean;
+  /** テスト実行時に呼び出されたか（実ログベース） */
+  wasCalledInTests: boolean;
+  /** 外部プロジェクトで呼び出されたか（実ログベース） */
+  wasCalledInExternalProject: boolean;
+  /** 呼び出し証跡のトレース（見つかった証跡の一覧） */
+  callTraceFound: string[];
+  /** 呼び出し証跡の検証日時 */
+  verifiedAt: string;
+  /** 証跡のソース（どこから証跡を取得したか） */
+  evidenceSource: 'actual_task_log' | 'session_evidence_file' | 'hook_output_only' | 'no_evidence';
+  /** 証跡ステータス（v4.2.0追加） */
+  status: 'verified' | 'partial' | 'no-evidence' | 'incomplete';
+  /** 3種の証跡確認結果（v4.2.0追加） */
+  repoEvidence: {
+    /** 開発リポジトリでの実起動証跡 */
+    developmentRepo: boolean;
+    /** 依存プロジェクトでの実起動証跡 */
+    dependencyProject: boolean;
+    /** npm配布版プロジェクトでの実起動証跡 */
+    distTestProject: boolean;
+  };
+  /** 証跡ファイルのパス */
+  evidenceFilePaths: string[];
+}
+
 export interface SelfCheckResult {
   success: boolean;
   mode: 'team' | 'personal' | 'unknown';
@@ -23,10 +60,16 @@ export interface SelfCheckResult {
   errors: string[];
   warnings: string[];
   repaired: string[];
+  /** PM Orchestrator の実際の呼び出し証跡 */
+  orchestratorCallEvidence?: OrchestratorCallEvidence;
 }
 
 export interface SelfCheckOptions {
   autoRepair?: boolean;
+  /** 呼び出し証跡の検証をスキップするかどうか（初回インストール時など） */
+  skipCallEvidence?: boolean;
+  /** 外部プロジェクトでの検証かどうか */
+  isExternalProject?: boolean;
 }
 
 export async function runSelfCheck(
@@ -71,6 +114,15 @@ export async function runSelfCheck(
     result.checks.hookSyntax = await checkHookSyntax(claudeDir, result);
     result.checks.hookOutput = await checkHookOutput(claudeDir, result);
     result.checks.rulesFile = await checkRulesFile(claudeDir, result);
+
+    // 呼び出し証跡の検証（オプション）
+    if (!options.skipCallEvidence) {
+      result.orchestratorCallEvidence = await checkOrchestratorCallEvidence(
+        claudeDir,
+        result,
+        options.isExternalProject ?? false
+      );
+    }
 
     result.success = Object.values(result.checks).every(check => check) && result.errors.length === 0;
   } catch (error) {
@@ -564,5 +616,262 @@ export function formatResult(result: SelfCheckResult): string {
 
   lines.push('='.repeat(50));
 
+  // 呼び出し証跡の表示（v4.2.0 拡張）
+  if (result.orchestratorCallEvidence) {
+    const ev = result.orchestratorCallEvidence;
+    lines.push('');
+    lines.push('PM Orchestrator Call Evidence (v4.2.0):');
+    lines.push('─'.repeat(40));
+
+    // ステータス表示
+    const statusIcon = ev.status === 'verified' ? '✅' :
+                       ev.status === 'partial' ? '⚠️' :
+                       ev.status === 'no-evidence' ? '❌' : '❓';
+    lines.push(`  Status: ${statusIcon} ${ev.status.toUpperCase()}`);
+    lines.push(`  Evidence Source: ${ev.evidenceSource}`);
+    lines.push('');
+
+    // 3種のリポジトリ証跡
+    lines.push('  Repository Evidence (必須3種):');
+    lines.push(`    Development Repo:    ${ev.repoEvidence.developmentRepo ? '✅' : '❌'}`);
+    lines.push(`    Dependency Project:  ${ev.repoEvidence.dependencyProject ? '✅' : '❌'}`);
+    lines.push(`    Dist-Test Project:   ${ev.repoEvidence.distTestProject ? '✅' : '❌'}`);
+    lines.push('');
+
+    // 呼び出し状態
+    lines.push('  Call Status:');
+    lines.push(`    Session Call:        ${ev.wasCalledInCurrentSession ? '✅' : '❌'}`);
+    lines.push(`    Test Call:           ${ev.wasCalledInTests ? '✅' : '❌'}`);
+    lines.push(`    External Project:    ${ev.wasCalledInExternalProject ? '✅' : '❌'}`);
+
+    // 証跡ファイル
+    if (ev.evidenceFilePaths.length > 0) {
+      lines.push('');
+      lines.push('  Evidence Files:');
+      for (const filePath of ev.evidenceFilePaths.slice(0, 5)) {
+        lines.push(`    - ${path.basename(filePath)}`);
+      }
+      if (ev.evidenceFilePaths.length > 5) {
+        lines.push(`    ... and ${ev.evidenceFilePaths.length - 5} more`);
+      }
+    }
+
+    // 見つかったトレース
+    if (ev.callTraceFound.length > 0) {
+      lines.push('');
+      lines.push('  Traces Found:');
+      for (const trace of ev.callTraceFound.slice(0, 10)) {
+        lines.push(`    - ${trace}`);
+      }
+      if (ev.callTraceFound.length > 10) {
+        lines.push(`    ... and ${ev.callTraceFound.length - 10} more`);
+      }
+    }
+
+    // 警告：hook_output_only の場合
+    if (ev.evidenceSource === 'hook_output_only') {
+      lines.push('');
+      lines.push('  ⚠️  WARNING: Hook is configured but NO actual Task tool invocation found!');
+      lines.push('  ⚠️  This is likely a FALSE SUCCESS. PM Orchestrator may not have actually run.');
+      lines.push('  ⚠️  completion_status: COMPLETE is PROHIBITED in this state.');
+    }
+
+    // 警告：no_evidence の場合
+    if (ev.evidenceSource === 'no_evidence') {
+      lines.push('');
+      lines.push('  ❌ ERROR: No Task tool invocation evidence found!');
+      lines.push('  ❌ selfcheck.status = "incomplete"');
+      lines.push('  ❌ completion_status: COMPLETE is PROHIBITED.');
+    }
+
+    lines.push('');
+    lines.push('─'.repeat(40));
+  }
+
   return lines.join('\n');
+}
+
+/**
+ * PM Orchestrator の呼び出し証跡を検証する（v4.2.0 完全書き換え）
+ *
+ * 【重要】この関数は内部コードの状態ではなく、実際のTask toolログを確認する。
+ *
+ * 証跡の取得方法：
+ * 1. .pm-orchestrator/session-evidence/ ディレクトリの証跡ファイル
+ * 2. .pm-orchestrator/logs/ の実行ログ（pm-orchestrator subagent の記録）
+ * 3. 手動検証の記録ファイル
+ *
+ * ★ ファイル内容のチェック（hook, agentファイル）だけでは true にならない
+ * ★ 実際の呼び出しログが存在する場合のみ true
+ */
+async function checkOrchestratorCallEvidence(
+  claudeDir: string,
+  result: SelfCheckResult,
+  isExternalProject: boolean
+): Promise<OrchestratorCallEvidence> {
+  const evidence: OrchestratorCallEvidence = {
+    wasCalledInCurrentSession: false,
+    wasCalledInTests: false,
+    wasCalledInExternalProject: false,
+    callTraceFound: [],
+    verifiedAt: new Date().toISOString(),
+    evidenceSource: 'no_evidence',
+    status: 'no-evidence',
+    repoEvidence: {
+      developmentRepo: false,
+      dependencyProject: false,
+      distTestProject: false,
+    },
+    evidenceFilePaths: [],
+  };
+
+  try {
+    const projectRoot = path.resolve(claudeDir, '..');
+    const pmOrchestratorDir = path.join(projectRoot, '.pm-orchestrator');
+
+    // 1. セッション証跡ファイルをチェック（最も信頼性が高い）
+    const sessionEvidenceDir = path.join(pmOrchestratorDir, 'session-evidence');
+    if (fs.existsSync(sessionEvidenceDir)) {
+      const evidenceFiles = fs.readdirSync(sessionEvidenceDir)
+        .filter(f => f.endsWith('.json') && f.includes('task-tool-invocation'));
+
+      for (const file of evidenceFiles) {
+        const filePath = path.join(sessionEvidenceDir, file);
+        try {
+          const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+          if (content.subagent_type === 'pm-orchestrator' && content.invoked === true) {
+            evidence.callTraceFound.push(`session_evidence:${file}`);
+            evidence.evidenceFilePaths.push(filePath);
+            evidence.evidenceSource = 'session_evidence_file';
+
+            // プロジェクトタイプに応じた証跡を記録
+            if (content.project_type === 'development') {
+              evidence.repoEvidence.developmentRepo = true;
+            } else if (content.project_type === 'dependency') {
+              evidence.repoEvidence.dependencyProject = true;
+            } else if (content.project_type === 'dist-test') {
+              evidence.repoEvidence.distTestProject = true;
+            }
+          }
+        } catch {
+          // ファイル読み取りエラーは無視
+        }
+      }
+    }
+
+    // 2. 実行ログをチェック（pm-orchestratorが実際に実行された記録）
+    const logsDir = path.join(pmOrchestratorDir, 'logs');
+    if (fs.existsSync(logsDir)) {
+      const logFiles = fs.readdirSync(logsDir)
+        .filter(f => f.endsWith('.json'))
+        .sort()
+        .reverse()
+        .slice(0, 10); // 最新10件
+
+      for (const file of logFiles) {
+        const filePath = path.join(logsDir, file);
+        try {
+          const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+          // 実際にpm-orchestratorのサブエージェントが実行された記録があるか
+          if (content.subagents && Array.isArray(content.subagents)) {
+            const hasPmExecution = content.subagents.some(
+              (s: { name: string; status: string }) =>
+                s.name === 'pm-orchestrator' || s.status === 'completed'
+            );
+            if (hasPmExecution && content.status === 'success') {
+              evidence.callTraceFound.push(`execution_log:${file}`);
+              evidence.evidenceFilePaths.push(filePath);
+              if (evidence.evidenceSource === 'no_evidence') {
+                evidence.evidenceSource = 'actual_task_log';
+              }
+            }
+          }
+        } catch {
+          // ファイル読み取りエラーは無視
+        }
+      }
+    }
+
+    // 3. hook内容のチェック（これだけでは true にならない - 参考情報のみ）
+    const hookPath = path.join(claudeDir, 'hooks', 'user-prompt-submit.sh');
+    if (fs.existsSync(hookPath)) {
+      const hookContent = fs.readFileSync(hookPath, 'utf-8');
+      const hasPmTrigger = hookContent.includes('PM Orchestrator') ||
+                           hookContent.includes('pm-orchestrator');
+
+      if (hasPmTrigger) {
+        evidence.callTraceFound.push('hook_trigger_configured');
+        // 注意: これだけでは evidenceSource を変更しない
+        if (evidence.evidenceSource === 'no_evidence') {
+          evidence.evidenceSource = 'hook_output_only';
+        }
+      }
+    }
+
+    // 4. 証跡の評価（実ログベースのみ true）
+    const hasActualEvidence =
+      evidence.evidenceSource === 'session_evidence_file' ||
+      evidence.evidenceSource === 'actual_task_log';
+
+    if (hasActualEvidence) {
+      // 実際のログが存在する場合
+      const allReposCovered =
+        evidence.repoEvidence.developmentRepo &&
+        evidence.repoEvidence.dependencyProject &&
+        evidence.repoEvidence.distTestProject;
+
+      if (allReposCovered) {
+        evidence.status = 'verified';
+        evidence.wasCalledInCurrentSession = true;
+        evidence.wasCalledInTests = true;
+        evidence.wasCalledInExternalProject = true;
+      } else {
+        evidence.status = 'partial';
+        // どのリポジトリで証跡があるかに応じて設定
+        evidence.wasCalledInCurrentSession = evidence.repoEvidence.developmentRepo;
+        evidence.wasCalledInExternalProject =
+          evidence.repoEvidence.dependencyProject || evidence.repoEvidence.distTestProject;
+
+        const missingRepos: string[] = [];
+        if (!evidence.repoEvidence.developmentRepo) missingRepos.push('development repo');
+        if (!evidence.repoEvidence.dependencyProject) missingRepos.push('dependency project');
+        if (!evidence.repoEvidence.distTestProject) missingRepos.push('dist-test project');
+
+        result.warnings.push(
+          `PM Orchestrator の呼び出し証跡が不完全です。` +
+          `以下のリポジトリで証跡が不足: ${missingRepos.join(', ')}`
+        );
+      }
+    } else if (evidence.evidenceSource === 'hook_output_only') {
+      // hookのみ設定されているが、実際の呼び出し証跡がない
+      evidence.status = 'no-evidence';
+      result.warnings.push(
+        '【警告】hookは設定されていますが、Task tool 呼び出しの証跡がありません。' +
+        '「テスト完了」と報告されても、PM Orchestratorが実際に起動されていない可能性があります。' +
+        'これは偽成功です。'
+      );
+    } else {
+      // 証跡がない
+      evidence.status = 'no-evidence';
+      result.warnings.push(
+        '【警告】PM Orchestrator の呼び出し証跡が見つかりません。' +
+        'Task tool 呼び出しの証跡がありません。' +
+        'completion_status: COMPLETE は禁止されます。'
+      );
+    }
+
+    // 5. 外部プロジェクトフラグの設定
+    if (isExternalProject) {
+      evidence.wasCalledInExternalProject = hasActualEvidence;
+      if (hasActualEvidence) {
+        evidence.repoEvidence.distTestProject = true;
+      }
+    }
+
+  } catch (error) {
+    result.warnings.push(`呼び出し証跡の検証中にエラー: ${(error as Error).message}`);
+    evidence.status = 'incomplete';
+  }
+
+  return evidence;
 }
