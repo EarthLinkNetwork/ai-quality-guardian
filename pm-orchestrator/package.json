@@ -1,6 +1,6 @@
 {
   "name": "pm-orchestrator-enhancement",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "description": "PM Orchestrator Enhancement - Multi-agent parallel execution system",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

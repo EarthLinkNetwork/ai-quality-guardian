@@ -92,7 +92,7 @@ jobs:
           npm init -y
           npm install $GITHUB_WORKSPACE/pm-orchestrator/pm-orchestrator-enhancement-*.tgz
           echo "=== Testing team mode install ==="
-          npx pm-orchestrator install --mode team --force
+          npx pm-orchestrator install --team
           echo "=== Verifying .claude directory ==="
           ls -la .claude/ || (echo "ERROR: .claude not created!" && exit 1)
           ls -la .claude/agents/ || (echo "ERROR: agents not created!" && exit 1)
@@ -109,7 +109,7 @@ jobs:
           npm init -y
           npm install $GITHUB_WORKSPACE/pm-orchestrator/pm-orchestrator-enhancement-*.tgz
           echo "=== Testing personal mode install ==="
-          npx pm-orchestrator install --mode personal --force
+          npx pm-orchestrator install --personal
           echo "=== Verifying parent .claude directory ==="
           ls -la ../.claude/ || (echo "ERROR: parent .claude not created!" && exit 1)
           echo "=== Running selfcheck ==="
