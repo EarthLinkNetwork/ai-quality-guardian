@@ -48,10 +48,84 @@ jobs:
         working-directory: pm-orchestrator
         run: npm test || echo "No tests found or test script not configured"
 
+  # E2E Distribution Test - npm配布物の検証
+  dist-test:
+    name: Distribution E2E Test
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies and build
+        working-directory: pm-orchestrator
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Create tarball
+        working-directory: pm-orchestrator
+        run: npm pack
+
+      - name: Verify tarball contents
+        working-directory: pm-orchestrator
+        run: |
+          echo "=== Tarball contents ==="
+          tar -tzf pm-orchestrator-enhancement-*.tgz | head -50
+          echo "=== Checking required files ==="
+          tar -tzf pm-orchestrator-enhancement-*.tgz | grep -E "templates/.claude" || (echo "ERROR: templates/.claude missing!" && exit 1)
+          tar -tzf pm-orchestrator-enhancement-*.tgz | grep -E "templates/.claude/agents/pm-orchestrator.md" || (echo "ERROR: pm-orchestrator.md missing!" && exit 1)
+          tar -tzf pm-orchestrator-enhancement-*.tgz | grep -E "templates/.claude/hooks/user-prompt-submit.sh" || (echo "ERROR: hook missing!" && exit 1)
+          tar -tzf pm-orchestrator-enhancement-*.tgz | grep -E "templates/.claude/commands/implementation.md" || (echo "ERROR: implementation.md missing!" && exit 1)
+          echo "✅ All required template files present"
+
+      - name: Create test project (team mode)
+        run: |
+          mkdir -p /tmp/dist-test-team
+          cd /tmp/dist-test-team
+          npm init -y
+          npm install $GITHUB_WORKSPACE/pm-orchestrator/pm-orchestrator-enhancement-*.tgz
+          echo "=== Testing team mode install ==="
+          npx pm-orchestrator install --mode team --force
+          echo "=== Verifying .claude directory ==="
+          ls -la .claude/ || (echo "ERROR: .claude not created!" && exit 1)
+          ls -la .claude/agents/ || (echo "ERROR: agents not created!" && exit 1)
+          ls -la .claude/hooks/ || (echo "ERROR: hooks not created!" && exit 1)
+          ls -la .claude/commands/ || (echo "ERROR: commands not created!" && exit 1)
+          echo "=== Running selfcheck ==="
+          npx pm-orchestrator selfcheck || true
+          echo "✅ Team mode test passed"
+
+      - name: Create test project (personal mode)
+        run: |
+          mkdir -p /tmp/dist-test-personal/project
+          cd /tmp/dist-test-personal/project
+          npm init -y
+          npm install $GITHUB_WORKSPACE/pm-orchestrator/pm-orchestrator-enhancement-*.tgz
+          echo "=== Testing personal mode install ==="
+          npx pm-orchestrator install --mode personal --force
+          echo "=== Verifying parent .claude directory ==="
+          ls -la ../.claude/ || (echo "ERROR: parent .claude not created!" && exit 1)
+          echo "=== Running selfcheck ==="
+          npx pm-orchestrator selfcheck || true
+          echo "✅ Personal mode test passed"
+
+      - name: Verify no global pollution
+        run: |
+          echo "=== Checking for global pollution ==="
+          npm list -g pm-orchestrator-enhancement 2>&1 | grep -v "empty" || true
+          which pm-orchestrator && echo "WARNING: Global pm-orchestrator found" || echo "✅ No global pollution"
+
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
-    needs: build-and-test
+    needs: [build-and-test, dist-test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:

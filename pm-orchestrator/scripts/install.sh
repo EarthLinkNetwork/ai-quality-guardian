@@ -457,43 +457,40 @@ $MD_MARKER_END
 }
 
 # ========================================
-# コマンドファイルの作成
+# コマンドファイルの作成（テンプレートからコピー）
 # ========================================
-create_command_file() {
-  echo "Creating command file..."
+create_command_files() {
+  echo "Creating command files..."
 
   local COMMANDS_DIR="$CLAUDE_DIR/commands"
-  local COMMAND_FILE="$COMMANDS_DIR/pm.md"
+  local TEMPLATE_COMMANDS_DIR="$PM_ORCHESTRATOR_ROOT/templates/.claude/commands"
 
   mkdir -p "$COMMANDS_DIR"
 
-  if [[ -f "$COMMAND_FILE" ]]; then
-    echo -e "   ${YELLOW}[SKIP]${NC} Command file already exists"
-    return
-  fi
+  # テンプレートからcommands全体をコピー
+  if [[ -d "$TEMPLATE_COMMANDS_DIR" ]]; then
+    for command_file in "$TEMPLATE_COMMANDS_DIR"/*.md; do
+      if [[ -f "$command_file" ]]; then
+        local filename=$(basename "$command_file")
+        local target_file="$COMMANDS_DIR/$filename"
 
-  cat > "$COMMAND_FILE" << 'EOF'
+        if [[ -f "$target_file" ]]; then
+          echo -e "   ${YELLOW}[SKIP]${NC} $filename (already exists)"
+        else
+          cp "$command_file" "$target_file"
+          echo -e "   ${GREEN}[CREATED]${NC} $target_file"
+        fi
+      fi
+    done
+  else
+    # フォールバック: テンプレートがない場合は最小限のpm.mdのみ作成
+    echo -e "   ${YELLOW}[WARNING]${NC} Template commands directory not found, creating minimal pm.md"
+    local COMMAND_FILE="$COMMANDS_DIR/pm.md"
+    if [[ ! -f "$COMMAND_FILE" ]]; then
+      cat > "$COMMAND_FILE" << 'EOF'
 # PM Orchestrator - 100% Always-On（毎回起動）
 
 このプロジェクトでは、PM Orchestratorは**100%常時起動**です。
-
----
-
-## 設計原則
-
-- **全てのユーザー入力でPM Orchestratorを起動する**
-- TaskType判定・writeガード・サブエージェントチェーンはPM側で決定
-- Main AIは判断せず、PMに全てを委譲する
-- hookは「PMを起動せよ」というトリガーのみを出力
-
----
-
-## Main AIの義務
-
-1. **ユーザー入力を受け取ったら、即座にTask toolでpm-orchestratorを起動**
-2. 自分で応答を作成しない
-3. PMの判定結果に従う
-4. PMの結果をユーザーに報告
 
 ---
 
@@ -506,25 +503,8 @@ prompt: |
   ユーザー入力:
   $ARGUMENTS
 
-  このタスクを分析し、以下を実行してください:
-  1. TaskType判定（READ_INFO/LIGHT_EDIT/IMPLEMENTATION/REVIEW_RESPONSE/CONFIG_CI_CHANGE/DANGEROUS_OP）
-  2. write許可判定
-  3. 必要なサブエージェントチェーン決定
-  4. サブエージェント起動または直接実行
-  5. 結果をJSON形式で報告
+  このタスクを分析してください。
 ```
-
----
-
-## 絶対禁止
-
-Main AIは以下を絶対にしてはいけない:
-
-- PM Orchestratorを起動せずに回答する
-- 「今後は起動します」と言う（口約束）
-- 自分でTaskType判定をする
-- 「hookからは起動できない」と言う
-- 「制約でできない」と言う
 
 ---
 
@@ -532,8 +512,9 @@ Main AIは以下を絶対にしてはいけない:
 
 $ARGUMENTS
 EOF
-
-  echo -e "   ${GREEN}[CREATED]${NC} $COMMAND_FILE"
+      echo -e "   ${GREEN}[CREATED]${NC} $COMMAND_FILE"
+    fi
+  fi
 }
 
 # ========================================
@@ -631,7 +612,7 @@ update_settings_json
 create_hook_script
 copy_rules_directory
 update_claude_md
-create_command_file
+create_command_files
 create_agent_files
 
 echo ""

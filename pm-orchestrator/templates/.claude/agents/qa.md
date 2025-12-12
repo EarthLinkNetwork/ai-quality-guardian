@@ -332,6 +332,38 @@ interface QAResult {
 
 ---
 
+## Task tool 起動証跡検証（v5.1.0 新機能）
+
+### 必須チェック
+
+QA は以下を必ず検証する:
+
+1. **hook 出力のみでは不十分**
+   - `user-prompt-submit.sh` が動いただけでは証跡とみなさない
+   - Task tool の実際の起動ログが必要
+
+2. **証跡ステータス判定**
+   - `evidenceSource: 'actual_task_log'` or `'session_evidence_file'` → OK
+   - `evidenceSource: 'hook_output_only'` → NO-EVIDENCE（偽成功の疑い）
+   - `evidenceSource: 'no_evidence'` → NO-EVIDENCE（絶対禁止）
+
+3. **NO-EVIDENCE 時の処理**
+   ```
+   IF evidenceSource == 'hook_output_only' OR 'no_evidence':
+     → completion_status = BLOCKED
+     → error: "Task tool 起動証跡がありません。hook は動いていますが、PM Orchestrator が実際に起動されたか確認できません。"
+     → COMPLETE 禁止
+   ```
+
+### 証跡確認方法
+
+以下のいずれかが存在すれば証跡あり:
+- `.pm-orchestrator/session-evidence/*.json` に `invoked: true` の記録
+- `.pm-orchestrator/logs/*.json` に `subagents: [{name: "pm-orchestrator", status: "completed"}]` の記録
+- Main AI の応答に `Task tool: 実行済み` の表示
+
+---
+
 ## 厳守事項
 
 1. **PMからのみ起動される**
@@ -341,10 +373,13 @@ interface QAResult {
 5. **BACKUP_MIGRATION では推測パスを許可しない**
 6. **COMPLETE 禁止条件に該当する場合は必ず PARTIAL/BLOCKED**
 7. **全ての検証結果を記録**
+8. **Task tool 起動証跡がない場合は COMPLETE 禁止**（v5.1.0 追加）
 
 ---
 
 ## バージョン履歴
+
+- v5.1.0: Task tool 起動証跡検証追加、NO-EVIDENCE 時の COMPLETE 禁止強化
 
 - v5.0.0: Step 0 追加（手動確認依頼検出・FALSE_SUCCESS）、MUST Rule 11 機械的ゲート
 - v4.0.0: TaskCategory 対応、BACKUP_MIGRATION/PACKAGE_UPDATE 検証ルール追加、COMPLETE 禁止ロジック追加

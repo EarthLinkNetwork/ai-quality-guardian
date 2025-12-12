@@ -62,6 +62,36 @@ export interface PlaywrightEvidence {
   missingVerification: boolean;
 }
 
+/**
+ * テンプレート完全性チェック結果（v4.4.0 新機能）
+ */
+export interface TemplateIntegrityResult {
+  /** テンプレートが完全かどうか */
+  isComplete: boolean;
+  /** 必須ファイル一覧 */
+  requiredFiles: string[];
+  /** 存在するファイル */
+  presentFiles: string[];
+  /** 欠落しているファイル */
+  missingFiles: string[];
+  /** 検証日時 */
+  verifiedAt: string;
+}
+
+/**
+ * グローバル汚染チェック結果（v4.4.0 新機能）
+ */
+export interface GlobalPollutionCheck {
+  /** グローバルインストールが検出されたか */
+  globalInstallDetected: boolean;
+  /** npm link が検出されたか */
+  npmLinkDetected: boolean;
+  /** 検出されたパス */
+  detectedPaths: string[];
+  /** 推奨アクション */
+  recommendedAction: string;
+}
+
 export interface SelfCheckResult {
   success: boolean;
   mode: 'team' | 'personal' | 'unknown';
@@ -75,6 +105,12 @@ export interface SelfCheckResult {
     hookSyntax: boolean;
     hookOutput: boolean;
     rulesFile: boolean;
+    /** テンプレート完全性（v4.4.0 新機能） */
+    templateIntegrity: boolean;
+    /** グローバル汚染なし（v4.4.0 新機能） */
+    noGlobalPollution: boolean;
+    /** implementationコマンド存在（v4.4.0 新機能） */
+    implementationCommand: boolean;
   };
   errors: string[];
   warnings: string[];
@@ -83,6 +119,10 @@ export interface SelfCheckResult {
   orchestratorCallEvidence?: OrchestratorCallEvidence;
   /** Playwright E2E テスト実行痕跡（v4.3.0 新機能） */
   playwrightEvidence?: PlaywrightEvidence;
+  /** テンプレート完全性チェック結果（v4.4.0 新機能） */
+  templateIntegrity?: TemplateIntegrityResult;
+  /** グローバル汚染チェック結果（v4.4.0 新機能） */
+  globalPollutionCheck?: GlobalPollutionCheck;
 }
 
 export interface SelfCheckOptions {
@@ -114,6 +154,9 @@ export async function runSelfCheck(
       hookSyntax: false,
       hookOutput: false,
       rulesFile: false,
+      templateIntegrity: false,
+      noGlobalPollution: false,
+      implementationCommand: false,
     },
     errors: [],
     warnings: [],
@@ -139,6 +182,19 @@ export async function runSelfCheck(
     result.checks.hookSyntax = await checkHookSyntax(claudeDir, result);
     result.checks.hookOutput = await checkHookOutput(claudeDir, result);
     result.checks.rulesFile = await checkRulesFile(claudeDir, result);
+
+    // テンプレート完全性チェック（v4.4.0 新機能）
+    const templateCheck = await checkTemplateIntegrity(claudeDir, result);
+    result.checks.templateIntegrity = templateCheck.isComplete;
+    result.templateIntegrity = templateCheck;
+
+    // グローバル汚染チェック（v4.4.0 新機能）
+    const pollutionCheck = await checkGlobalPollution(result);
+    result.checks.noGlobalPollution = !pollutionCheck.globalInstallDetected && !pollutionCheck.npmLinkDetected;
+    result.globalPollutionCheck = pollutionCheck;
+
+    // implementationコマンド存在チェック（v4.4.0 新機能）
+    result.checks.implementationCommand = await checkImplementationCommand(claudeDir, result);
 
     // 呼び出し証跡の検証（オプション）
     if (!options.skipCallEvidence) {
@@ -1063,4 +1119,160 @@ async function checkPlaywrightEvidence(
   }
 
   return evidence;
+}
+
+/**
+ * テンプレート完全性チェック（v4.4.0 新機能）
+ * 必須ファイルが全て存在するかを検証する
+ */
+async function checkTemplateIntegrity(
+  claudeDir: string,
+  result: SelfCheckResult
+): Promise<TemplateIntegrityResult> {
+  const templateResult: TemplateIntegrityResult = {
+    isComplete: false,
+    requiredFiles: [
+      'CLAUDE.md',
+      'settings.json',
+      'hooks/user-prompt-submit.sh',
+      'agents/pm-orchestrator.md',
+      'agents/implementer.md',
+      'agents/qa.md',
+      'agents/reporter.md',
+      'commands/pm.md',
+      'commands/implementation.md',
+      'rules/critical-must.md',
+    ],
+    presentFiles: [],
+    missingFiles: [],
+    verifiedAt: new Date().toISOString(),
+  };
+
+  try {
+    for (const file of templateResult.requiredFiles) {
+      const filePath = path.join(claudeDir, file);
+      if (fs.existsSync(filePath)) {
+        templateResult.presentFiles.push(file);
+      } else {
+        templateResult.missingFiles.push(file);
+      }
+    }
+
+    templateResult.isComplete = templateResult.missingFiles.length === 0;
+
+    if (!templateResult.isComplete) {
+      result.errors.push(
+        `テンプレート不完全: 以下のファイルが欠落しています: ${templateResult.missingFiles.join(', ')}`
+      );
+      result.errors.push(
+        'NO-EVIDENCE: テンプレートが不完全なため、completion_status: COMPLETE は禁止されます'
+      );
+    }
+  } catch (error) {
+    result.warnings.push(`テンプレート完全性チェック中にエラー: ${(error as Error).message}`);
+  }
+
+  return templateResult;
+}
+
+/**
+ * グローバル汚染チェック（v4.4.0 新機能）
+ * npm -g / npm link による汚染を検出する
+ */
+async function checkGlobalPollution(
+  result: SelfCheckResult
+): Promise<GlobalPollutionCheck> {
+  const pollutionCheck: GlobalPollutionCheck = {
+    globalInstallDetected: false,
+    npmLinkDetected: false,
+    detectedPaths: [],
+    recommendedAction: '',
+  };
+
+  try {
+    // グローバルインストールチェック
+    try {
+      const globalList = execSync('npm list -g pm-orchestrator-enhancement 2>/dev/null || true', {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      if (globalList.includes('pm-orchestrator-enhancement')) {
+        pollutionCheck.globalInstallDetected = true;
+        pollutionCheck.detectedPaths.push('npm global');
+        pollutionCheck.recommendedAction = 'npm uninstall -g pm-orchestrator-enhancement';
+      }
+    } catch {
+      // npm list失敗は無視
+    }
+
+    // npm link チェック
+    try {
+      const whichResult = execSync('which pm-orchestrator 2>/dev/null || true', {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      if (whichResult.trim()) {
+        const resolvedPath = whichResult.trim();
+        // グローバルパスまたはリンクパスかどうかを判定
+        if (resolvedPath.includes('/lib/node_modules/') ||
+            resolvedPath.includes('/.npm/') ||
+            resolvedPath.includes('/asdf/')) {
+          pollutionCheck.npmLinkDetected = true;
+          pollutionCheck.detectedPaths.push(resolvedPath);
+          pollutionCheck.recommendedAction = 'npm unlink pm-orchestrator-enhancement';
+        }
+      }
+    } catch {
+      // which 失敗は無視
+    }
+
+    if (pollutionCheck.globalInstallDetected || pollutionCheck.npmLinkDetected) {
+      result.errors.push(
+        `グローバル汚染検出: ${pollutionCheck.detectedPaths.join(', ')}`
+      );
+      result.errors.push(
+        `推奨アクション: ${pollutionCheck.recommendedAction}`
+      );
+      result.errors.push(
+        'グローバル汚染がある状態では、completion_status: COMPLETE は禁止されます'
+      );
+    }
+  } catch (error) {
+    result.warnings.push(`グローバル汚染チェック中にエラー: ${(error as Error).message}`);
+  }
+
+  return pollutionCheck;
+}
+
+/**
+ * implementationコマンド存在チェック（v4.4.0 新機能）
+ */
+async function checkImplementationCommand(
+  claudeDir: string,
+  result: SelfCheckResult
+): Promise<boolean> {
+  const commandPath = path.join(claudeDir, 'commands', 'implementation.md');
+
+  if (!fs.existsSync(commandPath)) {
+    result.errors.push(
+      'commands/implementation.md が存在しません。' +
+      'IMPLEMENTATION_MULTI_AGENT TaskType が正しく動作しません。'
+    );
+    return false;
+  }
+
+  try {
+    const content = fs.readFileSync(commandPath, 'utf-8');
+    // 必須コンテンツの検証
+    if (!content.includes('Wave') && !content.includes('parallel') && !content.includes('並列')) {
+      result.warnings.push(
+        'commands/implementation.md にWave方式の記述がありません。' +
+        '並列実装モードが正しく動作しない可能性があります。'
+      );
+    }
+  } catch (error) {
+    result.warnings.push(`implementation.md の検証中にエラー: ${(error as Error).message}`);
+  }
+
+  return true;
 }
