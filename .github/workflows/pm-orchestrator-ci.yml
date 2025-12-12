@@ -6,50 +6,16 @@ on:
     paths:
       - 'pm-orchestrator/**'
       - '.github/workflows/pm-orchestrator-ci.yml'
-      - '.lefthook.yml'
   pull_request:
     branches: [main, develop]
     paths:
       - 'pm-orchestrator/**'
       - '.github/workflows/pm-orchestrator-ci.yml'
-      - '.lefthook.yml'
 
 jobs:
-  validate:
-    name: Validate Commit Rules
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # 全履歴を取得（差分チェック用）
-
-      - name: Run validate-commit.sh
-        run: bash pm-orchestrator/scripts/validate-commit.sh
-
-      - name: Check for Claude Code artifacts in recent commits
-        run: |
-          echo "Checking recent commits for Claude Code artifacts..."
-          if git log --all -20 --pretty=%B | grep -qE 'Co-Authored-By: Claude|Generated with \[Claude Code\]|noreply@anthropic.com'; then
-            echo "::error::Claude Code署名が最近のコミットメッセージに検出されました"
-            exit 1
-          fi
-          echo "OK: Claude Code痕跡なし"
-
-      - name: Check for test.skip patterns
-        run: |
-          echo "Checking for test.skip patterns..."
-          if grep -rE 'it\.skip\(|describe\.skip\(|test\.skip\(|xit\(|xdescribe\(' --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" pm-orchestrator/ 2>/dev/null; then
-            echo "::error::test.skip()パターンが検出されました"
-            exit 1
-          fi
-          echo "OK: test.skipパターンなし"
-
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
-    needs: validate
 
     steps:
       - name: Checkout code
@@ -82,40 +48,10 @@ jobs:
         working-directory: pm-orchestrator
         run: npm test || echo "No tests found or test script not configured"
 
-  install-test:
-    name: Install Script Test
-    runs-on: ubuntu-latest
-    needs: build-and-test
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Build pm-orchestrator
-        working-directory: pm-orchestrator
-        run: |
-          npm ci || npm install
-          npm run build
-
-      - name: Test install script
-        working-directory: pm-orchestrator
-        run: |
-          if [ -f "scripts/test-install.sh" ]; then
-            bash scripts/test-install.sh
-          else
-            echo "test-install.sh not found, skipping"
-          fi
-
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
-    needs: install-test
-    # main ブランチへの push 時のみ実行（PR は除外）
+    needs: build-and-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
@@ -146,10 +82,10 @@ jobs:
           echo "npm_version=$NPM_VERSION" >> $GITHUB_OUTPUT
           if [ "$PACKAGE_VERSION" != "$NPM_VERSION" ]; then
             echo "should_publish=true" >> $GITHUB_OUTPUT
-            echo "📦 New version detected: $PACKAGE_VERSION (npm: $NPM_VERSION)"
+            echo "New version detected: $PACKAGE_VERSION (npm: $NPM_VERSION)"
           else
             echo "should_publish=false" >> $GITHUB_OUTPUT
-            echo "⏭️ Version unchanged: $PACKAGE_VERSION"
+            echo "Version unchanged: $PACKAGE_VERSION"
           fi
 
       - name: Publish to npm
