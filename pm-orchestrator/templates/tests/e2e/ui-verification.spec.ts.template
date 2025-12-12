@@ -1,0 +1,135 @@
+/**
+ * UI変更検証テンプレート (Playwright)
+ *
+ * このテンプレートは以下の変更タイプで使用する:
+ * - UI表示/非表示の変更
+ * - feature flag のON/OFF
+ * - settings/env の切り替え
+ * - ルーティング・画面の挙動変更
+ *
+ * 使用方法:
+ * 1. このファイルを tests/e2e/<feature-name>.spec.ts としてコピー
+ * 2. TODO コメントを実際の値に置き換え
+ * 3. npx playwright test tests/e2e/<feature-name>.spec.ts を実行
+ * 4. artifacts を確認し、Reporter に報告
+ */
+
+import { test, expect } from '@playwright/test';
+
+// TODO: テスト対象のURLを設定
+const TARGET_URL = '/admin/mastermaker';
+
+// TODO: テスト名を設定
+test.describe('UI変更検証: [機能名]', () => {
+
+  test.beforeEach(async ({ page }) => {
+    // TODO: 必要に応じて認証処理を追加
+    // await page.goto('/login');
+    // await page.fill('[name="email"]', 'test@example.com');
+    // await page.fill('[name="password"]', 'password');
+    // await page.click('button[type="submit"]');
+    // await page.waitForURL('/dashboard');
+  });
+
+  test('変更後のUI状態を検証', async ({ page }) => {
+    // ページにアクセス
+    await page.goto(TARGET_URL);
+
+    // ページが完全に読み込まれるまで待機
+    await page.waitForLoadState('networkidle');
+
+    // スクリーンショットを保存（変更前の状態確認用）
+    await page.screenshot({
+      path: 'test-results/ui-before.png',
+      fullPage: true
+    });
+
+    // TODO: アサーションを追加
+    // 例1: 要素が存在しないことを確認
+    // await expect(page.locator('[data-testid="free-layout-toggle"]')).not.toBeVisible();
+
+    // 例2: 要素が存在することを確認
+    // await expect(page.locator('[data-testid="auto-layout"]')).toBeVisible();
+
+    // 例3: テキストが含まれることを確認
+    // await expect(page.locator('h1')).toContainText('Expected Title');
+
+    // 例4: CSS プロパティを確認（flex レイアウトなど）
+    // const container = page.locator('[data-testid="layout-container"]');
+    // await expect(container).toHaveCSS('display', 'flex');
+
+    // 変更後のスクリーンショットを保存
+    await page.screenshot({
+      path: 'test-results/ui-after.png',
+      fullPage: true
+    });
+  });
+
+  test('feature flag OFF時の挙動を検証', async ({ page }) => {
+    // TODO: feature flag を OFF にする方法を設定
+    // 例: URL パラメータ
+    // await page.goto(`${TARGET_URL}?feature_flag=false`);
+
+    // 例: localStorage
+    // await page.evaluate(() => {
+    //   localStorage.setItem('feature_flag', 'false');
+    // });
+    // await page.goto(TARGET_URL);
+
+    await page.goto(TARGET_URL);
+    await page.waitForLoadState('networkidle');
+
+    // TODO: OFF 時のアサーション
+    // await expect(page.locator('[data-testid="new-feature"]')).not.toBeVisible();
+
+    await page.screenshot({
+      path: 'test-results/feature-off.png',
+      fullPage: true
+    });
+  });
+
+  test('エラー時のフォールバック表示を検証', async ({ page }) => {
+    // TODO: エラー状態をシミュレート
+    // 例: API をモック
+    // await page.route('**/api/data', route => route.abort());
+
+    await page.goto(TARGET_URL);
+    await page.waitForLoadState('networkidle');
+
+    // TODO: エラー時のUI状態を確認
+    // await expect(page.locator('[data-testid="error-message"]')).toBeVisible();
+    // await expect(page.locator('[data-testid="retry-button"]')).toBeVisible();
+
+    await page.screenshot({
+      path: 'test-results/error-state.png',
+      fullPage: true
+    });
+  });
+});
+
+/**
+ * Reporter への報告用 verification セクション例:
+ *
+ * {
+ *   "verification": {
+ *     "e2e": {
+ *       "playwright": {
+ *         "executed": true,
+ *         "command": "npx playwright test tests/e2e/<feature-name>.spec.ts",
+ *         "exitCode": 0,
+ *         "artifacts": [
+ *           "test-results/ui-before.png",
+ *           "test-results/ui-after.png",
+ *           "test-results/feature-off.png"
+ *         ]
+ *       }
+ *     },
+ *     "assertions": [
+ *       "トグルが存在しないことを確認",
+ *       "デフォルト配置が flex であることを確認",
+ *       "feature flag OFF 時に新機能が非表示であることを確認"
+ *     ],
+ *     "changeType": "ui_visibility"
+ *   }
+ * }
+ */

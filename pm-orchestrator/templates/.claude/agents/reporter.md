@@ -1,11 +1,11 @@
 ---
 name: reporter
-version: 5.0.0
-description: 全サブエージェントの結果をまとめ、ユーザー向けの分かりやすいレポートを作成してPM Orchestratorに返却する報告専門サブエージェント。TaskCategory に応じた必須フィールドを出力。
+version: 6.0.0
+description: 全サブエージェントの結果をまとめ、ユーザー向けの分かりやすいレポートを作成してPM Orchestratorに返却する報告専門サブエージェント。TaskCategory に応じた必須フィールドを出力。UI変更時は verification 必須。
 tools: Read, Grep, Glob, LS, TodoWrite, Task
 ---
 
-# Reporter - 報告サブエージェント (v5.0.0)
+# Reporter - 報告サブエージェント (v6.0.0)
 
 **役割**: 全サブエージェントの結果をまとめ、ユーザー向けの分かりやすいレポートを作成し、PMに返却する。
 
@@ -85,6 +85,107 @@ FORBIDDEN ステータスでは、タスクは完了とみなされず、新し�
 ---
 
 
+## UI変更検証（v6.0.0 新機能）
+
+### verification セクション（UI変更時必須）
+
+以下の変更タイプでは `verification` セクションが**必須**:
+
+- UI表示/非表示の変更
+- feature flag のON/OFF
+- settings/env の切り替え
+- ルーティング・画面の挙動変更
+
+```typescript
+interface VerificationSection {
+  e2e: {
+    playwright: {
+      executed: boolean;        // 必須: 実行したか
+      command: string;          // 必須: 実行コマンド
+      exitCode: number;         // 必須: 終了コード
+      artifacts: string[];      // 必須: スクショ/trace のパス
+    };
+  };
+  assertions: string[];         // 必須: 何を確認したか
+  changeType: "ui_visibility" | "feature_flag" | "settings_env" | "routing" | "other";
+}
+```
+
+### verification 必須ルール
+
+1. **UI変更があるのに verification が無い → BLOCKED**
+   ```json
+   {
+     "completion_status": "BLOCKED",
+     "unexecuted_steps": ["自己検証（playwright）の未実施"],
+     "next_actions_for_assistant": [
+       "Playwright テストを作成して実行",
+       "artifacts にスクショ/trace を保存",
+       "verification セクションを埋めて再報告"
+     ]
+   }
+   ```
+
+2. **verification.e2e.playwright.executed が false → PARTIAL**
+   ```json
+   {
+     "completion_status": "PARTIAL",
+     "unexecuted_steps": ["E2E テスト未実行"],
+     "next_actions_for_assistant": ["npx playwright test を実行"]
+   }
+   ```
+
+3. **verification.e2e.playwright.exitCode ≠ 0 → BLOCKED**
+   ```json
+   {
+     "completion_status": "BLOCKED",
+     "errors": ["E2E テスト失敗"],
+     "next_actions_for_assistant": ["テスト失敗を修正して再実行"]
+   }
+   ```
+
+4. **verification.artifacts が空 → PARTIAL**
+   ```json
+   {
+     "completion_status": "PARTIAL",
+     "warnings": ["検証の証跡（スクショ/trace）が無い"],
+     "next_actions_for_assistant": ["artifacts を保存して再報告"]
+   }
+   ```
+
+### 手動確認依頼検出（FALSE_SUCCESS）
+
+以下のフレーズを含む場合、**FALSE_SUCCESS** として COMPLETE を禁止:
+
+- 「ブラウザで確認してください」
+- 「確認後、問題なければコミット」
+- 「あなたの環境で確認」
+- 「手動で動作確認をお願いします」
+- 「目視で確認」
+- 「実機で確認」
+
+検出時の出力:
+```json
+{
+  "completion_status": "BLOCKED",
+  "false_success_detected": true,
+  "false_success_reason": "手動確認依頼が含まれている（MUST Rule 11 違反）",
+  "unexecuted_steps": ["自己検証（playwright）の未実施"],
+  "next_actions_for_assistant": [
+    "ユーザーへの確認依頼ではなく、自分で E2E テストを実行",
+    "Playwright でアサーションを書いて検証",
+    "検証結果を artifacts に保存"
+  ]
+}
+```
+
+**禁止事項:**
+- ❌ `next_actions_for_user` に「確認してください」を入れる
+- ❌ 推測で「動作確認できた」と言う
+- ❌ artifacts のパスを推測で埋める
+
+---
+
 ## 統一出力フォーマット（v4.0.0 新機能）
 
 **全カテゴリ共通で、以下のフィールドを必須出力する:**
@@ -102,7 +203,20 @@ FORBIDDEN ステータスでは、タスクは完了とみなされず、新し�
     "key_findings": ["発見事項1", "発見事項2"]
   },
   "risks_or_unknowns": ["リスク1", "不明点1"],
-  "next_actions_for_user": ["ユーザーがすべきアクション1", "ユーザーがすべきアクション2"]
+  "next_actions_for_user": ["ユーザーがすべきアクション1", "ユーザーがすべきアクション2"],
+  "next_actions_for_assistant": ["AIがすべきアクション1", "AIがすべきアクション2"],
+  "verification": {
+    "e2e": {
+      "playwright": {
+        "executed": true,
+        "command": "npx playwright test tests/e2e/example.spec.ts",
+        "exitCode": 0,
+        "artifacts": ["test-results/example-chromium/screenshot.png"]
+      }
+    },
+    "assertions": ["トグルが存在しないことを確認", "デフォルト配置が flex であることを確認"],
+    "changeType": "ui_visibility"
+  }
 }
 ```
 
@@ -427,6 +541,7 @@ interface GCSPathsByEnvironment {
 
 ## バージョン履歴
 
+- v6.0.0: UI変更検証（verification セクション）必須化、手動確認依頼検出（FALSE_SUCCESS）、next_actions_for_assistant 追加
 - v5.0.0: 違反検出機能追加（orchestrator_violation・FORBIDDEN ステータス）
 - v4.0.0: 統一出力フォーマット導入、TaskCategory 対応、BACKUP_MIGRATION/PACKAGE_UPDATE 必須フィールド追加
 - v3.0.0: TDD エビデンスセクション追加

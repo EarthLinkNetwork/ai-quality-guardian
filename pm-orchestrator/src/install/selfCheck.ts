@@ -43,6 +43,25 @@ export interface OrchestratorCallEvidence {
   evidenceFilePaths: string[];
 }
 
+/**
+ * Playwright E2E テスト実行痕跡のインターフェース（v4.3.0 新機能）
+ * UI変更時に Playwright テストが実行されたかを追跡する
+ */
+export interface PlaywrightEvidence {
+  /** Playwright テストが実行されたか */
+  executed: boolean;
+  /** 検出された痕跡の種類 */
+  evidenceType: 'test-results' | 'traces' | 'screenshots' | 'reports' | 'no_evidence';
+  /** 見つかったアーティファクト */
+  artifacts: string[];
+  /** 検証日時 */
+  verifiedAt: string;
+  /** UI変更が検出されたか */
+  uiChangeDetected: boolean;
+  /** UI変更があるのに痕跡がない場合 true */
+  missingVerification: boolean;
+}
+
 export interface SelfCheckResult {
   success: boolean;
   mode: 'team' | 'personal' | 'unknown';
@@ -62,6 +81,8 @@ export interface SelfCheckResult {
   repaired: string[];
   /** PM Orchestrator の実際の呼び出し証跡 */
   orchestratorCallEvidence?: OrchestratorCallEvidence;
+  /** Playwright E2E テスト実行痕跡（v4.3.0 新機能） */
+  playwrightEvidence?: PlaywrightEvidence;
 }
 
 export interface SelfCheckOptions {
@@ -70,6 +91,10 @@ export interface SelfCheckOptions {
   skipCallEvidence?: boolean;
   /** 外部プロジェクトでの検証かどうか */
   isExternalProject?: boolean;
+  /** UI変更の検証を行うかどうか（v4.3.0 新機能） */
+  checkPlaywrightEvidence?: boolean;
+  /** 変更タイプ（UI変更の場合に指定） */
+  changeType?: 'ui_visibility' | 'feature_flag' | 'settings_env' | 'routing' | 'code_change' | 'other';
 }
 
 export async function runSelfCheck(
@@ -121,6 +146,16 @@ export async function runSelfCheck(
         claudeDir,
         result,
         options.isExternalProject ?? false
+      );
+    }
+
+    // Playwright E2E テスト痕跡の検証（v4.3.0 新機能）
+    if (options.checkPlaywrightEvidence) {
+      const projectRoot = path.resolve(claudeDir, '..');
+      result.playwrightEvidence = await checkPlaywrightEvidence(
+        projectRoot,
+        result,
+        options.changeType ?? 'other'
       );
     }
 
@@ -688,6 +723,43 @@ export function formatResult(result: SelfCheckResult): string {
     lines.push('─'.repeat(40));
   }
 
+  // Playwright E2E テスト痕跡の表示（v4.3.0 新機能）
+  if (result.playwrightEvidence) {
+    const pw = result.playwrightEvidence;
+    lines.push('');
+    lines.push('Playwright E2E Test Evidence (v4.3.0):');
+    lines.push('─'.repeat(40));
+
+    const statusIcon = pw.executed ? '✅' :
+                       pw.missingVerification ? '❌' : '⚠️';
+    lines.push(`  Status: ${statusIcon} ${pw.executed ? 'EXECUTED' : 'NOT EXECUTED'}`);
+    lines.push(`  Evidence Type: ${pw.evidenceType}`);
+    lines.push(`  UI Change Detected: ${pw.uiChangeDetected ? 'Yes' : 'No'}`);
+    lines.push(`  Missing Verification: ${pw.missingVerification ? '❌ YES' : '✅ No'}`);
+
+    if (pw.artifacts.length > 0) {
+      lines.push('');
+      lines.push('  Artifacts Found:');
+      for (const artifact of pw.artifacts.slice(0, 10)) {
+        lines.push(`    - ${artifact}`);
+      }
+      if (pw.artifacts.length > 10) {
+        lines.push(`    ... and ${pw.artifacts.length - 10} more`);
+      }
+    }
+
+    if (pw.missingVerification) {
+      lines.push('');
+      lines.push('  ❌ MUST Rule 11 違反の可能性:');
+      lines.push('  ❌ UI変更があるのに Playwright テスト痕跡がありません');
+      lines.push('  ❌ 「ブラウザで確認してください」は禁止です');
+      lines.push('  ❌ completion_status: COMPLETE は禁止されます');
+    }
+
+    lines.push('');
+    lines.push('─'.repeat(40));
+  }
+
   return lines.join('\n');
 }
 
@@ -871,6 +943,123 @@ async function checkOrchestratorCallEvidence(
   } catch (error) {
     result.warnings.push(`呼び出し証跡の検証中にエラー: ${(error as Error).message}`);
     evidence.status = 'incomplete';
+  }
+
+  return evidence;
+}
+
+/**
+ * Playwright E2E テスト実行痕跡を検証する（v4.3.0 新機能）
+ *
+ * UI変更があるのに Playwright テストの痕跡がない場合、
+ * NO-EVIDENCE を返して COMPLETE を禁止する。
+ *
+ * 【検出対象】
+ * - test-results/ ディレクトリ
+ * - playwright-report/ ディレクトリ
+ * - *.png スクリーンショット
+ * - trace.zip ファイル
+ */
+async function checkPlaywrightEvidence(
+  projectRoot: string,
+  result: SelfCheckResult,
+  changeType: string
+): Promise<PlaywrightEvidence> {
+  const evidence: PlaywrightEvidence = {
+    executed: false,
+    evidenceType: 'no_evidence',
+    artifacts: [],
+    verifiedAt: new Date().toISOString(),
+    uiChangeDetected: false,
+    missingVerification: false,
+  };
+
+  // UI変更タイプかどうかを判定
+  const uiChangeTypes = ['ui_visibility', 'feature_flag', 'settings_env', 'routing'];
+  evidence.uiChangeDetected = uiChangeTypes.includes(changeType);
+
+  try {
+    // 1. test-results/ ディレクトリをチェック
+    const testResultsDir = path.join(projectRoot, 'test-results');
+    if (fs.existsSync(testResultsDir)) {
+      const files = fs.readdirSync(testResultsDir, { recursive: true }) as string[];
+      const screenshots = files.filter(f => f.endsWith('.png') || f.endsWith('.jpg'));
+      const traces = files.filter(f => f.endsWith('.zip') || f.includes('trace'));
+
+      if (screenshots.length > 0) {
+        evidence.executed = true;
+        evidence.evidenceType = 'screenshots';
+        evidence.artifacts.push(...screenshots.slice(0, 10).map(f => `test-results/${f}`));
+      }
+
+      if (traces.length > 0) {
+        evidence.executed = true;
+        evidence.evidenceType = 'traces';
+        evidence.artifacts.push(...traces.slice(0, 5).map(f => `test-results/${f}`));
+      }
+    }
+
+    // 2. playwright-report/ ディレクトリをチェック
+    const reportDir = path.join(projectRoot, 'playwright-report');
+    if (fs.existsSync(reportDir)) {
+      evidence.executed = true;
+      evidence.evidenceType = 'reports';
+      evidence.artifacts.push('playwright-report/');
+    }
+
+    // 3. 最近の Playwright 実行ログをチェック
+    const pmOrchestratorDir = path.join(projectRoot, '.pm-orchestrator', 'logs');
+    if (fs.existsSync(pmOrchestratorDir)) {
+      const logFiles = fs.readdirSync(pmOrchestratorDir)
+        .filter(f => f.endsWith('.json'))
+        .sort()
+        .reverse()
+        .slice(0, 5);
+
+      for (const file of logFiles) {
+        try {
+          const content = JSON.parse(
+            fs.readFileSync(path.join(pmOrchestratorDir, file), 'utf-8')
+          );
+          if (content.commands && Array.isArray(content.commands)) {
+            const playwrightCommands = content.commands.filter(
+              (cmd: string) => cmd.includes('playwright') || cmd.includes('npx playwright')
+            );
+            if (playwrightCommands.length > 0) {
+              evidence.executed = true;
+              evidence.artifacts.push(`log:${file}`);
+            }
+          }
+        } catch {
+          // ログ読み取りエラーは無視
+        }
+      }
+    }
+
+    // 4. UI変更があるのに痕跡がない場合を検出
+    if (evidence.uiChangeDetected && !evidence.executed) {
+      evidence.missingVerification = true;
+      result.warnings.push(
+        '【MUST Rule 11 違反の可能性】' +
+        'UI変更が検出されましたが、Playwright E2E テストの痕跡がありません。' +
+        '「ブラウザで確認してください」ではなく、' +
+        'npx playwright test を実行して検証結果を artifacts に保存してください。' +
+        'completion_status: COMPLETE は禁止されます。'
+      );
+      result.errors.push(
+        'UI変更に対する Playwright E2E テスト痕跡がありません (NO-EVIDENCE)'
+      );
+    }
+
+    // 5. 成功時のメッセージ
+    if (evidence.executed && evidence.artifacts.length > 0) {
+      result.repaired.push(
+        `Playwright E2E テスト痕跡を検出: ${evidence.artifacts.length} 件のアーティファクト`
+      );
+    }
+
+  } catch (error) {
+    result.warnings.push(`Playwright 痕跡検証中にエラー: ${(error as Error).message}`);
   }
 
   return evidence;
