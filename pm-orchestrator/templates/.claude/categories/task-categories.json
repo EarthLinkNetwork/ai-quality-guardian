@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": "1.0.0",
-  "description": "TaskCategory definitions for PM Orchestrator",
+  "version": "2.0.0",
+  "description": "TaskCategory definitions for PM Orchestrator (with IMPLEMENTATION_MULTI_AGENT support)",
   "categories": {
     "BACKUP_MIGRATION": {
       "description": "GCS バケットへのバックアップ取得、backupdata ディレクトリの更新、sandbox/production のバックアップ検証タスク",
@@ -169,10 +169,115 @@
           "6. 結果とログを evidence として Reporter が出力"
         ]
       }
+    },
+    "IMPLEMENTATION_MULTI_AGENT": {
+      "description": "大規模な実装タスクを複数のチャンクに分割し、並列実行するカテゴリ",
+      "keywords": [
+        "大規模", "複数の機能", "複数のモジュール", "全体的な", "システム全体",
+        "並列で", "同時に", "分割して", "チャンクで",
+        "multiple features", "large scale", "parallel", "chunks"
+      ],
+      "triggerConditions": {
+        "task_size": "10ファイル以上の変更が予想される、または 3時間以上の作業と推定される",
+        "sub_task_count": "タスク分解で 4 個以上の独立したサブタスクが生成される",
+        "independence": "サブタスク間の依存関係が最小限である",
+        "user_request": "ユーザーが並列実行を明示的に要求している"
+      },
+      "completionRequirements": {
+        "all_chunks_complete": {
+          "description": "全てのチャンクが COMPLETE ステータスであること",
+          "required": true,
+          "evidenceType": "structured_data",
+          "validationRule": "all_chunk_status_complete"
+        },
+        "all_dod_satisfied": {
+          "description": "全チャンクの Definition of Done が満たされていること",
+          "required": true,
+          "evidenceType": "structured_data",
+          "validationRule": "all_chunk_dod_complete"
+        },
+        "no_conflicts": {
+          "description": "チャンク間でファイル変更の競合が発生していないこと",
+          "required": true,
+          "evidenceType": "structured_data",
+          "validationRule": "no_file_conflicts"
+        }
+      },
+      "requiredEvidence": {
+        "chunk_plan": {
+          "description": "チャンク分割計画（JSON形式）",
+          "required": true,
+          "format": "json_object",
+          "schema": {
+            "chunks": "array of chunk objects",
+            "execution_plan": "wave-based execution plan"
+          }
+        },
+        "chunk_results": {
+          "description": "各チャンクの実行結果",
+          "required": true,
+          "format": "array_of_objects",
+          "fields": [
+            "chunk_id",
+            "status",
+            "completed_dod",
+            "incomplete_dod",
+            "files_changed",
+            "test_results"
+          ]
+        },
+        "integration_status": {
+          "description": "統合結果（Integrator 出力）",
+          "required": true,
+          "format": "json_object",
+          "fields": [
+            "overall_status",
+            "completed_chunks",
+            "partial_chunks",
+            "blocked_chunks",
+            "conflicts_detected",
+            "next_steps"
+          ]
+        }
+      },
+      "completionStatusRules": {
+        "COMPLETE": "全チャンク COMPLETE、全 DoD 満たす、競合なし",
+        "PARTIAL": "いずれかのチャンクが PARTIAL または BLOCKED、または一部 DoD 未達成",
+        "BLOCKED": "クリティカルチャンク（例: impl-01 設計）が BLOCKED で後続実行不可"
+      },
+      "prohibitions": [
+        "いずれかのチャンクが PARTIAL or BLOCKED の場合に COMPLETE と報告すること",
+        "チャンク実行結果を待たずに推測で完了報告すること",
+        "ファイル競合を無視して統合すること",
+        "依存関係を無視してチャンクを実行すること"
+      ],
+      "workflow": {
+        "phases": [
+          "Phase 1: Planner - インテント確認と制約収集",
+          "Phase 2: Chunk Planner - タスクをチャンクに分割",
+          "Phase 3: Task Agents (parallel) - 各チャンクを並列実行（最大4並列）",
+          "Phase 4: Integrator - 結果を統合",
+          "Phase 5: Reporter - 最終レポート作成"
+        ],
+        "max_parallel_agents": 4,
+        "chunk_size_guidelines": {
+          "token_budget": "4,000 ~ 8,000 tokens per chunk",
+          "file_count": "3 ~ 5 files per chunk",
+          "time_estimate": "30 ~ 60 minutes per chunk"
+        }
+      },
+      "subagentChain": [
+        "Planner",
+        "Chunk Planner",
+        "Task Agents (parallel)",
+        "Integrator",
+        "Reporter"
+      ]
     }
   },
   "defaultCategory": "CODE_CHANGE",
   "categoryDetectionPriority": [
+    "IMPLEMENTATION_MULTI_AGENT",
     "BACKUP_MIGRATION",
     "PACKAGE_UPDATE",
     "CONFIG_CHANGE",
