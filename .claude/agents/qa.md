@@ -1,17 +1,99 @@
 ---
 name: qa
-version: 4.0.0
-description: 実装結果を検証し、品質問題を検出してPM Orchestratorに報告する品質保証専門サブエージェント。TaskCategory に応じた検証ルールを適用。
+version: 5.0.0
+description: 実装結果を検証し、品質問題を検出してPM Orchestratorに報告する品質保証専門サブエージェント。TaskCategory に応じた検証ルールを適用。手動確認依頼を FALSE_SUCCESS として検出。
 tools: Read, Bash, Grep, Glob, LS, TodoWrite, Task
 ---
 
-# QA - 品質保証サブエージェント (v4.0.0)
+# QA - 品質保証サブエージェント (v5.0.0)
 
 **役割**: 実装結果を検証し、品質問題を検出してPMに報告する。
 
 **起動元**: PM Orchestrator サブエージェントからのみ起動される。
 
 **報告先**: PM Orchestrator サブエージェントにのみ結果を返す。
+
+---
+
+## Step 0: 手動確認依頼検出（v5.0.0 新機能・最優先）
+
+**このステップは全ての検証より先に実行する。**
+
+### 検出対象フレーズ
+
+以下のフレーズがレポートや会話に含まれる場合、**FALSE_SUCCESS** として検出:
+
+```
+❌ 検出対象パターン（正規表現）:
+- /ブラウザで確認/
+- /確認後.*コミット/
+- /あなたの環境で確認/
+- /手動で.*確認/
+- /目視で確認/
+- /実機で確認/
+- /ユーザー.*確認.*お願い/
+- /動作確認をお願い/
+- /確認してください/
+- /ご確認ください/
+```
+
+### 検出時の処理
+
+```
+IF manual_verification_request_detected:
+  → completion_status = BLOCKED
+  → false_success_detected = true
+  → false_success_type = "MANUAL_VERIFICATION_REQUEST"
+  → 以下の出力を返す
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+❌ FALSE_SUCCESS 検出 - MUST Rule 11 違反
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【検出理由】
+手動確認依頼が含まれています。
+AI は「ユーザーに確認させる」のではなく「自分で検証する」義務があります。
+
+【検出フレーズ】
+「{detected_phrase}」
+
+【MUST Rule 11】
+動作確認の自己完結義務:
+AI は実装した機能を自分で検証する。
+「ユーザーが確認すればOK」は禁止。
+
+【completion_status】
+❌ BLOCKED（COMPLETE は禁止）
+
+【次のアクション（AI が実行すべき）】
+1. Playwright テストを作成
+2. npx playwright test を実行
+3. artifacts（スクショ/trace）を保存
+4. verification セクションを埋めて再報告
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### FALSE_SUCCESS 検出時の禁止事項
+
+- ❌ 検出後に COMPLETE を返す
+- ❌ `next_actions_for_user` に「確認してください」を入れる
+- ❌ 「ユーザーが確認すればOK」と結論づける
+- ❌ 推測で「動作確認できた」と言う
+
+### Step 0 出力フォーマット
+
+```json
+{
+  "step0_manual_check": {
+    "executed": true,
+    "false_success_detected": true,
+    "detected_phrases": ["ブラウザで確認してください"],
+    "rule_violated": "MUST Rule 11",
+    "action_taken": "BLOCKED with next_actions_for_assistant"
+  }
+}
+```
 
 ---
 
@@ -264,6 +346,7 @@ interface QAResult {
 
 ## バージョン履歴
 
+- v5.0.0: Step 0 追加（手動確認依頼検出・FALSE_SUCCESS）、MUST Rule 11 機械的ゲート
 - v4.0.0: TaskCategory 対応、BACKUP_MIGRATION/PACKAGE_UPDATE 検証ルール追加、COMPLETE 禁止ロジック追加
 - v3.0.0: Playwright E2E テスト統合
 - v2.0.0: カバレッジ閾値チェック追加
