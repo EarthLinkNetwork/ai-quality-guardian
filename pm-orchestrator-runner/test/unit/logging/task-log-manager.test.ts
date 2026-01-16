@@ -1,0 +1,450 @@
+/**
+ * Task Log Manager Tests
+ *
+ * TDD Tests for spec 13_LOGGING_AND_OBSERVABILITY.md and 05_DATA_MODELS.md
+ *
+ * Tests Thread/Run/Task hierarchy, session-based directories, and visibility control.
+ */
+
+import { describe, it, beforeEach, afterEach } from 'mocha';
+import { strict as assert } from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+
+import { TaskLogManager } from '../../../src/logging/task-log-manager';
+
+describe('TaskLogManager - Thread/Run/Task Hierarchy', () => {
+  let tempDir: string;
+  let manager: TaskLogManager;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'task-log-test-'));
+    fs.mkdirSync(path.join(tempDir, '.claude'), { recursive: true });
+    manager = new TaskLogManager(tempDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  describe('Session-based Directory Structure', () => {
+    /**
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 1.1:
+     * .claude/logs/sessions/<session_id>/tasks/<task_id>.json
+     */
+    it('should create session-based directory structure', async () => {
+      const sessionId = 'sess-20250112-001';
+      
+      await manager.ensureSessionDirectories(sessionId);
+      
+      const sessionsDir = path.join(tempDir, '.claude', 'logs', 'sessions', sessionId);
+      const tasksDir = path.join(sessionsDir, 'tasks');
+      
+      assert.ok(fs.existsSync(sessionsDir), 'Sessions directory should exist');
+      assert.ok(fs.existsSync(tasksDir), 'Tasks directory should exist');
+    });
+
+    /**
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 1.2:
+     * Session metadata: sessions/<session_id>/session.json
+     */
+    it('should create session metadata file', async () => {
+      const sessionId = 'sess-20250112-001';
+      
+      await manager.initializeSession(sessionId);
+      
+      const sessionMetaPath = path.join(
+        tempDir, '.claude', 'logs', 'sessions', sessionId, 'session.json'
+      );
+      
+      assert.ok(fs.existsSync(sessionMetaPath), 'Session metadata file should exist');
+      
+      const metadata = JSON.parse(fs.readFileSync(sessionMetaPath, 'utf-8'));
+      assert.equal(metadata.session_id, sessionId);
+      assert.ok(metadata.started_at, 'started_at should be set');
+      assert.deepEqual(metadata.threads, [], 'threads should be empty array initially');
+      assert.deepEqual(metadata.runs, [], 'runs should be empty array initially');
+    });
+
+    /**
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 1.2:
+     * Session index: sessions/<session_id>/index.json
+     */
+    it('should create session-level index file', async () => {
+      const sessionId = 'sess-20250112-001';
+      
+      await manager.initializeSession(sessionId);
+      
+      const indexPath = path.join(
+        tempDir, '.claude', 'logs', 'sessions', sessionId, 'index.json'
+      );
+      
+      assert.ok(fs.existsSync(indexPath), 'Session index file should exist');
+      
+      const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+      assert.equal(index.session_id, sessionId);
+      assert.deepEqual(index.entries, [], 'entries should be empty array initially');
+    });
+
+    /**
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 1.2:
+     * Global index: index.json
+     */
+    it('should update global index when session is created', async () => {
+      const sessionId = 'sess-20250112-001';
+      
+      await manager.initializeSession(sessionId);
+      
+      const globalIndexPath = path.join(tempDir, '.claude', 'logs', 'index.json');
+      
+      assert.ok(fs.existsSync(globalIndexPath), 'Global index file should exist');
+      
+      const globalIndex = JSON.parse(fs.readFileSync(globalIndexPath, 'utf-8'));
+      assert.ok(globalIndex.sessions, 'sessions array should exist');
+      assert.ok(
+        globalIndex.sessions.some((s: { session_id: string }) => s.session_id === sessionId),
+        'Session should be in global index'
+      );
+    });
+  });
+
+  describe('Thread Management', () => {
+    /**
+     * Per spec 05_DATA_MODELS.md Section "Thread":
+     * thread_id format: thr_<連番>
+     */
+    it('should create thread with correct ID format', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      
+      const thread = await manager.createThread(sessionId, 'main', 'Create TypeScript file');
+      
+      assert.ok(thread.thread_id.startsWith('thr-'), 'Thread ID should start with thr-');
+      assert.equal(thread.session_id, sessionId);
+      assert.equal(thread.thread_type, 'main');
+      assert.equal(thread.description, 'Create TypeScript file');
+      assert.ok(thread.created_at, 'created_at should be set');
+    });
+
+    /**
+     * Per spec 05_DATA_MODELS.md Section "ThreadType":
+     * main | background | system
+     */
+    it('should support all thread types', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      
+      const mainThread = await manager.createThread(sessionId, 'main');
+      const bgThread = await manager.createThread(sessionId, 'background');
+      const sysThread = await manager.createThread(sessionId, 'system');
+      
+      assert.equal(mainThread.thread_type, 'main');
+      assert.equal(bgThread.thread_type, 'background');
+      assert.equal(sysThread.thread_type, 'system');
+    });
+
+    it('should add thread to session metadata', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      
+      const thread = await manager.createThread(sessionId, 'main', 'Test');
+      
+      const sessionMeta = await manager.getSessionMetadata(sessionId);
+      assert.ok(
+        sessionMeta.threads.some((t: { thread_id: string }) => t.thread_id === thread.thread_id),
+        'Thread should be in session metadata'
+      );
+    });
+  });
+
+  describe('Run Management', () => {
+    /**
+     * Per spec 05_DATA_MODELS.md Section "Run":
+     * run_id format: run_<連番>
+     */
+    it('should create run with correct ID format', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      const thread = await manager.createThread(sessionId, 'main');
+      
+      const run = await manager.createRun(sessionId, thread.thread_id, 'USER_INPUT');
+      
+      assert.ok(run.run_id.startsWith('run-'), 'Run ID should start with run-');
+      assert.equal(run.thread_id, thread.thread_id);
+      assert.equal(run.session_id, sessionId);
+      assert.equal(run.trigger, 'USER_INPUT');
+      assert.equal(run.status, 'RUNNING');
+      assert.ok(run.started_at, 'started_at should be set');
+      assert.equal(run.completed_at, null, 'completed_at should be null initially');
+    });
+
+    /**
+     * Per spec 05_DATA_MODELS.md Section "RunTrigger":
+     * USER_INPUT | USER_RESPONSE | CONTINUATION | EXECUTOR
+     */
+    it('should support all run triggers', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      const thread = await manager.createThread(sessionId, 'main');
+      
+      const run1 = await manager.createRun(sessionId, thread.thread_id, 'USER_INPUT');
+      const run2 = await manager.createRun(sessionId, thread.thread_id, 'USER_RESPONSE');
+      const run3 = await manager.createRun(sessionId, thread.thread_id, 'CONTINUATION');
+      const run4 = await manager.createRun(sessionId, thread.thread_id, 'EXECUTOR');
+      
+      assert.equal(run1.trigger, 'USER_INPUT');
+      assert.equal(run2.trigger, 'USER_RESPONSE');
+      assert.equal(run3.trigger, 'CONTINUATION');
+      assert.equal(run4.trigger, 'EXECUTOR');
+    });
+
+    /**
+     * Per spec 05_DATA_MODELS.md Section "RunStatus":
+     * RUNNING | COMPLETED | FAILED | CANCELLED
+     */
+    it('should update run status correctly', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      const thread = await manager.createThread(sessionId, 'main');
+      const run = await manager.createRun(sessionId, thread.thread_id, 'USER_INPUT');
+      
+      assert.equal(run.status, 'RUNNING');
+      
+      await manager.completeRun(sessionId, run.run_id, 'COMPLETED');
+      const completedRun = await manager.getRun(sessionId, run.run_id);
+      
+      assert.equal(completedRun?.status, 'COMPLETED');
+      assert.ok(completedRun?.completed_at, 'completed_at should be set after completion');
+    });
+  });
+
+  describe('Task with Thread/Run Context', () => {
+    /**
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 2.3:
+     * Tasks have parent_task_id, thread_id, run_id
+     */
+    it('should create task with thread and run context', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      const thread = await manager.createThread(sessionId, 'main');
+      const run = await manager.createRun(sessionId, thread.thread_id, 'USER_INPUT');
+      
+      const task = await manager.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+      
+      assert.ok(task.task_id.startsWith('task-'), 'Task ID should start with task-');
+      assert.equal(task.session_id, sessionId);
+      assert.equal(task.thread_id, thread.thread_id);
+      assert.equal(task.run_id, run.run_id);
+      assert.equal(task.parent_task_id, null, 'Root task should have null parent');
+    });
+
+    /**
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 2.3:
+     * parent_task_id references must be within same Thread
+     */
+    it('should create child task with parent reference', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      const thread = await manager.createThread(sessionId, 'main');
+      const run = await manager.createRun(sessionId, thread.thread_id, 'USER_INPUT');
+      
+      const parentTask = await manager.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+      const childTask = await manager.createTaskWithContext(
+        sessionId, thread.thread_id, run.run_id, parentTask.task_id
+      );
+      
+      assert.equal(childTask.parent_task_id, parentTask.task_id);
+    });
+
+    /**
+     * Per spec: parent_task_id must be within same Thread
+     */
+    it('should reject parent from different thread', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      const thread1 = await manager.createThread(sessionId, 'main');
+      const thread2 = await manager.createThread(sessionId, 'background');
+      const run1 = await manager.createRun(sessionId, thread1.thread_id, 'USER_INPUT');
+      const run2 = await manager.createRun(sessionId, thread2.thread_id, 'EXECUTOR');
+      
+      const parentTask = await manager.createTaskWithContext(sessionId, thread1.thread_id, run1.run_id);
+      
+      await assert.rejects(
+        () => manager.createTaskWithContext(sessionId, thread2.thread_id, run2.run_id, parentTask.task_id),
+        /parent_task_id must be within same thread/
+      );
+    });
+  });
+
+  describe('Task Log Entry with Hierarchy Fields', () => {
+    /**
+     * Per spec 05_DATA_MODELS.md Section "TaskLogEntry":
+     * Includes thread_id, run_id, parent_task_id
+     */
+    it('should include hierarchy fields in task log entry', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      const thread = await manager.createThread(sessionId, 'main');
+      const run = await manager.createRun(sessionId, thread.thread_id, 'USER_INPUT');
+      
+      await manager.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+      
+      const index = await manager.getSessionIndex(sessionId);
+      const entry = index.entries[0];
+      
+      assert.equal(entry.thread_id, thread.thread_id, 'Entry should have thread_id');
+      assert.equal(entry.run_id, run.run_id, 'Entry should have run_id');
+      assert.equal(entry.parent_task_id, null, 'Root task should have null parent_task_id');
+    });
+  });
+
+  describe('ID Generation', () => {
+    /**
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 2.4:
+     * IDs should be sequential within session
+     */
+    it('should generate sequential task IDs within session', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      const thread = await manager.createThread(sessionId, 'main');
+      const run = await manager.createRun(sessionId, thread.thread_id, 'USER_INPUT');
+      
+      const task1 = await manager.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+      const task2 = await manager.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+      const task3 = await manager.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+      
+      // Extract numeric part and check sequential
+      const extractNum = (id: string) => parseInt(id.replace('task-', ''), 10);
+      
+      assert.ok(extractNum(task2.task_id) > extractNum(task1.task_id));
+      assert.ok(extractNum(task3.task_id) > extractNum(task2.task_id));
+    });
+
+    it('should generate sequential thread IDs within session', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      
+      const thread1 = await manager.createThread(sessionId, 'main');
+      const thread2 = await manager.createThread(sessionId, 'background');
+      
+      const extractNum = (id: string) => parseInt(id.replace('thr-', ''), 10);
+      
+      assert.ok(extractNum(thread2.thread_id) > extractNum(thread1.thread_id));
+    });
+  });
+
+  describe('Visibility Control - Two-Layer Viewing', () => {
+    /**
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 3:
+     * Default is summary level
+     */
+    it('should default to summary visibility level', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      const thread = await manager.createThread(sessionId, 'main');
+      const run = await manager.createRun(sessionId, thread.thread_id, 'USER_INPUT');
+      const task = await manager.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+      
+      // Add both summary and full events
+      await manager.addEventWithSession(task.task_id, sessionId, 'USER_INPUT', { text: 'Hello' });
+      await manager.addEventWithSession(task.task_id, sessionId, 'EXECUTOR_OUTPUT', { output_summary: 'Done' });
+      
+      const detail = await manager.getTaskDetailWithSession(task.task_id, sessionId);
+      
+      // Default should only show summary events
+      assert.ok(detail.events.some(e => e.event_type === 'USER_INPUT'));
+      assert.ok(!detail.events.some(e => e.event_type === 'EXECUTOR_OUTPUT'));
+    });
+
+    it('should show all events with full visibility', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      const thread = await manager.createThread(sessionId, 'main');
+      const run = await manager.createRun(sessionId, thread.thread_id, 'USER_INPUT');
+      const task = await manager.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+      
+      await manager.addEventWithSession(task.task_id, sessionId, 'USER_INPUT', { text: 'Hello' });
+      await manager.addEventWithSession(task.task_id, sessionId, 'EXECUTOR_OUTPUT', { output_summary: 'Done' });
+      
+      const detail = await manager.getTaskDetailWithSession(task.task_id, sessionId, 'full');
+      
+      assert.ok(detail.events.some(e => e.event_type === 'USER_INPUT'));
+      assert.ok(detail.events.some(e => e.event_type === 'EXECUTOR_OUTPUT'));
+    });
+  });
+
+  describe('Tree View Format', () => {
+    /**
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 2.5:
+     * /logs --tree shows Thread/Run/Task hierarchy
+     */
+    it('should format tree view correctly', async () => {
+      const sessionId = 'sess-20250112-001';
+      await manager.initializeSession(sessionId);
+      
+      // Create hierarchy: Thread -> Run -> Tasks
+      const thread = await manager.createThread(sessionId, 'main', 'Create TypeScript file');
+      const run = await manager.createRun(sessionId, thread.thread_id, 'USER_INPUT');
+      const task1 = await manager.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+      const task2 = await manager.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+      
+      await manager.addEventWithSession(task1.task_id, sessionId, 'USER_INPUT', { 
+        text: 'Create a new TypeScript file' 
+      });
+      await manager.addEventWithSession(task2.task_id, sessionId, 'RUNNER_CLARIFICATION', { 
+        question: 'What should be the file name?' 
+      });
+      
+      const treeOutput = await manager.formatTreeView(sessionId);
+      
+      // Verify tree structure elements
+      assert.ok(treeOutput.includes('Session:'), 'Should show session');
+      assert.ok(treeOutput.includes(thread.thread_id), 'Should show thread ID');
+      assert.ok(treeOutput.includes(run.run_id), 'Should show run ID');
+      assert.ok(treeOutput.includes(task1.task_id), 'Should show task IDs');
+    });
+  });
+});
+
+describe('TaskLogManager - Error Handling', () => {
+  let tempDir: string;
+  let manager: TaskLogManager;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'task-log-test-'));
+    fs.mkdirSync(path.join(tempDir, '.claude'), { recursive: true });
+    manager = new TaskLogManager(tempDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  /**
+   * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 9.1:
+   * Log write failures should not stop task execution
+   */
+  it('should handle corrupted session index gracefully', async () => {
+    const sessionId = 'sess-20250112-001';
+    await manager.initializeSession(sessionId);
+    
+    // Corrupt the index file
+    const indexPath = path.join(
+      tempDir, '.claude', 'logs', 'sessions', sessionId, 'index.json'
+    );
+    fs.writeFileSync(indexPath, 'not-valid-json');
+    
+    // Should return empty entries, not throw
+    const index = await manager.getSessionIndex(sessionId);
+    assert.deepEqual(index.entries, []);
+  });
+
+  it('should return null for non-existent task', async () => {
+    const sessionId = 'sess-20250112-001';
+    await manager.initializeSession(sessionId);
+    
+    const log = await manager.getTaskLogWithSession('non-existent-task', sessionId);
+    assert.equal(log, null);
+  });
+});

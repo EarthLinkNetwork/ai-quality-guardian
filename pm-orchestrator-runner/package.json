@@ -1,0 +1,59 @@
+{
+  "name": "pm-orchestrator-runner",
+  "version": "1.0.5",
+  "description": "CLI tool that enforces controlled execution of Claude Code through mandatory orchestration",
+  "main": "dist/cli/index.js",
+  "bin": {
+    "pm": "dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "mocha --require ts-node/register 'test/**/*.test.ts'",
+    "test:unit": "mocha --require ts-node/register 'test/unit/**/*.test.ts'",
+    "test:property": "mocha --require ts-node/register 'test/property/**/*.test.ts'",
+    "test:integration": "mocha --require ts-node/register 'test/integration/**/*.test.ts'",
+    "coverage": "nyc npm test",
+    "lint": "eslint src/**/*.ts test/**/*.ts",
+    "typecheck": "tsc --noEmit",
+    "llm:sentinel": "ts-node src/cli/llm-sentinel.ts",
+    "llm:test:real": "LLM_TEST_MODE=1 mocha --require ts-node/register 'test/integration/real-llm-mediation.test.ts' 'test/integration/verdict-gate-open.test.ts'",
+    "llm:test:verdict": "mocha --require ts-node/register 'test/unit/mediation/verdict-reporter.test.ts'"
+  },
+  "keywords": [
+    "pm-orchestrator",
+    "claude-code",
+    "runner"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/chai": "^5.2.3",
+    "@types/minimatch": "^5.1.2",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.10.0",
+    "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.52.0",
+    "@typescript-eslint/parser": "^8.52.0",
+    "chai": "^6.2.2",
+    "eslint": "^8.55.0",
+    "fast-check": "^3.15.0",
+    "mocha": "^10.2.0",
+    "nyc": "^15.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "minimatch": "^9.0.0",
+    "uuid": "^10.0.0",
+    "yaml": "^2.8.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
