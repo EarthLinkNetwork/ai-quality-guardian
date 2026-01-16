@@ -65,6 +65,7 @@ const session_1 = require("../models/session");
 const error_codes_1 = require("../errors/error-codes");
 const claude_code_executor_1 = require("../executor/claude-code-executor");
 const deterministic_executor_1 = require("../executor/deterministic-executor");
+const recovery_executor_1 = require("../executor/recovery-executor");
 /**
  * Runner Core Error
  */
@@ -197,6 +198,11 @@ class RunnerCore extends events_1.EventEmitter {
             // Use injected executor if provided (for testing), otherwise create real executor
             if (this.options.executor) {
                 this.claudeCodeExecutor = this.options.executor;
+            }
+            else if ((0, recovery_executor_1.isRecoveryMode)()) {
+                // PM_EXECUTOR_MODE=recovery-stub: Use recovery executor for E2E recovery testing
+                // Simulates TIMEOUT/BLOCKED/FAIL_CLOSED scenarios
+                this.claudeCodeExecutor = new recovery_executor_1.RecoveryExecutor();
             }
             else if ((0, deterministic_executor_1.isDeterministicMode)()) {
                 // CLI_TEST_MODE=1: Use deterministic executor for testing

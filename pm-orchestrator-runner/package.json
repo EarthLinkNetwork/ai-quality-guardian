@@ -23,7 +23,8 @@
     "llm:sentinel": "ts-node src/cli/llm-sentinel.ts",
     "llm:test:real": "LLM_TEST_MODE=1 mocha --require ts-node/register 'test/integration/real-llm-mediation.test.ts' 'test/integration/verdict-gate-open.test.ts'",
     "llm:test:verdict": "mocha --require ts-node/register 'test/unit/mediation/verdict-reporter.test.ts'",
-    "e2e:smoke": "ts-node scripts/e2e-smoke.ts"
+    "e2e:smoke": "ts-node scripts/e2e-smoke.ts",
+    "e2e:recovery": "ts-node scripts/e2e-recovery.ts"
   },
   "keywords": [
     "pm-orchestrator",

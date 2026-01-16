@@ -42,6 +42,7 @@ import { Session, SessionStatus } from '../models/session';
 import { ErrorCode, getErrorMessage } from '../errors/error-codes';
 import { ClaudeCodeExecutor, ExecutorResult, IExecutor, ExecutorConfig } from '../executor/claude-code-executor';
 import { DeterministicExecutor, isDeterministicMode } from '../executor/deterministic-executor';
+import { RecoveryExecutor, isRecoveryMode } from '../executor/recovery-executor';
 import { ClarificationReason } from '../mediation/llm-mediation-layer';
 
 /**
@@ -373,6 +374,10 @@ export class RunnerCore extends EventEmitter {
       // Use injected executor if provided (for testing), otherwise create real executor
       if (this.options.executor) {
         this.claudeCodeExecutor = this.options.executor;
+      } else if (isRecoveryMode()) {
+        // PM_EXECUTOR_MODE=recovery-stub: Use recovery executor for E2E recovery testing
+        // Simulates TIMEOUT/BLOCKED/FAIL_CLOSED scenarios
+        this.claudeCodeExecutor = new RecoveryExecutor();
       } else if (isDeterministicMode()) {
         // CLI_TEST_MODE=1: Use deterministic executor for testing
         // Per spec 06_CORRECTNESS_PROPERTIES.md Property 37: Deterministic testing
