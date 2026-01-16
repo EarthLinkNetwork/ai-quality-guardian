@@ -1,1 +1,3 @@
 .env.local
+.claude/
+node_modules/
