@@ -1334,3 +1334,73 @@ EOF
 ```
 
 参照: spec/10_REPL_UX.md (即時サマリ出力), spec/05_DATA_MODELS.md (TaskLogStatus)
+
+---
+
+## Property 40 Test Executor Production Safety
+
+Runner はテスト用 Executor（recovery-stub 等）が本番環境で有効化されることを絶対に許容してはならない。
+
+1. 環境検出
+
+本番環境は以下の条件で判定する：
+
+```
+NODE_ENV === 'production'
+```
+
+2. テスト用 Executor の定義
+
+テスト用 Executor とは、E2E テストやリカバリテスト専用に設計された Executor であり、以下の環境変数で有効化される：
+
+| 環境変数 | 値 | 用途 |
+|----------|-----|------|
+| `PM_EXECUTOR_MODE` | `recovery-stub` | リカバリシナリオテスト用 |
+
+3. 本番安全ガード（必須）
+
+```
+if (NODE_ENV === 'production' && PM_EXECUTOR_MODE === 'recovery-stub'):
+    即座に process.exit(1) で終了
+    stderr に "[FATAL] recovery-stub is forbidden in production" を出力
+```
+
+4. 警告出力（必須）
+
+テスト用 Executor が有効化された場合、以下の警告を stdout に出力すること：
+
+```
+WARNING: recovery-stub enabled (test-only)
+```
+
+5. Evidence マーカー（必須）
+
+テスト用 Executor による実行結果には以下のマーカーを含めること：
+
+```
+mode=recovery-stub
+```
+
+6. Fail-Closed Conditions
+
+以下の状態は仕様違反とする：
+
+- 本番環境でテスト用 Executor が有効化される
+- 本番環境で `PM_EXECUTOR_MODE=recovery-stub` が黙認される
+- テスト用 Executor 有効化時に警告が出力されない
+- Evidence に `mode=recovery-stub` マーカーが含まれない
+
+7. 検証方法
+
+```bash
+# テストケース: 本番環境での拒否検証
+NODE_ENV=production PM_EXECUTOR_MODE=recovery-stub node dist/cli/index.js repl
+# 期待: exit code 1, stderr に FATAL メッセージ
+
+# テストケース: 非本番環境での警告出力
+PM_EXECUTOR_MODE=recovery-stub PM_RECOVERY_SCENARIO=blocked node dist/cli/index.js repl
+# 期待: stdout に "WARNING: recovery-stub enabled (test-only)"
+# 期待: stdout に "mode=recovery-stub"
+```
+
+参照: src/executor/recovery-executor.ts, scripts/e2e-recovery.ts

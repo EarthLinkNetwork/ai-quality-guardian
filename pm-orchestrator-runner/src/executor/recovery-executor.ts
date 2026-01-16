@@ -4,6 +4,16 @@
  * Purpose: Simulate TIMEOUT, BLOCKED, and FAIL_CLOSED scenarios
  * to verify wrapper recovery behavior.
  *
+ * ========================================
+ * SAFETY: TEST-ONLY COMPONENT
+ * ========================================
+ * This executor is designed ONLY for E2E testing.
+ * Production safety mechanisms:
+ *   1. Requires explicit PM_EXECUTOR_MODE=recovery-stub
+ *   2. Rejects activation when NODE_ENV=production
+ *   3. Prints warning to stdout on activation
+ *   4. All output contains mode=recovery-stub marker
+ *
  * Activation:
  *   PM_EXECUTOR_MODE=recovery-stub
  *   PM_RECOVERY_SCENARIO=timeout|blocked|fail-closed
@@ -12,6 +22,12 @@
  *   TIMEOUT: Block indefinitely until watchdog kills (hard timeout)
  *   BLOCKED: Return output with interactive prompt patterns
  *   FAIL_CLOSED: Return ERROR status immediately
+ *
+ * E2E Verification Criteria:
+ *   - Wrapper must recover from all scenarios
+ *   - Exit code must be 0, 1, or 2 (graceful termination)
+ *   - Immediate Summary must be visible (RESULT/TASK/HINT)
+ *   - No RUNNING residue in session state
  */
 
 import type {
@@ -27,10 +43,46 @@ import type { BlockedReason, TerminatedBy } from '../models/enums';
 export type RecoveryScenario = 'timeout' | 'blocked' | 'fail-closed';
 
 /**
+ * Check if running in production environment
+ */
+export function isProductionEnvironment(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
+/**
  * Check if recovery mode is enabled
+ *
+ * SAFETY: Returns false if NODE_ENV=production
  */
 export function isRecoveryMode(): boolean {
+  // Production safety: reject recovery-stub in production
+  if (isProductionEnvironment()) {
+    return false;
+  }
   return process.env.PM_EXECUTOR_MODE === 'recovery-stub';
+}
+
+/**
+ * Attempt to enable recovery mode in production
+ * This will fail-closed with process.exit(1) if attempted
+ *
+ * Call this early in the process to catch production misuse
+ */
+export function assertRecoveryModeAllowed(): void {
+  if (process.env.PM_EXECUTOR_MODE === 'recovery-stub' && isProductionEnvironment()) {
+    console.error('[FATAL] recovery-stub is forbidden in production (NODE_ENV=production)');
+    console.error('[FATAL] mode=recovery-stub rejected');
+    process.exit(1);
+  }
+}
+
+/**
+ * Print warning when recovery mode is activated
+ * This MUST be visible in stdout for E2E verification
+ */
+export function printRecoveryModeWarning(): void {
+  console.log('WARNING: recovery-stub enabled (test-only)');
+  console.log('mode=recovery-stub');
 }
 
 /**
@@ -49,11 +101,15 @@ export function getRecoveryScenario(): RecoveryScenario | null {
  *
  * Simulates failure scenarios that require wrapper recovery.
  * Each scenario tests a different recovery path.
+ *
+ * SAFETY: Constructor prints warning to stdout
  */
 export class RecoveryExecutor implements IExecutor {
   private scenario: RecoveryScenario;
 
   constructor(scenario?: RecoveryScenario) {
+    // Print warning on construction (visible in stdout)
+    printRecoveryModeWarning();
     this.scenario = scenario || getRecoveryScenario() || 'timeout';
   }
 
@@ -66,6 +122,8 @@ export class RecoveryExecutor implements IExecutor {
     const startTime = Date.now();
     const cwd = task.workingDir;
 
+    // Evidence marker for E2E verification
+    console.log(`[RecoveryExecutor] mode=recovery-stub`);
     console.log(`[RecoveryExecutor] Scenario: ${this.scenario}, task: ${task.id}`);
 
     switch (this.scenario) {
@@ -189,8 +247,13 @@ export class RecoveryExecutor implements IExecutor {
 
 /**
  * Create recovery executor if in recovery mode
+ *
+ * SAFETY: Calls assertRecoveryModeAllowed() to reject production usage
  */
 export function createRecoveryExecutor(): IExecutor | null {
+  // Early fail-closed for production misuse
+  assertRecoveryModeAllowed();
+
   if (isRecoveryMode()) {
     const scenario = getRecoveryScenario();
     if (scenario) {

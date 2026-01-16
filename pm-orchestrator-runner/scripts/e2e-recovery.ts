@@ -40,6 +40,12 @@ const IMMEDIATE_SUMMARY_PATTERNS = {
   hint: /^HINT:\s*\/logs/m,
 };
 
+// Recovery stub safety verification patterns
+const RECOVERY_STUB_SAFETY_PATTERNS = {
+  warning: /WARNING: recovery-stub enabled \(test-only\)/,
+  modeMarker: /mode=recovery-stub/,
+};
+
 // Recovery scenario types
 type RecoveryScenario = 'timeout' | 'blocked' | 'fail-closed';
 
@@ -58,6 +64,11 @@ interface ScenarioResult {
   };
   runningResidue: boolean;
   sessionStateCheck: SessionStateCheck | null;
+  hasSafetyMarkers: boolean;
+  safetyFields: {
+    warning: boolean;
+    modeMarker: boolean;
+  };
   errorMessage?: string;
   durationMs: number;
 }
@@ -202,6 +213,28 @@ function checkImmediateSummary(stdout: string): {
 }
 
 /**
+ * Check for recovery-stub safety markers in output
+ *
+ * These markers prove that:
+ *   1. Warning was printed (test-only indication)
+ *   2. mode=recovery-stub is in evidence (for audit)
+ */
+function checkSafetyMarkers(stdout: string): {
+  hasSafetyMarkers: boolean;
+  fields: { warning: boolean; modeMarker: boolean };
+} {
+  const fields = {
+    warning: RECOVERY_STUB_SAFETY_PATTERNS.warning.test(stdout),
+    modeMarker: RECOVERY_STUB_SAFETY_PATTERNS.modeMarker.test(stdout),
+  };
+
+  // Both warning and mode marker are required for safety verification
+  const hasSafetyMarkers = fields.warning && fields.modeMarker;
+
+  return { hasSafetyMarkers, fields };
+}
+
+/**
  * Check for RUNNING residue from stdout (fallback)
  */
 function checkRunningResidueFromStdout(stdout: string): boolean {
@@ -292,6 +325,9 @@ async function runRecoveryScenario(
       // Check Immediate Summary
       const { hasImmediateSummary, fields } = checkImmediateSummary(stdout);
 
+      // Check for recovery-stub safety markers
+      const { hasSafetyMarkers, fields: safetyFields } = checkSafetyMarkers(stdout);
+
       // Check for RUNNING residue
       const sessionStateCheck = checkSessionState(tempProjectPath);
       const runningResidue = sessionStateCheck
@@ -315,7 +351,7 @@ async function runRecoveryScenario(
       // Save immediate summary check
       fs.writeFileSync(
         path.join(logDir, `${scenarioName}-summary-check.json`),
-        JSON.stringify({ hasImmediateSummary, fields }, null, 2)
+        JSON.stringify({ hasImmediateSummary, fields, hasSafetyMarkers, safetyFields }, null, 2)
       );
 
       // Determine pass/fail
@@ -325,14 +361,15 @@ async function runRecoveryScenario(
       if (timedOut) {
         errorMessage = 'Test process timed out (wrapper failed to recover)';
       } else {
-        // Recovery scenarios:
+        // Recovery scenarios verification criteria:
         // - Wrapper must terminate gracefully (exit code 0, 1, or 2 - not null/crash)
         // - Immediate Summary must be visible (RESULT/TASK/HINT)
         // - No RUNNING residue in session state
+        // - Safety markers must be present (WARNING + mode=recovery-stub)
         // Note: Exit code 1 (ERROR) or 2 (INCOMPLETE) is acceptable for recovery scenarios
         // because the executor intentionally returns error/blocked status
         const gracefulExit = exitCode !== null && exitCode >= 0 && exitCode <= 2;
-        passed = gracefulExit && hasImmediateSummary && !runningResidue;
+        passed = gracefulExit && hasImmediateSummary && !runningResidue && hasSafetyMarkers;
         if (!passed) {
           const reasons: string[] = [];
           if (!gracefulExit) reasons.push(`exitCode=${exitCode} (expected 0-2)`);
@@ -340,6 +377,9 @@ async function runRecoveryScenario(
             reasons.push(`summary: RESULT=${fields.result}, TASK=${fields.task}, HINT=${fields.hint}`);
           }
           if (runningResidue) reasons.push('runningResidue=true');
+          if (!hasSafetyMarkers) {
+            reasons.push(`safety: warning=${safetyFields.warning}, modeMarker=${safetyFields.modeMarker}`);
+          }
           errorMessage = `${scenario}: ${reasons.join(', ')}`;
         }
       }
@@ -354,6 +394,8 @@ async function runRecoveryScenario(
         immeditateSummaryFields: fields,
         runningResidue,
         sessionStateCheck,
+        hasSafetyMarkers,
+        safetyFields,
         errorMessage,
         durationMs,
       });
@@ -371,6 +413,8 @@ async function runRecoveryScenario(
         immeditateSummaryFields: { result: false, task: false, next: false, hint: false },
         runningResidue: false,
         sessionStateCheck: null,
+        hasSafetyMarkers: false,
+        safetyFields: { warning: false, modeMarker: false },
         errorMessage: `Process error: ${err.message}`,
         durationMs: Date.now() - startTime,
       });

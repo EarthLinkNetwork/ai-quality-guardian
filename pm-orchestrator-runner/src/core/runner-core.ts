@@ -42,7 +42,7 @@ import { Session, SessionStatus } from '../models/session';
 import { ErrorCode, getErrorMessage } from '../errors/error-codes';
 import { ClaudeCodeExecutor, ExecutorResult, IExecutor, ExecutorConfig } from '../executor/claude-code-executor';
 import { DeterministicExecutor, isDeterministicMode } from '../executor/deterministic-executor';
-import { RecoveryExecutor, isRecoveryMode } from '../executor/recovery-executor';
+import { RecoveryExecutor, isRecoveryMode, assertRecoveryModeAllowed } from '../executor/recovery-executor';
 import { ClarificationReason } from '../mediation/llm-mediation-layer';
 
 /**
@@ -371,6 +371,9 @@ export class RunnerCore extends EventEmitter {
 
     // Initialize Claude Code Executor if enabled
     if (this.options.useClaudeCode) {
+      // SAFETY: Reject recovery-stub in production (fail-closed with exit 1)
+      assertRecoveryModeAllowed();
+
       // Use injected executor if provided (for testing), otherwise create real executor
       if (this.options.executor) {
         this.claudeCodeExecutor = this.options.executor;
