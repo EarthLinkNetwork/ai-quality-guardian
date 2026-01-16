@@ -2,9 +2,13 @@
 
 ## 1. ローカル起動（REPL）
 
+**起動方法**
+
 ```bash
 node dist/cli/index.js repl
 ```
+
+**利用可能コマンド**
 
 | コマンド | 説明 |
 |----------|------|
@@ -17,6 +21,8 @@ node dist/cli/index.js repl
 
 ## 2. 非対話実行
 
+**実行例**
+
 ```bash
 node dist/cli/index.js repl --non-interactive --exit-on-eof <<EOF
 /init
@@ -24,7 +30,7 @@ node dist/cli/index.js repl --non-interactive --exit-on-eof <<EOF
 EOF
 ```
 
-**Immediate Summary の読み方:**
+**Immediate Summary の読み方**
 
 | フィールド | 意味 |
 |------------|------|
@@ -36,19 +42,23 @@ EOF
 ## 3. 検証
 
 ```bash
-npm test              # ユニットテスト
-npm run e2e:smoke     # スモークテスト (10回)
-npm run e2e:recovery  # リカバリテスト (10回)
-npm pack              # パッケージ作成
+npm test
+npm run e2e:smoke
+npm run e2e:recovery
+npm pack
 ```
 
 ## 4. recovery-stub（テスト専用）
+
+**実行例**
 
 ```bash
 PM_EXECUTOR_MODE=recovery-stub PM_RECOVERY_SCENARIO=timeout node dist/cli/index.js repl
 PM_EXECUTOR_MODE=recovery-stub PM_RECOVERY_SCENARIO=blocked node dist/cli/index.js repl
 PM_EXECUTOR_MODE=recovery-stub PM_RECOVERY_SCENARIO=fail-closed node dist/cli/index.js repl
 ```
+
+**注意事項**
 
 - `NODE_ENV=production` では必ず拒否される（exit 1）
 - 有効化時は `WARNING: recovery-stub enabled` と `mode=recovery-stub` が出力される
