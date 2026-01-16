@@ -134,6 +134,12 @@ interface ExecutionConfig {
 /**
  * Execution result
  */
+/**
+ * Executor mode for visibility
+ * Per redesign: Users need to see which executor is being used
+ */
+type ExecutorMode = 'claude-code' | 'api' | 'stub' | 'recovery-stub' | 'deterministic' | 'none';
+
 interface ExecutionResult {
   session_id: string;
   overall_status: OverallStatus;
@@ -148,6 +154,14 @@ interface ExecutionResult {
   original_prompt?: string;
   error?: Error;
   incomplete_task_reasons?: Array<{ task_id: string; reason: string }>;
+  /** Executor mode used for this execution (visibility) */
+  executor_mode?: ExecutorMode;
+  /** Summary of executor output (visibility) */
+  executor_output_summary?: string;
+  /** Files modified during execution (visibility) */
+  files_modified?: string[];
+  /** Execution duration in ms */
+  duration_ms?: number;
 }
 
 /**
@@ -275,6 +289,12 @@ export class RunnerCore extends EventEmitter {
   // Claude Code Executor for natural language task execution
   private claudeCodeExecutor: IExecutor | null = null;
 
+  // Executor visibility tracking (per redesign)
+  private currentExecutorMode: ExecutorMode = 'none';
+  private lastExecutorOutput: string = '';
+  private lastFilesModified: string[] = [];
+  private lastExecutionDurationMs: number = 0;
+
   // TaskLogManager for Property 26/27: TaskLog Lifecycle Recording
   // Per spec 06_CORRECTNESS_PROPERTIES.md Property 26: Fail-Closed Logging
   private taskLogManager: TaskLogManager | null = null;
@@ -377,19 +397,23 @@ export class RunnerCore extends EventEmitter {
       // Use injected executor if provided (for testing), otherwise create real executor
       if (this.options.executor) {
         this.claudeCodeExecutor = this.options.executor;
+        this.currentExecutorMode = 'stub'; // Injected = test stub
       } else if (isRecoveryMode()) {
         // PM_EXECUTOR_MODE=recovery-stub: Use recovery executor for E2E recovery testing
         // Simulates TIMEOUT/BLOCKED/FAIL_CLOSED scenarios
         this.claudeCodeExecutor = new RecoveryExecutor();
+        this.currentExecutorMode = 'recovery-stub';
       } else if (isDeterministicMode()) {
         // CLI_TEST_MODE=1: Use deterministic executor for testing
         // Per spec 06_CORRECTNESS_PROPERTIES.md Property 37: Deterministic testing
         this.claudeCodeExecutor = new DeterministicExecutor();
+        this.currentExecutorMode = 'deterministic';
       } else {
         this.claudeCodeExecutor = new ClaudeCodeExecutor({
           projectPath: targetProject,
           timeout: this.options.claudeCodeTimeout || 120000, // 2 minutes default
         });
+        this.currentExecutorMode = 'claude-code';
       }
     }
 
@@ -489,6 +513,11 @@ export class RunnerCore extends EventEmitter {
       const clarificationTask = this.taskResults.find(r => r.clarification_needed);
       const hasClarification = !!clarificationTask;
 
+      // Create summary of executor output (first 200 chars for visibility)
+      const outputSummary = this.lastExecutorOutput.length > 200
+        ? this.lastExecutorOutput.substring(0, 200) + '...'
+        : this.lastExecutorOutput;
+
       return {
         session_id: this.session.session_id,
         overall_status: this.overallStatus,
@@ -505,6 +534,11 @@ export class RunnerCore extends EventEmitter {
         original_prompt: hasClarification ? clarificationTask.original_prompt : undefined,
         error: this.errorEvidence.length > 0 ? this.errorEvidence[0].error : undefined,
         incomplete_task_reasons: this.incompleteReasons.length > 0 ? this.incompleteReasons : undefined,
+        // Visibility fields (per redesign)
+        executor_mode: this.currentExecutorMode,
+        executor_output_summary: outputSummary || undefined,
+        files_modified: this.lastFilesModified.length > 0 ? this.lastFilesModified : undefined,
+        duration_ms: this.lastExecutionDurationMs > 0 ? this.lastExecutionDurationMs : undefined,
       };
     } catch (error) {
       this.triggerCriticalError(error as Error);
@@ -516,6 +550,8 @@ export class RunnerCore extends EventEmitter {
         tasks_total: config.tasks.length,
         next_action: false,
         error: error as Error,
+        // Include executor mode even on error (per redesign)
+        executor_mode: this.currentExecutorMode,
       };
     }
   }
@@ -593,12 +629,15 @@ export class RunnerCore extends EventEmitter {
     };
 
     // Property 26: Create TaskLog at task start (Fail-Closed - all terminal states)
+    // Pass external task ID from REPL to ensure ID consistency between UI and logs
     let taskLog: TaskLog | null = null;
     if (this.taskLogManager && this.session && this.taskLogThread && this.taskLogRun) {
       taskLog = await this.taskLogManager.createTaskWithContext(
         this.session.session_id,
         this.taskLogThread.thread_id,
-        this.taskLogRun.run_id
+        this.taskLogRun.run_id,
+        undefined,  // parentTaskId
+        task.id     // externalTaskId - use REPL-provided task ID
       );
       // Add TASK_STARTED event
       await this.taskLogManager.addEventWithSession(
@@ -685,6 +724,11 @@ export class RunnerCore extends EventEmitter {
             workingDir: this.session.target_project,
             selectedModel: this.currentSelectedModel,
           });
+
+          // Save executor output for visibility (per redesign)
+          this.lastExecutorOutput = executorResult.output || '';
+          this.lastFilesModified = executorResult.files_modified || [];
+          this.lastExecutionDurationMs = executorResult.duration_ms || 0;
 
           executionLog.push(`[${new Date().toISOString()}] Claude Code execution completed`);
           executionLog.push(`[${new Date().toISOString()}] Executed: ${executorResult.executed}`);
@@ -887,6 +931,11 @@ export class RunnerCore extends EventEmitter {
           break;
       }
 
+      // Per redesign: Create response summary (truncate to 200 chars)
+      const responseSummary = this.lastExecutorOutput.length > 200
+        ? this.lastExecutorOutput.substring(0, 200) + '...'
+        : this.lastExecutorOutput;
+
       await this.taskLogManager.completeTaskWithSession(
         taskLog.task_id,
         this.session.session_id,
@@ -895,12 +944,16 @@ export class RunnerCore extends EventEmitter {
         undefined, // evidenceRef
         result.error?.message,
         // Per spec 10_REPL_UX.md Section 10: Pass executor blocking info (Property 34-36)
-        executorBlockingInfo.executor_blocked !== undefined ? {
+        // Per redesign: Pass visibility fields (description, executorMode, responseSummary)
+        {
           executorBlocked: executorBlockingInfo.executor_blocked,
           blockedReason: executorBlockingInfo.blocked_reason,
           timeoutMs: executorBlockingInfo.timeout_ms,
           terminatedBy: executorBlockingInfo.terminated_by,
-        } : undefined
+          description: task.naturalLanguageTask || task.description,
+          executorMode: this.currentExecutorMode,
+          responseSummary: responseSummary || undefined,
+        }
       );
     }
 

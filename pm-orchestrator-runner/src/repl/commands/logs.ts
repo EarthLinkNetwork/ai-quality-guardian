@@ -86,17 +86,39 @@ export class LogsCommand {
    * Get task detail
    * Per spec 10_REPL_UX.md: /logs <task-id> shows details (Layer 2)
    * Per spec 06_CORRECTNESS_PROPERTIES.md Property 25: --full for executor logs
+   * Per redesign: Shows visibility fields from TaskLogEntry
    *
    * @param projectPath - Project path
    * @param taskId - Task ID
    * @param full - Show full details (executor logs)
+   * @param sessionId - Session ID (optional, for getting TaskLogEntry with visibility fields)
    * @returns Logs result
    */
-  async getTaskDetail(projectPath: string, taskId: string, full: boolean = false): Promise<LogsResult> {
+  async getTaskDetail(projectPath: string, taskId: string, full: boolean = false, sessionId?: string): Promise<LogsResult> {
     try {
       const manager = this.ensureLogManager(projectPath);
       const visibility: VisibilityLevel = full ? 'full' : 'summary';
-      const { log, events } = await manager.getTaskDetail(taskId, visibility);
+
+      // Try to get with session context if sessionId provided
+      let log;
+      let events;
+      let entry;
+
+      if (sessionId) {
+        // Use session-based methods for visibility fields
+        const result = await manager.getTaskDetailWithSession(taskId, sessionId, visibility);
+        log = result.log;
+        events = result.events;
+
+        // Get the TaskLogEntry for visibility fields
+        const index = await manager.getSessionIndex(sessionId);
+        entry = index.entries.find(e => e.task_id === taskId);
+      } else {
+        // Fallback to legacy method
+        const result = await manager.getTaskDetail(taskId, visibility);
+        log = result.log;
+        events = result.events;
+      }
 
       if (!log) {
         return {
@@ -109,7 +131,7 @@ export class LogsCommand {
         };
       }
 
-      const output = manager.formatTaskDetail(taskId, log, events, full);
+      const output = manager.formatTaskDetail(taskId, log, events, full, entry);
 
       return {
         success: true,

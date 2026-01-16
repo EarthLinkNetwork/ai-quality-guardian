@@ -810,17 +810,15 @@ export class REPLInterface extends EventEmitter {
       return;
     }
 
+    // Auto-start session for any natural language input (no /start required)
+    // Per redesign: natural language input = automatic task creation
     if (this.session.status !== 'running') {
-      // In non-interactive mode, auto-start a session for better UX
-      if (this.executionMode === 'non_interactive') {
-        console.log('[DEBUG processNaturalLanguage] auto-starting session for non-interactive mode');
-        const startResult = await this.handleStart([]);
-        if (!startResult.success) {
-          this.print('Failed to auto-start session: ' + (startResult.error?.message || 'Unknown error'));
-          return;
-        }
-      } else {
-        this.print('No active session. Use /start to begin, or /init to set up a new project.');
+      console.log('[DEBUG processNaturalLanguage] auto-starting session');
+      this.print('');
+      this.print('[Auto-starting session...]');
+      const startResult = await this.handleStart([]);
+      if (!startResult.success) {
+        this.print('Failed to auto-start session: ' + (startResult.error?.message || 'Unknown error'));
         return;
       }
     }
@@ -835,8 +833,23 @@ export class REPLInterface extends EventEmitter {
     const taskId = 'task-' + Date.now();
     this.session.current_task_id = taskId;
 
-    this.print('Processing task: ' + input);
+    // Display task start info (per redesign: visibility)
+    // Per user requirement: Provider/Mode/Auth must be shown at task start
+    this.print('');
+    this.print('--- Task Started ---');
     this.print('Task ID: ' + taskId);
+    // Show LLM layer info (Provider/Mode/Auth) - per redesign requirement
+    if (this.config.authMode === 'claude-code') {
+      this.print('Provider: Claude Code CLI (uses your Claude subscription, no API key required)');
+    } else if (this.config.authMode === 'api-key') {
+      this.print('Provider: Anthropic API (API key configured)');
+    } else {
+      this.print('Provider: ' + this.config.authMode);
+    }
+    // Show prompt summary (first 100 chars)
+    const promptSummary = input.length > 100 ? input.substring(0, 100) + '...' : input;
+    this.print('Prompt: ' + promptSummary);
+    this.print('--------------------');
     this.print('');
 
     try {
@@ -1245,10 +1258,12 @@ export class REPLInterface extends EventEmitter {
       // /logs <task-id> [--full]
       const taskId = args[0];
       const full = args.includes('--full');
+      // Per redesign: Pass sessionId for visibility fields
       const result = await this.logsCommand.getTaskDetail(
         this.session.projectPath,
         taskId,
-        full
+        full,
+        this.session.sessionId ?? undefined
       );
       if (result.success) {
         this.print(result.output || 'No log detail found.');
@@ -1526,6 +1541,11 @@ export class REPLInterface extends EventEmitter {
     next_action_reason?: string;
     error?: Error;
     incomplete_task_reasons?: Array<{ task_id: string; reason: string }>;
+    // Visibility fields (per redesign)
+    executor_mode?: string;
+    executor_output_summary?: string;
+    files_modified?: string[];
+    duration_ms?: number;
   }): void {
     // Get task ID from session tracking
     const taskId = this.session.current_task_id || this.session.last_task_id || 'unknown';
@@ -1561,6 +1581,17 @@ export class REPLInterface extends EventEmitter {
     this.print('--- Execution Result ---');
     this.print('Status: ' + result.overall_status);
 
+    // Display executor mode (per redesign: visibility)
+    if (result.executor_mode) {
+      this.print('Executor: ' + result.executor_mode);
+    }
+
+    // Display duration (per redesign: visibility)
+    if (result.duration_ms !== undefined && result.duration_ms > 0) {
+      const seconds = (result.duration_ms / 1000).toFixed(1);
+      this.print('Duration: ' + seconds + 's');
+    }
+
     if (result.tasks_completed !== undefined) {
       this.print('Tasks: ' + result.tasks_completed + '/' + result.tasks_total + ' completed');
 
@@ -1571,8 +1602,25 @@ export class REPLInterface extends EventEmitter {
       }
     }
 
+    // Display files modified (per redesign: visibility)
+    if (result.files_modified && result.files_modified.length > 0) {
+      this.print('');
+      this.print('Files Modified:');
+      for (const file of result.files_modified) {
+        this.print('  - ' + file);
+      }
+    }
+
+    // Display executor output summary (per redesign: visibility)
+    if (result.executor_output_summary) {
+      this.print('');
+      this.print('Response Summary:');
+      this.print('  ' + result.executor_output_summary);
+    }
+
     // Display error details when status is ERROR (critical for debugging fail-closed behavior)
     if (result.error) {
+      this.print('');
       this.print('Error: ' + result.error.message);
       if ((result.error as Error & { code?: string }).code) {
         this.print('Error Code: ' + (result.error as Error & { code?: string }).code);
@@ -1584,6 +1632,7 @@ export class REPLInterface extends EventEmitter {
 
     // Display incomplete task reasons (helps identify why tasks failed)
     if (result.incomplete_task_reasons && result.incomplete_task_reasons.length > 0) {
+      this.print('');
       this.print('Incomplete Tasks:');
       for (const reason of result.incomplete_task_reasons) {
         this.print('  - ' + reason.task_id + ': ' + reason.reason);
@@ -1602,6 +1651,17 @@ export class REPLInterface extends EventEmitter {
     if (result.overall_status === OverallStatus.INCOMPLETE) {
       this.hasIncompleteTasks = true;
       this.updateExitCode();
+    }
+
+    // NO_EVIDENCE handling: show next action hint (per redesign requirement)
+    // Per user requirement: NO_EVIDENCE should not complete silently
+    if (result.overall_status === OverallStatus.NO_EVIDENCE) {
+      this.print('');
+      this.print('HINT: No file changes were verified for this task.');
+      this.print('  Possible next actions:');
+      this.print('    - Check /logs for execution details');
+      this.print('    - Retry with more specific instructions');
+      this.print('    - Use /status to see current session state');
     }
 
     if (result.next_action !== undefined) {

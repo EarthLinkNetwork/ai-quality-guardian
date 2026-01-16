@@ -50,13 +50,15 @@ export declare class LogsCommand {
      * Get task detail
      * Per spec 10_REPL_UX.md: /logs <task-id> shows details (Layer 2)
      * Per spec 06_CORRECTNESS_PROPERTIES.md Property 25: --full for executor logs
+     * Per redesign: Shows visibility fields from TaskLogEntry
      *
      * @param projectPath - Project path
      * @param taskId - Task ID
      * @param full - Show full details (executor logs)
+     * @param sessionId - Session ID (optional, for getting TaskLogEntry with visibility fields)
      * @returns Logs result
      */
-    getTaskDetail(projectPath: string, taskId: string, full?: boolean): Promise<LogsResult>;
+    getTaskDetail(projectPath: string, taskId: string, full?: boolean, sessionId?: string): Promise<LogsResult>;
     /**
      * Create a new task log
      * Called when starting a new task

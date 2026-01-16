@@ -12,6 +12,7 @@ import type { BlockedReason, TerminatedBy } from '../models/enums';
 /**
  * Options for completing a task
  * Per spec 10_REPL_UX.md Section 10: Executor blocking fields (Property 34-36)
+ * Per redesign: Visibility fields for task description, executor mode, and response
  */
 export interface CompleteTaskOptions {
     filesModified?: string[];
@@ -25,6 +26,12 @@ export interface CompleteTaskOptions {
     timeoutMs?: number;
     /** How the executor was terminated */
     terminatedBy?: TerminatedBy;
+    /** Task description/prompt summary (per redesign: visibility) */
+    description?: string;
+    /** Executor mode used (per redesign: visibility) */
+    executorMode?: string;
+    /** Response summary from executor (per redesign: visibility) */
+    responseSummary?: string;
 }
 /**
  * Log directory structure
@@ -130,8 +137,14 @@ export declare class TaskLogManager {
     /**
      * Create a task with thread/run context
      * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 2.3
+     *
+     * @param sessionId - Session ID
+     * @param threadId - Thread ID
+     * @param runId - Run ID
+     * @param parentTaskId - Optional parent task ID
+     * @param externalTaskId - Optional external task ID (from REPL). If provided, use this instead of generating.
      */
-    createTaskWithContext(sessionId: string, threadId: string, runId: string, parentTaskId?: string): Promise<TaskLog>;
+    createTaskWithContext(sessionId: string, threadId: string, runId: string, parentTaskId?: string, externalTaskId?: string): Promise<TaskLog>;
     /**
      * Increment task count in global index
      */
@@ -204,12 +217,14 @@ export declare class TaskLogManager {
     }>;
     /**
      * Format task list for REPL display (legacy)
+     * Per redesign: Shows task description for visibility
      */
     formatTaskList(entries: TaskLogEntry[], sessionId: string): string;
     /**
      * Format task detail for REPL display (legacy)
+     * Per redesign: Shows summary section with description, executor mode, files modified, and response
      */
-    formatTaskDetail(taskId: string, log: TaskLog, events: LogEvent[], isFull: boolean): string;
+    formatTaskDetail(taskId: string, log: TaskLog, events: LogEvent[], isFull: boolean, entry?: TaskLogEntry): string;
 }
 export { LOG_DIR, INDEX_FILE, TASKS_DIR, RAW_DIR, SESSIONS_DIR, SESSION_FILE };
 //# sourceMappingURL=task-log-manager.d.ts.map

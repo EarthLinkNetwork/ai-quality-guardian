@@ -13,11 +13,40 @@ node dist/cli/index.js repl
 | コマンド | 説明 |
 |----------|------|
 | `/init` | セッション初期化 |
-| `/start <prompt>` | タスク実行開始 |
 | `/tasks` | タスク一覧表示 |
 | `/logs` | セッションのログ一覧 |
 | `/logs <task-id>` | 指定タスクの詳細表示 |
 | `/exit` | REPL終了 |
+
+**タスク実行**
+
+自然言語入力で自動的にタスクが開始されます（/start不要）。
+
+```
+> READMEファイルを作成してください
+[Auto-starting session...]
+
+--- Task Started ---
+Task ID: task-1737104556789
+Provider: Claude Code CLI (uses your Claude subscription, no API key required)
+Prompt: READMEファイルを作成してください
+--------------------
+
+... 実行中 ...
+
+--- Execution Result ---
+Status: COMPLETE
+Executor: claude-code
+Duration: 12.3s
+Tasks: 1/1 completed
+
+Files Modified:
+  - README.md
+
+Response Summary:
+  README.mdを作成しました...
+------------------------
+```
 
 ## 2. 非対話実行
 
@@ -26,7 +55,7 @@ node dist/cli/index.js repl
 ```bash
 node dist/cli/index.js repl --non-interactive --exit-on-eof <<EOF
 /init
-/start Fix the bug in src/main.ts
+Fix the bug in src/main.ts
 EOF
 ```
 
@@ -38,6 +67,16 @@ EOF
 | TASK | 実行したタスクID |
 | NEXT | 推奨される次のアクション |
 | HINT | /logs 等のヒント |
+
+**Execution Result の読み方**
+
+| フィールド | 意味 |
+|------------|------|
+| Status | 実行状態（COMPLETE / INCOMPLETE / ERROR） |
+| Executor | 使用したExecutor（claude-code / deterministic / recovery-stub） |
+| Duration | 実行時間 |
+| Files Modified | 変更されたファイル一覧 |
+| Response Summary | LLM応答の要約（先頭200文字） |
 
 ## 3. 検証
 

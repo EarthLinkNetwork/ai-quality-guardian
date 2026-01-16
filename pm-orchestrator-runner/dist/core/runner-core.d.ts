@@ -104,6 +104,11 @@ interface ExecutionConfig {
 /**
  * Execution result
  */
+/**
+ * Executor mode for visibility
+ * Per redesign: Users need to see which executor is being used
+ */
+type ExecutorMode = 'claude-code' | 'api' | 'stub' | 'recovery-stub' | 'deterministic' | 'none';
 interface ExecutionResult {
     session_id: string;
     overall_status: OverallStatus;
@@ -121,6 +126,14 @@ interface ExecutionResult {
         task_id: string;
         reason: string;
     }>;
+    /** Executor mode used for this execution (visibility) */
+    executor_mode?: ExecutorMode;
+    /** Summary of executor output (visibility) */
+    executor_output_summary?: string;
+    /** Files modified during execution (visibility) */
+    files_modified?: string[];
+    /** Execution duration in ms */
+    duration_ms?: number;
 }
 /**
  * Check result for resource limits
@@ -226,6 +239,10 @@ export declare class RunnerCore extends EventEmitter {
     private elapsedTimeOverride;
     private initialized;
     private claudeCodeExecutor;
+    private currentExecutorMode;
+    private lastExecutorOutput;
+    private lastFilesModified;
+    private lastExecutionDurationMs;
     private taskLogManager;
     private taskLogThread;
     private taskLogRun;

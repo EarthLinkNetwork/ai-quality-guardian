@@ -234,6 +234,7 @@ export interface TaskLog {
  * TaskLogEntry structure (for index) with hierarchy fields
  * Per spec 05_DATA_MODELS.md
  * Per spec 13_LOGGING_AND_OBSERVABILITY.md - Property 34-36 executor blocking fields
+ * Per redesign: includes description and executor_mode for visibility
  */
 export interface TaskLogEntry {
   task_id: string;
@@ -247,6 +248,14 @@ export interface TaskLogEntry {
   files_modified_count: number;
   tests_run_count: number;
   log_file: string;
+  /** Task description/prompt summary (per redesign: visibility) */
+  description?: string;
+  /** Executor mode used (per redesign: visibility) */
+  executor_mode?: string;
+  /** Files that were modified (per redesign: visibility) */
+  files_modified?: string[];
+  /** Response summary from executor (per redesign: visibility) */
+  response_summary?: string;
   /** Executor blocked in non-interactive mode (Property 34-36) */
   executor_blocked?: boolean;
   /** Blocking reason - required when executor_blocked is true */

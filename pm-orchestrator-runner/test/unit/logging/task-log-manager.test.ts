@@ -443,8 +443,301 @@ describe('TaskLogManager - Error Handling', () => {
   it('should return null for non-existent task', async () => {
     const sessionId = 'sess-20250112-001';
     await manager.initializeSession(sessionId);
-    
+
     const log = await manager.getTaskLogWithSession('non-existent-task', sessionId);
     assert.equal(log, null);
+  });
+});
+
+/**
+ * Redesign Visibility Tests
+ *
+ * Per redesign requirements:
+ * - Auto-start: Natural language input = automatic task creation
+ * - Visibility: Show executor mode, prompt, response, files modified
+ * - /logs redesign: Show description and files in list view
+ */
+describe('TaskLogManager - Redesign Visibility Features', () => {
+  let tempDir: string;
+  let manager: TaskLogManager;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'task-log-visibility-'));
+    fs.mkdirSync(path.join(tempDir, '.claude'), { recursive: true });
+    manager = new TaskLogManager(tempDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  describe('CompleteTaskOptions with visibility fields', () => {
+    /**
+     * Per redesign: Task completion should save description, executorMode, responseSummary
+     */
+    it('should save visibility fields when completing task', async () => {
+      const sessionId = 'sess-visibility-001';
+
+      await manager.initializeSession(sessionId);
+      const taskLog = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      const taskId = taskLog.task_id;
+
+      await manager.completeTaskWithSession(taskId, sessionId, 'COMPLETE', ['src/app.ts', 'src/utils.ts'], undefined, undefined, {
+        description: 'Add user authentication feature',
+        executorMode: 'autonomous',
+        responseSummary: 'Successfully implemented JWT authentication with login/logout endpoints',
+      });
+
+      const index = await manager.getSessionIndex(sessionId);
+      const entry = index.entries.find(e => e.task_id === taskId);
+
+      assert.ok(entry, 'Entry should exist');
+      assert.equal(entry.description, 'Add user authentication feature');
+      assert.equal(entry.executor_mode, 'autonomous');
+      assert.equal(entry.response_summary, 'Successfully implemented JWT authentication with login/logout endpoints');
+      assert.deepEqual(entry.files_modified, ['src/app.ts', 'src/utils.ts']);
+    });
+
+    it('should handle missing visibility fields gracefully', async () => {
+      const sessionId = 'sess-visibility-002';
+
+      await manager.initializeSession(sessionId);
+      const taskLog = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      const taskId = taskLog.task_id;
+
+      // Complete without visibility fields
+      await manager.completeTaskWithSession(taskId, sessionId, 'COMPLETE', []);
+
+      const index = await manager.getSessionIndex(sessionId);
+      const entry = index.entries.find(e => e.task_id === taskId);
+
+      assert.ok(entry, 'Entry should exist');
+      assert.equal(entry.description, undefined);
+      assert.equal(entry.executor_mode, undefined);
+      assert.equal(entry.response_summary, undefined);
+    });
+  });
+
+  describe('formatTaskList with visibility fields', () => {
+    /**
+     * Per redesign: Task list should show description and files
+     */
+    it('should show task description in list view', async () => {
+      const sessionId = 'sess-format-001';
+
+      await manager.initializeSession(sessionId);
+      const taskLog = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      const taskId = taskLog.task_id;
+      await manager.completeTaskWithSession(taskId, sessionId, 'COMPLETE', ['src/app.ts'], undefined, undefined, {
+        description: 'Implement login feature',
+        executorMode: 'autonomous',
+      });
+
+      const entries = await manager.getTaskList(sessionId);
+      const output = manager.formatTaskList(entries, sessionId);
+
+      assert.ok(output.includes('Implement login feature'), 'Should show task description');
+    });
+
+    it('should show status icons correctly', async () => {
+      const sessionId = 'sess-format-002';
+
+      await manager.initializeSession(sessionId);
+
+      // Create COMPLETE task
+      const task1 = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      await manager.completeTaskWithSession(task1.task_id, sessionId, 'COMPLETE', []);
+
+      // Create ERROR task
+      const task2 = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      await manager.completeTaskWithSession(task2.task_id, sessionId, 'ERROR', []);
+
+      const entries = await manager.getTaskList(sessionId);
+      const output = manager.formatTaskList(entries, sessionId);
+
+      assert.ok(output.includes('[OK]'), 'Should show [OK] for COMPLETE');
+      assert.ok(output.includes('[ERR]'), 'Should show [ERR] for ERROR');
+    });
+
+    it('should show files modified count', async () => {
+      const sessionId = 'sess-format-003';
+
+      await manager.initializeSession(sessionId);
+      const taskLog = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      const taskId = taskLog.task_id;
+      await manager.completeTaskWithSession(taskId, sessionId, 'COMPLETE', ['a.ts', 'b.ts', 'c.ts'], undefined, undefined, {
+        description: 'Multi-file change',
+      });
+
+      const entries = await manager.getTaskList(sessionId);
+      const output = manager.formatTaskList(entries, sessionId);
+
+      assert.ok(output.includes('Files: 3'), 'Should show files count');
+    });
+
+    it('should show executor mode', async () => {
+      const sessionId = 'sess-format-004';
+
+      await manager.initializeSession(sessionId);
+      const taskLog = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      const taskId = taskLog.task_id;
+      await manager.completeTaskWithSession(taskId, sessionId, 'COMPLETE', [], undefined, undefined, {
+        description: 'Test task',
+        executorMode: 'interactive',
+      });
+
+      const entries = await manager.getTaskList(sessionId);
+      const output = manager.formatTaskList(entries, sessionId);
+
+      assert.ok(output.includes('interactive'), 'Should show executor mode');
+    });
+
+    it('should truncate long descriptions', async () => {
+      const sessionId = 'sess-format-005';
+      const longDesc = 'A'.repeat(100);
+
+      await manager.initializeSession(sessionId);
+      const taskLog = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      const taskId = taskLog.task_id;
+      await manager.completeTaskWithSession(taskId, sessionId, 'COMPLETE', [], undefined, undefined, {
+        description: longDesc,
+      });
+
+      const entries = await manager.getTaskList(sessionId);
+      const output = manager.formatTaskList(entries, sessionId);
+
+      assert.ok(output.includes('...'), 'Should truncate with ...');
+      assert.ok(!output.includes(longDesc), 'Should not include full long description');
+    });
+  });
+
+  describe('formatTaskDetail with visibility fields', () => {
+    /**
+     * Per redesign: Task detail should show executor mode, prompt, response summary
+     */
+    it('should show Prompt section in detail view', async () => {
+      const sessionId = 'sess-detail-001';
+
+      await manager.initializeSession(sessionId);
+      const taskLog = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      const taskId = taskLog.task_id;
+      await manager.completeTaskWithSession(taskId, sessionId, 'COMPLETE', [], undefined, undefined, {
+        description: 'Create a REST API endpoint for users',
+        executorMode: 'autonomous',
+      });
+
+      const { log, events } = await manager.getTaskDetailWithSession(taskId, sessionId, 'summary');
+      const index = await manager.getSessionIndex(sessionId);
+      const entry = index.entries.find(e => e.task_id === taskId);
+      const output = manager.formatTaskDetail(taskId, log!, events, false, entry);
+
+      assert.ok(output.includes('Prompt'), 'Should have Prompt section');
+      assert.ok(output.includes('Create a REST API endpoint for users'), 'Should show description');
+    });
+
+    it('should show Response Summary section', async () => {
+      const sessionId = 'sess-detail-002';
+
+      await manager.initializeSession(sessionId);
+      const taskLog = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      const taskId = taskLog.task_id;
+      await manager.completeTaskWithSession(taskId, sessionId, 'COMPLETE', [], undefined, undefined, {
+        description: 'Fix login bug',
+        responseSummary: 'Fixed the authentication issue by updating the JWT validation logic',
+      });
+
+      const { log, events } = await manager.getTaskDetailWithSession(taskId, sessionId, 'summary');
+      const index = await manager.getSessionIndex(sessionId);
+      const entry = index.entries.find(e => e.task_id === taskId);
+      const output = manager.formatTaskDetail(taskId, log!, events, false, entry);
+
+      assert.ok(output.includes('Response Summary'), 'Should have Response Summary section');
+      assert.ok(output.includes('Fixed the authentication issue'), 'Should show response summary');
+    });
+
+    it('should show Files Modified section', async () => {
+      const sessionId = 'sess-detail-003';
+
+      await manager.initializeSession(sessionId);
+      const taskLog = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      const taskId = taskLog.task_id;
+      await manager.completeTaskWithSession(taskId, sessionId, 'COMPLETE', ['src/auth.ts', 'src/middleware.ts'], undefined, undefined, {
+        description: 'Update auth',
+      });
+
+      const { log, events } = await manager.getTaskDetailWithSession(taskId, sessionId, 'summary');
+      const index = await manager.getSessionIndex(sessionId);
+      const entry = index.entries.find(e => e.task_id === taskId);
+      const output = manager.formatTaskDetail(taskId, log!, events, false, entry);
+
+      assert.ok(output.includes('Files Modified'), 'Should have Files Modified section');
+      assert.ok(output.includes('src/auth.ts'), 'Should show modified files');
+      assert.ok(output.includes('src/middleware.ts'), 'Should show modified files');
+    });
+
+    it('should show Summary with executor mode', async () => {
+      const sessionId = 'sess-detail-004';
+
+      await manager.initializeSession(sessionId);
+      const taskLog = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      const taskId = taskLog.task_id;
+      await manager.completeTaskWithSession(taskId, sessionId, 'COMPLETE', [], undefined, undefined, {
+        description: 'Test task',
+        executorMode: 'interactive',
+      });
+
+      const { log, events } = await manager.getTaskDetailWithSession(taskId, sessionId, 'summary');
+      const index = await manager.getSessionIndex(sessionId);
+      const entry = index.entries.find(e => e.task_id === taskId);
+      const output = manager.formatTaskDetail(taskId, log!, events, false, entry);
+
+      assert.ok(output.includes('Summary'), 'Should have Summary section');
+      assert.ok(output.includes('interactive'), 'Should show executor mode');
+    });
+
+    it('should show executor blocking info when blocked', async () => {
+      const sessionId = 'sess-detail-005';
+
+      await manager.initializeSession(sessionId);
+      const taskLog = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      const taskId = taskLog.task_id;
+      await manager.completeTaskWithSession(taskId, sessionId, 'INCOMPLETE', [], undefined, undefined, {
+        description: 'Blocked task',
+        executorBlocked: true,
+        blockedReason: 'INTERACTIVE_PROMPT',
+        timeoutMs: 30000,
+        terminatedBy: 'TIMEOUT',
+      });
+
+      const { log, events } = await manager.getTaskDetailWithSession(taskId, sessionId, 'summary');
+      const index = await manager.getSessionIndex(sessionId);
+      const entry = index.entries.find(e => e.task_id === taskId);
+      const output = manager.formatTaskDetail(taskId, log!, events, false, entry);
+
+      assert.ok(output.includes('=== BLOCKED ==='), 'Should have BLOCKED section');
+      assert.ok(output.includes('INTERACTIVE_PROMPT'), 'Should show blocking reason');
+    });
+  });
+
+  describe('No silent completion', () => {
+    /**
+     * Per redesign: Tasks must show visibility info, not complete silently
+     */
+    it('should always have status in formatted output', async () => {
+      const sessionId = 'sess-silent-001';
+
+      await manager.initializeSession(sessionId);
+      const taskLog = await manager.createTaskWithContext(sessionId, 'main-thread', 'run-001');
+      const taskId = taskLog.task_id;
+      await manager.completeTaskWithSession(taskId, sessionId, 'COMPLETE', []);
+
+      const entries = await manager.getTaskList(sessionId);
+      const output = manager.formatTaskList(entries, sessionId);
+
+      // Should always show status, not be empty or silent
+      assert.ok(output.length > 0, 'Output should not be empty');
+      assert.ok(output.includes('[OK]') || output.includes('[ERR]') || output.includes('[INC]') || output.includes('[...]'),
+        'Should always show status indicator');
+    });
   });
 });

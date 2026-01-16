@@ -345,14 +345,33 @@ class TaskLogManager {
                 entry.executor_blocked = options.executorBlocked;
                 entry.blocked_reason = options.blockedReason;
             }
+            // Per redesign: Record visibility fields
+            if (options?.description) {
+                entry.description = options.description;
+            }
+            if (options?.executorMode) {
+                entry.executor_mode = options.executorMode;
+            }
+            if (filesModified.length > 0) {
+                entry.files_modified = filesModified;
+            }
+            if (options?.responseSummary) {
+                entry.response_summary = options.responseSummary;
+            }
         }
         await this.saveSessionIndex(sessionId, index);
     }
     /**
      * Create a task with thread/run context
      * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 2.3
+     *
+     * @param sessionId - Session ID
+     * @param threadId - Thread ID
+     * @param runId - Run ID
+     * @param parentTaskId - Optional parent task ID
+     * @param externalTaskId - Optional external task ID (from REPL). If provided, use this instead of generating.
      */
-    async createTaskWithContext(sessionId, threadId, runId, parentTaskId) {
+    async createTaskWithContext(sessionId, threadId, runId, parentTaskId, externalTaskId) {
         await this.ensureSessionDirectories(sessionId);
         // Validate parent task is in same thread if specified
         if (parentTaskId) {
@@ -361,7 +380,8 @@ class TaskLogManager {
                 throw new Error('parent_task_id must be within same thread');
             }
         }
-        const taskId = this.generateTaskId(sessionId);
+        // Use external task ID if provided (from REPL), otherwise generate
+        const taskId = externalTaskId || this.generateTaskId(sessionId);
         const log = (0, task_log_1.createTaskLog)(taskId, sessionId, threadId, runId, parentTaskId ?? null);
         await this.saveTaskLogWithSession(log, sessionId);
         // Update session index
@@ -646,92 +666,162 @@ class TaskLogManager {
     }
     /**
      * Format task list for REPL display (legacy)
+     * Per redesign: Shows task description for visibility
      */
     formatTaskList(entries, sessionId) {
         if (entries.length === 0) {
             return 'No tasks logged for this session.';
         }
         let output = 'Task Logs (session: ' + sessionId + '):\n\n';
-        output += '  # | Task ID      | Status     | Duration | Files | Tests\n';
-        output += '  --|--------------|------------|----------|-------|------\n';
         entries.forEach((entry, index) => {
             const duration = entry.duration_ms > 0
                 ? (entry.duration_ms / 1000).toFixed(1) + 's'
                 : '-';
-            output += '  ' + (index + 1) + ' | ' +
-                entry.task_id.padEnd(12) + ' | ' +
-                entry.status.padEnd(10) + ' | ' +
-                duration.padEnd(8) + ' | ' +
-                String(entry.files_modified_count).padEnd(5) + ' | ' +
-                entry.tests_run_count + '\n';
+            // Status icon
+            let statusIcon = '';
+            if (entry.status === 'COMPLETE') {
+                statusIcon = '[OK]';
+            }
+            else if (entry.status === 'ERROR') {
+                statusIcon = '[ERR]';
+            }
+            else if (entry.status === 'INCOMPLETE') {
+                statusIcon = '[INC]';
+            }
+            else {
+                statusIcon = '[...]';
+            }
+            // Task line with description
+            output += '  ' + (index + 1) + '. ' + entry.task_id + ' ' + statusIcon + '\n';
+            // Description (truncated to 60 chars)
+            if (entry.description) {
+                const truncatedDesc = entry.description.length > 60
+                    ? entry.description.substring(0, 57) + '...'
+                    : entry.description;
+                output += '     Prompt: ' + truncatedDesc + '\n';
+            }
+            // Stats line
+            output += '     ' + duration + ' | Files: ' + entry.files_modified_count;
+            if (entry.executor_mode) {
+                output += ' | Mode: ' + entry.executor_mode;
+            }
+            if (entry.executor_blocked) {
+                output += ' | BLOCKED: ' + (entry.blocked_reason || 'unknown');
+            }
+            output += '\n';
+            // Files modified summary (if any)
+            if (entry.files_modified && entry.files_modified.length > 0) {
+                const filesDisplay = entry.files_modified.slice(0, 3).join(', ');
+                const moreCount = entry.files_modified.length > 3 ? ' +' + (entry.files_modified.length - 3) + ' more' : '';
+                output += '     Changed: ' + filesDisplay + moreCount + '\n';
+            }
+            output += '\n';
         });
-        output += '\nUse /logs <task-id> to view details.\n';
+        output += 'Use /logs <task-id> to view details.\n';
         output += 'Use /logs <task-id> --full for executor-level logs.';
         return output;
     }
     /**
      * Format task detail for REPL display (legacy)
+     * Per redesign: Shows summary section with description, executor mode, files modified, and response
      */
-    formatTaskDetail(taskId, log, events, isFull) {
-        let output = 'Task Log: ' + taskId;
+    formatTaskDetail(taskId, log, events, isFull, entry) {
+        let output = '--- Task Detail: ' + taskId + ' ---\n';
         if (isFull) {
-            output += ' (FULL)';
+            output += '(Full mode - showing all executor details)\n';
         }
-        output += '\n\n';
-        for (const event of events) {
-            const time = new Date(event.timestamp).toLocaleTimeString();
-            output += '[' + time + '] ' + event.event_type + '\n';
-            // Format content based on event type
-            if (event.content.text) {
-                output += '  "' + (0, sensitive_data_masker_1.maskSensitiveData)(event.content.text) + '"\n';
-            }
-            if (event.content.question) {
-                output += '  "' + (0, sensitive_data_masker_1.maskSensitiveData)(event.content.question) + '"\n';
-            }
-            if (event.content.action) {
-                output += '  Action: ' + event.content.action + '\n';
-            }
-            if (event.content.target_file) {
-                output += '  Target: ' + event.content.target_file + '\n';
-            }
-            if (event.content.status) {
-                output += '  Status: ' + event.content.status + '\n';
-            }
-            if (event.content.files_modified && event.content.files_modified.length > 0) {
-                output += '  Files modified: ' + event.content.files_modified.join(', ') + '\n';
-            }
-            if (event.content.evidence_ref) {
-                output += '  Evidence: ' + event.content.evidence_ref + '\n';
-            }
-            if (event.content.error_message) {
-                output += '  Error: ' + (0, sensitive_data_masker_1.maskSensitiveData)(event.content.error_message) + '\n';
-            }
-            // Full mode specific content
-            if (isFull) {
-                if (event.content.provider) {
-                    output += '  Provider: ' + event.content.provider + '\n';
-                }
-                if (event.content.model) {
-                    output += '  Model: ' + event.content.model + '\n';
-                }
-                if (event.content.tokens_input !== undefined) {
-                    output += '  Tokens: ' + event.content.tokens_input + ' input';
-                    if (event.content.tokens_output !== undefined) {
-                        output += ', ' + event.content.tokens_output + ' output';
-                    }
-                    output += '\n';
-                }
-                if (event.content.latency_ms !== undefined) {
-                    output += '  Latency: ' + event.content.latency_ms + 'ms\n';
-                }
-                if (event.content.exit_code !== undefined) {
-                    output += '  Exit code: ' + event.content.exit_code + '\n';
-                }
-                if (event.content.output_summary) {
-                    output += '  Output: ' + (0, sensitive_data_masker_1.maskSensitiveData)(event.content.output_summary) + '\n';
-                }
+        output += '\n';
+        // Per redesign: Show summary section at top with visibility fields
+        output += '=== Summary ===\n';
+        output += 'Status: ' + (entry?.status || 'UNKNOWN') + '\n';
+        if (entry?.duration_ms && entry.duration_ms > 0) {
+            output += 'Duration: ' + (entry.duration_ms / 1000).toFixed(1) + 's\n';
+        }
+        if (entry?.executor_mode) {
+            output += 'Executor: ' + entry.executor_mode + '\n';
+        }
+        output += '\n';
+        // Prompt/Description
+        if (entry?.description) {
+            output += '=== Prompt ===\n';
+            output += entry.description + '\n\n';
+        }
+        // Files Modified
+        if (entry?.files_modified && entry.files_modified.length > 0) {
+            output += '=== Files Modified (' + entry.files_modified.length + ') ===\n';
+            for (const file of entry.files_modified) {
+                output += '  - ' + file + '\n';
             }
             output += '\n';
+        }
+        // Response Summary
+        if (entry?.response_summary) {
+            output += '=== Response Summary ===\n';
+            output += entry.response_summary + '\n\n';
+        }
+        // Executor Blocking Info
+        if (entry?.executor_blocked) {
+            output += '=== BLOCKED ===\n';
+            output += 'Reason: ' + (entry.blocked_reason || 'unknown') + '\n\n';
+        }
+        // Event Log
+        if (events.length > 0) {
+            output += '=== Event Log ===\n';
+            for (const event of events) {
+                const time = new Date(event.timestamp).toLocaleTimeString();
+                output += '[' + time + '] ' + event.event_type + '\n';
+                // Format content based on event type
+                if (event.content.text) {
+                    output += '  "' + (0, sensitive_data_masker_1.maskSensitiveData)(event.content.text) + '"\n';
+                }
+                if (event.content.question) {
+                    output += '  "' + (0, sensitive_data_masker_1.maskSensitiveData)(event.content.question) + '"\n';
+                }
+                if (event.content.action) {
+                    output += '  Action: ' + event.content.action + '\n';
+                }
+                if (event.content.target_file) {
+                    output += '  Target: ' + event.content.target_file + '\n';
+                }
+                if (event.content.status) {
+                    output += '  Status: ' + event.content.status + '\n';
+                }
+                if (event.content.files_modified && event.content.files_modified.length > 0) {
+                    output += '  Files modified: ' + event.content.files_modified.join(', ') + '\n';
+                }
+                if (event.content.evidence_ref) {
+                    output += '  Evidence: ' + event.content.evidence_ref + '\n';
+                }
+                if (event.content.error_message) {
+                    output += '  Error: ' + (0, sensitive_data_masker_1.maskSensitiveData)(event.content.error_message) + '\n';
+                }
+                // Full mode specific content
+                if (isFull) {
+                    if (event.content.provider) {
+                        output += '  Provider: ' + event.content.provider + '\n';
+                    }
+                    if (event.content.model) {
+                        output += '  Model: ' + event.content.model + '\n';
+                    }
+                    if (event.content.tokens_input !== undefined) {
+                        output += '  Tokens: ' + event.content.tokens_input + ' input';
+                        if (event.content.tokens_output !== undefined) {
+                            output += ', ' + event.content.tokens_output + ' output';
+                        }
+                        output += '\n';
+                    }
+                    if (event.content.latency_ms !== undefined) {
+                        output += '  Latency: ' + event.content.latency_ms + 'ms\n';
+                    }
+                    if (event.content.exit_code !== undefined) {
+                        output += '  Exit code: ' + event.content.exit_code + '\n';
+                    }
+                    if (event.content.output_summary) {
+                        output += '  Output: ' + (0, sensitive_data_masker_1.maskSensitiveData)(event.content.output_summary) + '\n';
+                    }
+                }
+                output += '\n';
+            }
         }
         if (!isFull) {
             output += 'Use --full to see executor details.';

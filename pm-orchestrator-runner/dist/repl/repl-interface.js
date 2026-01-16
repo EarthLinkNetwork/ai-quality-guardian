@@ -647,18 +647,15 @@ class REPLInterface extends events_1.EventEmitter {
             this.print('HINT: /exit');
             return;
         }
+        // Auto-start session for any natural language input (no /start required)
+        // Per redesign: natural language input = automatic task creation
         if (this.session.status !== 'running') {
-            // In non-interactive mode, auto-start a session for better UX
-            if (this.executionMode === 'non_interactive') {
-                console.log('[DEBUG processNaturalLanguage] auto-starting session for non-interactive mode');
-                const startResult = await this.handleStart([]);
-                if (!startResult.success) {
-                    this.print('Failed to auto-start session: ' + (startResult.error?.message || 'Unknown error'));
-                    return;
-                }
-            }
-            else {
-                this.print('No active session. Use /start to begin, or /init to set up a new project.');
+            console.log('[DEBUG processNaturalLanguage] auto-starting session');
+            this.print('');
+            this.print('[Auto-starting session...]');
+            const startResult = await this.handleStart([]);
+            if (!startResult.success) {
+                this.print('Failed to auto-start session: ' + (startResult.error?.message || 'Unknown error'));
                 return;
             }
         }
@@ -670,8 +667,25 @@ class REPLInterface extends events_1.EventEmitter {
         // Per spec 05_DATA_MODELS.md Property 38
         const taskId = 'task-' + Date.now();
         this.session.current_task_id = taskId;
-        this.print('Processing task: ' + input);
+        // Display task start info (per redesign: visibility)
+        // Per user requirement: Provider/Mode/Auth must be shown at task start
+        this.print('');
+        this.print('--- Task Started ---');
         this.print('Task ID: ' + taskId);
+        // Show LLM layer info (Provider/Mode/Auth) - per redesign requirement
+        if (this.config.authMode === 'claude-code') {
+            this.print('Provider: Claude Code CLI (uses your Claude subscription, no API key required)');
+        }
+        else if (this.config.authMode === 'api-key') {
+            this.print('Provider: Anthropic API (API key configured)');
+        }
+        else {
+            this.print('Provider: ' + this.config.authMode);
+        }
+        // Show prompt summary (first 100 chars)
+        const promptSummary = input.length > 100 ? input.substring(0, 100) + '...' : input;
+        this.print('Prompt: ' + promptSummary);
+        this.print('--------------------');
         this.print('');
         try {
             // Per spec 10_REPL_UX.md L117-118: Get selected model from REPL config
@@ -1063,7 +1077,8 @@ class REPLInterface extends events_1.EventEmitter {
             // /logs <task-id> [--full]
             const taskId = args[0];
             const full = args.includes('--full');
-            const result = await this.logsCommand.getTaskDetail(this.session.projectPath, taskId, full);
+            // Per redesign: Pass sessionId for visibility fields
+            const result = await this.logsCommand.getTaskDetail(this.session.projectPath, taskId, full, this.session.sessionId ?? undefined);
             if (result.success) {
                 this.print(result.output || 'No log detail found.');
                 return { success: true };
@@ -1337,6 +1352,15 @@ class REPLInterface extends events_1.EventEmitter {
         this.print('');
         this.print('--- Execution Result ---');
         this.print('Status: ' + result.overall_status);
+        // Display executor mode (per redesign: visibility)
+        if (result.executor_mode) {
+            this.print('Executor: ' + result.executor_mode);
+        }
+        // Display duration (per redesign: visibility)
+        if (result.duration_ms !== undefined && result.duration_ms > 0) {
+            const seconds = (result.duration_ms / 1000).toFixed(1);
+            this.print('Duration: ' + seconds + 's');
+        }
         if (result.tasks_completed !== undefined) {
             this.print('Tasks: ' + result.tasks_completed + '/' + result.tasks_total + ' completed');
             // Track incomplete tasks for exit code (non-interactive mode)
@@ -1345,8 +1369,23 @@ class REPLInterface extends events_1.EventEmitter {
                 this.updateExitCode();
             }
         }
+        // Display files modified (per redesign: visibility)
+        if (result.files_modified && result.files_modified.length > 0) {
+            this.print('');
+            this.print('Files Modified:');
+            for (const file of result.files_modified) {
+                this.print('  - ' + file);
+            }
+        }
+        // Display executor output summary (per redesign: visibility)
+        if (result.executor_output_summary) {
+            this.print('');
+            this.print('Response Summary:');
+            this.print('  ' + result.executor_output_summary);
+        }
         // Display error details when status is ERROR (critical for debugging fail-closed behavior)
         if (result.error) {
+            this.print('');
             this.print('Error: ' + result.error.message);
             if (result.error.code) {
                 this.print('Error Code: ' + result.error.code);
@@ -1357,6 +1396,7 @@ class REPLInterface extends events_1.EventEmitter {
         }
         // Display incomplete task reasons (helps identify why tasks failed)
         if (result.incomplete_task_reasons && result.incomplete_task_reasons.length > 0) {
+            this.print('');
             this.print('Incomplete Tasks:');
             for (const reason of result.incomplete_task_reasons) {
                 this.print('  - ' + reason.task_id + ': ' + reason.reason);
@@ -1373,6 +1413,16 @@ class REPLInterface extends events_1.EventEmitter {
         if (result.overall_status === enums_1.OverallStatus.INCOMPLETE) {
             this.hasIncompleteTasks = true;
             this.updateExitCode();
+        }
+        // NO_EVIDENCE handling: show next action hint (per redesign requirement)
+        // Per user requirement: NO_EVIDENCE should not complete silently
+        if (result.overall_status === enums_1.OverallStatus.NO_EVIDENCE) {
+            this.print('');
+            this.print('HINT: No file changes were verified for this task.');
+            this.print('  Possible next actions:');
+            this.print('    - Check /logs for execution details');
+            this.print('    - Retry with more specific instructions');
+            this.print('    - Use /status to see current session state');
         }
         if (result.next_action !== undefined) {
             this.print('Next Action: ' + (result.next_action ? 'Yes' : 'No'));
