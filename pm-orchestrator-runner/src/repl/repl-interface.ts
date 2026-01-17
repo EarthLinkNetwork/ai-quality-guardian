@@ -12,7 +12,8 @@
  * - Deterministic Exit Code: 0=COMPLETE, 1=ERROR, 2=INCOMPLETE
  *
  * Project Mode (per spec 10_REPL_UX.md, Property 32, 33):
- * - temp: Use temporary directory (default, cleaned up on exit)
+ * - cwd: Use current working directory (DEFAULT per spec)
+ * - temp: Use temporary directory (cleaned up on exit)
  * - fixed: Use specified directory (persists after exit)
  */
 
@@ -44,10 +45,11 @@ import {
 /**
  * Project Mode - per spec 10_REPL_UX.md
  * Controls how verification_root is determined
- * - temp: Use temporary directory (default)
+ * - cwd: Use current working directory (DEFAULT per spec)
+ * - temp: Use temporary directory
  * - fixed: Use specified --project-root directory
  */
-export type ProjectMode = 'temp' | 'fixed';
+export type ProjectMode = 'cwd' | 'temp' | 'fixed';
 
 /**
  * Verified File record - per spec 06_CORRECTNESS_PROPERTIES.md Property 33
@@ -90,7 +92,8 @@ export interface REPLConfig {
   
   /**
    * Project mode - per spec 10_REPL_UX.md
-   * - 'temp': Use temporary directory for verification_root (default)
+   * - 'cwd': Use current working directory (DEFAULT per spec)
+   * - 'temp': Use temporary directory for verification_root
    * - 'fixed': Use projectRoot as verification_root
    */
   projectMode?: ProjectMode;
@@ -277,13 +280,17 @@ export class REPLInterface extends EventEmitter {
         throw new Error('project-root does not exist: ' + config.projectRoot);
       }
     }
-    
-    // Determine project mode
-    this.projectMode = config.projectMode || 'temp';
-    
+
+    // Determine project mode - per spec 10_REPL_UX.md: cwd is default
+    this.projectMode = config.projectMode || 'cwd';
+
     // Set verification root based on mode
     if (this.projectMode === 'fixed') {
       this.verificationRoot = config.projectRoot!;
+    } else if (this.projectMode === 'cwd') {
+      // CWD mode: use current working directory (DEFAULT per spec 10_REPL_UX.md)
+      // Per spec lines 74-83: カレントディレクトリをそのまま使用
+      this.verificationRoot = process.cwd();
     } else {
       // Temp mode: create temporary directory immediately (synchronous)
       // This ensures getVerificationRoot() always returns a valid path
@@ -303,12 +310,15 @@ export class REPLInterface extends EventEmitter {
       fs.writeFileSync(path.join(claudeDir, 'settings.json'), settingsContent, 'utf-8');
     }
     
-    // CRITICAL: In temp mode, use verificationRoot for projectPath and evidenceDir
-    // This ensures files are created in the temp directory, not process.cwd()
-    // In fixed mode, use projectRoot (from --project-root) if provided
+    // CRITICAL: Resolve projectPath based on mode
+    // - cwd mode: use process.cwd() (already set in verificationRoot)
+    // - temp mode: use verificationRoot (temp directory)
+    // - fixed mode: use projectRoot (from --project-root)
     const resolvedProjectPath = this.projectMode === 'temp'
       ? this.verificationRoot!
-      : (config.projectRoot || config.projectPath || process.cwd());
+      : this.projectMode === 'cwd'
+        ? this.verificationRoot!  // verificationRoot is process.cwd() in cwd mode
+        : (config.projectRoot || config.projectPath || process.cwd());
     this.config = {
       projectPath: resolvedProjectPath,
       evidenceDir: config.evidenceDir || path.join(resolvedProjectPath, '.claude', 'evidence'),
@@ -1506,13 +1516,18 @@ export class REPLInterface extends EventEmitter {
 
   /**
    * Handle /start command
-   * Per spec Property 32, 33: Use verification_root for file operations in temp mode
+   * Per spec Property 32, 33: Use verification_root for file operations
+   * - cwd mode: use process.cwd() (verificationRoot)
+   * - temp mode: use temp directory (verificationRoot)
+   * - fixed mode: use projectRoot
    */
   private async handleStart(args: string[]): Promise<CommandResult> {
-    // In temp mode, use verificationRoot for file operations
+    // In cwd/temp mode, use verificationRoot for file operations
     // In fixed mode or with explicit args, use the provided/session path
     const projectPath = args[0] ||
-      (this.projectMode === 'temp' ? this.verificationRoot : this.session.projectPath);
+      (this.projectMode === 'cwd' || this.projectMode === 'temp'
+        ? this.verificationRoot
+        : this.session.projectPath);
 
     try {
       const result = await this.sessionCommands.start(projectPath);

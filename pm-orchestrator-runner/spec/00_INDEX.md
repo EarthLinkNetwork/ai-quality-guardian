@@ -95,7 +95,8 @@
 
 - REPL-first UX（対話型実行環境）の追加仕様。
 - Claude Code / Codex と同等の使用感を提供するための UX レイヤー定義。
-- プロジェクトモード（--project-mode, --project-root, --print-project-path）。
+- プロジェクトモード（--project-mode cwd|temp|fixed, --project-root, --print-project-path）。
+- **cwd モードがデフォルト**（カレントディレクトリをそのまま使用）。
 - 非対話モード（heredoc / pipe / stdin script）でのファイル検証。
 - **既存仕様（Lifecycle / Components / Properties / Error Handling）を一切変更しない。**
 - REPL は Runner Core を呼び出すための入力 UI であり、新しい実行権限を持たない。
@@ -127,6 +128,95 @@
 
 ---
 
+## 自己開発仕様（Self-Development Extension）
+
+14_GOAL_AND_SCOPE.md
+
+- pm-orchestrator-runner の目的とスコープ定義。
+- 自分自身を開発できる Claude Code Wrapper としての最初のゴール。
+- Claude Code を「考えさせない」原則。
+
+15_API_KEY_ENV_SANITIZE.md
+
+- API Key 環境変数のサニタイズ仕様。
+- child_process 起動時の env 制御（**ALLOWLIST 方式**）。
+- 許可する環境変数のみを明示的に渡す（PATH, HOME, USER, SHELL 等）。
+- **DELETELIST 方式の採用を禁止**（新規 API Key の漏洩リスク）。
+- 起動時チェック（Claude Code CLI 存在確認、ログイン確認）。
+
+16_TASK_GROUP.md
+
+- Task Group（会話・思考・文脈の単位）の概念定義。
+- Session → Task Group → Task の階層構造。
+- **コンテキスト継承規則**（Task Group 内で継承されるもの、されないもの）。
+- Task Group 内での文脈維持と会話継続。
+- Task Group ライフサイクル（Created → Active ↔ Paused → Completed）。
+
+17_PROMPT_TEMPLATE.md
+
+- 5段階の Prompt 結合仕様。
+- global prelude / project prelude / task group prelude / user input / output epilogue。
+- 設定ファイルからの読み込みと動的生成。
+
+18_CLI_TWO_PANE.md
+
+- CLI 2ペイン UI 仕様。
+- 上部ペイン（ログ表示）と下部ペイン（入力専用）の分離。
+- 入力中のログ割り込み防止。
+- 実行中・完了時の表示形式。
+
+19_WEB_UI.md
+
+- Web UI（Phase 1）仕様。
+- **ngrok 運用手順**（起動、設定、セキュリティ考慮）。
+- Task Group 一覧 / Task 一覧 / Task ログ閲覧 / 新規命令投入。
+- Web UI は Queue Store を操作するだけ（Runner に直接命令しない）。
+
+20_QUEUE_STORE.md
+
+- Queue Store（DynamoDB Local）仕様。
+- Queue Item スキーマと状態遷移。
+- Polling 機構と二重実行防止。
+
+21_STABLE_DEV.md
+
+- stable / dev 構成仕様。
+- stable runner が dev runner を開発する構造（**逆は禁止**）。
+- **開発ワークフロー**（stable から dev を編集・テスト・ビルド）。
+- **マージ手順**（dev 安定化後の stable 更新）。
+- ディレクトリ構成、バージョン管理、状態管理。
+
+22_ACCEPTANCE_CRITERIA_STRICT.md
+
+- 8つの受入基準（STRICT）定義。
+- **各基準に検証コマンド・自動テストコード例を明記**。
+- API Key 漏洩防止（ALLOWLIST 検証）、CLI 入力保護、Task Group 文脈維持、
+  Task 完了後の会話継続、Web UI 命令投入、状態復元、stable/dev 構成。
+- 一括検証スクリプト（scripts/verify-acceptance-criteria.sh）。
+
+23_TASK_BREAKDOWN.md
+
+- 実装タスクの分解と順序定義。
+- Task 1-8 の依存関係と参照先。
+
+24_BASIC_PRINCIPLES.md
+
+- 基本原則と禁止事項。
+- Claude Code は「設計者」ではなく「作業者」。
+- 仕様に書いていない判断の禁止。
+- 曖昧な場合は FAIL とする原則。
+
+---
+
+## 運用仕様（Operations）
+
+99_RUNBOOK.md
+
+- 運用手順書。
+- 実行コマンド、トラブルシューティング、保守手順。
+
+---
+
 ## 仕様適用ルール
 
 - 00_INDEX.md〜09_TRACEABILITY.md は「実行仕様」である。
@@ -136,10 +226,17 @@
   1. 06_CORRECTNESS_PROPERTIES.md
   2. 03_LIFECYCLE.md
   3. 04_COMPONENTS.md
-  4. その他の基本仕様
-  5. 10_REPL_UX.md（UX 仕様）
-  6. 12_LLM_PROVIDER_AND_MODELS.md（Provider/Model 仕様）
-  7. 13_LOGGING_AND_OBSERVABILITY.md（ログ仕様）
-  8. 11_VIBE_CODING_ACCEPTANCE.md（検証・受入仕様）
+  4. その他の基本仕様（00-09）
+  5. 24_BASIC_PRINCIPLES.md（基本原則）
+  6. 14_GOAL_AND_SCOPE.md（目的とスコープ）
+  7. 15_API_KEY_ENV_SANITIZE.md（API Key 仕様）
+  8. 16_TASK_GROUP.md〜21_STABLE_DEV.md（自己開発仕様）
+  9. 22_ACCEPTANCE_CRITERIA_STRICT.md（受入基準）
+  10. 23_TASK_BREAKDOWN.md（タスク分解）
+  11. 10_REPL_UX.md（UX 仕様）
+  12. 12_LLM_PROVIDER_AND_MODELS.md（Provider/Model 仕様）
+  13. 13_LOGGING_AND_OBSERVABILITY.md（ログ仕様）
+  14. 11_VIBE_CODING_ACCEPTANCE.md（検証・受入仕様）
+  15. 99_RUNBOOK.md（運用仕様）
 
 - 本インデックスに記載のない挙動は仕様外とし、fail-closed とする。

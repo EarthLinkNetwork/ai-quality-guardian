@@ -151,6 +151,47 @@ const DEFAULT_OVERALL_TIMEOUT_MS = 300000; // 5 min total
 const SIGTERM_GRACE_MS = 5000;
 
 /**
+ * ALLOWLIST of environment variables to pass to child process
+ * Per spec/15_API_KEY_ENV_SANITIZE.md: Only these variables are permitted.
+ * This ensures API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.) are never
+ * passed to the subprocess, implementing Property 24 (API Key Secrecy).
+ *
+ * DELETELIST approach is PROHIBITED - new API keys would slip through.
+ */
+const ENV_ALLOWLIST = [
+  'PATH',           // Required for execution
+  'HOME',           // Home directory
+  'USER',           // Username
+  'SHELL',          // Shell
+  'LANG',           // Language setting
+  'LC_ALL',         // Locale
+  'LC_CTYPE',       // Character type
+  'TERM',           // Terminal type
+  'TMPDIR',         // Temp directory
+  'XDG_CONFIG_HOME', // XDG config directory
+  'XDG_DATA_HOME',   // XDG data directory
+  'XDG_CACHE_HOME',  // XDG cache directory
+  'NODE_ENV',       // Node.js environment
+  'DEBUG',          // Debug flag (optional)
+];
+
+/**
+ * Build sanitized environment from ALLOWLIST
+ * Per spec/15_API_KEY_ENV_SANITIZE.md: Never pass process.env directly.
+ *
+ * @returns Record containing only ALLOWLIST variables
+ */
+export function buildSanitizedEnv(): Record<string, string> {
+  const sanitizedEnv: Record<string, string> = {};
+  for (const key of ENV_ALLOWLIST) {
+    if (process.env[key] !== undefined) {
+      sanitizedEnv[key] = process.env[key] as string;
+    }
+  }
+  return sanitizedEnv;
+}
+
+/**
  * Process state check interval
  */
 const PROCESS_CHECK_INTERVAL_MS = 1000;
@@ -199,9 +240,11 @@ export class ClaudeCodeExecutor implements IExecutor {
   async isClaudeCodeAvailable(): Promise<boolean> {
     return new Promise((resolve) => {
       try {
+        // Per spec/15_API_KEY_ENV_SANITIZE.md: Use ALLOWLIST approach even for version check
         const childProcess = spawn(this.cliPath, ['--version'], {
           stdio: ['pipe', 'pipe', 'pipe'],
           timeout: 5000,
+          env: buildSanitizedEnv(),
         });
 
         childProcess.on('close', (code: number | null) => {
@@ -390,11 +433,14 @@ export class ClaudeCodeExecutor implements IExecutor {
       console.log(`[ClaudeCodeExecutor] Timeout config: soft=${this.softTimeoutMs}ms, hard=${this.hardTimeoutMs}ms, overall=${this.config.timeout}ms`);
 
       try {
+        // Per spec/15_API_KEY_ENV_SANITIZE.md: Use ALLOWLIST approach
+        // NEVER pass process.env directly (DELETELIST approach is PROHIBITED)
+        const sanitizedEnv = buildSanitizedEnv();
         childProcess = spawn(this.cliPath, cliArgs, {
           cwd: task.workingDir,
           stdio: ['pipe', 'pipe', 'pipe'],
           env: {
-            ...process.env,
+            ...sanitizedEnv,
             // Ensure non-interactive mode
             CI: 'true',
             // Disable color output for cleaner parsing

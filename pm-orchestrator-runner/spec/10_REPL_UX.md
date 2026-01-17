@@ -52,7 +52,7 @@ REPL は「新しい実行権限」ではなく、既存 CLI コマンドと Run
 REPL モードは CLI に追加されるサブコマンドとして提供する。
 
 ```
-pm-orchestrator repl [--project <path>] [--project-mode <temp|fixed>] [--project-root <path>] [--print-project-path]
+pm-orchestrator repl [--project <path>] [--project-mode <cwd|temp|fixed>] [--project-root <path>] [--print-project-path]
 ```
 
 `--project` の解決規則は 04_COMPONENTS.md の Project Resolution Rules に完全準拠する。
@@ -63,15 +63,26 @@ REPL の起動時点で validate 相当の検証を行い、必須構造がな�
 | オプション | 説明 | デフォルト |
 |------------|------|------------|
 | `--project <path>` | プロジェクトパスを明示指定 | カレントディレクトリ |
-| `--project-mode <temp\|fixed>` | プロジェクトディレクトリモード | `temp` |
+| `--project-mode <cwd\|temp\|fixed>` | プロジェクトディレクトリモード | `cwd` |
 | `--project-root <path>` | fixed モード時の固定ルートパス | (必須) |
 | `--print-project-path` | 起動後にプロジェクトパスを出力（機械可読形式） | false |
 
 ### プロジェクトモード（Project Mode）
 
-Runner は 2 種類のプロジェクトディレクトリモードをサポートする。
+Runner は 3 種類のプロジェクトディレクトリモードをサポートする。
 
-#### temp モード（デフォルト）
+#### cwd モード（デフォルト）
+
+```
+--project-mode cwd
+```
+
+- カレントディレクトリ（`process.cwd()`）をそのまま作業ディレクトリとして使用
+- ディレクトリの作成・削除は行わない
+- 既存プロジェクトでの通常開発ワークフローに適している
+- **注意**: `--project-root` オプションは無視される（警告出力）
+
+#### temp モード
 
 ```
 --project-mode temp
@@ -96,17 +107,24 @@ Runner は 2 種類のプロジェクトディレクトリモードをサポー�
 #### 解決規則（Project Root Resolution）
 
 ```
-IF --project-mode === 'fixed':
+IF --project-mode === 'cwd' (デフォルト):
+  IF --project-root が指定されている:
+    → WARNING: "--project-root は cwd モードでは無視されます"
+  IF process.cwd() が存在しない:
+    → ERROR: "カレントディレクトリが存在しません"
+  projectPath = process.cwd()
+
+ELSE IF --project-mode === 'temp':
+  IF --project-root が指定されている:
+    → WARNING: "--project-root は temp モードでは無視されます"
+  projectPath = os.tmpdir() + '/pm-orchestrator-runner-' + randomId()
+
+ELSE IF --project-mode === 'fixed':
   IF --project-root が指定されていない:
     → ERROR: "fixed モードでは --project-root が必須です"
   IF --project-root のディレクトリが存在しない:
     → ERROR: "指定されたプロジェクトルートが存在しません: <path>"
   projectPath = --project-root
-
-ELSE (temp モード):
-  IF --project-root が指定されている:
-    → WARNING: "--project-root は temp モードでは無視されます"
-  projectPath = os.tmpdir() + '/pm-orchestrator-runner-' + randomId()
 ```
 
 ### --print-project-path フラグ

@@ -1,6 +1,6 @@
 {
   "name": "pm-orchestrator-runner",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "CLI tool that enforces controlled execution of Claude Code through mandatory orchestration",
   "main": "dist/cli/index.js",
   "bin": {
@@ -17,6 +17,7 @@
     "test:unit": "mocha --require ts-node/register 'test/unit/**/*.test.ts'",
     "test:property": "mocha --require ts-node/register 'test/property/**/*.test.ts'",
     "test:integration": "mocha --require ts-node/register 'test/integration/**/*.test.ts'",
+    "test:acceptance": "mocha --require ts-node/register 'test/acceptance/**/*.test.ts'",
     "coverage": "nyc npm test",
     "lint": "eslint src/**/*.ts test/**/*.ts",
     "typecheck": "tsc --noEmit",

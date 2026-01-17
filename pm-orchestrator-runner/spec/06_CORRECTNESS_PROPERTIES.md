@@ -710,7 +710,7 @@ Runner は `--project-mode fixed` オプション使用時、プロジェクト�
   - ディレクトリが存在しない場合は即座に ERROR
   - タスク実行後もディレクトリは保持される
 
-3. Temp Mode（デフォルト）の挙動
+3. Temp Mode の挙動
 
 - `--project-mode temp`（または未指定）時:
   - OS 標準のテンポラリディレクトリを使用

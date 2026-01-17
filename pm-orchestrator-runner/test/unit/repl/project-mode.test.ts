@@ -31,17 +31,18 @@ describe('Project Mode (Property 32, 33)', () => {
   
   /**
    * Property 32: Non-Volatile Project Root
-   * Per spec 10_REPL_UX.md: --project-mode <temp|fixed>
+   * Per spec 10_REPL_UX.md: --project-mode <cwd|temp|fixed>
+   * cwd is the default per spec lines 98-100
    */
   describe('Property 32: Non-Volatile Project Root', () => {
-    
-    it('should default to temp mode when --project-mode is not specified', () => {
+
+    it('should default to cwd mode when --project-mode is not specified', () => {
       const config: REPLConfig = {
         projectPath: tempDir,
       };
       const repl = new REPLInterface(config);
-      
-      assert.strictEqual(repl.getProjectMode(), 'temp', 'Default project mode should be temp');
+
+      assert.strictEqual(repl.getProjectMode(), 'cwd', 'Default project mode should be cwd per spec 10_REPL_UX.md');
     });
     
     it('should accept --project-mode temp', () => {

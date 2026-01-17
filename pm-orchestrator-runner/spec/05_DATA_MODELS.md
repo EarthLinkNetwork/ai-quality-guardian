@@ -423,8 +423,11 @@ REPL 起動時の設定構造。CLI オプションから解決される。
   プロジェクトパス。CLI `--project` オプションから取得。
   未指定の場合はカレントディレクトリ。
 - **project_mode**
-  プロジェクトディレクトリモード。`temp` または `fixed`。
-  CLI `--project-mode` オプションから取得。既定は `temp`。
+  プロジェクトディレクトリモード。`cwd` | `temp` | `fixed`。
+  CLI `--project-mode` オプションから取得。既定は `cwd`。
+  `cwd`: カレントディレクトリを作業ディレクトリとして使用（デフォルト）。
+  `temp`: OS 一時ディレクトリに揮発性ディレクトリを作成。
+  `fixed`: `--project-root` で指定した固定ディレクトリを使用。
 - **project_root**
   fixed モード時の固定ルートパス。絶対パス。
   CLI `--project-root` オプションから取得。
@@ -449,7 +452,7 @@ REPL 起動時の設定構造。CLI オプションから解決される。
 ```typescript
 interface ReplConfig {
   project?: string;
-  project_mode: 'temp' | 'fixed';
+  project_mode: 'cwd' | 'temp' | 'fixed';
   project_root?: string;
   print_project_path: boolean;
   non_interactive: boolean;
@@ -464,17 +467,22 @@ interface ReplConfig {
 - `project_root` は絶対パスでなければならない。
 - `project_root` が指定された場合、ディレクトリは存在しなければならない（自動作成禁止）。
 - `project_mode === 'temp'` の場合、`project_root` は無視される（警告出力）。
+- `project_mode === 'cwd'` の場合、`project_root` は無視される（警告出力）。
+- `project_mode === 'cwd'` の場合、カレントディレクトリは存在しなければならない。
 
 ### ReplConfig 解決規則
 
 ```
 1. CLI オプションを解析
-2. project_mode を決定（既定: temp）
+2. project_mode を決定（既定: cwd）
 3. IF project_mode === 'fixed':
      IF project_root が未指定 → ERROR
      IF project_root が存在しない → ERROR
      resolvedProjectPath = project_root
-   ELSE:
+   ELSE IF project_mode === 'cwd':
+     IF project_root が指定 → WARNING（無視）
+     resolvedProjectPath = process.cwd()
+   ELSE IF project_mode === 'temp':
      IF project_root が指定 → WARNING（無視）
      resolvedProjectPath = os.tmpdir() + '/pm-orchestrator-runner-' + randomId()
 4. print_project_path が true の場合:
@@ -1064,7 +1072,8 @@ files_modified_count = verified_files.filter(vf => vf.exists).length
   `summary` | `full`
 
 - **ProjectMode**
-  `temp` | `fixed`
+  `cwd` | `temp` | `fixed`
+  `cwd` がデフォルト。カレントディレクトリを作業ディレクトリとして使用。
 
 ---
 
