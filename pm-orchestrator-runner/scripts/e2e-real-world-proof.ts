@@ -127,7 +127,7 @@ async function runCase1Autostart(evidenceDir: string): Promise<CaseResult> {
 
   console.log('  Running Case 1: autostart...');
 
-  const result = await runCLI('/help\n/exit\n');
+  const result = await runCLI('README.md を作成して。最小でよい。\n/exit\n', 60000);
   const durationMs = Date.now() - startTime;
 
   // Save evidence
@@ -137,12 +137,12 @@ async function runCase1Autostart(evidenceDir: string): Promise<CaseResult> {
   fs.writeFileSync(stderrPath, sanitizePaths(result.stderr));
   evidence.push(stdoutPath, stderrPath);
 
-  // Verification: Check for REPL prompt or successful command execution
-  const hasPrompt = result.stdout.includes('pm-orchestrator>') || 
+  // Verification: Check for REPL prompt or successful task execution
+  const hasPrompt = result.stdout.includes('pm-orchestrator>') ||
                    result.stdout.includes('pm>') ||
-                   result.stdout.includes('Commands') ||
-                   result.stdout.includes('/help') ||
-                   result.stdout.includes('/exit');
+                   result.stdout.includes('Task Queued') ||
+                   result.stdout.includes('Task Started') ||
+                   result.stdout.includes('RESULT:');
   
   const passed = !result.timedOut && result.exitCode === 0 && hasPrompt;
   
@@ -256,8 +256,8 @@ async function runCase3Nonblocking(evidenceDir: string): Promise<CaseResult> {
   // 2. Submit second task immediately (without waiting)
   // 3. Check /tasks
   // 4. Exit
-  const input = `Create a file called test1.txt
-Create a file called test2.txt
+  const input = `test1.txt を作成して。中に 'A' を1行だけ書いて。
+test2.txt を作成して。中に 'B' を1行だけ書いて。
 /tasks
 /exit
 `;
