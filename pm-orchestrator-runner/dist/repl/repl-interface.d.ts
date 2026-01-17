@@ -111,6 +111,39 @@ export interface CommandResult {
  */
 export type TaskLogStatus = 'queued' | 'running' | 'complete' | 'incomplete' | 'error';
 /**
+ * Task queue state - for non-blocking task execution
+ * QUEUED: Waiting to be executed
+ * RUNNING: Currently executing
+ * COMPLETE/INCOMPLETE/ERROR: Terminal states
+ */
+export type TaskQueueState = 'QUEUED' | 'RUNNING' | 'COMPLETE' | 'INCOMPLETE' | 'ERROR';
+/**
+ * Queued task structure for non-blocking execution
+ * Allows multiple tasks to be submitted while previous tasks are running
+ */
+export interface QueuedTask {
+    /** Task ID (task-{timestamp}) */
+    id: string;
+    /** Task description / prompt */
+    description: string;
+    /** Current state */
+    state: TaskQueueState;
+    /** Timestamp when queued */
+    queuedAt: number;
+    /** Timestamp when started (null if not started) */
+    startedAt: number | null;
+    /** Timestamp when completed (null if not completed) */
+    completedAt: number | null;
+    /** Result status (set on completion) */
+    resultStatus?: string;
+    /** Error message (set on error) */
+    errorMessage?: string;
+    /** Files modified (set on completion) */
+    filesModified?: string[];
+    /** Response summary (set on completion) */
+    responseSummary?: string;
+}
+/**
  * REPL session state - per spec 05_DATA_MODELS.md
  * Extended with current_task_id / last_task_id tracking
  */
@@ -142,6 +175,8 @@ export declare class REPLInterface extends EventEmitter {
     private hasError;
     private hasIncompleteTasks;
     private sessionCompleted;
+    private taskQueue;
+    private isTaskWorkerRunning;
     private projectMode;
     private verificationRoot;
     private tempVerificationRoot;
@@ -245,9 +280,14 @@ export declare class REPLInterface extends EventEmitter {
      */
     private isExitTypo;
     /**
-     * Process natural language input
+     * Process natural language input - NON-BLOCKING
      * Per spec 10_REPL_UX.md L117-118: Model selection is REPL-local
      * Model is read from .claude/repl.json and passed to executor via runner
+     *
+     * Non-blocking design:
+     * - Creates task and adds to queue immediately
+     * - Returns control to input prompt right away
+     * - Background worker processes tasks asynchronously
      *
      * Auto-start: In non-interactive mode, automatically start a session if none exists
      * This improves CLI usability for piped input and scripting
@@ -258,6 +298,16 @@ export declare class REPLInterface extends EventEmitter {
      * - Never passes "exit" to Claude Code
      */
     private processNaturalLanguage;
+    /**
+     * Background task worker - processes queued tasks asynchronously
+     * Runs in background, allowing input to continue while tasks execute
+     */
+    private startTaskWorker;
+    /**
+     * Execute a single queued task
+     * Updates task state and prints results
+     */
+    private executeQueuedTask;
     /**
      * Handle clarification needed - prompt user interactively
      * Returns true if clarification was requested (and will be processed separately)
@@ -310,6 +360,8 @@ export declare class REPLInterface extends EventEmitter {
     private handleLogs;
     /**
      * Handle /tasks command
+     * Shows task queue with RUNNING/QUEUED/COMPLETE/ERROR/INCOMPLETE states
+     * Per redesign: proves non-blocking by showing multiple tasks simultaneously
      */
     private handleTasks;
     /**
@@ -334,6 +386,7 @@ export declare class REPLInterface extends EventEmitter {
      * Per spec 10_REPL_UX.md: Ensure clean exit with flushed output
      *
      * Guarantees:
+     * - Waits for running tasks to complete (task worker)
      * - Session state is persisted before exit
      * - All output is flushed before readline closes
      * - Double-completion is prevented via sessionCompleted flag

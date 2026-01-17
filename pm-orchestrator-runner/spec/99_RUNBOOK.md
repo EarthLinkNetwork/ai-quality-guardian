@@ -48,7 +48,58 @@ Response Summary:
 ------------------------
 ```
 
-## 2. 非対話実行
+## 2. 非ブロッキングタスク入力
+
+**設計原則**
+
+入力ループはエグゼキューター実行から完全に分離されています。
+
+- タスク投入後、即座にプロンプトに戻る（入力がブロックされない）
+- タスクAが実行中（RUNNING）でも、タスクBを投入できる
+- バックグラウンドでタスクが順次処理される
+
+**タスク状態**
+
+| 状態 | 説明 |
+|------|------|
+| QUEUED | キュー待機中（次に実行される） |
+| RUNNING | 実行中 |
+| COMPLETE | 正常完了 |
+| INCOMPLETE | 完了だが要確認（NO_EVIDENCE等） |
+| ERROR | エラー終了 |
+
+**/tasks コマンド出力例**
+
+```
+pm> Create file1.txt
+--- Task Queued ---
+Task ID: task-1737104556789
+State: QUEUED
+(Input is not blocked - you can submit more tasks with /tasks to view status)
+
+pm> Create file2.txt
+--- Task Queued ---
+Task ID: task-1737104556790
+State: QUEUED
+(Input is not blocked - you can submit more tasks with /tasks to view status)
+
+pm> /tasks
+=== Task Queue ===
+
+[*] RUNNING  task-1737104556789 (15.2s)
+    "Create file1.txt"
+
+[ ] QUEUED   task-1737104556790
+    "Create file2.txt"
+
+Summary: 1 running, 1 queued, 0 completed
+```
+
+**非ブロッキングの証拠**
+
+タスクAがRUNNINGの間に、タスクBを投入でき、`/tasks`で同時に表示される。
+
+## 4. 非対話実行
 
 **実行例**
 
@@ -78,7 +129,7 @@ EOF
 | Files Modified | 変更されたファイル一覧 |
 | Response Summary | LLM応答の要約（先頭200文字） |
 
-## 3. 検証
+## 5. 検証
 
 ```bash
 npm test
@@ -87,7 +138,7 @@ npm run e2e:recovery
 npm pack
 ```
 
-## 4. recovery-stub（テスト専用）
+## 6. recovery-stub（テスト専用）
 
 **実行例**
 

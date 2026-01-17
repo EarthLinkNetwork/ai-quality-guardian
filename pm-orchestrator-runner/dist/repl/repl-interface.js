@@ -117,6 +117,9 @@ class REPLInterface extends events_1.EventEmitter {
     hasIncompleteTasks = false;
     // Session completion tracking (prevents double completion)
     sessionCompleted = false;
+    // Non-blocking task queue (allows input while tasks are running)
+    taskQueue = [];
+    isTaskWorkerRunning = false;
     // Project mode support (per spec 10_REPL_UX.md, Property 32, 33)
     projectMode;
     verificationRoot;
@@ -626,9 +629,14 @@ class REPLInterface extends events_1.EventEmitter {
         return trimmed === 'exit';
     }
     /**
-     * Process natural language input
+     * Process natural language input - NON-BLOCKING
      * Per spec 10_REPL_UX.md L117-118: Model selection is REPL-local
      * Model is read from .claude/repl.json and passed to executor via runner
+     *
+     * Non-blocking design:
+     * - Creates task and adds to queue immediately
+     * - Returns control to input prompt right away
+     * - Background worker processes tasks asynchronously
      *
      * Auto-start: In non-interactive mode, automatically start a session if none exists
      * This improves CLI usability for piped input and scripting
@@ -663,15 +671,26 @@ class REPLInterface extends events_1.EventEmitter {
             this.print('Runner not initialized. Use /start first.');
             return;
         }
-        // Generate task ID and set current_task_id
+        // Generate task ID
         // Per spec 05_DATA_MODELS.md Property 38
         const taskId = 'task-' + Date.now();
-        this.session.current_task_id = taskId;
-        // Display task start info (per redesign: visibility)
+        // Create queued task
+        const queuedTask = {
+            id: taskId,
+            description: input,
+            state: 'QUEUED',
+            queuedAt: Date.now(),
+            startedAt: null,
+            completedAt: null,
+        };
+        // Add to task queue
+        this.taskQueue.push(queuedTask);
+        // Display task queued info (per redesign: visibility)
         // Per user requirement: Provider/Mode/Auth must be shown at task start
         this.print('');
-        this.print('--- Task Started ---');
+        this.print('--- Task Queued ---');
         this.print('Task ID: ' + taskId);
+        this.print('State: QUEUED');
         // Show LLM layer info (Provider/Mode/Auth) - per redesign requirement
         if (this.config.authMode === 'claude-code') {
             this.print('Provider: Claude Code CLI (uses your Claude subscription, no API key required)');
@@ -685,49 +704,117 @@ class REPLInterface extends events_1.EventEmitter {
         // Show prompt summary (first 100 chars)
         const promptSummary = input.length > 100 ? input.substring(0, 100) + '...' : input;
         this.print('Prompt: ' + promptSummary);
-        this.print('--------------------');
+        this.print('-------------------');
         this.print('');
+        this.print('(Input is not blocked - you can submit more tasks with /tasks to view status)');
+        this.print('');
+        // Start background worker if not running
+        // The worker runs asynchronously - we don't await it
+        if (!this.isTaskWorkerRunning) {
+            this.startTaskWorker();
+        }
+        console.log(`[DEBUG processNaturalLanguage] task queued, returning immediately`);
+    }
+    /**
+     * Background task worker - processes queued tasks asynchronously
+     * Runs in background, allowing input to continue while tasks execute
+     */
+    async startTaskWorker() {
+        if (this.isTaskWorkerRunning) {
+            return;
+        }
+        this.isTaskWorkerRunning = true;
+        console.log('[DEBUG startTaskWorker] worker started');
+        try {
+            while (this.running) {
+                // Find next QUEUED task
+                const nextTask = this.taskQueue.find(t => t.state === 'QUEUED');
+                if (!nextTask) {
+                    // No more queued tasks - worker exits
+                    break;
+                }
+                // Execute the task
+                await this.executeQueuedTask(nextTask);
+            }
+        }
+        finally {
+            this.isTaskWorkerRunning = false;
+            console.log('[DEBUG startTaskWorker] worker stopped');
+        }
+    }
+    /**
+     * Execute a single queued task
+     * Updates task state and prints results
+     */
+    async executeQueuedTask(task) {
+        console.log(`[DEBUG executeQueuedTask] starting task ${task.id}`);
+        // Update state to RUNNING
+        task.state = 'RUNNING';
+        task.startedAt = Date.now();
+        this.session.current_task_id = task.id;
+        // Print status update
+        this.print('');
+        this.print('--- Task Started ---');
+        this.print('Task ID: ' + task.id);
+        this.print('State: RUNNING');
+        this.print('--------------------');
         try {
             // Per spec 10_REPL_UX.md L117-118: Get selected model from REPL config
-            // Model is REPL-local, stored in .claude/repl.json
             let selectedModel;
             const modelResult = await this.modelCommand.getModel(this.session.projectPath);
             if (modelResult.success && modelResult.model && modelResult.model !== 'UNSET') {
                 selectedModel = modelResult.model;
             }
-            console.log(`[DEBUG processNaturalLanguage] calling runner.execute...`);
-            // Create task from natural language input
-            // CRITICAL: naturalLanguageTask must be set to trigger Claude Code execution
-            // Without this, the task would only use fallback file creation patterns
+            console.log(`[DEBUG executeQueuedTask] calling runner.execute...`);
             const result = await this.session.runner.execute({
                 tasks: [{
-                        id: taskId,
-                        description: input,
-                        naturalLanguageTask: input,
+                        id: task.id,
+                        description: task.description,
+                        naturalLanguageTask: task.description,
                     }],
                 selectedModel,
             });
-            console.log(`[DEBUG processNaturalLanguage] runner.execute returned, status=${result.overall_status}`);
-            // Handle INCOMPLETE with clarification interactively
+            console.log(`[DEBUG executeQueuedTask] runner.execute returned, status=${result.overall_status}`);
+            // Update task state based on result
+            task.completedAt = Date.now();
+            task.resultStatus = result.overall_status;
+            task.filesModified = result.files_modified;
+            task.responseSummary = result.executor_output_summary;
+            switch (result.overall_status) {
+                case enums_1.OverallStatus.COMPLETE:
+                    task.state = 'COMPLETE';
+                    break;
+                case enums_1.OverallStatus.INCOMPLETE:
+                    task.state = 'INCOMPLETE';
+                    break;
+                case enums_1.OverallStatus.ERROR:
+                    task.state = 'ERROR';
+                    task.errorMessage = result.error?.message;
+                    break;
+                default:
+                    task.state = 'COMPLETE';
+            }
+            // Handle INCOMPLETE with clarification (but don't block)
             if (result.overall_status === enums_1.OverallStatus.INCOMPLETE &&
                 result.incomplete_task_reasons &&
                 result.incomplete_task_reasons.length > 0) {
-                const clarificationNeeded = await this.handleClarificationNeeded(input, result.incomplete_task_reasons);
-                if (clarificationNeeded) {
-                    // User provided clarification, will be processed in next input
-                    return;
-                }
+                await this.handleClarificationNeeded(task.description, result.incomplete_task_reasons);
             }
             this.printExecutionResult(result);
         }
         catch (err) {
-            console.log(`[DEBUG processNaturalLanguage] error: ${err.message}`);
-            // Clear current_task_id on exception (fail-closed)
-            this.session.last_task_id = this.session.current_task_id;
-            this.session.current_task_id = null;
+            console.log(`[DEBUG executeQueuedTask] error: ${err.message}`);
+            task.state = 'ERROR';
+            task.completedAt = Date.now();
+            task.errorMessage = err.message;
             this.printError(err);
         }
-        console.log(`[DEBUG processNaturalLanguage] done`);
+        finally {
+            // Clear current_task_id
+            this.session.last_task_id = this.session.current_task_id;
+            this.session.current_task_id = null;
+        }
+        console.log(`[DEBUG executeQueuedTask] task ${task.id} done, state=${task.state}`);
     }
     /**
      * Handle clarification needed - prompt user interactively
@@ -1091,10 +1178,78 @@ class REPLInterface extends events_1.EventEmitter {
     }
     /**
      * Handle /tasks command
+     * Shows task queue with RUNNING/QUEUED/COMPLETE/ERROR/INCOMPLETE states
+     * Per redesign: proves non-blocking by showing multiple tasks simultaneously
      */
     async handleTasks() {
-        const result = await this.statusCommands.getTasks();
-        this.print(result);
+        this.print('');
+        this.print('=== Task Queue ===');
+        this.print('');
+        if (this.taskQueue.length === 0) {
+            this.print('No tasks in queue.');
+            this.print('');
+            // Also show legacy tasks from statusCommands if available
+            const legacyResult = await this.statusCommands.getTasks();
+            if (legacyResult && legacyResult.trim()) {
+                this.print('--- Session Tasks ---');
+                this.print(legacyResult);
+            }
+            return;
+        }
+        // Count by state
+        const running = this.taskQueue.filter(t => t.state === 'RUNNING').length;
+        const queued = this.taskQueue.filter(t => t.state === 'QUEUED').length;
+        const complete = this.taskQueue.filter(t => t.state === 'COMPLETE').length;
+        const incomplete = this.taskQueue.filter(t => t.state === 'INCOMPLETE').length;
+        const error = this.taskQueue.filter(t => t.state === 'ERROR').length;
+        this.print('Summary: ' + running + ' RUNNING, ' + queued + ' QUEUED, ' + complete + ' COMPLETE, ' + incomplete + ' INCOMPLETE, ' + error + ' ERROR');
+        this.print('');
+        // List all tasks with state
+        for (const task of this.taskQueue) {
+            const promptSummary = task.description.length > 50
+                ? task.description.substring(0, 50) + '...'
+                : task.description;
+            let durationStr = '';
+            if (task.startedAt) {
+                const endTime = task.completedAt || Date.now();
+                const durationMs = endTime - task.startedAt;
+                durationStr = ' (' + (durationMs / 1000).toFixed(1) + 's)';
+            }
+            // State indicator with visual marker
+            let stateMarker = '';
+            switch (task.state) {
+                case 'RUNNING':
+                    stateMarker = '[*]';
+                    break;
+                case 'QUEUED':
+                    stateMarker = '[ ]';
+                    break;
+                case 'COMPLETE':
+                    stateMarker = '[v]';
+                    break;
+                case 'INCOMPLETE':
+                    stateMarker = '[!]';
+                    break;
+                case 'ERROR':
+                    stateMarker = '[X]';
+                    break;
+            }
+            this.print(stateMarker + ' ' + task.id + ' | ' + task.state + durationStr);
+            this.print('    ' + promptSummary);
+            // Show error message if error
+            if (task.state === 'ERROR' && task.errorMessage) {
+                this.print('    Error: ' + task.errorMessage);
+            }
+            // Show files modified if complete
+            if (task.state === 'COMPLETE' && task.filesModified && task.filesModified.length > 0) {
+                this.print('    Files: ' + task.filesModified.slice(0, 3).join(', ') +
+                    (task.filesModified.length > 3 ? ' (+' + (task.filesModified.length - 3) + ' more)' : ''));
+            }
+        }
+        this.print('');
+        this.print('Use /logs <task-id> for details.');
+        this.print('==================');
+        this.print('');
     }
     /**
      * Handle /status command
@@ -1225,6 +1380,7 @@ class REPLInterface extends events_1.EventEmitter {
      * Per spec 10_REPL_UX.md: Ensure clean exit with flushed output
      *
      * Guarantees:
+     * - Waits for running tasks to complete (task worker)
      * - Session state is persisted before exit
      * - All output is flushed before readline closes
      * - Double-completion is prevented via sessionCompleted flag
@@ -1238,6 +1394,18 @@ class REPLInterface extends events_1.EventEmitter {
             return;
         }
         this.sessionCompleted = true;
+        // Wait for task worker to complete any running tasks
+        if (this.isTaskWorkerRunning) {
+            const runningTasks = this.taskQueue.filter(t => t.state === 'RUNNING');
+            const queuedTasks = this.taskQueue.filter(t => t.state === 'QUEUED');
+            if (runningTasks.length > 0 || queuedTasks.length > 0) {
+                this.print('Waiting for ' + runningTasks.length + ' running and ' + queuedTasks.length + ' queued tasks to complete...');
+            }
+            while (this.isTaskWorkerRunning) {
+                await new Promise(r => setTimeout(r, 100));
+            }
+            this.print('All tasks completed.');
+        }
         this.print('Saving session state...');
         if (this.session.runner && this.session.sessionId) {
             try {
