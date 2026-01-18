@@ -1,0 +1,21 @@
+{
+  "name": "e2e-tiny-cli",
+  "version": "1.0.0",
+  "description": "Tiny CLI fixture for self-heal integration testing",
+  "main": "dist/tiny-cli.js",
+  "bin": {
+    "tiny-cli": "./dist/tiny-cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "mocha --require ts-node/register 'test/**/*.test.ts'",
+    "start": "node dist/tiny-cli.js"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.0",
+    "mocha": "^10.2.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
