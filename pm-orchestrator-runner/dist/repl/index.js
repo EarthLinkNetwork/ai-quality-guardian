@@ -17,9 +17,11 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.EXIT_CODES = exports.REPLInterface = void 0;
+exports.TwoPaneRenderer = exports.EXIT_CODES = exports.REPLInterface = void 0;
 var repl_interface_1 = require("./repl-interface");
 Object.defineProperty(exports, "REPLInterface", { enumerable: true, get: function () { return repl_interface_1.REPLInterface; } });
 Object.defineProperty(exports, "EXIT_CODES", { enumerable: true, get: function () { return repl_interface_1.EXIT_CODES; } });
 __exportStar(require("./commands"), exports);
+var two_pane_renderer_1 = require("./two-pane-renderer");
+Object.defineProperty(exports, "TwoPaneRenderer", { enumerable: true, get: function () { return two_pane_renderer_1.TwoPaneRenderer; } });
 //# sourceMappingURL=index.js.map

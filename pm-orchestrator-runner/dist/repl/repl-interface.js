@@ -13,7 +13,8 @@
  * - Deterministic Exit Code: 0=COMPLETE, 1=ERROR, 2=INCOMPLETE
  *
  * Project Mode (per spec 10_REPL_UX.md, Property 32, 33):
- * - temp: Use temporary directory (default, cleaned up on exit)
+ * - cwd: Use current working directory (DEFAULT per spec)
+ * - temp: Use temporary directory (cleaned up on exit)
  * - fixed: Use specified directory (persists after exit)
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
@@ -66,7 +67,10 @@ const provider_1 = require("./commands/provider");
 const models_1 = require("./commands/models");
 const keys_1 = require("./commands/keys");
 const logs_1 = require("./commands/logs");
+const two_pane_renderer_1 = require("./two-pane-renderer");
 const global_config_1 = require("../config/global-config");
+const claude_code_executor_1 = require("../executor/claude-code-executor");
+const keys_2 = require("../keys");
 /**
  * Exit codes for non-interactive mode - per spec 10_REPL_UX.md
  * These are deterministic based on session state
@@ -81,6 +85,12 @@ exports.EXIT_CODES = {
  * When .claude is missing, only these commands are available
  */
 const INIT_ONLY_ALLOWED_COMMANDS = ['help', 'init', 'exit'];
+/**
+ * Commands allowed in key-setup mode
+ * When no API key is configured, only these commands are available
+ * This enforces fail-closed + interactive onboarding behavior
+ */
+const KEY_SETUP_ALLOWED_COMMANDS = ['help', 'keys', 'provider', 'exit'];
 /**
  * All known commands (for unknown command detection)
  * Updated per spec 10_REPL_UX.md to include new commands
@@ -105,6 +115,7 @@ class REPLInterface extends events_1.EventEmitter {
     session;
     running = false;
     initOnlyMode = false;
+    keySetupMode = false;
     // Sequential input processing (prevents race conditions with piped input)
     inputQueue = [];
     isProcessingInput = false;
@@ -134,6 +145,8 @@ class REPLInterface extends events_1.EventEmitter {
     modelsCommand;
     keysCommand;
     logsCommand;
+    // Two-pane renderer per spec 18_CLI_TWO_PANE.md
+    renderer;
     constructor(config = {}) {
         super();
         // Validate fixed mode configuration (Property 32)
@@ -145,11 +158,17 @@ class REPLInterface extends events_1.EventEmitter {
                 throw new Error('project-root does not exist: ' + config.projectRoot);
             }
         }
-        // Determine project mode
-        this.projectMode = config.projectMode || 'temp';
+        // Determine project mode - per spec 10_REPL_UX.md: cwd is default
+        this.projectMode = config.projectMode || 'cwd';
         // Set verification root based on mode
         if (this.projectMode === 'fixed') {
             this.verificationRoot = config.projectRoot;
+        }
+        else if (this.projectMode === 'cwd') {
+            // CWD mode: use current working directory (DEFAULT per spec 10_REPL_UX.md)
+            // Per spec lines 74-83: カレントディレクトリをそのまま使用
+            // But respect explicitly provided projectPath from --project flag
+            this.verificationRoot = config.projectPath || process.cwd();
         }
         else {
             // Temp mode: create temporary directory immediately (synchronous)
@@ -168,12 +187,15 @@ class REPLInterface extends events_1.EventEmitter {
             }, null, 2);
             fs.writeFileSync(path.join(claudeDir, 'settings.json'), settingsContent, 'utf-8');
         }
-        // CRITICAL: In temp mode, use verificationRoot for projectPath and evidenceDir
-        // This ensures files are created in the temp directory, not process.cwd()
-        // In fixed mode, use projectRoot (from --project-root) if provided
+        // CRITICAL: Resolve projectPath based on mode
+        // - cwd mode: use process.cwd() (already set in verificationRoot)
+        // - temp mode: use verificationRoot (temp directory)
+        // - fixed mode: use projectRoot (from --project-root)
         const resolvedProjectPath = this.projectMode === 'temp'
             ? this.verificationRoot
-            : (config.projectRoot || config.projectPath || process.cwd());
+            : this.projectMode === 'cwd'
+                ? this.verificationRoot // verificationRoot is process.cwd() in cwd mode
+                : (config.projectRoot || config.projectPath || process.cwd());
         this.config = {
             projectPath: resolvedProjectPath,
             evidenceDir: config.evidenceDir || path.join(resolvedProjectPath, '.claude', 'evidence'),
@@ -209,6 +231,10 @@ class REPLInterface extends events_1.EventEmitter {
         this.modelsCommand = new models_1.ModelsCommand();
         this.keysCommand = new keys_1.KeysCommand();
         this.logsCommand = new logs_1.LogsCommand();
+        // Initialize two-pane renderer per spec 18_CLI_TWO_PANE.md
+        this.renderer = new two_pane_renderer_1.TwoPaneRenderer({
+            prompt: this.config.prompt,
+        });
     }
     /**
      * Get project mode - per spec 10_REPL_UX.md
@@ -318,34 +344,77 @@ class REPLInterface extends events_1.EventEmitter {
         // In fixed mode, the directory persists as expected
     }
     /**
-     * Check API key status and show warning if not configured
+     * Check Claude Code CLI auth status
+     * Per spec/15_API_KEY_ENV_SANITIZE.md: Check at startup, exit on failure
+     *
+     * @returns AuthCheckResult with availability and login status
+     */
+    async checkClaudeCodeAuth() {
+        const executor = new claude_code_executor_1.ClaudeCodeExecutor({
+            projectPath: this.session.projectPath,
+            timeout: 30000,
+        });
+        return executor.checkAuthStatus();
+    }
+    /**
+     * Check API key status and enter key-setup mode if not configured
      * API keys are stored in global config file (~/.pm-orchestrator-runner/config.json)
+     *
+     * Key Setup Mode (fail-closed + interactive onboarding):
+     * - No API key = enter key-setup mode
+     * - Only /help, /keys, /provider, /exit are available
+     * - User must set a valid API key to proceed
      */
     async checkApiKeyStatus() {
         // Check global config for API keys
         const hasKey = (0, global_config_1.hasAnyApiKey)();
         if (!hasKey) {
-            // Show prominent warning
+            // Non-interactive mode: fail-closed immediately
+            // User cannot input a key without TTY, so we must exit with error
+            if (this.executionMode === 'non_interactive') {
+                console.error('');
+                console.error('ERROR: No API key configured (fail-closed)');
+                console.error('');
+                console.error('In non-interactive mode, an API key must be pre-configured.');
+                console.error('');
+                console.error('To configure an API key, run interactively:');
+                console.error('  pm repl');
+                console.error('  /keys set openai');
+                console.error('');
+                console.error('Or set environment variables:');
+                console.error('  export OPENAI_API_KEY=sk-...');
+                console.error('  export ANTHROPIC_API_KEY=sk-ant-...');
+                console.error('');
+                process.exit(1);
+            }
+            // Interactive mode: Enter key-setup mode (fail-closed behavior)
+            this.keySetupMode = true;
+            // Show prominent warning and instructions
             console.log('');
             console.log('============================================================');
-            console.log('  WARNING: No API key configured!');
+            console.log('  KEY SETUP MODE');
             console.log('============================================================');
             console.log('');
-            console.log('This application requires an API key to function.');
+            console.log('No API key configured. An API key is required to use pm.');
             console.log('');
-            console.log('To set up your API key, use one of these commands:');
+            console.log('Available commands in key-setup mode:');
+            console.log('  /keys set openai     - Set OpenAI API key (interactive)');
+            console.log('  /keys set anthropic  - Set Anthropic API key (interactive)');
+            console.log('  /keys                - Show current key status');
+            console.log('  /provider            - List or set default provider');
+            console.log('  /help                - Show help');
+            console.log('  /exit                - Exit pm');
             console.log('');
-            console.log('  /keys set openai <your-openai-api-key>');
-            console.log('  /keys set anthropic <your-anthropic-api-key>');
-            console.log('');
-            console.log('API keys are stored securely in:');
+            console.log('API keys are stored securely (0600 permissions) in:');
             console.log('  ' + (0, global_config_1.getConfigFilePath)());
             console.log('');
-            console.log('You can also check current key status with: /keys');
+            console.log('Once a valid API key is set, all commands will be available.');
             console.log('============================================================');
             console.log('');
         }
         else {
+            // Not in key-setup mode
+            this.keySetupMode = false;
             // Check which keys are set and show status
             const openaiKey = (0, global_config_1.getApiKey)('openai');
             const anthropicKey = (0, global_config_1.getApiKey)('anthropic');
@@ -355,6 +424,29 @@ class REPLInterface extends events_1.EventEmitter {
             console.log('  Anthropic: ' + (anthropicKey ? 'Configured' : 'Not set'));
             console.log('');
         }
+    }
+    /**
+     * Exit key-setup mode after a valid API key is configured
+     * This re-enables all commands
+     */
+    exitKeySetupMode() {
+        if (this.keySetupMode) {
+            this.keySetupMode = false;
+            console.log('');
+            console.log('============================================================');
+            console.log('  API key configured successfully!');
+            console.log('  Exiting key-setup mode. All commands are now available.');
+            console.log('============================================================');
+            console.log('');
+            console.log('Type /help to see all available commands.');
+            console.log('');
+        }
+    }
+    /**
+     * Check if in key-setup mode
+     */
+    isInKeySetupMode() {
+        return this.keySetupMode;
     }
     /**
      * Start the REPL
@@ -370,6 +462,29 @@ class REPLInterface extends events_1.EventEmitter {
     async start() {
         // Initialize project root
         await this.initialize();
+        // Per spec/15_API_KEY_ENV_SANITIZE.md lines 91-97: Startup checks
+        // Check Claude Code CLI availability and login status
+        if (this.config.authMode === 'claude-code') {
+            const authStatus = await this.checkClaudeCodeAuth();
+            if (!authStatus.available) {
+                console.error('');
+                console.error('ERROR: Claude Code CLI not available');
+                console.error('  ' + (authStatus.error || 'CLI not found'));
+                console.error('');
+                console.error('Please install Claude Code CLI and try again.');
+                console.error('');
+                process.exit(1);
+            }
+            if (!authStatus.loggedIn) {
+                console.error('');
+                console.error('ERROR: Claude Code CLI not logged in');
+                console.error('  ' + (authStatus.error || 'Login required'));
+                console.error('');
+                console.error('Please run: claude setup-token');
+                console.error('');
+                process.exit(1);
+            }
+        }
         // Check API keys for api-key mode
         if (this.config.authMode === 'api-key') {
             await this.checkApiKeyStatus();
@@ -426,6 +541,8 @@ class REPLInterface extends events_1.EventEmitter {
                 }
                 this.running = false;
                 // Ensure all output is flushed before cleanup
+                // Per spec 18_CLI_TWO_PANE.md: Flush renderer pending logs
+                this.renderer.flush();
                 await this.flushStdout();
                 await this.cleanup();
                 // In non-interactive mode, set process exit code
@@ -458,6 +575,8 @@ class REPLInterface extends events_1.EventEmitter {
      * - This allows long messages with newlines to be sent together
      */
     enqueueInput(line) {
+        // Per spec 18_CLI_TWO_PANE.md: Clear input state after line is committed
+        this.renderer.clearInput();
         const trimmed = line.trim();
         if (!trimmed) {
             // Empty line - submit accumulated multi-line buffer
@@ -529,6 +648,7 @@ class REPLInterface extends events_1.EventEmitter {
                 // In non-interactive mode, flush output after each command
                 // This ensures output is visible before processing next command
                 if (this.executionMode === 'non_interactive') {
+                    this.renderer.flush();
                     await this.flushStdout();
                 }
                 // Show prompt after each input if still running (interactive mode only)
@@ -578,6 +698,24 @@ class REPLInterface extends events_1.EventEmitter {
                 error: {
                     code: 'E301',
                     message: 'Cannot run /' + command + ' in init-only mode. Run /init first to initialize the project.',
+                },
+            };
+        }
+        // Check if in key-setup mode (fail-closed behavior)
+        // Block commands that require API key until a valid key is configured
+        if (this.keySetupMode && !KEY_SETUP_ALLOWED_COMMANDS.includes(command)) {
+            this.print('ERROR: Cannot run /' + command + ' - no API key configured.');
+            this.print('');
+            this.print('Set an API key first:');
+            this.print('  /keys set openai     - Set OpenAI API key');
+            this.print('  /keys set anthropic  - Set Anthropic API key');
+            this.print('');
+            this.print('Or type /help for available commands in key-setup mode.');
+            return {
+                success: false,
+                error: {
+                    code: 'E302',
+                    message: 'Cannot run /' + command + ' in key-setup mode. Set an API key first using /keys set.',
                 },
             };
         }
@@ -648,6 +786,20 @@ class REPLInterface extends events_1.EventEmitter {
      */
     async processNaturalLanguage(input) {
         console.log(`[DEBUG processNaturalLanguage] start, input="${input}"`);
+        // Check if in key-setup mode (fail-closed behavior)
+        // Block all natural language input until a valid API key is configured
+        if (this.keySetupMode) {
+            this.print('ERROR: Cannot process tasks - no API key configured.');
+            this.print('');
+            this.print('Set an API key first:');
+            this.print('  /keys set openai     - Set OpenAI API key');
+            this.print('  /keys set anthropic  - Set Anthropic API key');
+            this.print('');
+            this.print('Or use /help to see available commands.');
+            this.hasError = true;
+            this.updateExitCode();
+            return;
+        }
         // Exit Typo Safety: Block bare "exit" input
         // Per spec 10_REPL_UX.md: fail-closed - 2 lines max, return to input
         if (this.isExitTypo(input)) {
@@ -865,6 +1017,7 @@ class REPLInterface extends events_1.EventEmitter {
     }
     /**
      * Print welcome message with clear auth status
+     * Per spec/15_API_KEY_ENV_SANITIZE.md: Show required startup display
      */
     printWelcome() {
         this.print('');
@@ -876,18 +1029,18 @@ class REPLInterface extends events_1.EventEmitter {
             this.print('Verification Root: ' + this.verificationRoot);
         }
         this.print('');
-        // Clear auth status display
-        this.print('Authentication Status:');
+        // Per spec/15_API_KEY_ENV_SANITIZE.md lines 100-108: Required startup display
         if (this.config.authMode === 'claude-code') {
-            this.print('  Provider: Claude Code CLI');
-            this.print('  API Key: Not required (uses your Claude subscription)');
-            this.print('  Status: Ready');
+            // Spec-mandated display format - MUST be shown exactly as specified
+            this.print('Executor: Claude Code CLI');
+            this.print('Auth: Uses Claude subscription (no API key required)');
+            this.print('Env: ALLOWLIST mode (only PATH, HOME, etc. passed to subprocess)');
         }
         else {
             // Check for API keys when using API mode
             const anthropicKey = process.env.ANTHROPIC_API_KEY;
             const openaiKey = process.env.OPENAI_API_KEY;
-            this.print('  Provider: API Mode');
+            this.print('Executor: API Mode');
             this.print('  ANTHROPIC_API_KEY: ' + (anthropicKey ? 'SET' : 'NOT SET'));
             this.print('  OPENAI_API_KEY: ' + (openaiKey ? 'SET' : 'NOT SET'));
             if (!anthropicKey && !openaiKey) {
@@ -1091,20 +1244,77 @@ class REPLInterface extends events_1.EventEmitter {
      */
     async handleKeys(args) {
         let result;
-        // /keys set <provider> <key>
-        if (args.length >= 3 && args[0] === 'set') {
-            const provider = args[1];
-            const key = args[2];
-            result = await this.keysCommand.setKey(provider, key);
-            if (result.success) {
-                this.print('API key set successfully for ' + provider);
-                this.print('Saved to: ' + (0, global_config_1.getConfigFilePath)());
-                return { success: true };
+        // /keys set <provider> [key] - set API key (interactive if key not provided)
+        if (args.length >= 2 && args[0] === 'set') {
+            const provider = args[1].toLowerCase();
+            // Validate provider
+            if (provider !== 'openai' && provider !== 'anthropic') {
+                this.print('Error: Invalid provider "' + provider + '"');
+                this.print('Supported providers: openai, anthropic');
+                return {
+                    success: false,
+                    error: {
+                        code: 'E106',
+                        message: 'Invalid provider. Use "openai" or "anthropic".',
+                    },
+                };
+            }
+            let key;
+            if (args.length >= 3) {
+                // Key provided inline: /keys set <provider> <key>
+                key = args[2];
             }
             else {
-                this.print('Error [' + result.error?.code + ']: ' + (result.error?.message || result.message));
-                return { success: false, error: result.error };
+                // Interactive mode: /keys set <provider>
+                // Prompt for key with hidden input and double-entry confirmation
+                const inputResult = await (0, keys_2.promptForApiKey)(provider);
+                if (!inputResult.success) {
+                    this.print(inputResult.error || 'API key input failed.');
+                    return {
+                        success: false,
+                        error: {
+                            code: inputResult.cancelled ? 'E109' : 'E108',
+                            message: inputResult.error || 'API key input failed.',
+                        },
+                    };
+                }
+                key = inputResult.key;
             }
+            // Validate key format
+            if (!(0, keys_2.isKeyFormatValid)(provider, key)) {
+                this.print('');
+                this.print('Warning: API key format does not match expected pattern for ' + provider);
+                this.print('  OpenAI keys typically start with "sk-"');
+                this.print('  Anthropic keys typically start with "sk-ant-"');
+                this.print('');
+                this.print('Continuing with validation...');
+            }
+            // Validate key with API
+            this.print('Validating API key with ' + provider + '...');
+            const validationResult = await (0, keys_2.validateApiKey)(provider, key);
+            if (!validationResult.valid) {
+                this.print('');
+                this.print('Error: API key validation failed.');
+                this.print('  ' + (validationResult.error || 'Invalid API key'));
+                this.print('');
+                this.print('Please check your API key and try again.');
+                return {
+                    success: false,
+                    error: {
+                        code: 'E110',
+                        message: 'API key validation failed: ' + (validationResult.error || 'Invalid key'),
+                    },
+                };
+            }
+            // Key is valid - save it
+            (0, global_config_1.setApiKey)(provider, key);
+            this.print('');
+            this.print('API key validated and saved successfully!');
+            this.print('Provider: ' + provider);
+            this.print('Config file: ' + (0, global_config_1.getConfigFilePath)());
+            // Exit key-setup mode if we were in it
+            this.exitKeySetupMode();
+            return { success: true };
         }
         // /keys <provider> - check specific provider
         if (args.length > 0 && args[0] !== 'set') {
@@ -1115,14 +1325,16 @@ class REPLInterface extends events_1.EventEmitter {
             result = await this.keysCommand.getKeyStatus();
         }
         else {
-            // /keys set without enough args
-            this.print('Usage: /keys set <provider> <api-key>');
-            this.print('  provider: openai or anthropic');
+            // /keys set without provider
+            this.print('Usage:');
+            this.print('  /keys set openai     - Set OpenAI API key (interactive)');
+            this.print('  /keys set anthropic  - Set Anthropic API key (interactive)');
+            this.print('  /keys                - Show current key status');
             return {
                 success: false,
                 error: {
                     code: 'E107',
-                    message: 'Invalid arguments. Usage: /keys set <provider> <api-key>',
+                    message: 'Invalid arguments. Usage: /keys set <provider>',
                 },
             };
         }
@@ -1260,13 +1472,18 @@ class REPLInterface extends events_1.EventEmitter {
     }
     /**
      * Handle /start command
-     * Per spec Property 32, 33: Use verification_root for file operations in temp mode
+     * Per spec Property 32, 33: Use verification_root for file operations
+     * - cwd mode: use process.cwd() (verificationRoot)
+     * - temp mode: use temp directory (verificationRoot)
+     * - fixed mode: use projectRoot
      */
     async handleStart(args) {
-        // In temp mode, use verificationRoot for file operations
+        // In cwd/temp mode, use verificationRoot for file operations
         // In fixed mode or with explicit args, use the provided/session path
         const projectPath = args[0] ||
-            (this.projectMode === 'temp' ? this.verificationRoot : this.session.projectPath);
+            (this.projectMode === 'cwd' || this.projectMode === 'temp'
+                ? this.verificationRoot
+                : this.session.projectPath);
         try {
             const result = await this.sessionCommands.start(projectPath);
             if (result.success) {
@@ -1429,6 +1646,7 @@ class REPLInterface extends events_1.EventEmitter {
         }
         this.print('Goodbye!');
         // Flush output before closing (critical for non-interactive mode)
+        this.renderer.flush();
         await this.flushStdout();
         this.running = false;
         this.rl?.close();
@@ -1604,9 +1822,21 @@ class REPLInterface extends events_1.EventEmitter {
     /**
      * Print message with flush guarantee for non-interactive mode
      * Per spec 10_REPL_UX.md: Output Flush Guarantee
+     * Per spec 18_CLI_TWO_PANE.md: Use TwoPaneRenderer for TTY output
+     *
+     * Syncs readline input state to renderer before output,
+     * ensuring input line is preserved during log output.
      */
     print(message) {
-        console.log(message);
+        // Sync input state from readline to renderer
+        // Per spec 18_CLI_TWO_PANE.md: Input line must never be disrupted
+        if (this.rl && this.renderer.isEnabled()) {
+            const rlAny = this.rl;
+            const line = rlAny.line || '';
+            const cursor = rlAny.cursor ?? line.length;
+            this.renderer.updateInput(line, cursor);
+        }
+        this.renderer.writeLog(message);
     }
     /**
      * Flush stdout - ensures all output is written before continuing

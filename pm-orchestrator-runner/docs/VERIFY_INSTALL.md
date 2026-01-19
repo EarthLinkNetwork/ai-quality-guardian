@@ -2,16 +2,40 @@
 
 Per product stability requirements - Verify `pm` command is available after global installation.
 
-## Quick Verification
+## IMPORTANT: Verify Published Package
+
+**DO NOT use `npm install -g .` for verification.** This only tests local build, not the published package.
+
+Always verify using the **published npm package**:
 
 ```bash
-# Run smoke test
+# Correct: Install from npm registry
+npm install -g pm-orchestrator-runner
+
+# WRONG: This only tests local build, not published package
+npm install -g .  # DO NOT USE THIS FOR VERIFICATION
+```
+
+## Quick Verification (Published Package)
+
+```bash
+# Verify published package works correctly
+./scripts/smoke/verify-published.sh
+
+# Or with specific version
+./scripts/smoke/verify-published.sh 1.0.9
+```
+
+## Quick Verification (Local Build)
+
+```bash
+# Run local smoke test (after npm install -g .)
 ./scripts/smoke/install-global.sh
 ```
 
 ## Manual Verification Steps
 
-### 1. Install Globally
+### 1. Install Globally (from npm registry)
 
 ```bash
 npm install -g pm-orchestrator-runner
@@ -184,8 +208,92 @@ pm web --help | head -1 || echo "pm web available"
 echo "=== Verification Complete ==="
 ```
 
+## Verify Installed Version (Published Package)
+
+To confirm you have the correct published version installed:
+
+```bash
+# 1. Check installed version via npm
+npm list -g --depth=0 | grep pm-orchestrator-runner
+# Expected: pm-orchestrator-runner@1.0.9
+
+# 2. Verify actual installed version from package.json
+NPM_PREFIX=$(npm prefix -g)
+node -p "require('$NPM_PREFIX/lib/node_modules/pm-orchestrator-runner/package.json').version"
+# Expected: 1.0.9
+
+# 3. Verify version from CLI
+pm --version
+# Expected: 1.0.9
+
+# 4. Compare with published version
+npm view pm-orchestrator-runner version
+# Should match installed version
+```
+
+## API Key Configuration
+
+The `pm` command requires an API key (OpenAI or Anthropic) by default.
+
+### First Time Setup (Key Setup Mode)
+
+When you run `pm` without an API key configured, you'll enter **Key Setup Mode**:
+
+```
+========================================
+  KEY SETUP MODE
+  API key required to use pm runner
+========================================
+
+Available commands in Key Setup Mode:
+  /keys set <provider>  - Set API key (openai or anthropic)
+  /provider <provider>  - Switch provider
+  /help                 - Show help
+  /exit                 - Exit
+```
+
+### Setting Up API Key
+
+```bash
+# Interactive mode (recommended - hidden input)
+pm
+> /keys set openai
+Enter OpenAI API key: ******
+Confirm OpenAI API key: ******
+Keys match. Validating with openai API...
+API key validated and saved successfully!
+
+# Or set via environment variable
+export OPENAI_API_KEY=sk-...
+pm
+```
+
+### Provider Options
+
+| Provider | Flag | API Key Required |
+|----------|------|------------------|
+| OpenAI | `--provider openai` (default) | Yes (`OPENAI_API_KEY`) |
+| Anthropic | `--provider anthropic` | Yes (`ANTHROPIC_API_KEY`) |
+| Claude Code | `--provider claude-code` | No (uses Claude login) |
+
+### Using Claude Code Without API Key
+
+If you have Claude Code CLI logged in, you can bypass API key requirement:
+
+```bash
+pm --provider claude-code
+```
+
+### Security Notes
+
+- API keys are stored locally in `~/.pm-orchestrator/config.json` with mode 0600
+- Keys are **NEVER** logged to console or log files
+- Double-entry confirmation required when setting keys interactively
+- Keys are validated against provider APIs before being saved
+
 ## Notes
 
 - **npm prefix -g** is used instead of `npm bin -g` for consistency
 - Only `pm` command is exposed; `pm-orchestrator` is deprecated
 - Web UI requires `pm web` subcommand (not a separate binary)
+- Always verify with the **published package** (`npm install -g pm-orchestrator-runner`), not local build (`npm install -g .`)

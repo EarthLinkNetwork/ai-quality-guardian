@@ -12,7 +12,8 @@
  * - Deterministic Exit Code: 0=COMPLETE, 1=ERROR, 2=INCOMPLETE
  *
  * Project Mode (per spec 10_REPL_UX.md, Property 32, 33):
- * - temp: Use temporary directory (default, cleaned up on exit)
+ * - cwd: Use current working directory (DEFAULT per spec)
+ * - temp: Use temporary directory (cleaned up on exit)
  * - fixed: Use specified directory (persists after exit)
  */
 import { EventEmitter } from 'events';
@@ -21,10 +22,11 @@ import { ExecutorSupervisor } from '../supervisor/executor-supervisor';
 /**
  * Project Mode - per spec 10_REPL_UX.md
  * Controls how verification_root is determined
- * - temp: Use temporary directory (default)
+ * - cwd: Use current working directory (DEFAULT per spec)
+ * - temp: Use temporary directory
  * - fixed: Use specified --project-root directory
  */
-export type ProjectMode = 'temp' | 'fixed';
+export type ProjectMode = 'cwd' | 'temp' | 'fixed';
 /**
  * Verified File record - per spec 06_CORRECTNESS_PROPERTIES.md Property 33
  * Records file verification result with traceability information
@@ -63,7 +65,8 @@ export interface REPLConfig {
     forceNonInteractive?: boolean;
     /**
      * Project mode - per spec 10_REPL_UX.md
-     * - 'temp': Use temporary directory for verification_root (default)
+     * - 'cwd': Use current working directory (DEFAULT per spec)
+     * - 'temp': Use temporary directory for verification_root
      * - 'fixed': Use projectRoot as verification_root
      */
     projectMode?: ProjectMode;
@@ -78,6 +81,22 @@ export interface REPLConfig {
      * Outputs PROJECT_PATH=<path> for machine-readable parsing
      */
     printProjectPath?: boolean;
+    /**
+     * Namespace for state separation - per spec/21_STABLE_DEV.md
+     * Separates QueueStore, state dir, Web UI port
+     * Examples: 'stable', 'dev', 'test-1'
+     */
+    namespace?: string;
+    /**
+     * Full namespace configuration - per spec/21_STABLE_DEV.md
+     * Contains derived values: tableName, stateDir, port
+     */
+    namespaceConfig?: {
+        namespace: string;
+        tableName: string;
+        stateDir: string;
+        port: number;
+    };
 }
 /**
  * REPL Execution Mode - per spec 05_DATA_MODELS.md
@@ -167,6 +186,7 @@ export declare class REPLInterface extends EventEmitter {
     private session;
     private running;
     private initOnlyMode;
+    private keySetupMode;
     private inputQueue;
     private isProcessingInput;
     private multiLineBuffer;
@@ -188,6 +208,7 @@ export declare class REPLInterface extends EventEmitter {
     private modelsCommand;
     private keysCommand;
     private logsCommand;
+    private renderer;
     constructor(config?: REPLConfig);
     /**
      * Get project mode - per spec 10_REPL_UX.md
@@ -229,10 +250,31 @@ export declare class REPLInterface extends EventEmitter {
      */
     cleanup(): Promise<void>;
     /**
-     * Check API key status and show warning if not configured
+     * Check Claude Code CLI auth status
+     * Per spec/15_API_KEY_ENV_SANITIZE.md: Check at startup, exit on failure
+     *
+     * @returns AuthCheckResult with availability and login status
+     */
+    private checkClaudeCodeAuth;
+    /**
+     * Check API key status and enter key-setup mode if not configured
      * API keys are stored in global config file (~/.pm-orchestrator-runner/config.json)
+     *
+     * Key Setup Mode (fail-closed + interactive onboarding):
+     * - No API key = enter key-setup mode
+     * - Only /help, /keys, /provider, /exit are available
+     * - User must set a valid API key to proceed
      */
     private checkApiKeyStatus;
+    /**
+     * Exit key-setup mode after a valid API key is configured
+     * This re-enables all commands
+     */
+    private exitKeySetupMode;
+    /**
+     * Check if in key-setup mode
+     */
+    isInKeySetupMode(): boolean;
     /**
      * Start the REPL
      * Per spec 10_REPL_UX.md L45: validate project structure on startup
@@ -315,6 +357,7 @@ export declare class REPLInterface extends EventEmitter {
     private handleClarificationNeeded;
     /**
      * Print welcome message with clear auth status
+     * Per spec/15_API_KEY_ENV_SANITIZE.md: Show required startup display
      */
     private printWelcome;
     /**
@@ -370,7 +413,10 @@ export declare class REPLInterface extends EventEmitter {
     private handleStatus;
     /**
      * Handle /start command
-     * Per spec Property 32, 33: Use verification_root for file operations in temp mode
+     * Per spec Property 32, 33: Use verification_root for file operations
+     * - cwd mode: use process.cwd() (verificationRoot)
+     * - temp mode: use temp directory (verificationRoot)
+     * - fixed mode: use projectRoot
      */
     private handleStart;
     /**
@@ -422,6 +468,10 @@ export declare class REPLInterface extends EventEmitter {
     /**
      * Print message with flush guarantee for non-interactive mode
      * Per spec 10_REPL_UX.md: Output Flush Guarantee
+     * Per spec 18_CLI_TWO_PANE.md: Use TwoPaneRenderer for TTY output
+     *
+     * Syncs readline input state to renderer before output,
+     * ensuring input line is preserved during log output.
      */
     private print;
     /**
