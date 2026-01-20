@@ -32,7 +32,8 @@ export declare function loadGlobalConfig(): GlobalConfig;
  */
 export declare function saveGlobalConfig(config: GlobalConfig): void;
 /**
- * Get API key for a provider
+ * Get API key for a provider (environment variable OR config file)
+ * Environment variables take precedence over config file.
  * @param provider - Provider name (openai, anthropic)
  * @returns API key or undefined
  */
@@ -44,7 +45,7 @@ export declare function getApiKey(provider: string): string | undefined;
  */
 export declare function setApiKey(provider: string, key: string): void;
 /**
- * Check if any API key is configured
+ * Check if any API key is configured (environment variable OR config file)
  * @returns true if at least one API key is set
  */
 export declare function hasAnyApiKey(): boolean;

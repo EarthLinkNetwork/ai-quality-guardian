@@ -22,7 +22,7 @@ your-project/
 ### Start a New Session
 
 ```bash
-pm-orchestrator start [--project <path>]
+pm start [--project <path>]
 ```
 
 Starts a new execution session. If `--project` is not specified, uses the current working directory.
@@ -32,7 +32,7 @@ Starts a new execution session. If `--project` is not specified, uses the curren
 ### Continue an Existing Session
 
 ```bash
-pm-orchestrator continue <session-id>
+pm continue <session-id>
 ```
 
 Resumes an existing session by its ID.
@@ -45,7 +45,7 @@ Resumes an existing session by its ID.
 ### Check Session Status
 
 ```bash
-pm-orchestrator status <session-id>
+pm status <session-id>
 ```
 
 Returns the current status of a session.
@@ -53,7 +53,7 @@ Returns the current status of a session.
 ### Validate Project Structure
 
 ```bash
-pm-orchestrator validate [--project <path>]
+pm validate [--project <path>]
 ```
 
 Validates project structure without starting execution. Checks for required `.claude` directory and files.
@@ -63,7 +63,7 @@ Validates project structure without starting execution. Checks for required `.cl
 Start the interactive REPL:
 
 ```bash
-pm-orchestrator repl [--project <path>]
+pm repl [--project <path>]
 ```
 
 ### Available REPL Commands
@@ -80,6 +80,13 @@ pm-orchestrator repl [--project <path>]
 | `/tasks` | List tasks in current session |
 | `/approve` | Approve continuation for INCOMPLETE sessions |
 | `/exit` | Exit REPL |
+| `/provider` | Show current provider |
+| `/provider <name>` | Set provider (openai, anthropic, claude-code) |
+| `/models` | List available models for current provider |
+| `/keys` | Show API key status (SET/NOT SET) |
+| `/keys set <provider> <key>` | Set API key for a provider |
+| `/logs` | List task logs for current session |
+| `/logs <task-id>` | Show task details |
 
 ### Natural Language Input
 
@@ -92,6 +99,55 @@ Any input not starting with `/` is treated as a task description and passed to t
 5. QA
 6. COMPLETION_VALIDATION
 7. REPORT
+
+## API Key Configuration
+
+### Using Environment Variables
+
+Set API keys via environment variables (recommended for development):
+
+```bash
+# OpenAI
+export OPENAI_API_KEY=sk-...
+
+# Anthropic
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### Using the Config File
+
+API keys can also be stored in `~/.pm-orchestrator-runner/config.json`:
+
+```bash
+# In REPL
+pm repl
+> /keys set openai sk-...
+> /keys set anthropic sk-ant-...
+```
+
+The config file is created with secure permissions (0600).
+
+### Provider Selection
+
+```bash
+# Show current provider
+> /provider
+
+# Set provider
+> /provider openai
+> /provider anthropic
+> /provider claude-code  # Uses Claude Code CLI
+
+# List available models
+> /models
+```
+
+### Key Setup Mode
+
+If no API key is configured (neither environment variable nor config file), REPL enters **Key Setup Mode**:
+- Only `/help`, `/keys`, `/provider`, and `/exit` commands are available
+- Natural language tasks are blocked
+- Set an API key to exit Key Setup Mode
 
 ## Configuration
 
@@ -144,7 +200,7 @@ PM Orchestrator Runner follows the fail-closed principle:
 Sessions are stored in the evidence directory:
 
 ```
-.pm-orchestrator/sessions/
+.pm/sessions/
   session-<id>/
     session.json         # Session metadata
     executor_runs.jsonl  # Executor execution log
@@ -167,7 +223,7 @@ Sessions are stored in the evidence directory:
 
 ```bash
 # 1. Initialize project
-pm-orchestrator repl
+pm repl
 > /init
 
 # 2. Start a session
@@ -191,14 +247,14 @@ pm-orchestrator repl
 
 ```bash
 # Validate first
-pm-orchestrator validate --project /path/to/project
+pm validate --project /path/to/project
 
 # Start execution
-pm-orchestrator start --project /path/to/project
+pm start --project /path/to/project
 
 # Check status later
-pm-orchestrator status session-abc123
+pm status session-abc123
 
 # Continue if needed
-pm-orchestrator continue session-abc123
+pm continue session-abc123
 ```

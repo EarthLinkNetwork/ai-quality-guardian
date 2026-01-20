@@ -44,6 +44,8 @@ import { ClaudeCodeExecutor, ExecutorResult, IExecutor, ExecutorConfig } from '.
 import { DeterministicExecutor, isDeterministicMode } from '../executor/deterministic-executor';
 import { RecoveryExecutor, isRecoveryMode, assertRecoveryModeAllowed } from '../executor/recovery-executor';
 import { ClarificationReason } from '../mediation/llm-mediation-layer';
+import { PromptAssembler, TaskGroupPreludeInput } from '../prompt/prompt-assembler';
+import { TaskGroupContext } from '../models/task-group';
 
 /**
  * Runner Core Error
@@ -305,6 +307,14 @@ export class RunnerCore extends EventEmitter {
   // This is set from ExecutionConfig.selectedModel and passed to executor
   private currentSelectedModel: string | undefined = undefined;
 
+  // Prompt Assembler for spec/17_PROMPT_TEMPLATE.md
+  // Assembles prompts in fixed order: global prelude → project prelude → task group prelude → user input → output epilogue
+  private promptAssembler: PromptAssembler | null = null;
+
+  // Current task group context for prompt assembly
+  // Per spec/16_TASK_GROUP.md: context persists within task group
+  private currentTaskGroupContext: TaskGroupPreludeInput | null = null;
+
   /**
    * Create a new RunnerCore
    */
@@ -416,6 +426,12 @@ export class RunnerCore extends EventEmitter {
         this.currentExecutorMode = 'claude-code';
       }
     }
+
+    // Initialize PromptAssembler for spec/17_PROMPT_TEMPLATE.md
+    // Prompt assembly in fixed order, no caching
+    this.promptAssembler = new PromptAssembler({
+      projectPath: targetProject,
+    });
 
     // Initialize TaskLogManager for Property 26/27: TaskLog Lifecycle Recording
     // Per spec 06_CORRECTNESS_PROPERTIES.md Property 26: Fail-Closed Logging
@@ -716,11 +732,28 @@ export class RunnerCore extends EventEmitter {
         if (this.claudeCodeExecutor && this.session?.target_project) {
           executionLog.push(`[${new Date().toISOString()}] Executing via Claude Code CLI...`);
 
+          // Per spec/17_PROMPT_TEMPLATE.md: Assemble prompt in fixed order
+          // Order: global prelude → project prelude → task group prelude → user input → output epilogue
+          let assembledPrompt = task.naturalLanguageTask;
+          if (this.promptAssembler && task.naturalLanguageTask) {
+            try {
+              const assemblyResult = this.promptAssembler.assemble(
+                task.naturalLanguageTask,
+                this.currentTaskGroupContext || undefined
+              );
+              assembledPrompt = assemblyResult.prompt;
+              executionLog.push(`[${new Date().toISOString()}] Prompt assembled (5 sections)`);
+            } catch (assemblyError) {
+              // Fail-closed: if assembly fails, use original prompt but log warning
+              executionLog.push(`[${new Date().toISOString()}] WARNING: Prompt assembly failed, using raw input`);
+            }
+          }
+
           // Per spec 10_REPL_UX.md L117-118: Pass model to executor
           // Model selection is REPL-local; executor passes it to Claude Code CLI
           const executorResult = await this.claudeCodeExecutor.execute({
             id: task.id,
-            prompt: task.naturalLanguageTask,
+            prompt: assembledPrompt,
             workingDir: this.session.target_project,
             selectedModel: this.currentSelectedModel,
           });

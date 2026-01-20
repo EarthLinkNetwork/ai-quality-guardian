@@ -8,6 +8,12 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import { strict as assert } from 'assert';
 import { execSync } from 'child_process';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// ESM-compatible __dirname replacement
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 describe('LLM Sentinel CLI', () => {
   const originalEnv: Record<string, string | undefined> = {};

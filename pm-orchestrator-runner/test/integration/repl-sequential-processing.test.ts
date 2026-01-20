@@ -17,6 +17,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn, ChildProcess } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// ESM-compatible __dirname replacement
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 describe('REPL Sequential Processing (Integration)', () => {
   let tempDir: string;
@@ -172,7 +178,8 @@ async function runREPLWithInput(
 
     const child = spawn('node', [cliPath, 'repl', '--project', projectDir], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, NO_COLOR: '1' },
+      // Include a test API key to bypass Key Setup Mode
+      env: { ...process.env, NO_COLOR: '1', OPENAI_API_KEY: 'sk-test-sequential-processing-key' },
     });
 
     let stdout = '';

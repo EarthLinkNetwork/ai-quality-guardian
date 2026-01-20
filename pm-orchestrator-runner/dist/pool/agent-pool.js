@@ -11,8 +11,7 @@ exports.L2ExecutorPool = exports.L1SubagentPool = exports.AgentPoolError = void 
 const events_1 = require("events");
 const enums_1 = require("../models/enums");
 const error_codes_1 = require("../errors/error-codes");
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const minimatch = require('minimatch');
+const minimatch_1 = require("minimatch");
 /**
  * Agent Pool Error
  */
@@ -244,7 +243,7 @@ class L2ExecutorPool extends events_1.EventEmitter {
             if (!options?.writeScopes || options.writeScopes.length === 0) {
                 return true; // Default: can write anywhere
             }
-            return options.writeScopes.some(scope => minimatch(path, scope));
+            return options.writeScopes.some(scope => (0, minimatch_1.minimatch)(path, scope));
         };
         const info = {
             id,

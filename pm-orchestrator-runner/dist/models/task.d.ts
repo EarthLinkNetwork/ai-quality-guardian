@@ -13,9 +13,14 @@ export interface GranularityLimits {
 }
 /**
  * Task data structure
+ * Per spec 05_DATA_MODELS.md L108-142
  */
 export interface Task {
     task_id: string;
+    /** 所属スレッドの識別子 */
+    thread_id?: string;
+    /** 所属 Run の識別子 */
+    run_id?: string;
     description: string;
     requirements: string[];
     status: TaskStatus;
@@ -30,6 +35,8 @@ export interface Task {
     subtask_ids?: string[];
     started_at?: string;
     completed_at?: string;
+    /** 当該タスクに対応する TaskLog の識別子 */
+    log_ref?: string;
     error?: {
         code: string;
         message: string;

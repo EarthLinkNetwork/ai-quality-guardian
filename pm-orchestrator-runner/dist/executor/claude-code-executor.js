@@ -49,6 +49,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ClaudeCodeExecutor = void 0;
+exports.buildSanitizedEnv = buildSanitizedEnv;
 const child_process_1 = require("child_process");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
@@ -107,6 +108,45 @@ const DEFAULT_OVERALL_TIMEOUT_MS = 300000; // 5 min total
  */
 const SIGTERM_GRACE_MS = 5000;
 /**
+ * ALLOWLIST of environment variables to pass to child process
+ * Per spec/15_API_KEY_ENV_SANITIZE.md: Only these variables are permitted.
+ * This ensures API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.) are never
+ * passed to the subprocess, implementing Property 24 (API Key Secrecy).
+ *
+ * DELETELIST approach is PROHIBITED - new API keys would slip through.
+ */
+const ENV_ALLOWLIST = [
+    'PATH', // Required for execution
+    'HOME', // Home directory
+    'USER', // Username
+    'SHELL', // Shell
+    'LANG', // Language setting
+    'LC_ALL', // Locale
+    'LC_CTYPE', // Character type
+    'TERM', // Terminal type
+    'TMPDIR', // Temp directory
+    'XDG_CONFIG_HOME', // XDG config directory
+    'XDG_DATA_HOME', // XDG data directory
+    'XDG_CACHE_HOME', // XDG cache directory
+    'NODE_ENV', // Node.js environment
+    'DEBUG', // Debug flag (optional)
+];
+/**
+ * Build sanitized environment from ALLOWLIST
+ * Per spec/15_API_KEY_ENV_SANITIZE.md: Never pass process.env directly.
+ *
+ * @returns Record containing only ALLOWLIST variables
+ */
+function buildSanitizedEnv() {
+    const sanitizedEnv = {};
+    for (const key of ENV_ALLOWLIST) {
+        if (process.env[key] !== undefined) {
+            sanitizedEnv[key] = process.env[key];
+        }
+    }
+    return sanitizedEnv;
+}
+/**
  * Process state check interval
  */
 const PROCESS_CHECK_INTERVAL_MS = 1000;
@@ -151,9 +191,11 @@ class ClaudeCodeExecutor {
     async isClaudeCodeAvailable() {
         return new Promise((resolve) => {
             try {
+                // Per spec/15_API_KEY_ENV_SANITIZE.md: Use ALLOWLIST approach even for version check
                 const childProcess = (0, child_process_1.spawn)(this.cliPath, ['--version'], {
                     stdio: ['pipe', 'pipe', 'pipe'],
                     timeout: 5000,
+                    env: buildSanitizedEnv(),
                 });
                 childProcess.on('close', (code) => {
                     resolve(code === 0);
@@ -169,6 +211,144 @@ class ClaudeCodeExecutor {
             }
             catch {
                 resolve(false);
+            }
+        });
+    }
+    /**
+     * Check Claude Code CLI auth status
+     * Per spec/15_API_KEY_ENV_SANITIZE.md: Runner must check login status at startup
+     *
+     * This method checks:
+     * 1. CLI exists (version check)
+     * 2. CLI is logged in (can run minimal prompt without auth error)
+     *
+     * @returns AuthCheckResult with availability and login status
+     */
+    async checkAuthStatus() {
+        // First check if CLI is available
+        const available = await this.isClaudeCodeAvailable();
+        if (!available) {
+            return {
+                available: false,
+                loggedIn: false,
+                error: `Claude Code CLI not found at: ${this.cliPath}`,
+            };
+        }
+        // CLI is available, now check if logged in
+        // We'll run a minimal test by trying to run with --print and detect auth errors
+        // Using a very short timeout and echo-like prompt to minimize API usage
+        return new Promise((resolve) => {
+            try {
+                // Use --print with a simple prompt that should be very fast
+                // If not logged in, we should get an auth error quickly
+                const childProcess = (0, child_process_1.spawn)(this.cliPath, [
+                    '--print',
+                    '--dangerously-skip-permissions',
+                    '--no-session-persistence',
+                    'echo test', // Minimal prompt
+                ], {
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                    timeout: 15000, // 15 second timeout for auth check
+                    env: {
+                        ...buildSanitizedEnv(),
+                        CI: 'true',
+                        NO_COLOR: '1',
+                        FORCE_COLOR: '0',
+                    },
+                });
+                let stderr = '';
+                let stdout = '';
+                childProcess.stdout?.on('data', (data) => {
+                    stdout += data.toString();
+                });
+                childProcess.stderr?.on('data', (data) => {
+                    stderr += data.toString();
+                });
+                // Close stdin immediately
+                childProcess.stdin?.end();
+                childProcess.on('close', (code) => {
+                    // Check for authentication-related errors in stderr or stdout
+                    const combinedOutput = (stderr + stdout).toLowerCase();
+                    // Common auth error patterns
+                    const authErrorPatterns = [
+                        'not logged in',
+                        'login required',
+                        'authentication required',
+                        'authentication failed',
+                        'unauthorized',
+                        'invalid token',
+                        'expired token',
+                        'please log in',
+                        'need to log in',
+                        'sign in',
+                        'authenticate',
+                        'api key',
+                        'subscription required',
+                        'no subscription',
+                    ];
+                    const hasAuthError = authErrorPatterns.some(pattern => combinedOutput.includes(pattern));
+                    if (hasAuthError) {
+                        resolve({
+                            available: true,
+                            loggedIn: false,
+                            error: 'Claude Code CLI not logged in. Please run: claude setup-token',
+                        });
+                    }
+                    else if (code === 0) {
+                        // Successful execution means logged in
+                        resolve({
+                            available: true,
+                            loggedIn: true,
+                        });
+                    }
+                    else if (code === 137) {
+                        // Exit code 137 = 128 + 9 (SIGKILL)
+                        // Per spec/15: Fail-closed for process termination during auth check
+                        // This typically means the process was killed externally (e.g., previous session cleanup)
+                        resolve({
+                            available: true,
+                            loggedIn: false,
+                            error: `Auth check process killed (exit 137 / SIGKILL). Please retry.`,
+                        });
+                    }
+                    else {
+                        // Non-zero exit but no auth error - might be other issue
+                        // For now, assume logged in but with other problems
+                        // (fail-open for non-auth errors to allow execution)
+                        resolve({
+                            available: true,
+                            loggedIn: true,
+                            error: `CLI exited with code ${code}: ${stderr}`,
+                        });
+                    }
+                });
+                childProcess.on('error', (err) => {
+                    resolve({
+                        available: true,
+                        loggedIn: false,
+                        error: `Error checking auth status: ${err.message}`,
+                    });
+                });
+                // Timeout handling
+                setTimeout(() => {
+                    if (!childProcess.killed) {
+                        childProcess.kill();
+                        // Timeout could mean many things, assume logged in (fail-open for timeout)
+                        resolve({
+                            available: true,
+                            loggedIn: true,
+                            error: 'Auth check timed out (assuming logged in)',
+                        });
+                    }
+                }, 15000);
+            }
+            catch (err) {
+                const error = err;
+                resolve({
+                    available: true,
+                    loggedIn: false,
+                    error: `Error checking auth: ${error.message}`,
+                });
             }
         });
     }
@@ -321,11 +501,14 @@ class ClaudeCodeExecutor {
             }
             console.log(`[ClaudeCodeExecutor] Timeout config: soft=${this.softTimeoutMs}ms, hard=${this.hardTimeoutMs}ms, overall=${this.config.timeout}ms`);
             try {
+                // Per spec/15_API_KEY_ENV_SANITIZE.md: Use ALLOWLIST approach
+                // NEVER pass process.env directly (DELETELIST approach is PROHIBITED)
+                const sanitizedEnv = buildSanitizedEnv();
                 childProcess = (0, child_process_1.spawn)(this.cliPath, cliArgs, {
                     cwd: task.workingDir,
                     stdio: ['pipe', 'pipe', 'pipe'],
                     env: {
-                        ...process.env,
+                        ...sanitizedEnv,
                         // Ensure non-interactive mode
                         CI: 'true',
                         // Disable color output for cleaner parsing

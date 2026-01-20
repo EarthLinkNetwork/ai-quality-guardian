@@ -106,6 +106,13 @@ class RecoveryExecutor {
         // In recovery mode, we simulate Claude Code availability
         return true;
     }
+    async checkAuthStatus() {
+        // In recovery mode, we simulate authenticated state
+        return {
+            available: true,
+            loggedIn: true,
+        };
+    }
     async execute(task) {
         const startTime = Date.now();
         const cwd = task.workingDir;

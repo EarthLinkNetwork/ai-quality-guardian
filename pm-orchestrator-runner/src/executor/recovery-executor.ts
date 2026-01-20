@@ -34,6 +34,7 @@ import type {
   IExecutor,
   ExecutorTask,
   ExecutorResult,
+  AuthCheckResult,
 } from './claude-code-executor';
 import type { BlockedReason, TerminatedBy } from '../models/enums';
 
@@ -116,6 +117,14 @@ export class RecoveryExecutor implements IExecutor {
   async isClaudeCodeAvailable(): Promise<boolean> {
     // In recovery mode, we simulate Claude Code availability
     return true;
+  }
+
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    // In recovery mode, we simulate authenticated state
+    return {
+      available: true,
+      loggedIn: true,
+    };
   }
 
   async execute(task: ExecutorTask): Promise<ExecutorResult> {

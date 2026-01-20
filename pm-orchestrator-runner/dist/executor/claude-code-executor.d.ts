@@ -74,6 +74,15 @@ export interface ExecutorResult {
     terminated_by?: TerminatedBy;
 }
 /**
+ * Auth check result
+ * Per spec/15_API_KEY_ENV_SANITIZE.md: Check login status at startup
+ */
+export interface AuthCheckResult {
+    available: boolean;
+    loggedIn: boolean;
+    error?: string;
+}
+/**
  * Executor interface for dependency injection
  *
  * Allows substituting the real ClaudeCodeExecutor with mocks for testing.
@@ -81,7 +90,15 @@ export interface ExecutorResult {
 export interface IExecutor {
     execute(task: ExecutorTask): Promise<ExecutorResult>;
     isClaudeCodeAvailable(): Promise<boolean>;
+    checkAuthStatus(): Promise<AuthCheckResult>;
 }
+/**
+ * Build sanitized environment from ALLOWLIST
+ * Per spec/15_API_KEY_ENV_SANITIZE.md: Never pass process.env directly.
+ *
+ * @returns Record containing only ALLOWLIST variables
+ */
+export declare function buildSanitizedEnv(): Record<string, string>;
 /**
  * Claude Code Executor class
  *
@@ -107,6 +124,17 @@ export declare class ClaudeCodeExecutor implements IExecutor {
      * @returns true if CLI is available, false otherwise
      */
     isClaudeCodeAvailable(): Promise<boolean>;
+    /**
+     * Check Claude Code CLI auth status
+     * Per spec/15_API_KEY_ENV_SANITIZE.md: Runner must check login status at startup
+     *
+     * This method checks:
+     * 1. CLI exists (version check)
+     * 2. CLI is logged in (can run minimal prompt without auth error)
+     *
+     * @returns AuthCheckResult with availability and login status
+     */
+    checkAuthStatus(): Promise<AuthCheckResult>;
     /**
      * Execute a task via Claude Code CLI
      *

@@ -13,16 +13,23 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Import the module statically at the top level
+import {
+  FailClosedRunner,
+  createFailClosedRunner,
+  validateFailClosedRequirements,
+} from '../../../src/mediation/fail-closed-runner';
+
 describe('FailClosedRunner - Integration Tests', () => {
   let tempDir: string;
-  const originalEnv = process.env;
+  let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fail-closed-runner-test-'));
     // Create .claude/evidence directory
     fs.mkdirSync(path.join(tempDir, '.claude', 'evidence'), { recursive: true });
     // Save original env
-    process.env = { ...originalEnv };
+    originalEnv = { ...process.env };
   });
 
   afterEach(() => {
@@ -36,8 +43,6 @@ describe('FailClosedRunner - Integration Tests', () => {
       // Remove API keys
       delete process.env.OPENAI_API_KEY;
       delete process.env.ANTHROPIC_API_KEY;
-
-      const { FailClosedRunner } = require('../../../src/mediation/fail-closed-runner');
 
       const runner = new FailClosedRunner({
         projectPath: tempDir,
@@ -56,8 +61,6 @@ describe('FailClosedRunner - Integration Tests', () => {
     it('should succeed when API key is configured', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { FailClosedRunner } = require('../../../src/mediation/fail-closed-runner');
-
       const runner = new FailClosedRunner({
         projectPath: tempDir,
         provider: 'openai',
@@ -72,8 +75,6 @@ describe('FailClosedRunner - Integration Tests', () => {
     it('should fail gate check when not initialized', () => {
       delete process.env.OPENAI_API_KEY;
 
-      const { FailClosedRunner } = require('../../../src/mediation/fail-closed-runner');
-
       const runner = new FailClosedRunner({
         projectPath: tempDir,
         provider: 'openai',
@@ -86,8 +87,6 @@ describe('FailClosedRunner - Integration Tests', () => {
 
     it('should pass both gates when properly configured', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
-
-      const { FailClosedRunner } = require('../../../src/mediation/fail-closed-runner');
 
       const runner = new FailClosedRunner({
         projectPath: tempDir,
@@ -105,8 +104,6 @@ describe('FailClosedRunner - Integration Tests', () => {
     it('should not assert COMPLETE without evidence', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { FailClosedRunner } = require('../../../src/mediation/fail-closed-runner');
-
       const runner = new FailClosedRunner({
         projectPath: tempDir,
         provider: 'openai',
@@ -120,8 +117,6 @@ describe('FailClosedRunner - Integration Tests', () => {
     it('should assert COMPLETE with successful evidence', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { FailClosedRunner } = require('../../../src/mediation/fail-closed-runner');
-
       const runner = new FailClosedRunner({
         projectPath: tempDir,
         provider: 'openai',
@@ -129,6 +124,7 @@ describe('FailClosedRunner - Integration Tests', () => {
 
       // Manually add evidence
       const evidenceManager = runner.getEvidenceManager();
+      assert.ok(evidenceManager, 'Evidence manager should not be null');
       evidenceManager.recordEvidence({
         call_id: 'test-success',
         provider: 'openai',
@@ -148,8 +144,6 @@ describe('FailClosedRunner - Integration Tests', () => {
     it('should not assert COMPLETE with only failed evidence', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { FailClosedRunner } = require('../../../src/mediation/fail-closed-runner');
-
       const runner = new FailClosedRunner({
         projectPath: tempDir,
         provider: 'openai',
@@ -157,6 +151,7 @@ describe('FailClosedRunner - Integration Tests', () => {
 
       // Manually add failed evidence
       const evidenceManager = runner.getEvidenceManager();
+      assert.ok(evidenceManager, 'Evidence manager should not be null');
       evidenceManager.recordEvidence({
         call_id: 'test-fail',
         provider: 'openai',
@@ -178,8 +173,6 @@ describe('FailClosedRunner - Integration Tests', () => {
     it('should return false without evidence', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { FailClosedRunner } = require('../../../src/mediation/fail-closed-runner');
-
       const runner = new FailClosedRunner({
         projectPath: tempDir,
         provider: 'openai',
@@ -191,8 +184,6 @@ describe('FailClosedRunner - Integration Tests', () => {
     it('should return true with successful evidence', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { FailClosedRunner } = require('../../../src/mediation/fail-closed-runner');
-
       const runner = new FailClosedRunner({
         projectPath: tempDir,
         provider: 'openai',
@@ -200,6 +191,7 @@ describe('FailClosedRunner - Integration Tests', () => {
 
       // Add successful evidence
       const evidenceManager = runner.getEvidenceManager();
+      assert.ok(evidenceManager, 'Evidence manager should not be null');
       evidenceManager.recordEvidence({
         call_id: 'quick-check-success',
         provider: 'openai',
@@ -219,8 +211,6 @@ describe('FailClosedRunner - Integration Tests', () => {
     it('should generate report', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { FailClosedRunner } = require('../../../src/mediation/fail-closed-runner');
-
       const runner = new FailClosedRunner({
         projectPath: tempDir,
         provider: 'openai',
@@ -235,8 +225,6 @@ describe('FailClosedRunner - Integration Tests', () => {
     it('createFailClosedRunner should create valid runner', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { createFailClosedRunner } = require('../../../src/mediation/fail-closed-runner');
-
       const runner = createFailClosedRunner(tempDir, 'openai');
       assert.ok(runner.isReady());
     });
@@ -244,16 +232,12 @@ describe('FailClosedRunner - Integration Tests', () => {
     it('validateFailClosedRequirements should validate requirements', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { validateFailClosedRequirements } = require('../../../src/mediation/fail-closed-runner');
-
       const result = validateFailClosedRequirements(tempDir, 'openai');
       assert.equal(result.valid, true);
     });
 
     it('validateFailClosedRequirements should fail without API key', () => {
       delete process.env.OPENAI_API_KEY;
-
-      const { validateFailClosedRequirements } = require('../../../src/mediation/fail-closed-runner');
 
       const result = validateFailClosedRequirements(tempDir, 'openai');
       assert.equal(result.valid, false);

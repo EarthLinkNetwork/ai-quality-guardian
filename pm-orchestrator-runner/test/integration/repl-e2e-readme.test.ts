@@ -26,6 +26,7 @@ import {
   IExecutor,
   ExecutorTask,
   ExecutorResult,
+  AuthCheckResult,
 } from '../../src/executor/claude-code-executor';
 import { isClaudeAvailable } from '../helpers/claude-availability';
 
@@ -59,6 +60,13 @@ class MockReadmeExecutor implements IExecutor {
 
   async isClaudeCodeAvailable(): Promise<boolean> {
     return true;
+  }
+
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    return {
+      available: true,
+      loggedIn: true,
+    };
   }
 }
 
@@ -220,6 +228,13 @@ describe('REPL README.md Creation (E2E)', () => {
 
       async isClaudeCodeAvailable(): Promise<boolean> {
         return true;
+      }
+
+      async checkAuthStatus(): Promise<AuthCheckResult> {
+        return {
+          available: true,
+          loggedIn: true,
+        };
       }
     }
 

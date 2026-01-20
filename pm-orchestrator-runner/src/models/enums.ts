@@ -214,3 +214,61 @@ export type BlockedReason = 'INTERACTIVE_PROMPT' | 'TIMEOUT' | 'STDIN_REQUIRED';
  * Per spec 05_DATA_MODELS.md - Property 34-36 non-interactive guarantees
  */
 export type TerminatedBy = 'REPL_FAIL_CLOSED' | 'USER' | 'TIMEOUT';
+
+/**
+ * Thread types
+ * Per spec 05_DATA_MODELS.md L59-66
+ */
+export enum ThreadType {
+  /** Main conversation thread (user interaction) */
+  MAIN = 'main',
+  /** Background execution thread (Executor processing) */
+  BACKGROUND = 'background',
+  /** System internal thread */
+  SYSTEM = 'system',
+}
+
+/**
+ * Run status
+ * Per spec 05_DATA_MODELS.md L89-96
+ */
+export enum RunStatus {
+  /** Currently executing */
+  RUNNING = 'RUNNING',
+  /** Successfully completed */
+  COMPLETED = 'COMPLETED',
+  /** Ended with error */
+  FAILED = 'FAILED',
+  /** Cancelled by user or system */
+  CANCELLED = 'CANCELLED',
+}
+
+/**
+ * Run trigger
+ * Per spec 05_DATA_MODELS.md L98-104
+ */
+export enum RunTrigger {
+  /** Started by user input */
+  USER_INPUT = 'USER_INPUT',
+  /** Started by user response */
+  USER_RESPONSE = 'USER_RESPONSE',
+  /** Started by auto-continuation */
+  CONTINUATION = 'CONTINUATION',
+  /** Started by Executor processing */
+  EXECUTOR = 'EXECUTOR',
+}
+
+/**
+ * Task Group context state
+ * Per spec 16_TASK_GROUP.md L132-143
+ */
+export enum TaskGroupState {
+  /** Task Group created but not yet active */
+  CREATED = 'created',
+  /** Task Group is active and accepting tasks */
+  ACTIVE = 'active',
+  /** Task Group is paused by user */
+  PAUSED = 'paused',
+  /** Task Group is completed (read-only) */
+  COMPLETED = 'completed',
+}

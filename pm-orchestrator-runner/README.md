@@ -9,6 +9,7 @@ A CLI tool for orchestrated execution of Claude Code with evidence-based complet
 - Two-stage timeout system (soft warning + hard terminate)
 - Session management and persistence
 - Non-interactive mode for scripting and automation
+- Web UI for task queue management
 
 ## Installation
 
@@ -25,21 +26,34 @@ npx pm-orchestrator-runner --help
 ### Interactive Mode
 
 ```bash
-# Start REPL in current directory
-pm repl
+# Start REPL in current directory (default command)
+pm
 
 # Start REPL with specific project
-pm repl --project /path/to/project
+pm --project /path/to/project
+
+# Explicit repl command
+pm repl --namespace stable
+```
+
+### Web UI Mode
+
+```bash
+# Start Web UI server
+pm web --port 3000
+
+# Verify Web UI
+curl http://localhost:3000/api/health
 ```
 
 ### Non-Interactive Mode (Scripting)
 
 ```bash
 # Pipe input
-echo "Create a file called hello.txt with content Hello World" | pm repl --non-interactive --exit-on-eof
+echo "Create a file called hello.txt with content Hello World" | pm --non-interactive --exit-on-eof
 
 # Heredoc input
-pm repl --non-interactive --exit-on-eof << 'EOF'
+pm --non-interactive --exit-on-eof << 'EOF'
 Create README.md with content "# My Project"
 EOF
 ```
@@ -49,14 +63,16 @@ EOF
 For persistent verification root (useful for CI/CD):
 
 ```bash
-pm repl --project-mode fixed --project-root /path/to/project
+pm --project-mode fixed --project-root /path/to/project
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
+| `pm` | Start interactive REPL mode (default) |
 | `pm repl` | Start interactive REPL mode |
+| `pm web` | Start Web UI server |
 | `pm start <path>` | Start a new session on a project |
 | `pm continue <id>` | Continue a paused session |
 | `pm status <id>` | Get session status |
@@ -72,6 +88,15 @@ pm repl --project-mode fixed --project-root /path/to/project
 | `--exit-on-eof` | Exit when EOF is received |
 | `--project-mode <mode>` | `temp` (default) or `fixed` |
 | `--project-root <path>` | Verification root directory |
+| `--namespace <name>` | Namespace for state separation |
+| `--port <number>` | Web UI port |
+
+## Web Options
+
+| Option | Description |
+|--------|-------------|
+| `--port <number>` | Web UI port (default: 3000) |
+| `--namespace <name>` | Namespace for state separation |
 
 ## REPL Commands
 
@@ -86,6 +111,24 @@ Inside the REPL:
 | `/session` | Show session info |
 | `/quit` | Exit REPL |
 
+## Web UI Verification
+
+```bash
+# 1. Start Web UI
+pm web --port 3000
+
+# 2. Health check
+curl http://localhost:3000/api/health
+
+# 3. Submit task
+curl -X POST http://localhost:3000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"task_group_id":"test","prompt":"hello"}'
+
+# 4. View tasks
+curl http://localhost:3000/api/task-groups
+```
+
 ## Environment Variables
 
 | Variable | Description |
@@ -98,6 +141,16 @@ Inside the REPL:
 
 - Node.js >= 18.0.0
 - Claude Code CLI (`claude` command) installed
+
+## Verify Installation
+
+```bash
+# Install globally
+npm install -g pm-orchestrator-runner
+
+# Verify command is available
+pm --help
+```
 
 ## License
 

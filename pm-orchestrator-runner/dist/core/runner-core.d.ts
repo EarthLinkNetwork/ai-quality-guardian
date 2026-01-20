@@ -247,6 +247,8 @@ export declare class RunnerCore extends EventEmitter {
     private taskLogThread;
     private taskLogRun;
     private currentSelectedModel;
+    private promptAssembler;
+    private currentTaskGroupContext;
     /**
      * Create a new RunnerCore
      */

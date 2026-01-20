@@ -18,6 +18,7 @@ import type {
   ExecutorTask,
   ExecutorResult,
   VerifiedFile,
+  AuthCheckResult,
 } from './claude-code-executor';
 
 /**
@@ -90,6 +91,14 @@ export class DeterministicExecutor implements IExecutor {
   async isClaudeCodeAvailable(): Promise<boolean> {
     // In deterministic mode, we don't need Claude Code CLI
     return true;
+  }
+
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    // In deterministic mode, we simulate authenticated state
+    return {
+      available: true,
+      loggedIn: true,
+    };
   }
 
   async execute(task: ExecutorTask): Promise<ExecutorResult> {

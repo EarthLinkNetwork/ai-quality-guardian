@@ -4,7 +4,7 @@
  * Based on 05_DATA_MODELS.md and 03_LIFECYCLE.md specifications
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.EvidenceType = exports.LockType = exports.LifecyclePhase = exports.Phase = exports.AgentType = exports.PhaseStatus = exports.TaskStatus = exports.OverallStatus = void 0;
+exports.TaskGroupState = exports.RunTrigger = exports.RunStatus = exports.ThreadType = exports.EvidenceType = exports.LockType = exports.LifecyclePhase = exports.Phase = exports.AgentType = exports.PhaseStatus = exports.TaskStatus = exports.OverallStatus = void 0;
 exports.getStatusPriority = getStatusPriority;
 exports.aggregateStatus = aggregateStatus;
 exports.isTerminalStatus = isTerminalStatus;
@@ -198,4 +198,62 @@ function isFirstPhase(phase) {
 function isLastPhase(phase) {
     return phase === Phase.REPORT;
 }
+/**
+ * Thread types
+ * Per spec 05_DATA_MODELS.md L59-66
+ */
+var ThreadType;
+(function (ThreadType) {
+    /** Main conversation thread (user interaction) */
+    ThreadType["MAIN"] = "main";
+    /** Background execution thread (Executor processing) */
+    ThreadType["BACKGROUND"] = "background";
+    /** System internal thread */
+    ThreadType["SYSTEM"] = "system";
+})(ThreadType || (exports.ThreadType = ThreadType = {}));
+/**
+ * Run status
+ * Per spec 05_DATA_MODELS.md L89-96
+ */
+var RunStatus;
+(function (RunStatus) {
+    /** Currently executing */
+    RunStatus["RUNNING"] = "RUNNING";
+    /** Successfully completed */
+    RunStatus["COMPLETED"] = "COMPLETED";
+    /** Ended with error */
+    RunStatus["FAILED"] = "FAILED";
+    /** Cancelled by user or system */
+    RunStatus["CANCELLED"] = "CANCELLED";
+})(RunStatus || (exports.RunStatus = RunStatus = {}));
+/**
+ * Run trigger
+ * Per spec 05_DATA_MODELS.md L98-104
+ */
+var RunTrigger;
+(function (RunTrigger) {
+    /** Started by user input */
+    RunTrigger["USER_INPUT"] = "USER_INPUT";
+    /** Started by user response */
+    RunTrigger["USER_RESPONSE"] = "USER_RESPONSE";
+    /** Started by auto-continuation */
+    RunTrigger["CONTINUATION"] = "CONTINUATION";
+    /** Started by Executor processing */
+    RunTrigger["EXECUTOR"] = "EXECUTOR";
+})(RunTrigger || (exports.RunTrigger = RunTrigger = {}));
+/**
+ * Task Group context state
+ * Per spec 16_TASK_GROUP.md L132-143
+ */
+var TaskGroupState;
+(function (TaskGroupState) {
+    /** Task Group created but not yet active */
+    TaskGroupState["CREATED"] = "created";
+    /** Task Group is active and accepting tasks */
+    TaskGroupState["ACTIVE"] = "active";
+    /** Task Group is paused by user */
+    TaskGroupState["PAUSED"] = "paused";
+    /** Task Group is completed (read-only) */
+    TaskGroupState["COMPLETED"] = "completed";
+})(TaskGroupState || (exports.TaskGroupState = TaskGroupState = {}));
 //# sourceMappingURL=enums.js.map

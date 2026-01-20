@@ -10,7 +10,7 @@
  * - Performs filesBefore/filesAfter 2-scan (Property 31)
  * - Returns immediately without spawning subprocess
  */
-import type { IExecutor, ExecutorTask, ExecutorResult } from './claude-code-executor';
+import type { IExecutor, ExecutorTask, ExecutorResult, AuthCheckResult } from './claude-code-executor';
 /**
  * DeterministicExecutor - For CLI_TEST_MODE=1
  *
@@ -19,6 +19,7 @@ import type { IExecutor, ExecutorTask, ExecutorResult } from './claude-code-exec
  */
 export declare class DeterministicExecutor implements IExecutor {
     isClaudeCodeAvailable(): Promise<boolean>;
+    checkAuthStatus(): Promise<AuthCheckResult>;
     execute(task: ExecutorTask): Promise<ExecutorResult>;
     /**
      * List all files in a directory (recursively)

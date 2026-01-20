@@ -29,7 +29,7 @@
  *   - Immediate Summary must be visible (RESULT/TASK/HINT)
  *   - No RUNNING residue in session state
  */
-import type { IExecutor, ExecutorTask, ExecutorResult } from './claude-code-executor';
+import type { IExecutor, ExecutorTask, ExecutorResult, AuthCheckResult } from './claude-code-executor';
 /**
  * Recovery scenario types
  */
@@ -72,6 +72,7 @@ export declare class RecoveryExecutor implements IExecutor {
     private scenario;
     constructor(scenario?: RecoveryScenario);
     isClaudeCodeAvailable(): Promise<boolean>;
+    checkAuthStatus(): Promise<AuthCheckResult>;
     execute(task: ExecutorTask): Promise<ExecutorResult>;
     /**
      * TIMEOUT scenario:

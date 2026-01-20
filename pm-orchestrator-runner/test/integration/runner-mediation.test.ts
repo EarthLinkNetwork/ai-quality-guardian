@@ -20,6 +20,7 @@ import {
   IExecutor,
   ExecutorTask,
   ExecutorResult,
+  AuthCheckResult,
 } from '../../src/executor/claude-code-executor';
 
 // Test fixtures
@@ -73,6 +74,9 @@ describe('REPL Natural Language Task Mediation', function () {
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
         }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
+        }
       }
 
       const runner = new RunnerCore({
@@ -119,6 +123,9 @@ describe('REPL Natural Language Task Mediation', function () {
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
         }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
+        }
       }
 
       const runner = new RunnerCore({
@@ -164,6 +171,9 @@ describe('REPL Natural Language Task Mediation', function () {
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
         }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
+        }
       }
 
       const runner = new RunnerCore({
@@ -206,6 +216,9 @@ describe('REPL Natural Language Task Mediation', function () {
         }
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
+        }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
         }
       }
 
@@ -250,6 +263,9 @@ describe('REPL Natural Language Task Mediation', function () {
         }
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
+        }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
         }
       }
 
@@ -300,6 +316,9 @@ describe('REPL Natural Language Task Mediation', function () {
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
         }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
+        }
       }
 
       const mockExecutor = new MockExecutor();
@@ -344,6 +363,9 @@ describe('REPL Natural Language Task Mediation', function () {
         }
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
+        }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
         }
       }
 
@@ -400,6 +422,9 @@ describe('REPL Natural Language Task Mediation', function () {
         }
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
+        }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
         }
       }
 
@@ -458,6 +483,9 @@ describe('REPL Natural Language Task Mediation', function () {
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
         }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
+        }
       }
 
       const runner = new RunnerCore({
@@ -510,6 +538,9 @@ describe('REPL Natural Language Task Mediation', function () {
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
         }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
+        }
       }
 
       const spyExecutor = new SpyExecutor();
@@ -561,6 +592,9 @@ describe('REPL Natural Language Task Mediation', function () {
         }
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
+        }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
         }
       }
 
@@ -644,6 +678,9 @@ describe('REPL Natural Language Task Mediation', function () {
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
         }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
+        }
       }
 
       // Create README.md in project directory
@@ -700,6 +737,9 @@ describe('REPL Natural Language Task Mediation', function () {
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
         }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
+        }
       }
 
       // Ensure README.md does NOT exist
@@ -740,6 +780,9 @@ describe('REPL Natural Language Task Mediation', function () {
         }
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
+        }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
         }
       }
 
@@ -789,6 +832,9 @@ describe('REPL Natural Language Task Mediation', function () {
         }
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
+        }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
         }
       }
 
@@ -848,6 +894,9 @@ describe('REPL Natural Language Task Mediation', function () {
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
         }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
+        }
       }
 
       // Ensure docs/guide.md does NOT exist
@@ -900,6 +949,9 @@ describe('REPL Natural Language Task Mediation', function () {
         }
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
+        }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
         }
       }
 
@@ -956,6 +1008,9 @@ describe('REPL Natural Language Task Mediation', function () {
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
         }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
+        }
       }
 
       const runner = new RunnerCore({
@@ -988,6 +1043,9 @@ describe('REPL Natural Language Task Mediation', function () {
         }
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
+        }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
         }
       }
 
@@ -1034,6 +1092,9 @@ describe('REPL Natural Language Task Mediation', function () {
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
         }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
+        }
       }
 
       const runner = new RunnerCore({
@@ -1074,6 +1135,9 @@ describe('REPL Natural Language Task Mediation', function () {
         }
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
+        }
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
         }
       }
 

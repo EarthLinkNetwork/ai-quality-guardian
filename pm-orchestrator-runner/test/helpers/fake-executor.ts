@@ -18,6 +18,7 @@ import type {
   ExecutorTask,
   ExecutorResult,
   VerifiedFile,
+  AuthCheckResult,
 } from '../../src/executor/claude-code-executor';
 import type { BlockedReason, TerminatedBy } from '../../src/models/enums';
 
@@ -54,6 +55,13 @@ export class SuccessFakeExecutor implements IExecutor {
 
   async isClaudeCodeAvailable(): Promise<boolean> {
     return true;
+  }
+
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    return {
+      available: true,
+      loggedIn: true,
+    };
   }
 
   async execute(task: ExecutorTask): Promise<ExecutorResult> {
@@ -113,6 +121,13 @@ export class BlockedFakeExecutor implements IExecutor {
     return true;
   }
 
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    return {
+      available: true,
+      loggedIn: true,
+    };
+  }
+
   async execute(task: ExecutorTask): Promise<ExecutorResult> {
     // Simulate delay before blocking detection
     if (this.delay_ms > 0) {
@@ -155,6 +170,13 @@ export class ErrorFakeExecutor implements IExecutor {
     return true;
   }
 
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    return {
+      available: true,
+      loggedIn: true,
+    };
+  }
+
   async execute(task: ExecutorTask): Promise<ExecutorResult> {
     if (this.delay_ms > 0) {
       await new Promise((resolve) => setTimeout(resolve, this.delay_ms));
@@ -190,6 +212,13 @@ export class TimeoutFakeExecutor implements IExecutor {
     return true;
   }
 
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    return {
+      available: true,
+      loggedIn: true,
+    };
+  }
+
   async execute(task: ExecutorTask): Promise<ExecutorResult> {
     // Simulate long execution that would trigger timeout
     await new Promise((resolve) => setTimeout(resolve, this.timeout_ms));
@@ -220,6 +249,14 @@ export class TimeoutFakeExecutor implements IExecutor {
 export class UnavailableFakeExecutor implements IExecutor {
   async isClaudeCodeAvailable(): Promise<boolean> {
     return false;
+  }
+
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    return {
+      available: false,
+      loggedIn: false,
+      error: 'Claude Code CLI not available (UnavailableFakeExecutor)',
+    };
   }
 
   async execute(task: ExecutorTask): Promise<ExecutorResult> {
@@ -293,6 +330,13 @@ export class CustomFakeExecutor implements IExecutor {
 
   async isClaudeCodeAvailable(): Promise<boolean> {
     return this.available;
+  }
+
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    return {
+      available: this.available,
+      loggedIn: this.available,
+    };
   }
 
   async execute(task: ExecutorTask): Promise<ExecutorResult> {

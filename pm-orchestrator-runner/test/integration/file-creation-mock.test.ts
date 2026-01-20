@@ -19,6 +19,7 @@ import {
   IExecutor,
   ExecutorTask,
   ExecutorResult,
+  AuthCheckResult,
 } from '../../src/executor/claude-code-executor';
 
 /**
@@ -52,6 +53,10 @@ class MockExecutorSuccess implements IExecutor {
   async isClaudeCodeAvailable(): Promise<boolean> {
     return true;
   }
+
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    return { available: true, loggedIn: true };
+  }
 }
 
 /**
@@ -82,6 +87,10 @@ class MockExecutorNoFile implements IExecutor {
   async isClaudeCodeAvailable(): Promise<boolean> {
     return true;
   }
+
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    return { available: true, loggedIn: true };
+  }
 }
 
 /**
@@ -110,6 +119,10 @@ class MockExecutorError implements IExecutor {
 
   async isClaudeCodeAvailable(): Promise<boolean> {
     return true;
+  }
+
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    return { available: true, loggedIn: true };
   }
 }
 
@@ -302,6 +315,9 @@ describe('File Creation Verification - Mock (Tier A: Deterministic)', () => {
         },
         async isClaudeCodeAvailable(): Promise<boolean> {
           return true;
+        },
+        async checkAuthStatus(): Promise<AuthCheckResult> {
+          return { available: true, loggedIn: true };
         },
       };
 

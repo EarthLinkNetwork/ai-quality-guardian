@@ -6,7 +6,10 @@ This tutorial walks you through using the PM Orchestrator Runner to build a simp
 
 - Node.js 18+ installed
 - npm or npx available
-- Claude Code CLI configured
+- API key configured (one of the following):
+  - Environment variable: `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`
+  - Config file: Set via `/keys` command in REPL
+  - Claude Code CLI configured (alternative: use `/provider claude-code`)
 
 ## Quick Start
 
@@ -23,7 +26,7 @@ npm init -y
 Start the REPL and initialize the project:
 
 ```bash
-npx pm-orchestrator repl
+pm repl
 ```
 
 In the REPL, run:
@@ -184,14 +187,14 @@ PM Orchestrator Runner uses evidence-based verification:
 Besides the REPL, you can use CLI commands directly:
 
 ```bash
-# Run tasks on a project
-npx pm-orchestrator run ./my-project
+# Start a session on a project
+pm start --project ./my-project
 
 # Continue a session
-npx pm-orchestrator continue session-2025-01-15-abc123
+pm continue session-2025-01-15-abc123
 
 # Get session status
-npx pm-orchestrator status session-2025-01-15-abc123
+pm status session-2025-01-15-abc123
 ```
 
 ## Troubleshooting
@@ -223,21 +226,21 @@ If evidence collection fails:
 
 Start REPL with a specific project:
 ```bash
-npx pm-orchestrator repl --project /path/to/project
+pm repl --project /path/to/project
 ```
 
 ### Evidence Directory
 
 Specify custom evidence directory:
 ```bash
-npx pm-orchestrator repl --evidence /path/to/evidence
+pm repl --evidence /path/to/evidence
 ```
 
-### Dry Run
+### Validate Project
 
-Validate without executing:
+Validate project structure without executing:
 ```bash
-npx pm-orchestrator run ./project --dry-run
+pm validate --project ./project
 ```
 
 ## Next Steps

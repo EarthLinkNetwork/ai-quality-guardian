@@ -9,8 +9,7 @@
 import { EventEmitter } from 'events';
 import { AgentType, TaskStatus } from '../models/enums';
 import { ErrorCode, getErrorMessage } from '../errors/error-codes';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const minimatch = require('minimatch');
+import { minimatch } from 'minimatch';
 
 /**
  * Agent Pool Error

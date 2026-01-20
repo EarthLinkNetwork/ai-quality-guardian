@@ -14,14 +14,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Import the module statically at the top level
+import { LLMClientWithEvidence } from '../../../src/mediation/llm-client-with-evidence';
+
 describe('LLMClientWithEvidence - Double Execution Gate', () => {
   let tempDir: string;
-  const originalEnv = process.env;
+  let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'llm-client-evidence-test-'));
     // Save original env
-    process.env = { ...originalEnv };
+    originalEnv = { ...process.env };
   });
 
   afterEach(() => {
@@ -36,9 +39,6 @@ describe('LLMClientWithEvidence - Double Execution Gate', () => {
       delete process.env.OPENAI_API_KEY;
       delete process.env.ANTHROPIC_API_KEY;
 
-      // Import dynamically to test fail-closed behavior
-      const { LLMClientWithEvidence } = require('../../../src/mediation/llm-client-with-evidence');
-
       assert.throws(
         () => new LLMClientWithEvidence({ evidenceDir: tempDir, provider: 'openai' }),
         (err: Error) => {
@@ -52,7 +52,6 @@ describe('LLMClientWithEvidence - Double Execution Gate', () => {
       // Set API key
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { LLMClientWithEvidence } = require('../../../src/mediation/llm-client-with-evidence');
       const client = new LLMClientWithEvidence({ evidenceDir: tempDir, provider: 'openai' });
 
       const gateResult = client.checkExecutionGate();
@@ -64,7 +63,6 @@ describe('LLMClientWithEvidence - Double Execution Gate', () => {
     it('should pass Gate 2 when evidence directory is ready', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { LLMClientWithEvidence } = require('../../../src/mediation/llm-client-with-evidence');
       const client = new LLMClientWithEvidence({ evidenceDir: tempDir, provider: 'openai' });
 
       const gateResult = client.checkExecutionGate();
@@ -74,7 +72,6 @@ describe('LLMClientWithEvidence - Double Execution Gate', () => {
     it('should create evidence subdirectory', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { LLMClientWithEvidence } = require('../../../src/mediation/llm-client-with-evidence');
       const client = new LLMClientWithEvidence({ evidenceDir: tempDir, provider: 'openai' });
 
       const evidenceDir = client.getEvidenceManager().getEvidenceDir();
@@ -86,7 +83,6 @@ describe('LLMClientWithEvidence - Double Execution Gate', () => {
     it('should pass both gates when properly configured', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { LLMClientWithEvidence } = require('../../../src/mediation/llm-client-with-evidence');
       const client = new LLMClientWithEvidence({ evidenceDir: tempDir, provider: 'openai' });
 
       const gateResult = client.checkExecutionGate();
@@ -101,7 +97,6 @@ describe('LLMClientWithEvidence - Double Execution Gate', () => {
     it('should return false when no evidence exists', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { LLMClientWithEvidence } = require('../../../src/mediation/llm-client-with-evidence');
       const client = new LLMClientWithEvidence({ evidenceDir: tempDir, provider: 'openai' });
 
       // No LLM calls made = no evidence = cannot assert COMPLETE
@@ -110,9 +105,6 @@ describe('LLMClientWithEvidence - Double Execution Gate', () => {
 
     it('should return false when only failed evidence exists', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
-
-      const { LLMClientWithEvidence } = require('../../../src/mediation/llm-client-with-evidence');
-      const { LLMEvidenceManager } = require('../../../src/mediation/llm-evidence-manager');
 
       const client = new LLMClientWithEvidence({ evidenceDir: tempDir, provider: 'openai' });
 
@@ -137,8 +129,6 @@ describe('LLMClientWithEvidence - Double Execution Gate', () => {
     it('should return true when successful evidence exists', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
 
-      const { LLMClientWithEvidence } = require('../../../src/mediation/llm-client-with-evidence');
-
       const client = new LLMClientWithEvidence({ evidenceDir: tempDir, provider: 'openai' });
 
       // Manually record a successful evidence
@@ -162,8 +152,6 @@ describe('LLMClientWithEvidence - Double Execution Gate', () => {
   describe('Evidence Management', () => {
     it('should list all evidence', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
-
-      const { LLMClientWithEvidence } = require('../../../src/mediation/llm-client-with-evidence');
 
       const client = new LLMClientWithEvidence({ evidenceDir: tempDir, provider: 'openai' });
       const evidenceManager = client.getEvidenceManager();
@@ -196,8 +184,6 @@ describe('LLMClientWithEvidence - Double Execution Gate', () => {
 
     it('should get evidence statistics', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
-
-      const { LLMClientWithEvidence } = require('../../../src/mediation/llm-client-with-evidence');
 
       const client = new LLMClientWithEvidence({ evidenceDir: tempDir, provider: 'openai' });
       const evidenceManager = client.getEvidenceManager();
@@ -233,8 +219,6 @@ describe('LLMClientWithEvidence - Double Execution Gate', () => {
 
     it('should verify evidence integrity', () => {
       process.env.OPENAI_API_KEY = 'test-key-123';
-
-      const { LLMClientWithEvidence } = require('../../../src/mediation/llm-client-with-evidence');
 
       const client = new LLMClientWithEvidence({ evidenceDir: tempDir, provider: 'openai' });
       const evidenceManager = client.getEvidenceManager();

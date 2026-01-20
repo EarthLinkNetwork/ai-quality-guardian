@@ -7,10 +7,16 @@
 export {
   OverallStatus,
   TaskStatus,
+  PhaseStatus,
+  AgentType,
   Phase,
   LifecyclePhase,
   LockType,
   EvidenceType,
+  ThreadType,
+  RunStatus,
+  RunTrigger,
+  TaskGroupState,
   getStatusPriority,
   aggregateStatus,
   isTerminalStatus,
@@ -114,3 +120,57 @@ export {
   incrementEvidenceCount,
   hasInventoryIssues,
 } from './supporting';
+
+// Thread (Per spec 05_DATA_MODELS.md L44-66)
+export {
+  Thread,
+  generateThreadId,
+  resetThreadCounter,
+  createThread,
+  validateThread,
+  isMainThread,
+  isBackgroundThread,
+  isSystemThread,
+} from './thread';
+
+// Run (Per spec 05_DATA_MODELS.md L69-104)
+export {
+  Run,
+  generateRunId,
+  resetRunCounter,
+  createRun,
+  completeRun,
+  failRun,
+  cancelRun,
+  validateRun,
+  isRunning,
+  isCompleted,
+  isFailed,
+  isCancelled,
+  isTerminal,
+  getRunDuration,
+} from './run';
+
+// Task Group (Per spec 16_TASK_GROUP.md)
+export {
+  ConversationEntry,
+  FileChange,
+  TaskResult,
+  TaskGroupContext,
+  TaskGroup,
+  generateTaskGroupId,
+  resetTaskGroupCounter,
+  generateConversationEntryId,
+  resetConversationEntryCounter,
+  createTaskGroup,
+  activateTaskGroup,
+  pauseTaskGroup,
+  resumeTaskGroup,
+  completeTaskGroup,
+  addConversationEntry,
+  addFileChange,
+  updateLastTaskResult,
+  validateTaskGroup,
+  isTaskGroupActive,
+  isTaskGroupCompleted,
+} from './task-group';

@@ -6,6 +6,11 @@
  * - OpenAI models with pricing
  * - Anthropic models with pricing
  * - claude-code does not have explicit models (delegated)
+ *
+ * Provider Recommendations:
+ * - openai: RECOMMENDED - API key based, direct control
+ * - anthropic: API key based, direct control
+ * - claude-code: NOT recommended by default, requires explicit opt-in (--provider claude-code)
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ANTHROPIC_MODELS = exports.OPENAI_MODELS = exports.PROVIDER_REGISTRY = void 0;
@@ -13,22 +18,28 @@ exports.getModelsForProvider = getModelsForProvider;
 exports.getProviderInfo = getProviderInfo;
 exports.getAllProviders = getAllProviders;
 exports.isValidModelForProvider = isValidModelForProvider;
+exports.requiresExplicitOptIn = requiresExplicitOptIn;
 /**
  * Provider registry
  * Per spec 12_LLM_PROVIDER_AND_MODELS.md Section 1.1
+ *
+ * IMPORTANT: claude-code is NOT the default.
+ * Default is api-key mode (openai/anthropic).
+ * claude-code requires explicit --provider claude-code.
  */
 exports.PROVIDER_REGISTRY = {
     'claude-code': {
         id: 'claude-code',
         displayName: 'Claude Code',
-        description: 'Claude Code Executor - recommended',
+        description: 'Claude Code CLI - requires explicit --provider claude-code opt-in',
         requiresApiKey: false,
         envVariable: null,
+        requiresExplicitOptIn: true,
     },
     'openai': {
         id: 'openai',
         displayName: 'OpenAI',
-        description: 'OpenAI API direct',
+        description: 'OpenAI API direct - recommended',
         requiresApiKey: true,
         envVariable: 'OPENAI_API_KEY',
     },
@@ -112,5 +123,15 @@ function getAllProviders() {
 function isValidModelForProvider(provider, modelId) {
     const models = getModelsForProvider(provider);
     return models.some(m => m.id === modelId);
+}
+/**
+ * Check if a provider requires explicit opt-in
+ *
+ * @param provider - Provider identifier
+ * @returns true if provider requires explicit opt-in
+ */
+function requiresExplicitOptIn(provider) {
+    const info = exports.PROVIDER_REGISTRY[provider];
+    return info?.requiresExplicitOptIn ?? false;
 }
 //# sourceMappingURL=model-registry.js.map

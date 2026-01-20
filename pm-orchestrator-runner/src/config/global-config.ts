@@ -76,11 +76,19 @@ export function saveGlobalConfig(config: GlobalConfig): void {
 }
 
 /**
- * Get API key for a provider
+ * Get API key for a provider (environment variable OR config file)
+ * Environment variables take precedence over config file.
  * @param provider - Provider name (openai, anthropic)
  * @returns API key or undefined
  */
 export function getApiKey(provider: string): string | undefined {
+  // Check environment variables first (higher priority)
+  if (provider === 'openai' && process.env.OPENAI_API_KEY) {
+    return process.env.OPENAI_API_KEY;
+  } else if (provider === 'anthropic' && process.env.ANTHROPIC_API_KEY) {
+    return process.env.ANTHROPIC_API_KEY;
+  }
+  // Then check config file
   const config = loadGlobalConfig();
   if (provider === 'openai') {
     return config.apiKeys?.openai;
@@ -109,10 +117,15 @@ export function setApiKey(provider: string, key: string): void {
 }
 
 /**
- * Check if any API key is configured
+ * Check if any API key is configured (environment variable OR config file)
  * @returns true if at least one API key is set
  */
 export function hasAnyApiKey(): boolean {
+  // Check environment variables first
+  if (process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY) {
+    return true;
+  }
+  // Then check config file
   const config = loadGlobalConfig();
   return !!(config.apiKeys?.openai || config.apiKeys?.anthropic);
 }

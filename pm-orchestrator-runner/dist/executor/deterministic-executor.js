@@ -114,6 +114,13 @@ class DeterministicExecutor {
         // In deterministic mode, we don't need Claude Code CLI
         return true;
     }
+    async checkAuthStatus() {
+        // In deterministic mode, we simulate authenticated state
+        return {
+            available: true,
+            loggedIn: true,
+        };
+    }
     async execute(task) {
         const startTime = Date.now();
         const cwd = task.workingDir;

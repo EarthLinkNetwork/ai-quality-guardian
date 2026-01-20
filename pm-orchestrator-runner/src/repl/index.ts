@@ -13,3 +13,9 @@ export {
   TaskLog,
 } from './repl-interface';
 export * from './commands';
+export {
+  TwoPaneRenderer,
+  TwoPaneRendererConfig,
+  RunningInfo,
+  CompleteInfo,
+} from './two-pane-renderer';

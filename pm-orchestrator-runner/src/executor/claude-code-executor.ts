@@ -84,6 +84,16 @@ export interface ExecutorResult {
 }
 
 /**
+ * Auth check result
+ * Per spec/15_API_KEY_ENV_SANITIZE.md: Check login status at startup
+ */
+export interface AuthCheckResult {
+  available: boolean;      // CLI exists
+  loggedIn: boolean;       // CLI is logged in (has valid session)
+  error?: string;          // Error message if check failed
+}
+
+/**
  * Executor interface for dependency injection
  *
  * Allows substituting the real ClaudeCodeExecutor with mocks for testing.
@@ -91,6 +101,7 @@ export interface ExecutorResult {
 export interface IExecutor {
   execute(task: ExecutorTask): Promise<ExecutorResult>;
   isClaudeCodeAvailable(): Promise<boolean>;
+  checkAuthStatus(): Promise<AuthCheckResult>;
 }
 
 /**
@@ -262,6 +273,154 @@ export class ClaudeCodeExecutor implements IExecutor {
         }, 5000);
       } catch {
         resolve(false);
+      }
+    });
+  }
+
+  /**
+   * Check Claude Code CLI auth status
+   * Per spec/15_API_KEY_ENV_SANITIZE.md: Runner must check login status at startup
+   *
+   * This method checks:
+   * 1. CLI exists (version check)
+   * 2. CLI is logged in (can run minimal prompt without auth error)
+   *
+   * @returns AuthCheckResult with availability and login status
+   */
+  async checkAuthStatus(): Promise<AuthCheckResult> {
+    // First check if CLI is available
+    const available = await this.isClaudeCodeAvailable();
+    if (!available) {
+      return {
+        available: false,
+        loggedIn: false,
+        error: `Claude Code CLI not found at: ${this.cliPath}`,
+      };
+    }
+
+    // CLI is available, now check if logged in
+    // We'll run a minimal test by trying to run with --print and detect auth errors
+    // Using a very short timeout and echo-like prompt to minimize API usage
+    return new Promise((resolve) => {
+      try {
+        // Use --print with a simple prompt that should be very fast
+        // If not logged in, we should get an auth error quickly
+        const childProcess = spawn(this.cliPath, [
+          '--print',
+          '--dangerously-skip-permissions',
+          '--no-session-persistence',
+          'echo test',  // Minimal prompt
+        ], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: 15000,  // 15 second timeout for auth check
+          env: {
+            ...buildSanitizedEnv(),
+            CI: 'true',
+            NO_COLOR: '1',
+            FORCE_COLOR: '0',
+          },
+        });
+
+        let stderr = '';
+        let stdout = '';
+
+        childProcess.stdout?.on('data', (data: Buffer) => {
+          stdout += data.toString();
+        });
+
+        childProcess.stderr?.on('data', (data: Buffer) => {
+          stderr += data.toString();
+        });
+
+        // Close stdin immediately
+        childProcess.stdin?.end();
+
+        childProcess.on('close', (code: number | null) => {
+          // Check for authentication-related errors in stderr or stdout
+          const combinedOutput = (stderr + stdout).toLowerCase();
+
+          // Common auth error patterns
+          const authErrorPatterns = [
+            'not logged in',
+            'login required',
+            'authentication required',
+            'authentication failed',
+            'unauthorized',
+            'invalid token',
+            'expired token',
+            'please log in',
+            'need to log in',
+            'sign in',
+            'authenticate',
+            'api key',
+            'subscription required',
+            'no subscription',
+          ];
+
+          const hasAuthError = authErrorPatterns.some(pattern =>
+            combinedOutput.includes(pattern)
+          );
+
+          if (hasAuthError) {
+            resolve({
+              available: true,
+              loggedIn: false,
+              error: 'Claude Code CLI not logged in. Please run: claude setup-token',
+            });
+          } else if (code === 0) {
+            // Successful execution means logged in
+            resolve({
+              available: true,
+              loggedIn: true,
+            });
+          } else if (code === 137) {
+            // Exit code 137 = 128 + 9 (SIGKILL)
+            // Per spec/15: Fail-closed for process termination during auth check
+            // This typically means the process was killed externally (e.g., previous session cleanup)
+            resolve({
+              available: true,
+              loggedIn: false,
+              error: `Auth check process killed (exit 137 / SIGKILL). Please retry.`,
+            });
+          } else {
+            // Non-zero exit but no auth error - might be other issue
+            // For now, assume logged in but with other problems
+            // (fail-open for non-auth errors to allow execution)
+            resolve({
+              available: true,
+              loggedIn: true,
+              error: `CLI exited with code ${code}: ${stderr}`,
+            });
+          }
+        });
+
+        childProcess.on('error', (err: Error) => {
+          resolve({
+            available: true,
+            loggedIn: false,
+            error: `Error checking auth status: ${err.message}`,
+          });
+        });
+
+        // Timeout handling
+        setTimeout(() => {
+          if (!childProcess.killed) {
+            childProcess.kill();
+            // Timeout could mean many things, assume logged in (fail-open for timeout)
+            resolve({
+              available: true,
+              loggedIn: true,
+              error: 'Auth check timed out (assuming logged in)',
+            });
+          }
+        }, 15000);
+      } catch (err) {
+        const error = err as Error;
+        resolve({
+          available: true,
+          loggedIn: false,
+          error: `Error checking auth: ${error.message}`,
+        });
       }
     });
   }

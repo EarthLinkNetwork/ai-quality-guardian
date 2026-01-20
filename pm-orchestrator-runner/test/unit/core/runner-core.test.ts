@@ -592,6 +592,7 @@ limits:
       // Create mock executor that returns files_modified=[] but verified_files with exists=true
       const mockExecutor = {
         async isClaudeCodeAvailable() { return true; },
+        async checkAuthStatus() { return { available: true, loggedIn: true }; },
         async execute() {
           // Create the file on disk (simulating Claude Code behavior)
           fs.writeFileSync(path.join(projectDir, 'README.md'), '# Test README');
@@ -645,6 +646,7 @@ limits:
       // Create mock executor that returns files_modified=[] and verified_files=[]
       const mockExecutor = {
         async isClaudeCodeAvailable() { return true; },
+        async checkAuthStatus() { return { available: true, loggedIn: true }; },
         async execute() {
           return {
             executed: true,
@@ -697,6 +699,7 @@ limits:
       // Create mock executor that returns ERROR
       const mockExecutor = {
         async isClaudeCodeAvailable() { return true; },
+        async checkAuthStatus() { return { available: true, loggedIn: true }; },
         async execute() {
           return {
             executed: false,
