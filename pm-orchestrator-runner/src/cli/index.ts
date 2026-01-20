@@ -87,9 +87,10 @@ Web UI Verification:
 `;
 
 /**
- * Version
+ * Version - read from package.json
  */
-const VERSION = '0.1.0';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const VERSION: string = require('../../package.json').version;
 
 /**
  * REPL arguments interface

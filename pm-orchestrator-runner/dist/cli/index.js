@@ -115,9 +115,10 @@ Web UI Verification:
   4. View tasks:      curl http://localhost:3000/api/task-groups
 `;
 /**
- * Version
+ * Version - read from package.json
  */
-const VERSION = '0.1.0';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const VERSION = require('../../package.json').version;
 /**
  * Parse REPL-specific arguments
  */
