@@ -80,7 +80,7 @@ tunnels:
 ### Task 一覧画面
 
 - 選択した Task Group 内の Task 一覧
-- status (QUEUED / RUNNING / COMPLETE / ERROR) で色分け
+- status (QUEUED / RUNNING / COMPLETE / ERROR / CANCELLED) で色分け
 - 最新のタスクが上に表示
 
 ### Task ログ閲覧画面
@@ -88,6 +88,7 @@ tunnels:
 - 選択した Task の詳細ログ表示
 - Evidence の参照リンク
 - 変更ファイル一覧
+- タスク状態変更ボタン（キャンセル等）
 
 ### 新規命令投入フォーム
 
@@ -101,6 +102,55 @@ tunnels:
 - フロントエンド: 軽量なもの（詳細は実装時に決定）
 - バックエンド: Runner と同一プロセスで起動
 - 通信: REST API または WebSocket
+
+
+## REST API
+
+### Task 状態変更
+
+**Endpoint**: `PATCH /api/tasks/:task_id/status`
+
+**Request Body**:
+```json
+{
+  "status": "CANCELLED"
+}
+```
+
+**Response (200 OK)**:
+```json
+{
+  "success": true,
+  "task_id": "task-xxx",
+  "old_status": "QUEUED",
+  "new_status": "CANCELLED"
+}
+```
+
+**Response (400 Bad Request)** - 不正な状態遷移:
+```json
+{
+  "error": "Invalid status transition",
+  "message": "Cannot transition from COMPLETE to CANCELLED"
+}
+```
+
+**Response (404 Not Found)** - タスクが存在しない:
+```json
+{
+  "error": "Task not found",
+  "task_id": "task-xxx"
+}
+```
+
+**許可される状態遷移**:
+- QUEUED -> CANCELLED
+- RUNNING -> CANCELLED
+
+**禁止される状態遷移**:
+- COMPLETE -> (どの状態にも遷移不可)
+- ERROR -> (どの状態にも遷移不可)
+- CANCELLED -> (どの状態にも遷移不可)
 
 
 ## Cross-References

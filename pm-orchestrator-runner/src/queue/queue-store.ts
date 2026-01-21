@@ -27,9 +27,31 @@ import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Queue Item status
- * Per spec/20: QUEUED / RUNNING / COMPLETE / ERROR
+ * Per spec/20: QUEUED / RUNNING / COMPLETE / ERROR / CANCELLED
  */
-export type QueueItemStatus = 'QUEUED' | 'RUNNING' | 'COMPLETE' | 'ERROR';
+export type QueueItemStatus = 'QUEUED' | 'RUNNING' | 'COMPLETE' | 'ERROR' | 'CANCELLED';
+
+/**
+ * Valid status transitions
+ * Per spec/20_QUEUE_STORE.md
+ */
+export const VALID_STATUS_TRANSITIONS: Record<QueueItemStatus, QueueItemStatus[]> = {
+  QUEUED: ['RUNNING', 'CANCELLED'],
+  RUNNING: ['COMPLETE', 'ERROR', 'CANCELLED'],
+  COMPLETE: [], // Terminal state
+  ERROR: [], // Terminal state
+  CANCELLED: [], // Terminal state
+};
+
+/**
+ * Check if a status transition is valid
+ */
+export function isValidStatusTransition(
+  fromStatus: QueueItemStatus,
+  toStatus: QueueItemStatus
+): boolean {
+  return VALID_STATUS_TRANSITIONS[fromStatus].includes(toStatus);
+}
 
 /**
  * Queue Item schema
@@ -65,6 +87,19 @@ export interface ClaimResult {
   success: boolean;
   item?: QueueItem;
   error?: string;
+}
+
+/**
+ * Status update result
+ * Per spec/19_WEB_UI.md: PATCH /api/tasks/:task_id/status response
+ */
+export interface StatusUpdateResult {
+  success: boolean;
+  task_id: string;
+  old_status?: QueueItemStatus;
+  new_status?: QueueItemStatus;
+  error?: string;
+  message?: string;
 }
 
 /**
@@ -395,6 +430,54 @@ export class QueueStore {
         ExpressionAttributeValues: expressionAttributeValues,
       })
     );
+  }
+
+  /**
+   * Update task status with validation
+   * Per spec/19_WEB_UI.md: PATCH /api/tasks/:task_id/status
+   *
+   * @param taskId - Task ID
+   * @param newStatus - Target status
+   * @returns StatusUpdateResult with success/error info
+   */
+  async updateStatusWithValidation(
+    taskId: string,
+    newStatus: QueueItemStatus
+  ): Promise<StatusUpdateResult> {
+    // First, get current task
+    const task = await this.getItem(taskId);
+
+    if (!task) {
+      return {
+        success: false,
+        task_id: taskId,
+        error: 'Task not found',
+        message: `Task not found: ${taskId}`,
+      };
+    }
+
+    const oldStatus = task.status;
+
+    // Check if transition is valid
+    if (!isValidStatusTransition(oldStatus, newStatus)) {
+      return {
+        success: false,
+        task_id: taskId,
+        old_status: oldStatus,
+        error: 'Invalid status transition',
+        message: `Cannot transition from ${oldStatus} to ${newStatus}`,
+      };
+    }
+
+    // Update status
+    await this.updateStatus(taskId, newStatus);
+
+    return {
+      success: true,
+      task_id: taskId,
+      old_status: oldStatus,
+      new_status: newStatus,
+    };
   }
 
   /**

@@ -13,7 +13,7 @@
 
 import express, { Express, Request, Response, NextFunction } from 'express';
 import path from 'path';
-import { QueueStore } from '../queue';
+import { QueueStore, QueueItemStatus } from '../queue';
 
 /**
  * Web Server configuration
@@ -63,7 +63,7 @@ export function createApp(config: WebServerConfig): Express {
   // CORS headers for local development
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type');
     next();
   });
@@ -231,6 +231,69 @@ export function createApp(config: WebServerConfig): Express {
     }
   });
 
+  /**
+   * PATCH /api/tasks/:task_id/status
+   * Update task status
+   * Body: { status: 'CANCELLED' | other valid status }
+   *
+   * Per spec/19_WEB_UI.md: Status change API
+   */
+  app.patch('/api/tasks/:task_id/status', async (req: Request, res: Response) => {
+    try {
+      const task_id = req.params.task_id as string;
+      const { status } = req.body;
+
+      // Fail-closed: validate input
+      if (!status || typeof status !== 'string') {
+        res.status(400).json({
+          error: 'INVALID_INPUT',
+          message: 'status is required and must be a string',
+        } as ErrorResponse);
+        return;
+      }
+
+      // Validate status value
+      const validStatuses: QueueItemStatus[] = ['QUEUED', 'RUNNING', 'COMPLETE', 'ERROR', 'CANCELLED'];
+      if (!validStatuses.includes(status as QueueItemStatus)) {
+        res.status(400).json({
+          error: 'INVALID_STATUS',
+          message: `Invalid status: ${status}. Must be one of: ${validStatuses.join(', ')}`,
+        } as ErrorResponse);
+        return;
+      }
+
+      // Update with validation
+      const result = await queueStore.updateStatusWithValidation(task_id, status as QueueItemStatus);
+
+      if (!result.success) {
+        if (result.error === 'Task not found') {
+          res.status(404).json({
+            error: 'NOT_FOUND',
+            task_id: task_id,
+            message: result.message,
+          });
+        } else {
+          // Invalid status transition
+          res.status(400).json({
+            error: result.error,
+            message: result.message,
+          });
+        }
+        return;
+      }
+
+      res.json({
+        success: true,
+        task_id: result.task_id,
+        old_status: result.old_status,
+        new_status: result.new_status,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
   // ===================
   // Frontend Routes
   // ===================
@@ -296,6 +359,7 @@ export function createApp(config: WebServerConfig): Express {
       'GET /api/task-groups/:task_group_id/tasks',
       'GET /api/tasks/:task_id',
       'POST /api/tasks',
+      'PATCH /api/tasks/:task_id/status',
       'GET /api/health',
       'GET /api/routes',
     ];

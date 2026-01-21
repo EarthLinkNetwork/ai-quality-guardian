@@ -15,6 +15,9 @@ export {
   QueueItemStatus,
   ClaimResult,
   TaskGroupSummary,
+  StatusUpdateResult,
+  VALID_STATUS_TRANSITIONS,
+  isValidStatusTransition,
 } from './queue-store';
 
 export {

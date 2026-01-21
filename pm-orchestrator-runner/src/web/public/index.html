@@ -186,6 +186,11 @@
       color: #991b1b;
     }
 
+    .badge-cancelled {
+      background: #e5e7eb;
+      color: #4b5563;
+    }
+
     .form-group {
       margin-bottom: 16px;
     }
@@ -517,6 +522,7 @@
         'RUNNING': 'badge-running',
         'COMPLETE': 'badge-complete',
         'ERROR': 'badge-error',
+        'CANCELLED': 'badge-cancelled',
       };
       return map[status] || 'badge-queued';
     }
@@ -730,6 +736,13 @@
                 <div class="log-content">${escapeHtml(task.error_message || 'Unknown error')}</div>
               </div>
               ` : ''}
+              ${task.status === 'CANCELLED' ? `
+              <div class="log-entry" style="border-left-color: #6b7280;">
+                <div class="log-time">${formatFullDate(task.updated_at)}</div>
+                <div class="log-type">TASK CANCELLED</div>
+                <div class="log-content">Task was cancelled by user.</div>
+              </div>
+              ` : ''}
             </div>
           `;
         }
@@ -745,7 +758,12 @@
 
           <div class="card">
             <h3>Status</h3>
-            <span class="badge ${getStatusBadgeClass(task.status)}" style="font-size: 1rem; padding: 8px 16px;">${task.status}</span>
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <span class="badge ${getStatusBadgeClass(task.status)}" style="font-size: 1rem; padding: 8px 16px;">${task.status}</span>
+              ${(task.status === 'QUEUED' || task.status === 'RUNNING') ? `
+                <button class="btn btn-secondary" onclick="cancelTask('${escapeHtml(task.task_id)}')" style="padding: 8px 16px;">Cancel Task</button>
+              ` : ''}
+            </div>
           </div>
 
           <div class="card">
@@ -896,6 +914,33 @@
           submitBtn.textContent = 'Submit to Queue';
         }
       });
+    }
+
+    // Cancel task
+    async function cancelTask(taskId) {
+      if (!confirm('Are you sure you want to cancel this task?')) {
+        return;
+      }
+
+      try {
+        const result = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'CANCELLED' }),
+        });
+
+        const data = await result.json();
+
+        if (!result.ok) {
+          alert(`Error: ${data.message || 'Failed to cancel task'}`);
+          return;
+        }
+
+        // Refresh the task detail page
+        renderTaskDetail(taskId);
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
     }
 
     // Router

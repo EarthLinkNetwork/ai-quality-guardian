@@ -9,10 +9,12 @@
  * - createNamespacedQueueStore: Factory for namespace-separated QueueStore
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.QueuePoller = exports.QueueStore = void 0;
+exports.QueuePoller = exports.isValidStatusTransition = exports.VALID_STATUS_TRANSITIONS = exports.QueueStore = void 0;
 exports.createNamespacedQueueStore = createNamespacedQueueStore;
 var queue_store_1 = require("./queue-store");
 Object.defineProperty(exports, "QueueStore", { enumerable: true, get: function () { return queue_store_1.QueueStore; } });
+Object.defineProperty(exports, "VALID_STATUS_TRANSITIONS", { enumerable: true, get: function () { return queue_store_1.VALID_STATUS_TRANSITIONS; } });
+Object.defineProperty(exports, "isValidStatusTransition", { enumerable: true, get: function () { return queue_store_1.isValidStatusTransition; } });
 var queue_poller_1 = require("./queue-poller");
 Object.defineProperty(exports, "QueuePoller", { enumerable: true, get: function () { return queue_poller_1.QueuePoller; } });
 const queue_store_2 = require("./queue-store");

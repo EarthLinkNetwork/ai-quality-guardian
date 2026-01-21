@@ -33,7 +33,7 @@ function createApp(config) {
     // CORS headers for local development
     app.use((_req, res, next) => {
         res.header('Access-Control-Allow-Origin', '*');
-        res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
         res.header('Access-Control-Allow-Headers', 'Content-Type');
         next();
     });
@@ -188,6 +188,65 @@ function createApp(config) {
             res.status(500).json({ error: 'INTERNAL_ERROR', message });
         }
     });
+    /**
+     * PATCH /api/tasks/:task_id/status
+     * Update task status
+     * Body: { status: 'CANCELLED' | other valid status }
+     *
+     * Per spec/19_WEB_UI.md: Status change API
+     */
+    app.patch('/api/tasks/:task_id/status', async (req, res) => {
+        try {
+            const task_id = req.params.task_id;
+            const { status } = req.body;
+            // Fail-closed: validate input
+            if (!status || typeof status !== 'string') {
+                res.status(400).json({
+                    error: 'INVALID_INPUT',
+                    message: 'status is required and must be a string',
+                });
+                return;
+            }
+            // Validate status value
+            const validStatuses = ['QUEUED', 'RUNNING', 'COMPLETE', 'ERROR', 'CANCELLED'];
+            if (!validStatuses.includes(status)) {
+                res.status(400).json({
+                    error: 'INVALID_STATUS',
+                    message: `Invalid status: ${status}. Must be one of: ${validStatuses.join(', ')}`,
+                });
+                return;
+            }
+            // Update with validation
+            const result = await queueStore.updateStatusWithValidation(task_id, status);
+            if (!result.success) {
+                if (result.error === 'Task not found') {
+                    res.status(404).json({
+                        error: 'NOT_FOUND',
+                        task_id: task_id,
+                        message: result.message,
+                    });
+                }
+                else {
+                    // Invalid status transition
+                    res.status(400).json({
+                        error: result.error,
+                        message: result.message,
+                    });
+                }
+                return;
+            }
+            res.json({
+                success: true,
+                task_id: result.task_id,
+                old_status: result.old_status,
+                new_status: result.new_status,
+            });
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            res.status(500).json({ error: 'INTERNAL_ERROR', message });
+        }
+    });
     // ===================
     // Frontend Routes
     // ===================
@@ -245,6 +304,7 @@ function createApp(config) {
             'GET /api/task-groups/:task_group_id/tasks',
             'GET /api/tasks/:task_id',
             'POST /api/tasks',
+            'PATCH /api/tasks/:task_id/status',
             'GET /api/health',
             'GET /api/routes',
         ];

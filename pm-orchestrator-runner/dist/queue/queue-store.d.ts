@@ -9,9 +9,18 @@
  */
 /**
  * Queue Item status
- * Per spec/20: QUEUED / RUNNING / COMPLETE / ERROR
+ * Per spec/20: QUEUED / RUNNING / COMPLETE / ERROR / CANCELLED
  */
-export type QueueItemStatus = 'QUEUED' | 'RUNNING' | 'COMPLETE' | 'ERROR';
+export type QueueItemStatus = 'QUEUED' | 'RUNNING' | 'COMPLETE' | 'ERROR' | 'CANCELLED';
+/**
+ * Valid status transitions
+ * Per spec/20_QUEUE_STORE.md
+ */
+export declare const VALID_STATUS_TRANSITIONS: Record<QueueItemStatus, QueueItemStatus[]>;
+/**
+ * Check if a status transition is valid
+ */
+export declare function isValidStatusTransition(fromStatus: QueueItemStatus, toStatus: QueueItemStatus): boolean;
 /**
  * Queue Item schema
  * Per spec/20_QUEUE_STORE.md
@@ -44,6 +53,18 @@ export interface ClaimResult {
     success: boolean;
     item?: QueueItem;
     error?: string;
+}
+/**
+ * Status update result
+ * Per spec/19_WEB_UI.md: PATCH /api/tasks/:task_id/status response
+ */
+export interface StatusUpdateResult {
+    success: boolean;
+    task_id: string;
+    old_status?: QueueItemStatus;
+    new_status?: QueueItemStatus;
+    error?: string;
+    message?: string;
 }
 /**
  * Task Group summary for listing
@@ -121,6 +142,15 @@ export declare class QueueStore {
      * @param errorMessage - Optional error message (for ERROR status)
      */
     updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string): Promise<void>;
+    /**
+     * Update task status with validation
+     * Per spec/19_WEB_UI.md: PATCH /api/tasks/:task_id/status
+     *
+     * @param taskId - Task ID
+     * @param newStatus - Target status
+     * @returns StatusUpdateResult with success/error info
+     */
+    updateStatusWithValidation(taskId: string, newStatus: QueueItemStatus): Promise<StatusUpdateResult>;
     /**
      * Get items by session ID
      * Uses session-index GSI

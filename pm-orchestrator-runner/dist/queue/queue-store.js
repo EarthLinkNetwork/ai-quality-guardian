@@ -9,10 +9,28 @@
  * - Fail-closed error handling
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.QueueStore = void 0;
+exports.QueueStore = exports.VALID_STATUS_TRANSITIONS = void 0;
+exports.isValidStatusTransition = isValidStatusTransition;
 const client_dynamodb_1 = require("@aws-sdk/client-dynamodb");
 const lib_dynamodb_1 = require("@aws-sdk/lib-dynamodb");
 const uuid_1 = require("uuid");
+/**
+ * Valid status transitions
+ * Per spec/20_QUEUE_STORE.md
+ */
+exports.VALID_STATUS_TRANSITIONS = {
+    QUEUED: ['RUNNING', 'CANCELLED'],
+    RUNNING: ['COMPLETE', 'ERROR', 'CANCELLED'],
+    COMPLETE: [], // Terminal state
+    ERROR: [], // Terminal state
+    CANCELLED: [], // Terminal state
+};
+/**
+ * Check if a status transition is valid
+ */
+function isValidStatusTransition(fromStatus, toStatus) {
+    return exports.VALID_STATUS_TRANSITIONS[fromStatus].includes(toStatus);
+}
 /**
  * Queue Store
  * Manages task queue with DynamoDB Local
@@ -282,6 +300,45 @@ class QueueStore {
             },
             ExpressionAttributeValues: expressionAttributeValues,
         }));
+    }
+    /**
+     * Update task status with validation
+     * Per spec/19_WEB_UI.md: PATCH /api/tasks/:task_id/status
+     *
+     * @param taskId - Task ID
+     * @param newStatus - Target status
+     * @returns StatusUpdateResult with success/error info
+     */
+    async updateStatusWithValidation(taskId, newStatus) {
+        // First, get current task
+        const task = await this.getItem(taskId);
+        if (!task) {
+            return {
+                success: false,
+                task_id: taskId,
+                error: 'Task not found',
+                message: `Task not found: ${taskId}`,
+            };
+        }
+        const oldStatus = task.status;
+        // Check if transition is valid
+        if (!isValidStatusTransition(oldStatus, newStatus)) {
+            return {
+                success: false,
+                task_id: taskId,
+                old_status: oldStatus,
+                error: 'Invalid status transition',
+                message: `Cannot transition from ${oldStatus} to ${newStatus}`,
+            };
+        }
+        // Update status
+        await this.updateStatus(taskId, newStatus);
+        return {
+            success: true,
+            task_id: taskId,
+            old_status: oldStatus,
+            new_status: newStatus,
+        };
     }
     /**
      * Get items by session ID

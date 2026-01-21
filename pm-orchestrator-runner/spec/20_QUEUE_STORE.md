@@ -19,7 +19,7 @@
 | task_id | string | タスクの一意識別子 |
 | task_group_id | string | 所属 Task Group の識別子 |
 | session_id | string | 所属 Session の識別子 |
-| status | string | QUEUED / RUNNING / COMPLETE / ERROR |
+| status | string | QUEUED / RUNNING / COMPLETE / ERROR / CANCELLED |
 | prompt | string | ユーザー入力 |
 | created_at | string | ISO 8601 形式の作成時刻 |
 | updated_at | string | ISO 8601 形式の更新時刻 |
@@ -42,13 +42,32 @@
 
 ```
 QUEUED -> RUNNING -> COMPLETE
-                  -> ERROR
+       |          -> ERROR
+       -> CANCELLED
+
+RUNNING -> CANCELLED (強制キャンセル)
 ```
 
 - QUEUED: キューに入った状態
 - RUNNING: 実行中
 - COMPLETE: 正常完了
 - ERROR: エラーで終了
+- CANCELLED: ユーザーによりキャンセル
+
+
+## 許可される状態遷移
+
+| 現在の状態 | 遷移可能な状態 |
+|---|---|
+| QUEUED | RUNNING, CANCELLED |
+| RUNNING | COMPLETE, ERROR, CANCELLED |
+| COMPLETE | (遷移不可) |
+| ERROR | (遷移不可) |
+| CANCELLED | (遷移不可) |
+
+- COMPLETE, ERROR, CANCELLED は終端状態であり、他の状態への遷移は禁止
+- QUEUED からの CANCELLED は即時実行
+- RUNNING からの CANCELLED は実行中のタスクを強制終了
 
 
 ## DynamoDB Local 起動

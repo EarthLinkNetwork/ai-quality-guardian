@@ -7,7 +7,7 @@
  * - QueuePoller: Polling and task execution
  * - createNamespacedQueueStore: Factory for namespace-separated QueueStore
  */
-export { QueueStore, QueueStoreConfig, QueueItem, QueueItemStatus, ClaimResult, TaskGroupSummary, } from './queue-store';
+export { QueueStore, QueueStoreConfig, QueueItem, QueueItemStatus, ClaimResult, TaskGroupSummary, StatusUpdateResult, VALID_STATUS_TRANSITIONS, isValidStatusTransition, } from './queue-store';
 export { QueuePoller, QueuePollerConfig, QueuePollerState, QueuePollerEvents, TaskExecutor, } from './queue-poller';
 import { QueueStore, QueueStoreConfig } from './queue-store';
 /**
