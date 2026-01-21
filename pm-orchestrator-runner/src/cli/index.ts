@@ -13,14 +13,14 @@
  */
 
 import * as path from 'path';
-import { CLI, parseArgs, CLIError } from './cli-interface';
+import { CLI, CLIError } from './cli-interface';
 import { REPLInterface, ProjectMode } from '../repl/repl-interface';
 import { WebServer } from '../web/server';
-import { createNamespacedQueueStore } from '../queue';
+import { QueueStore, QueuePoller, QueueItem, TaskExecutor } from '../queue';
+import { AutoResolvingExecutor } from '../executor/auto-resolve-executor';
 import {
   validateNamespace,
   buildNamespaceConfig,
-  DEFAULT_NAMESPACE,
 } from '../config/namespace';
 import { runApiKeyOnboarding, isOnboardingRequired } from '../keys/api-key-onboarding';
 
@@ -59,10 +59,10 @@ REPL Options:
   --print-project-path   Print PROJECT_PATH=<path> on startup
   --namespace <name>     Namespace for state separation (default: 'default')
                          Examples: 'stable', 'dev', 'test-1'
-  --port <number>        Web UI port (default: 3000 for 'default'/'stable', 3001 for 'dev')
+  --port <number>        Web UI port (default: 5678 for 'default'/'stable', 5679 for 'dev')
 
 Web Options:
-  --port <number>        Web UI port (default: 3000)
+  --port <number>        Web UI port (default: 5678)
   --namespace <name>     Namespace for state separation
 
 General Options:
@@ -73,17 +73,17 @@ Examples:
   pm                                    # Start REPL in current directory
   pm --project ./my-project             # Start REPL with specific project
   pm repl --namespace stable            # Start REPL with stable namespace
-  pm web --port 3000                    # Start Web UI on port 3000
+  pm web --port 5678                    # Start Web UI on port 5678
   pm start ./my-project --dry-run       # Start session with dry-run
   pm continue session-2025-01-15-abc123 # Continue a session
 
 Web UI Verification:
-  1. Start Web UI:    pm web --port 3000
-  2. Health check:    curl http://localhost:3000/api/health
-  3. Submit task:     curl -X POST http://localhost:3000/api/tasks \\
+  1. Start Web UI:    pm web --port 5678
+  2. Health check:    curl http://localhost:5678/api/health
+  3. Submit task:     curl -X POST http://localhost:5678/api/tasks \\
                         -H "Content-Type: application/json" \\
                         -d '{"task_group_id":"test","prompt":"hello"}'
-  4. View tasks:      curl http://localhost:3000/api/task-groups
+  4. View tasks:      curl http://localhost:5678/api/task-groups
 `;
 
 /**
@@ -245,6 +245,7 @@ async function startRepl(replArgs: ReplArguments): Promise<void> {
   // Build namespace configuration (per spec/21_STABLE_DEV.md)
   // Fail-closed: buildNamespaceConfig throws on invalid namespace
   const namespaceConfig = buildNamespaceConfig({
+    autoDerive: true,
     namespace: replArgs.namespace,
     projectRoot: projectPath,
     port: replArgs.port,
@@ -328,6 +329,54 @@ function generateWebSessionId(): string {
 }
 
 /**
+ * Create a TaskExecutor that uses AutoResolvingExecutor
+ *
+ * AutoResolvingExecutor automatically resolves clarification requests using LLM
+ * instead of asking the user. This is critical for headless execution (Web UI, queue).
+ *
+ * Per user insight: "LLM Layer should answer clarification questions"
+ */
+function createTaskExecutor(projectPath: string): TaskExecutor {
+  return async (item: QueueItem): Promise<{ status: 'COMPLETE' | 'ERROR'; errorMessage?: string }> => {
+    console.log(`[Runner] Executing task: ${item.task_id}`);
+    console.log(`[Runner] Prompt: ${item.prompt.substring(0, 100)}${item.prompt.length > 100 ? '...' : ''}`);
+
+    try {
+      // Use AutoResolvingExecutor to automatically resolve clarification requests
+      // When Claude Code asks "where should I save the file?", LLM decides automatically
+      const executor = new AutoResolvingExecutor({
+        projectPath,
+        timeout: 10 * 60 * 1000, // 10 minutes
+        softTimeoutMs: 60 * 1000,
+        hardTimeoutMs: 120 * 1000,
+        maxRetries: 2, // Allow 2 retry attempts for auto-resolution
+      });
+
+      const result = await executor.execute({
+        id: item.task_id,
+        prompt: item.prompt,
+        workingDir: projectPath,
+      });
+
+      console.log(`[Runner] Task ${item.task_id} completed with status: ${result.status}`);
+
+      if (result.status === 'COMPLETE') {
+        return { status: 'COMPLETE' };
+      } else if (result.status === 'ERROR') {
+        return { status: 'ERROR', errorMessage: result.error || 'Task failed' };
+      } else {
+        // INCOMPLETE, NO_EVIDENCE, BLOCKED -> treat as ERROR for queue purposes
+        return { status: 'ERROR', errorMessage: `Task ended with status: ${result.status}` };
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[Runner] Task ${item.task_id} failed:`, errorMessage);
+      return { status: 'ERROR', errorMessage };
+    }
+  };
+}
+
+/**
  * Start Web UI server
  */
 async function startWebServer(webArgs: WebArguments): Promise<void> {
@@ -335,21 +384,49 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
 
   // Build namespace configuration
   const namespaceConfig = buildNamespaceConfig({
+    autoDerive: true,
     namespace: webArgs.namespace,
     projectRoot: projectPath,
     port: webArgs.port,
   });
 
   const port = webArgs.port || namespaceConfig.port;
-  const queueStore = createNamespacedQueueStore({
+  const queueStore = new QueueStore({
     namespace: namespaceConfig.namespace,
-    tableName: namespaceConfig.tableName,
+  });
+  await queueStore.ensureTable();
+
+  // Create TaskExecutor and QueuePoller
+  const taskExecutor = createTaskExecutor(projectPath);
+  const poller = new QueuePoller(queueStore, taskExecutor, {
+    pollIntervalMs: 1000,
+    recoverOnStartup: true,
+    projectRoot: projectPath,
+  });
+
+  // Set up poller event listeners
+  poller.on('started', () => {
+    console.log('[Runner] Queue poller started');
+  });
+  poller.on('claimed', (item: QueueItem) => {
+    console.log(`[Runner] Claimed task: ${item.task_id}`);
+  });
+  poller.on('completed', (item: QueueItem) => {
+    console.log(`[Runner] Completed task: ${item.task_id}`);
+  });
+  poller.on('error', (item: QueueItem, error: Error) => {
+    console.error(`[Runner] Task ${item.task_id} error:`, error.message);
+  });
+  poller.on('stale-recovered', (count: number) => {
+    console.log(`[Runner] Recovered ${count} stale tasks`);
   });
 
   const server = new WebServer({
     port,
     queueStore,
     sessionId: generateWebSessionId(),
+    namespace: namespaceConfig.namespace,
+    projectRoot: projectPath,
   });
 
   console.log(`Starting Web UI server on port ${port}...`);
@@ -364,7 +441,24 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   console.log(`  3. View tasks:    curl http://localhost:${port}/api/task-groups`);
   console.log('');
 
+  // Start both web server and poller
   await server.start();
+  await poller.start();
+
+  console.log('[Runner] Web server and queue poller are running');
+  console.log('[Runner] Press Ctrl+C to stop');
+
+  // Handle graceful shutdown
+  const shutdown = async () => {
+    console.log('\n[Runner] Shutting down...');
+    await poller.stop();
+    await server.stop();
+    console.log('[Runner] Shutdown complete');
+    process.exit(0);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 /**
