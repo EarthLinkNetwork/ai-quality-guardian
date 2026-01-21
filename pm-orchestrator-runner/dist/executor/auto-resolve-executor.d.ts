@@ -1,17 +1,19 @@
 /**
- * Auto-Resolving Executor
+ * Auto-Resolving Executor with Decision Classification
  *
- * Wraps ClaudeCodeExecutor and automatically resolves clarification requests
- * using LLM instead of asking the user.
+ * Enhanced executor that:
+ * 1. Classifies clarification requests (best_practice vs case_by_case)
+ * 2. Auto-resolves best practices using established conventions
+ * 3. Routes case-by-case decisions to user input
+ * 4. Learns from user preferences to reduce future questions
  *
- * When Claude Code needs clarification (e.g., file path), this executor:
- * 1. Analyzes the output to understand what clarification is needed
- * 2. Uses LLM to make a reasonable decision based on project context
- * 3. Re-runs the task with explicit instructions
- *
- * This is per the user's insight: "LLM Layer should answer clarification questions"
+ * Key insight: Not all clarifications are equal.
+ * - Best practices (e.g., docs in docs/) can be auto-resolved
+ * - Case-by-case (e.g., which feature first) needs user input
+ * - User preferences can be learned over time
  */
 import { ExecutorConfig, ExecutorTask, ExecutorResult, IExecutor, AuthCheckResult } from './claude-code-executor';
+import { BestPracticeRule } from './decision-classifier';
 /**
  * Clarification types detected from Claude Code output
  */
@@ -32,7 +34,13 @@ export interface AutoResolution {
     resolvedValue?: string;
     explicitPrompt?: string;
     reasoning?: string;
+    /** How the resolution was made */
+    resolutionMethod?: 'best_practice' | 'user_preference' | 'llm_inference' | 'user_input';
 }
+/**
+ * User response handler callback
+ */
+export type UserResponseHandler = (question: string, options?: string[], context?: string) => Promise<string>;
 /**
  * Configuration for auto-resolving executor
  */
@@ -41,17 +49,30 @@ export interface AutoResolveConfig extends ExecutorConfig {
     maxRetries?: number;
     /** LLM provider for auto-resolution (default: openai) */
     llmProvider?: 'openai' | 'anthropic';
+    /** Custom best practice rules */
+    customRules?: BestPracticeRule[];
+    /** User preference store configuration */
+    preferenceStoreConfig?: {
+        storagePath?: string;
+        namespace?: string;
+        minAutoApplyConfidence?: number;
+    };
+    /** Handler for case-by-case questions that need user input */
+    userResponseHandler?: UserResponseHandler;
 }
 /**
- * Auto-Resolving Executor
+ * Auto-Resolving Executor with Decision Classification
  *
- * Automatically resolves clarification requests using LLM
+ * Enhanced to classify clarifications and learn user preferences
  */
 export declare class AutoResolvingExecutor implements IExecutor {
     private readonly innerExecutor;
     private readonly llmClient;
     private readonly maxRetries;
     private readonly projectPath;
+    private readonly classifier;
+    private readonly preferenceStore;
+    private readonly userResponseHandler?;
     constructor(config: AutoResolveConfig);
     /**
      * Check if Claude Code CLI is available
@@ -62,32 +83,73 @@ export declare class AutoResolvingExecutor implements IExecutor {
      */
     checkAuthStatus(): Promise<AuthCheckResult>;
     /**
-     * Execute task with auto-resolution for clarification requests
+     * Execute task with smart clarification handling
      */
     execute(task: ExecutorTask): Promise<ExecutorResult>;
+    /**
+     * Smart resolution using classification and preferences
+     */
+    private smartResolve;
+    /**
+     * Apply a matched user preference
+     */
+    private applyPreference;
+    /**
+     * Resolve using best practice rules
+     */
+    private resolveBestPractice;
+    /**
+     * Handle case-by-case decisions that need user input
+     */
+    private handleCaseByCase;
+    /**
+     * Build an explicit prompt with the resolved value
+     */
+    private buildExplicitPrompt;
+    /**
+     * Map clarification type to preference category
+     */
+    private mapClarificationTypeToCategory;
+    /**
+     * Generate a question from clarification type
+     */
+    private generateQuestionFromType;
     /**
      * Detect clarification request from output
      */
     private detectClarification;
     /**
-     * Auto-resolve clarification using LLM and project context
+     * Auto-resolve clarification using LLM (fallback method)
      */
     private autoResolve;
     /**
-     * Resolve ambiguous file path
+     * Resolve ambiguous file path using LLM
      */
     private resolveFilePath;
     /**
-     * Resolve unclear scope
+     * Resolve unclear scope using LLM
      */
     private resolveScope;
     /**
-     * Resolve ambiguous action
+     * Resolve ambiguous action using LLM
      */
     private resolveAction;
     /**
      * Scan project structure for context
      */
     private scanProjectStructure;
+    /**
+     * Get preference store statistics
+     */
+    getPreferenceStats(): {
+        totalPreferences: number;
+        byCategory: Record<string, number>;
+        avgConfidence: number;
+        highConfidenceCount: number;
+    };
+    /**
+     * Clear all learned preferences
+     */
+    clearPreferences(): void;
 }
 //# sourceMappingURL=auto-resolve-executor.d.ts.map

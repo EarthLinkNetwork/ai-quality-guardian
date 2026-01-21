@@ -1,16 +1,17 @@
 "use strict";
 /**
- * Auto-Resolving Executor
+ * Auto-Resolving Executor with Decision Classification
  *
- * Wraps ClaudeCodeExecutor and automatically resolves clarification requests
- * using LLM instead of asking the user.
+ * Enhanced executor that:
+ * 1. Classifies clarification requests (best_practice vs case_by_case)
+ * 2. Auto-resolves best practices using established conventions
+ * 3. Routes case-by-case decisions to user input
+ * 4. Learns from user preferences to reduce future questions
  *
- * When Claude Code needs clarification (e.g., file path), this executor:
- * 1. Analyzes the output to understand what clarification is needed
- * 2. Uses LLM to make a reasonable decision based on project context
- * 3. Re-runs the task with explicit instructions
- *
- * This is per the user's insight: "LLM Layer should answer clarification questions"
+ * Key insight: Not all clarifications are equal.
+ * - Best practices (e.g., docs in docs/) can be auto-resolved
+ * - Case-by-case (e.g., which feature first) needs user input
+ * - User preferences can be learned over time
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -51,6 +52,8 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const claude_code_executor_1 = require("./claude-code-executor");
 const llm_client_1 = require("../mediation/llm-client");
+const decision_classifier_1 = require("./decision-classifier");
+const user_preference_store_1 = require("./user-preference-store");
 /**
  * Patterns to detect clarification requests in output
  */
@@ -63,28 +66,39 @@ const CLARIFICATION_PATTERNS = [
     /which.*(?:file|path|directory).*\?/i,
     /what.*(?:file|name|path).*\?/i,
     /specify.*(?:file|path|location)/i,
-    // File path related
+    // File path related (Japanese)
     /ファイル(?:名|パス).*(?:指定|教えて)/i,
     /どこに.*(?:保存|作成)/i,
     /保存先.*(?:を|は)/i,
 ];
 /**
- * Auto-Resolving Executor
+ * Auto-Resolving Executor with Decision Classification
  *
- * Automatically resolves clarification requests using LLM
+ * Enhanced to classify clarifications and learn user preferences
  */
 class AutoResolvingExecutor {
     innerExecutor;
     llmClient;
     maxRetries;
     projectPath;
+    classifier;
+    preferenceStore;
+    userResponseHandler;
     constructor(config) {
         this.innerExecutor = new claude_code_executor_1.ClaudeCodeExecutor(config);
         this.projectPath = config.projectPath;
         this.maxRetries = config.maxRetries ?? 2;
+        this.userResponseHandler = config.userResponseHandler;
         // Initialize LLM client for auto-resolution
         this.llmClient = llm_client_1.LLMClient.fromEnv(config.llmProvider ?? 'openai', undefined, { temperature: 0.3 } // Lower temperature for more deterministic decisions
         );
+        // Initialize decision classifier with custom rules
+        this.classifier = new decision_classifier_1.DecisionClassifier(config.customRules, this.llmClient);
+        // Initialize user preference store
+        this.preferenceStore = new user_preference_store_1.UserPreferenceStore(config.preferenceStoreConfig || {});
+        console.log('[AutoResolvingExecutor] Initialized with decision classification and preference learning');
+        const stats = this.preferenceStore.getStats();
+        console.log(`[AutoResolvingExecutor] Loaded ${stats.totalPreferences} preferences (${stats.highConfidenceCount} high-confidence)`);
     }
     /**
      * Check if Claude Code CLI is available
@@ -99,7 +113,7 @@ class AutoResolvingExecutor {
         return this.innerExecutor.checkAuthStatus();
     }
     /**
-     * Execute task with auto-resolution for clarification requests
+     * Execute task with smart clarification handling
      */
     async execute(task) {
         let attempts = 0;
@@ -119,42 +133,197 @@ class AutoResolvingExecutor {
             // Check if clarification is needed
             const clarification = this.detectClarification(result.output, result.error);
             if (!clarification || clarification.type === 'unknown') {
-                // No clarification detected or unknown type - return as-is
                 console.log('[AutoResolvingExecutor] No resolvable clarification detected');
                 return result;
             }
             console.log(`[AutoResolvingExecutor] Clarification detected: ${clarification.type}`);
-            // Try to auto-resolve
-            const resolution = await this.autoResolve(clarification, currentTask.prompt);
+            // Smart resolution with classification
+            const resolution = await this.smartResolve(clarification, currentTask.prompt);
             if (!resolution.resolved || !resolution.explicitPrompt) {
-                console.log('[AutoResolvingExecutor] Could not auto-resolve, returning original result');
+                console.log('[AutoResolvingExecutor] Could not resolve, returning original result');
                 return result;
             }
-            console.log(`[AutoResolvingExecutor] Auto-resolved: ${resolution.reasoning}`);
-            console.log(`[AutoResolvingExecutor] New prompt: ${resolution.explicitPrompt}`);
+            console.log(`[AutoResolvingExecutor] Resolved via ${resolution.resolutionMethod}: ${resolution.reasoning}`);
             // Update task with explicit prompt
             currentTask = {
                 ...task,
                 prompt: resolution.explicitPrompt,
             };
         }
-        // Max retries reached
         console.log('[AutoResolvingExecutor] Max retries reached');
         return lastResult;
+    }
+    /**
+     * Smart resolution using classification and preferences
+     */
+    async smartResolve(clarification, originalPrompt) {
+        const question = clarification.question || this.generateQuestionFromType(clarification.type);
+        const category = this.mapClarificationTypeToCategory(clarification.type);
+        // Step 1: Check user preferences first
+        const preferenceMatch = this.preferenceStore.findMatch(category, question, clarification.context);
+        if (preferenceMatch && this.preferenceStore.canAutoApply(preferenceMatch)) {
+            console.log(`[AutoResolvingExecutor] Found high-confidence preference: ${preferenceMatch.preference.choice}`);
+            return this.applyPreference(preferenceMatch, originalPrompt, clarification);
+        }
+        // Step 2: Classify the clarification
+        const classification = await this.classifier.classifyFull(question, clarification.context);
+        console.log(`[AutoResolvingExecutor] Classification: ${classification.category} (confidence: ${classification.confidence})`);
+        // Step 3: Route based on classification
+        switch (classification.category) {
+            case 'best_practice':
+                return this.resolveBestPractice(classification, originalPrompt, clarification);
+            case 'case_by_case':
+                return this.handleCaseByCase(classification, originalPrompt, clarification, category);
+            default:
+                // Unknown - try LLM inference as fallback
+                return this.autoResolve(clarification, originalPrompt);
+        }
+    }
+    /**
+     * Apply a matched user preference
+     */
+    applyPreference(match, originalPrompt, clarification) {
+        const choice = match.preference.choice;
+        const prefContext = match.preference.context || choice;
+        // Build explicit prompt with the preferred choice
+        const explicitPrompt = this.buildExplicitPrompt(originalPrompt, clarification, choice, `Based on your previous preference: ${prefContext}`);
+        return {
+            resolved: true,
+            resolvedValue: choice,
+            explicitPrompt,
+            reasoning: `Applied user preference (confidence: ${match.preference.confidence.toFixed(2)}, matched keywords: ${match.matchedKeywords.join(', ')})`,
+            resolutionMethod: 'user_preference',
+        };
+    }
+    /**
+     * Resolve using best practice rules
+     */
+    async resolveBestPractice(classification, originalPrompt, clarification) {
+        const resolution = classification.suggestedResolution || classification.matchedRule?.resolution;
+        if (!resolution) {
+            // Fallback to LLM inference
+            return this.autoResolve(clarification, originalPrompt);
+        }
+        const explicitPrompt = this.buildExplicitPrompt(originalPrompt, clarification, resolution, classification.reasoning);
+        return {
+            resolved: true,
+            resolvedValue: resolution,
+            explicitPrompt,
+            reasoning: `Best practice: ${classification.reasoning}`,
+            resolutionMethod: 'best_practice',
+        };
+    }
+    /**
+     * Handle case-by-case decisions that need user input
+     */
+    async handleCaseByCase(classification, originalPrompt, clarification, category) {
+        const question = clarification.question || this.generateQuestionFromType(clarification.type);
+        // Check if we have a user response handler
+        if (!this.userResponseHandler) {
+            console.log('[AutoResolvingExecutor] No user response handler, falling back to LLM');
+            return this.autoResolve(clarification, originalPrompt);
+        }
+        // Ask the user
+        console.log(`[AutoResolvingExecutor] Asking user: ${question}`);
+        try {
+            const contextStr = clarification.context || 'No additional context';
+            const userChoice = await this.userResponseHandler(question, undefined, // Options could be extracted from context
+            `Context: ${contextStr}`);
+            // Record the preference for future use
+            this.preferenceStore.recordPreference(category, question, userChoice, clarification.context);
+            // Build explicit prompt with user's choice
+            const explicitPrompt = this.buildExplicitPrompt(originalPrompt, clarification, userChoice, 'User specified');
+            return {
+                resolved: true,
+                resolvedValue: userChoice,
+                explicitPrompt,
+                reasoning: `User chose: ${userChoice}`,
+                resolutionMethod: 'user_input',
+            };
+        }
+        catch (error) {
+            console.error('[AutoResolvingExecutor] User response error:', error);
+            // Fallback to LLM inference
+            return this.autoResolve(clarification, originalPrompt);
+        }
+    }
+    /**
+     * Build an explicit prompt with the resolved value
+     */
+    buildExplicitPrompt(originalPrompt, clarification, resolvedValue, reasoning) {
+        switch (clarification.type) {
+            case 'target_file_ambiguous':
+                return `${originalPrompt}
+
+Important: Save the file to: ${resolvedValue}
+Reason: ${reasoning}
+Do not ask for clarification. Create the file at the specified path.`;
+            case 'scope_unclear':
+                return `${originalPrompt}
+
+Scope clarification: ${resolvedValue}
+Reason: ${reasoning}
+Do not ask for clarification. Proceed with the clarified scope.`;
+            case 'action_ambiguous':
+                return `${originalPrompt}
+
+Action to take: ${resolvedValue}
+Reason: ${reasoning}
+Do not ask for clarification. Proceed with the specified action.`;
+            default:
+                return `${originalPrompt}
+
+Clarification: ${resolvedValue}
+Reason: ${reasoning}
+Do not ask for further clarification. Proceed with the above.`;
+        }
+    }
+    /**
+     * Map clarification type to preference category
+     */
+    mapClarificationTypeToCategory(type) {
+        switch (type) {
+            case 'target_file_ambiguous':
+                return 'file_location';
+            case 'scope_unclear':
+                return 'task_scope';
+            case 'action_ambiguous':
+                return 'action_choice';
+            case 'missing_context':
+                return 'context_clarification';
+            default:
+                return 'general';
+        }
+    }
+    /**
+     * Generate a question from clarification type
+     */
+    generateQuestionFromType(type) {
+        switch (type) {
+            case 'target_file_ambiguous':
+                return 'Where should the file be saved?';
+            case 'scope_unclear':
+                return 'What is the scope of this task?';
+            case 'action_ambiguous':
+                return 'What action should be taken?';
+            case 'missing_context':
+                return 'Can you provide more context?';
+            default:
+                return 'Need clarification';
+        }
     }
     /**
      * Detect clarification request from output
      */
     detectClarification(output, error) {
-        const combined = `${output}\n${error || ''}`;
+        const errorStr = error || '';
+        const combined = `${output}\n${errorStr}`;
         // Check for explicit clarification markers
         for (const pattern of CLARIFICATION_PATTERNS) {
             const match = combined.match(pattern);
             if (match) {
-                // Extract clarification type
                 let type = 'unknown';
                 if (match[1]) {
-                    // Explicit type from marker
                     const typeStr = match[1].toLowerCase();
                     if (typeStr.includes('file') || typeStr.includes('path')) {
                         type = 'target_file_ambiguous';
@@ -170,12 +339,10 @@ class AutoResolvingExecutor {
                     }
                 }
                 else {
-                    // Infer type from pattern
                     if (/(?:file|path|save|create|put|保存|作成)/i.test(match[0])) {
                         type = 'target_file_ambiguous';
                     }
                 }
-                // Extract question if present
                 const questionMatch = combined.match(/([^.!?\n]*\?)/);
                 return {
                     type,
@@ -184,12 +351,11 @@ class AutoResolvingExecutor {
                 };
             }
         }
-        // Check for INCOMPLETE status with question-like output
         if (combined.includes('INCOMPLETE') || combined.includes('incomplete')) {
             const questionMatch = combined.match(/([^.!?\n]*\?)/);
             if (questionMatch) {
                 return {
-                    type: 'target_file_ambiguous', // Default assumption
+                    type: 'target_file_ambiguous',
                     question: questionMatch[1],
                     context: combined.substring(0, 500),
                 };
@@ -198,7 +364,7 @@ class AutoResolvingExecutor {
         return null;
     }
     /**
-     * Auto-resolve clarification using LLM and project context
+     * Auto-resolve clarification using LLM (fallback method)
      */
     async autoResolve(clarification, originalPrompt) {
         try {
@@ -219,11 +385,11 @@ class AutoResolvingExecutor {
         }
     }
     /**
-     * Resolve ambiguous file path
+     * Resolve ambiguous file path using LLM
      */
     async resolveFilePath(originalPrompt, clarification) {
-        // Get project structure for context
         const projectStructure = this.scanProjectStructure();
+        const questionStr = clarification.question || 'Where should the file be saved?';
         const response = await this.llmClient.chat([
             {
                 role: 'system',
@@ -246,7 +412,7 @@ Respond with ONLY a JSON object:
 ${projectStructure}
 
 Task: ${originalPrompt}
-Question from system: ${clarification.question || 'Where should the file be saved?'}
+Question from system: ${questionStr}
 
 Determine the appropriate file path.`,
             },
@@ -257,17 +423,12 @@ Determine the appropriate file path.`,
                 return { resolved: false };
             }
             const parsed = JSON.parse(jsonMatch[0]);
-            const filePath = parsed.file_path;
-            // Create explicit prompt with resolved file path
-            const explicitPrompt = `${originalPrompt}
-
-Important: Save the file to: ${filePath}
-Do not ask for clarification. Create the file at the specified path.`;
             return {
                 resolved: true,
-                resolvedValue: filePath,
-                explicitPrompt,
+                resolvedValue: parsed.file_path,
+                explicitPrompt: this.buildExplicitPrompt(originalPrompt, clarification, parsed.file_path, parsed.reasoning),
                 reasoning: parsed.reasoning,
+                resolutionMethod: 'llm_inference',
             };
         }
         catch {
@@ -275,9 +436,10 @@ Do not ask for clarification. Create the file at the specified path.`;
         }
     }
     /**
-     * Resolve unclear scope
+     * Resolve unclear scope using LLM
      */
     async resolveScope(originalPrompt, clarification) {
+        const questionStr = clarification.question || 'What is the scope?';
         const response = await this.llmClient.chat([
             {
                 role: 'system',
@@ -285,14 +447,14 @@ Do not ask for clarification. Create the file at the specified path.`;
 When the scope is unclear, make a reasonable decision based on common development practices.
 
 Respond with ONLY a JSON object:
-{"clarified_scope": "<specific scope>", "explicit_prompt": "<full prompt with scope clarified>", "reasoning": "<brief explanation>"}`,
+{"clarified_scope": "<specific scope>", "reasoning": "<brief explanation>"}`,
             },
             {
                 role: 'user',
                 content: `Original task: ${originalPrompt}
-Question: ${clarification.question || 'What is the scope?'}
+Question: ${questionStr}
 
-Clarify the scope and provide an explicit prompt.`,
+Clarify the scope.`,
             },
         ]);
         try {
@@ -304,8 +466,9 @@ Clarify the scope and provide an explicit prompt.`,
             return {
                 resolved: true,
                 resolvedValue: parsed.clarified_scope,
-                explicitPrompt: parsed.explicit_prompt,
+                explicitPrompt: this.buildExplicitPrompt(originalPrompt, clarification, parsed.clarified_scope, parsed.reasoning),
                 reasoning: parsed.reasoning,
+                resolutionMethod: 'llm_inference',
             };
         }
         catch {
@@ -313,9 +476,10 @@ Clarify the scope and provide an explicit prompt.`,
         }
     }
     /**
-     * Resolve ambiguous action
+     * Resolve ambiguous action using LLM
      */
     async resolveAction(originalPrompt, clarification) {
+        const questionStr = clarification.question || 'What action should be taken?';
         const response = await this.llmClient.chat([
             {
                 role: 'system',
@@ -323,14 +487,14 @@ Clarify the scope and provide an explicit prompt.`,
 When the action is unclear, make a reasonable decision based on the context.
 
 Respond with ONLY a JSON object:
-{"action": "<specific action>", "explicit_prompt": "<full prompt with action clarified>", "reasoning": "<brief explanation>"}`,
+{"action": "<specific action>", "reasoning": "<brief explanation>"}`,
             },
             {
                 role: 'user',
                 content: `Original task: ${originalPrompt}
-Question: ${clarification.question || 'What action should be taken?'}
+Question: ${questionStr}
 
-Clarify the action and provide an explicit prompt.`,
+Clarify the action.`,
             },
         ]);
         try {
@@ -342,8 +506,9 @@ Clarify the action and provide an explicit prompt.`,
             return {
                 resolved: true,
                 resolvedValue: parsed.action,
-                explicitPrompt: parsed.explicit_prompt,
+                explicitPrompt: this.buildExplicitPrompt(originalPrompt, clarification, parsed.action, parsed.reasoning),
                 reasoning: parsed.reasoning,
+                resolutionMethod: 'llm_inference',
             };
         }
         catch {
@@ -363,7 +528,6 @@ Clarify the action and provide an explicit prompt.`,
                 return;
             try {
                 const entries = fs.readdirSync(dir, { withFileTypes: true });
-                // Sort: directories first, then files
                 const sorted = entries.sort((a, b) => {
                     if (a.isDirectory() && !b.isDirectory())
                         return -1;
@@ -374,7 +538,6 @@ Clarify the action and provide an explicit prompt.`,
                 for (const entry of sorted) {
                     if (entryCount >= maxEntries)
                         break;
-                    // Skip hidden files, node_modules, dist, etc.
                     if (entry.name.startsWith('.') ||
                         entry.name === 'node_modules' ||
                         entry.name === 'dist' ||
@@ -396,6 +559,19 @@ Clarify the action and provide an explicit prompt.`,
         };
         scan(this.projectPath, 0, '');
         return structure.join('\n') || '(empty project)';
+    }
+    /**
+     * Get preference store statistics
+     */
+    getPreferenceStats() {
+        return this.preferenceStore.getStats();
+    }
+    /**
+     * Clear all learned preferences
+     */
+    clearPreferences() {
+        this.preferenceStore.clear();
+        console.log('[AutoResolvingExecutor] All preferences cleared');
     }
 }
 exports.AutoResolvingExecutor = AutoResolvingExecutor;

@@ -1,7 +1,18 @@
 "use strict";
 /**
- * Queue Store - DynamoDB Local implementation
+ * Queue Store - DynamoDB Local implementation (v2)
  * Per spec/20_QUEUE_STORE.md
+ *
+ * v2 Changes:
+ * - Single fixed table: pm-runner-queue
+ * - Composite key: PK=namespace, SK=task_id
+ * - GSI: status-index (status + created_at)
+ * - Namespace-based separation in single table
+ *
+ * v2.1 Changes:
+ * - Added AWAITING_RESPONSE status for clarification flow
+ * - Added clarification and conversation_history fields
+ * - Updated status transitions for AWAITING_RESPONSE
  *
  * Provides queue operations with:
  * - Atomic QUEUED -> RUNNING transitions (conditional update)
@@ -9,18 +20,28 @@
  * - Fail-closed error handling
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.QueueStore = exports.VALID_STATUS_TRANSITIONS = void 0;
+exports.QueueStore = exports.VALID_STATUS_TRANSITIONS = exports.RUNNERS_TABLE_NAME = exports.QUEUE_TABLE_NAME = void 0;
 exports.isValidStatusTransition = isValidStatusTransition;
 const client_dynamodb_1 = require("@aws-sdk/client-dynamodb");
 const lib_dynamodb_1 = require("@aws-sdk/lib-dynamodb");
 const uuid_1 = require("uuid");
 /**
+ * Fixed table name (v2: single table for all namespaces)
+ */
+exports.QUEUE_TABLE_NAME = 'pm-runner-queue';
+/**
+ * Runners table name (v2: heartbeat tracking)
+ */
+exports.RUNNERS_TABLE_NAME = 'pm-runner-runners';
+/**
  * Valid status transitions
  * Per spec/20_QUEUE_STORE.md
+ * v2.1: Added AWAITING_RESPONSE transitions
  */
 exports.VALID_STATUS_TRANSITIONS = {
     QUEUED: ['RUNNING', 'CANCELLED'],
-    RUNNING: ['COMPLETE', 'ERROR', 'CANCELLED'],
+    RUNNING: ['COMPLETE', 'ERROR', 'CANCELLED', 'AWAITING_RESPONSE'],
+    AWAITING_RESPONSE: ['RUNNING', 'CANCELLED', 'ERROR'], // User response resumes to RUNNING
     COMPLETE: [], // Terminal state
     ERROR: [], // Terminal state
     CANCELLED: [], // Terminal state
@@ -32,17 +53,18 @@ function isValidStatusTransition(fromStatus, toStatus) {
     return exports.VALID_STATUS_TRANSITIONS[fromStatus].includes(toStatus);
 }
 /**
- * Queue Store
+ * Queue Store (v2)
  * Manages task queue with DynamoDB Local
+ * Single table design with namespace-based separation
  */
 class QueueStore {
     client;
     docClient;
-    tableName;
+    namespace;
     endpoint;
-    constructor(config = {}) {
+    constructor(config) {
         this.endpoint = config.endpoint || 'http://localhost:8000';
-        this.tableName = config.tableName || 'pm-runner-queue';
+        this.namespace = config.namespace;
         const region = config.region || 'local';
         this.client = new client_dynamodb_1.DynamoDBClient({
             endpoint: this.endpoint,
@@ -59,10 +81,16 @@ class QueueStore {
         });
     }
     /**
-     * Get table name
+     * Get fixed table name (v2: always returns pm-runner-queue)
      */
     getTableName() {
-        return this.tableName;
+        return exports.QUEUE_TABLE_NAME;
+    }
+    /**
+     * Get namespace
+     */
+    getNamespace() {
+        return this.namespace;
     }
     /**
      * Get endpoint
@@ -75,7 +103,7 @@ class QueueStore {
      */
     async tableExists() {
         try {
-            await this.client.send(new client_dynamodb_1.DescribeTableCommand({ TableName: this.tableName }));
+            await this.client.send(new client_dynamodb_1.DescribeTableCommand({ TableName: exports.QUEUE_TABLE_NAME }));
             return true;
         }
         catch (error) {
@@ -86,33 +114,39 @@ class QueueStore {
         }
     }
     /**
-     * Create table with required GSIs
-     * Per spec/20_QUEUE_STORE.md table definition
+     * Delete queue table (for testing)
+     */
+    async deleteTable() {
+        try {
+            await this.client.send(new client_dynamodb_1.DeleteTableCommand({ TableName: exports.QUEUE_TABLE_NAME }));
+        }
+        catch (error) {
+            if (error instanceof client_dynamodb_1.ResourceNotFoundException) {
+                // Table doesn't exist, ignore
+                return;
+            }
+            throw error;
+        }
+    }
+    /**
+     * Create queue table with composite key (v2)
+     * PK: namespace, SK: task_id
      */
     async createTable() {
         const command = new client_dynamodb_1.CreateTableCommand({
-            TableName: this.tableName,
-            KeySchema: [{ AttributeName: 'task_id', KeyType: 'HASH' }],
+            TableName: exports.QUEUE_TABLE_NAME,
+            KeySchema: [
+                { AttributeName: 'namespace', KeyType: 'HASH' },
+                { AttributeName: 'task_id', KeyType: 'RANGE' },
+            ],
             AttributeDefinitions: [
+                { AttributeName: 'namespace', AttributeType: 'S' },
                 { AttributeName: 'task_id', AttributeType: 'S' },
-                { AttributeName: 'session_id', AttributeType: 'S' },
                 { AttributeName: 'status', AttributeType: 'S' },
                 { AttributeName: 'created_at', AttributeType: 'S' },
                 { AttributeName: 'task_group_id', AttributeType: 'S' },
             ],
             GlobalSecondaryIndexes: [
-                {
-                    IndexName: 'session-index',
-                    KeySchema: [
-                        { AttributeName: 'session_id', KeyType: 'HASH' },
-                        { AttributeName: 'created_at', KeyType: 'RANGE' },
-                    ],
-                    Projection: { ProjectionType: 'ALL' },
-                    ProvisionedThroughput: {
-                        ReadCapacityUnits: 5,
-                        WriteCapacityUnits: 5,
-                    },
-                },
                 {
                     IndexName: 'status-index',
                     KeySchema: [
@@ -146,24 +180,67 @@ class QueueStore {
         await this.client.send(command);
     }
     /**
-     * Ensure table exists, create if not
+     * Create runners table (v2)
+     * PK: namespace, SK: runner_id
+     */
+    async createRunnersTable() {
+        const command = new client_dynamodb_1.CreateTableCommand({
+            TableName: exports.RUNNERS_TABLE_NAME,
+            KeySchema: [
+                { AttributeName: 'namespace', KeyType: 'HASH' },
+                { AttributeName: 'runner_id', KeyType: 'RANGE' },
+            ],
+            AttributeDefinitions: [
+                { AttributeName: 'namespace', AttributeType: 'S' },
+                { AttributeName: 'runner_id', AttributeType: 'S' },
+            ],
+            ProvisionedThroughput: {
+                ReadCapacityUnits: 5,
+                WriteCapacityUnits: 5,
+            },
+        });
+        await this.client.send(command);
+    }
+    /**
+     * Check if runners table exists
+     */
+    async runnersTableExists() {
+        try {
+            await this.client.send(new client_dynamodb_1.DescribeTableCommand({ TableName: exports.RUNNERS_TABLE_NAME }));
+            return true;
+        }
+        catch (error) {
+            if (error instanceof client_dynamodb_1.ResourceNotFoundException) {
+                return false;
+            }
+            throw error;
+        }
+    }
+    /**
+     * Ensure both tables exist
      */
     async ensureTable() {
-        const exists = await this.tableExists();
-        if (!exists) {
+        // Queue table
+        const queueExists = await this.tableExists();
+        if (!queueExists) {
             await this.createTable();
-            // Wait for table to be active
-            await this.waitForTableActive();
+            await this.waitForTableActive(exports.QUEUE_TABLE_NAME);
+        }
+        // Runners table
+        const runnersExists = await this.runnersTableExists();
+        if (!runnersExists) {
+            await this.createRunnersTable();
+            await this.waitForTableActive(exports.RUNNERS_TABLE_NAME);
         }
     }
     /**
      * Wait for table to become active
      */
-    async waitForTableActive(maxWaitMs = 30000) {
+    async waitForTableActive(tableName, maxWaitMs = 30000) {
         const startTime = Date.now();
         while (Date.now() - startTime < maxWaitMs) {
             try {
-                const result = await this.client.send(new client_dynamodb_1.DescribeTableCommand({ TableName: this.tableName }));
+                const result = await this.client.send(new client_dynamodb_1.DescribeTableCommand({ TableName: tableName }));
                 if (result.Table?.TableStatus === 'ACTIVE') {
                     return;
                 }
@@ -173,21 +250,16 @@ class QueueStore {
             }
             await new Promise(resolve => setTimeout(resolve, 100));
         }
-        throw new Error(`Table ${this.tableName} did not become active within ${maxWaitMs}ms`);
+        throw new Error(`Table ${tableName} did not become active within ${maxWaitMs}ms`);
     }
     /**
      * Enqueue a new task
      * Creates item with status=QUEUED
-     *
-     * @param sessionId - Session ID
-     * @param taskGroupId - Task Group ID
-     * @param prompt - User prompt
-     * @param taskId - Optional task ID (generates if not provided)
-     * @returns Created queue item
      */
     async enqueue(sessionId, taskGroupId, prompt, taskId) {
         const now = new Date().toISOString();
         const item = {
+            namespace: this.namespace,
             task_id: taskId || (0, uuid_1.v4)(),
             task_group_id: taskGroupId,
             session_id: sessionId,
@@ -197,52 +269,57 @@ class QueueStore {
             updated_at: now,
         };
         await this.docClient.send(new lib_dynamodb_1.PutCommand({
-            TableName: this.tableName,
+            TableName: exports.QUEUE_TABLE_NAME,
             Item: item,
         }));
         return item;
     }
     /**
-     * Get item by task_id
+     * Get item by task_id (v2: uses composite key)
      */
-    async getItem(taskId) {
+    async getItem(taskId, targetNamespace) {
+        const ns = targetNamespace ?? this.namespace;
         const result = await this.docClient.send(new lib_dynamodb_1.GetCommand({
-            TableName: this.tableName,
-            Key: { task_id: taskId },
+            TableName: exports.QUEUE_TABLE_NAME,
+            Key: {
+                namespace: ns,
+                task_id: taskId
+            },
         }));
         return result.Item || null;
     }
     /**
-     * Claim the oldest QUEUED task (atomic QUEUED -> RUNNING)
-     * Per spec: Uses conditional update for double execution prevention
-     *
-     * @returns ClaimResult with success flag and item if claimed
+     * Claim the oldest QUEUED task for this namespace
      */
     async claim() {
-        // Query for oldest QUEUED item using status-index
         const queryResult = await this.docClient.send(new lib_dynamodb_1.QueryCommand({
-            TableName: this.tableName,
+            TableName: exports.QUEUE_TABLE_NAME,
             IndexName: 'status-index',
             KeyConditionExpression: '#status = :queued',
+            FilterExpression: '#namespace = :namespace',
             ExpressionAttributeNames: {
                 '#status': 'status',
+                '#namespace': 'namespace',
             },
             ExpressionAttributeValues: {
                 ':queued': 'QUEUED',
+                ':namespace': this.namespace,
             },
-            Limit: 1,
-            ScanIndexForward: true, // Ascending by created_at (oldest first)
+            Limit: 10,
+            ScanIndexForward: true,
         }));
         if (!queryResult.Items || queryResult.Items.length === 0) {
             return { success: false };
         }
         const item = queryResult.Items[0];
-        // Atomic update: QUEUED -> RUNNING with conditional check
         try {
             const now = new Date().toISOString();
             await this.docClient.send(new lib_dynamodb_1.UpdateCommand({
-                TableName: this.tableName,
-                Key: { task_id: item.task_id },
+                TableName: exports.QUEUE_TABLE_NAME,
+                Key: {
+                    namespace: this.namespace,
+                    task_id: item.task_id
+                },
                 UpdateExpression: 'SET #status = :running, updated_at = :now',
                 ConditionExpression: '#status = :queued',
                 ExpressionAttributeNames: {
@@ -254,30 +331,22 @@ class QueueStore {
                     ':now': now,
                 },
             }));
-            // Update local item with new status
             item.status = 'RUNNING';
             item.updated_at = now;
             return { success: true, item };
         }
         catch (error) {
-            // ConditionalCheckFailed means another process claimed it
             if (error &&
                 typeof error === 'object' &&
                 'name' in error &&
                 error.name === 'ConditionalCheckFailedException') {
                 return { success: false, error: 'Task already claimed by another process' };
             }
-            // Fail-closed: re-throw unexpected errors
             throw error;
         }
     }
     /**
      * Update task status
-     * Per spec: RUNNING -> COMPLETE or RUNNING -> ERROR
-     *
-     * @param taskId - Task ID
-     * @param status - New status
-     * @param errorMessage - Optional error message (for ERROR status)
      */
     async updateStatus(taskId, status, errorMessage) {
         const now = new Date().toISOString();
@@ -292,8 +361,11 @@ class QueueStore {
             expressionAttributeValues[':error'] = errorMessage;
         }
         await this.docClient.send(new lib_dynamodb_1.UpdateCommand({
-            TableName: this.tableName,
-            Key: { task_id: taskId },
+            TableName: exports.QUEUE_TABLE_NAME,
+            Key: {
+                namespace: this.namespace,
+                task_id: taskId
+            },
             UpdateExpression: updateExpression,
             ExpressionAttributeNames: {
                 '#status': 'status',
@@ -303,14 +375,8 @@ class QueueStore {
     }
     /**
      * Update task status with validation
-     * Per spec/19_WEB_UI.md: PATCH /api/tasks/:task_id/status
-     *
-     * @param taskId - Task ID
-     * @param newStatus - Target status
-     * @returns StatusUpdateResult with success/error info
      */
     async updateStatusWithValidation(taskId, newStatus) {
-        // First, get current task
         const task = await this.getItem(taskId);
         if (!task) {
             return {
@@ -321,7 +387,6 @@ class QueueStore {
             };
         }
         const oldStatus = task.status;
-        // Check if transition is valid
         if (!isValidStatusTransition(oldStatus, newStatus)) {
             return {
                 success: false,
@@ -331,7 +396,6 @@ class QueueStore {
                 message: `Cannot transition from ${oldStatus} to ${newStatus}`,
             };
         }
-        // Update status
         await this.updateStatus(taskId, newStatus);
         return {
             success: true,
@@ -341,70 +405,171 @@ class QueueStore {
         };
     }
     /**
-     * Get items by session ID
-     * Uses session-index GSI
+     * Set task to AWAITING_RESPONSE with clarification details
      */
-    async getBySession(sessionId) {
-        const result = await this.docClient.send(new lib_dynamodb_1.QueryCommand({
-            TableName: this.tableName,
-            IndexName: 'session-index',
-            KeyConditionExpression: 'session_id = :sid',
-            ExpressionAttributeValues: {
-                ':sid': sessionId,
+    async setAwaitingResponse(taskId, clarification, conversationHistory) {
+        const task = await this.getItem(taskId);
+        if (!task) {
+            return {
+                success: false,
+                task_id: taskId,
+                error: 'Task not found',
+                message: `Task not found: ${taskId}`,
+            };
+        }
+        const oldStatus = task.status;
+        if (!isValidStatusTransition(oldStatus, 'AWAITING_RESPONSE')) {
+            return {
+                success: false,
+                task_id: taskId,
+                old_status: oldStatus,
+                error: 'Invalid status transition',
+                message: `Cannot transition from ${oldStatus} to AWAITING_RESPONSE`,
+            };
+        }
+        const now = new Date().toISOString();
+        await this.docClient.send(new lib_dynamodb_1.UpdateCommand({
+            TableName: exports.QUEUE_TABLE_NAME,
+            Key: {
+                namespace: this.namespace,
+                task_id: taskId,
             },
-            ScanIndexForward: true, // Ascending by created_at
-        }));
-        return result.Items || [];
-    }
-    /**
-     * Get items by status
-     * Uses status-index GSI
-     */
-    async getByStatus(status) {
-        const result = await this.docClient.send(new lib_dynamodb_1.QueryCommand({
-            TableName: this.tableName,
-            IndexName: 'status-index',
-            KeyConditionExpression: '#status = :status',
+            UpdateExpression: 'SET #status = :status, updated_at = :now, clarification = :clarification, conversation_history = :history',
             ExpressionAttributeNames: {
                 '#status': 'status',
             },
             ExpressionAttributeValues: {
-                ':status': status,
+                ':status': 'AWAITING_RESPONSE',
+                ':now': now,
+                ':clarification': clarification,
+                ':history': conversationHistory || [],
             },
-            ScanIndexForward: true, // Ascending by created_at
+        }));
+        return {
+            success: true,
+            task_id: taskId,
+            old_status: oldStatus,
+            new_status: 'AWAITING_RESPONSE',
+        };
+    }
+    /**
+     * Resume task from AWAITING_RESPONSE with user response
+     */
+    async resumeWithResponse(taskId, userResponse) {
+        const task = await this.getItem(taskId);
+        if (!task) {
+            return {
+                success: false,
+                task_id: taskId,
+                error: 'Task not found',
+                message: `Task not found: ${taskId}`,
+            };
+        }
+        if (task.status !== 'AWAITING_RESPONSE') {
+            return {
+                success: false,
+                task_id: taskId,
+                old_status: task.status,
+                error: 'Invalid status',
+                message: `Task is not awaiting response: ${task.status}`,
+            };
+        }
+        const now = new Date().toISOString();
+        // Add user response to conversation history
+        const history = task.conversation_history || [];
+        history.push({
+            role: 'user',
+            content: userResponse,
+            timestamp: now,
+        });
+        await this.docClient.send(new lib_dynamodb_1.UpdateCommand({
+            TableName: exports.QUEUE_TABLE_NAME,
+            Key: {
+                namespace: this.namespace,
+                task_id: taskId,
+            },
+            UpdateExpression: 'SET #status = :status, updated_at = :now, conversation_history = :history',
+            ExpressionAttributeNames: {
+                '#status': 'status',
+            },
+            ExpressionAttributeValues: {
+                ':status': 'RUNNING',
+                ':now': now,
+                ':history': history,
+            },
+        }));
+        return {
+            success: true,
+            task_id: taskId,
+            old_status: 'AWAITING_RESPONSE',
+            new_status: 'RUNNING',
+        };
+    }
+    /**
+     * Get items by status for this namespace
+     */
+    async getByStatus(status) {
+        const result = await this.docClient.send(new lib_dynamodb_1.QueryCommand({
+            TableName: exports.QUEUE_TABLE_NAME,
+            IndexName: 'status-index',
+            KeyConditionExpression: '#status = :status',
+            FilterExpression: '#namespace = :namespace',
+            ExpressionAttributeNames: {
+                '#status': 'status',
+                '#namespace': 'namespace',
+            },
+            ExpressionAttributeValues: {
+                ':status': status,
+                ':namespace': this.namespace,
+            },
+            ScanIndexForward: true,
         }));
         return result.Items || [];
     }
     /**
-     * Get items by task group ID
-     * Uses task-group-index GSI
-     * Per spec/19_WEB_UI.md: for listing tasks in a task group
+     * Get items by task group ID for this namespace
      */
-    async getByTaskGroup(taskGroupId) {
+    async getByTaskGroup(taskGroupId, targetNamespace) {
+        const ns = targetNamespace ?? this.namespace;
         const result = await this.docClient.send(new lib_dynamodb_1.QueryCommand({
-            TableName: this.tableName,
+            TableName: exports.QUEUE_TABLE_NAME,
             IndexName: 'task-group-index',
             KeyConditionExpression: 'task_group_id = :tgid',
+            FilterExpression: '#namespace = :namespace',
+            ExpressionAttributeNames: {
+                '#namespace': 'namespace',
+            },
             ExpressionAttributeValues: {
                 ':tgid': taskGroupId,
+                ':namespace': ns,
             },
-            ScanIndexForward: true, // Ascending by created_at
+            ScanIndexForward: true,
         }));
         return result.Items || [];
     }
     /**
-     * Get all distinct task groups with summary
-     * Per spec/19_WEB_UI.md: for task group list view
-     * Note: Uses Scan - consider pagination for large datasets
+     * Get all items in a namespace
      */
-    async getAllTaskGroups() {
-        // Scan all items and aggregate by task_group_id
-        const result = await this.docClient.send(new lib_dynamodb_1.ScanCommand({
-            TableName: this.tableName,
-            ProjectionExpression: 'task_group_id, created_at, updated_at',
+    async getAllItems(targetNamespace) {
+        const ns = targetNamespace ?? this.namespace;
+        const result = await this.docClient.send(new lib_dynamodb_1.QueryCommand({
+            TableName: exports.QUEUE_TABLE_NAME,
+            KeyConditionExpression: '#namespace = :namespace',
+            ExpressionAttributeNames: {
+                '#namespace': 'namespace',
+            },
+            ExpressionAttributeValues: {
+                ':namespace': ns,
+            },
+            ScanIndexForward: true,
         }));
-        const items = result.Items || [];
-        // Aggregate by task_group_id
+        return result.Items || [];
+    }
+    /**
+     * Get all distinct task groups for a namespace with summary
+     */
+    async getAllTaskGroups(targetNamespace) {
+        const items = await this.getAllItems(targetNamespace);
         const groupMap = new Map();
         for (const item of items) {
             const existing = groupMap.get(item.task_group_id);
@@ -425,7 +590,6 @@ class QueueStore {
                 });
             }
         }
-        // Convert to array and sort by created_at (oldest first)
         const groups = [];
         for (const [taskGroupId, data] of groupMap) {
             groups.push({
@@ -439,20 +603,72 @@ class QueueStore {
         return groups;
     }
     /**
+     * Get all distinct namespaces (scan entire table)
+     */
+    async getAllNamespaces() {
+        const queueResult = await this.docClient.send(new lib_dynamodb_1.ScanCommand({
+            TableName: exports.QUEUE_TABLE_NAME,
+            ProjectionExpression: '#namespace',
+            ExpressionAttributeNames: {
+                '#namespace': 'namespace',
+            },
+        }));
+        let runnersResult = { Items: [] };
+        try {
+            runnersResult = await this.docClient.send(new lib_dynamodb_1.ScanCommand({
+                TableName: exports.RUNNERS_TABLE_NAME,
+            }));
+        }
+        catch {
+            // Runners table might not exist yet
+        }
+        const queueItems = (queueResult.Items || []);
+        const runners = (runnersResult.Items || []);
+        const taskCounts = new Map();
+        for (const item of queueItems) {
+            const count = taskCounts.get(item.namespace) || 0;
+            taskCounts.set(item.namespace, count + 1);
+        }
+        const runnerCounts = new Map();
+        const now = Date.now();
+        const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
+        for (const runner of runners) {
+            const counts = runnerCounts.get(runner.namespace) || { total: 0, active: 0 };
+            counts.total++;
+            const lastHeartbeat = new Date(runner.last_heartbeat).getTime();
+            if (now - lastHeartbeat < HEARTBEAT_TIMEOUT_MS) {
+                counts.active++;
+            }
+            runnerCounts.set(runner.namespace, counts);
+        }
+        const allNamespaces = new Set([...taskCounts.keys(), ...runnerCounts.keys()]);
+        const summaries = [];
+        for (const ns of allNamespaces) {
+            const runnerInfo = runnerCounts.get(ns) || { total: 0, active: 0 };
+            summaries.push({
+                namespace: ns,
+                task_count: taskCounts.get(ns) || 0,
+                runner_count: runnerInfo.total,
+                active_runner_count: runnerInfo.active,
+            });
+        }
+        summaries.sort((a, b) => a.namespace.localeCompare(b.namespace));
+        return summaries;
+    }
+    /**
      * Delete item (for testing)
      */
     async deleteItem(taskId) {
         await this.docClient.send(new lib_dynamodb_1.DeleteCommand({
-            TableName: this.tableName,
-            Key: { task_id: taskId },
+            TableName: exports.QUEUE_TABLE_NAME,
+            Key: {
+                namespace: this.namespace,
+                task_id: taskId
+            },
         }));
     }
     /**
      * Mark stale RUNNING tasks as ERROR
-     * Per spec: fail-closed - don't leave tasks in "limbo"
-     *
-     * @param maxAgeMs - Max age in milliseconds for RUNNING tasks
-     * @returns Number of tasks marked as ERROR
      */
     async recoverStaleTasks(maxAgeMs = 5 * 60 * 1000) {
         const runningTasks = await this.getByStatus('RUNNING');
@@ -466,6 +682,119 @@ class QueueStore {
             }
         }
         return recovered;
+    }
+    // ===============================
+    // Runner Heartbeat Methods (v2)
+    // ===============================
+    /**
+     * Register or update runner heartbeat
+     */
+    async updateRunnerHeartbeat(runnerId, projectRoot) {
+        const now = new Date().toISOString();
+        const existing = await this.getRunner(runnerId);
+        if (existing) {
+            await this.docClient.send(new lib_dynamodb_1.UpdateCommand({
+                TableName: exports.RUNNERS_TABLE_NAME,
+                Key: {
+                    namespace: this.namespace,
+                    runner_id: runnerId,
+                },
+                UpdateExpression: 'SET last_heartbeat = :now, #status = :status',
+                ExpressionAttributeNames: {
+                    '#status': 'status',
+                },
+                ExpressionAttributeValues: {
+                    ':now': now,
+                    ':status': 'RUNNING',
+                },
+            }));
+        }
+        else {
+            const record = {
+                namespace: this.namespace,
+                runner_id: runnerId,
+                last_heartbeat: now,
+                started_at: now,
+                status: 'RUNNING',
+                project_root: projectRoot,
+            };
+            await this.docClient.send(new lib_dynamodb_1.PutCommand({
+                TableName: exports.RUNNERS_TABLE_NAME,
+                Item: record,
+            }));
+        }
+    }
+    /**
+     * Get runner by ID
+     */
+    async getRunner(runnerId) {
+        const result = await this.docClient.send(new lib_dynamodb_1.GetCommand({
+            TableName: exports.RUNNERS_TABLE_NAME,
+            Key: {
+                namespace: this.namespace,
+                runner_id: runnerId,
+            },
+        }));
+        return result.Item || null;
+    }
+    /**
+     * Get all runners for this namespace
+     */
+    async getAllRunners(targetNamespace) {
+        const ns = targetNamespace ?? this.namespace;
+        const result = await this.docClient.send(new lib_dynamodb_1.QueryCommand({
+            TableName: exports.RUNNERS_TABLE_NAME,
+            KeyConditionExpression: '#namespace = :namespace',
+            ExpressionAttributeNames: {
+                '#namespace': 'namespace',
+            },
+            ExpressionAttributeValues: {
+                ':namespace': ns,
+            },
+        }));
+        return result.Items || [];
+    }
+    /**
+     * Get runners with their alive status
+     */
+    async getRunnersWithStatus(heartbeatTimeoutMs = 2 * 60 * 1000, targetNamespace) {
+        const runners = await this.getAllRunners(targetNamespace);
+        const now = Date.now();
+        return runners.map(runner => ({
+            ...runner,
+            isAlive: now - new Date(runner.last_heartbeat).getTime() < heartbeatTimeoutMs,
+        }));
+    }
+    /**
+     * Mark runner as stopped
+     */
+    async markRunnerStopped(runnerId) {
+        await this.docClient.send(new lib_dynamodb_1.UpdateCommand({
+            TableName: exports.RUNNERS_TABLE_NAME,
+            Key: {
+                namespace: this.namespace,
+                runner_id: runnerId,
+            },
+            UpdateExpression: 'SET #status = :status',
+            ExpressionAttributeNames: {
+                '#status': 'status',
+            },
+            ExpressionAttributeValues: {
+                ':status': 'STOPPED',
+            },
+        }));
+    }
+    /**
+     * Delete runner record
+     */
+    async deleteRunner(runnerId) {
+        await this.docClient.send(new lib_dynamodb_1.DeleteCommand({
+            TableName: exports.RUNNERS_TABLE_NAME,
+            Key: {
+                namespace: this.namespace,
+                runner_id: runnerId,
+            },
+        }));
     }
     /**
      * Close the client connection

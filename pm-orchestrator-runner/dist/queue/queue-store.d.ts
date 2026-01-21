@@ -1,6 +1,17 @@
 /**
- * Queue Store - DynamoDB Local implementation
+ * Queue Store - DynamoDB Local implementation (v2)
  * Per spec/20_QUEUE_STORE.md
+ *
+ * v2 Changes:
+ * - Single fixed table: pm-runner-queue
+ * - Composite key: PK=namespace, SK=task_id
+ * - GSI: status-index (status + created_at)
+ * - Namespace-based separation in single table
+ *
+ * v2.1 Changes:
+ * - Added AWAITING_RESPONSE status for clarification flow
+ * - Added clarification and conversation_history fields
+ * - Updated status transitions for AWAITING_RESPONSE
  *
  * Provides queue operations with:
  * - Atomic QUEUED -> RUNNING transitions (conditional update)
@@ -8,13 +19,23 @@
  * - Fail-closed error handling
  */
 /**
+ * Fixed table name (v2: single table for all namespaces)
+ */
+export declare const QUEUE_TABLE_NAME = "pm-runner-queue";
+/**
+ * Runners table name (v2: heartbeat tracking)
+ */
+export declare const RUNNERS_TABLE_NAME = "pm-runner-runners";
+/**
  * Queue Item status
  * Per spec/20: QUEUED / RUNNING / COMPLETE / ERROR / CANCELLED
+ * v2.1: Added AWAITING_RESPONSE for clarification flow
  */
-export type QueueItemStatus = 'QUEUED' | 'RUNNING' | 'COMPLETE' | 'ERROR' | 'CANCELLED';
+export type QueueItemStatus = 'QUEUED' | 'RUNNING' | 'AWAITING_RESPONSE' | 'COMPLETE' | 'ERROR' | 'CANCELLED';
 /**
  * Valid status transitions
  * Per spec/20_QUEUE_STORE.md
+ * v2.1: Added AWAITING_RESPONSE transitions
  */
 export declare const VALID_STATUS_TRANSITIONS: Record<QueueItemStatus, QueueItemStatus[]>;
 /**
@@ -22,10 +43,39 @@ export declare const VALID_STATUS_TRANSITIONS: Record<QueueItemStatus, QueueItem
  */
 export declare function isValidStatusTransition(fromStatus: QueueItemStatus, toStatus: QueueItemStatus): boolean;
 /**
- * Queue Item schema
+ * Conversation history entry for clarification flow
+ */
+export interface ConversationEntry {
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+    timestamp: string;
+}
+/**
+ * Clarification request details
+ */
+export interface ClarificationRequest {
+    /** Type of clarification needed */
+    type: 'best_practice' | 'case_by_case' | 'unknown';
+    /** The question being asked */
+    question: string;
+    /** Options provided (if any) */
+    options?: string[];
+    /** Context for the clarification */
+    context?: string;
+    /** Was this auto-resolved? */
+    auto_resolved?: boolean;
+    /** Resolution value (if auto-resolved) */
+    resolution?: string;
+    /** Reasoning for auto-resolution */
+    resolution_reasoning?: string;
+}
+/**
+ * Queue Item schema (v2.1)
  * Per spec/20_QUEUE_STORE.md
+ * Extended with clarification fields
  */
 export interface QueueItem {
+    namespace: string;
     task_id: string;
     task_group_id: string;
     session_id: string;
@@ -34,6 +84,26 @@ export interface QueueItem {
     created_at: string;
     updated_at: string;
     error_message?: string;
+    /** Clarification request when status is AWAITING_RESPONSE */
+    clarification?: ClarificationRequest;
+    /** Conversation history for context preservation */
+    conversation_history?: ConversationEntry[];
+}
+/**
+ * Runner status for heartbeat tracking
+ */
+export type RunnerStatus = 'RUNNING' | 'STOPPED';
+/**
+ * Runner record schema (v2)
+ * Per spec/20_QUEUE_STORE.md
+ */
+export interface RunnerRecord {
+    namespace: string;
+    runner_id: string;
+    last_heartbeat: string;
+    started_at: string;
+    status: RunnerStatus;
+    project_root: string;
 }
 /**
  * Queue Store configuration
@@ -41,10 +111,10 @@ export interface QueueItem {
 export interface QueueStoreConfig {
     /** DynamoDB endpoint (default: http://localhost:8000) */
     endpoint?: string;
-    /** Table name (default: pm-runner-queue) */
-    tableName?: string;
     /** AWS region (default: local) */
     region?: string;
+    /** Namespace for this store instance */
+    namespace: string;
 }
 /**
  * Claim result
@@ -77,19 +147,33 @@ export interface TaskGroupSummary {
     latest_updated_at: string;
 }
 /**
- * Queue Store
+ * Namespace summary for listing
+ */
+export interface NamespaceSummary {
+    namespace: string;
+    task_count: number;
+    runner_count: number;
+    active_runner_count: number;
+}
+/**
+ * Queue Store (v2)
  * Manages task queue with DynamoDB Local
+ * Single table design with namespace-based separation
  */
 export declare class QueueStore {
     private readonly client;
     private readonly docClient;
-    private readonly tableName;
+    private readonly namespace;
     private readonly endpoint;
-    constructor(config?: QueueStoreConfig);
+    constructor(config: QueueStoreConfig);
     /**
-     * Get table name
+     * Get fixed table name (v2: always returns pm-runner-queue)
      */
     getTableName(): string;
+    /**
+     * Get namespace
+     */
+    getNamespace(): string;
     /**
      * Get endpoint
      */
@@ -99,12 +183,25 @@ export declare class QueueStore {
      */
     tableExists(): Promise<boolean>;
     /**
-     * Create table with required GSIs
-     * Per spec/20_QUEUE_STORE.md table definition
+     * Delete queue table (for testing)
+     */
+    deleteTable(): Promise<void>;
+    /**
+     * Create queue table with composite key (v2)
+     * PK: namespace, SK: task_id
      */
     createTable(): Promise<void>;
     /**
-     * Ensure table exists, create if not
+     * Create runners table (v2)
+     * PK: namespace, SK: runner_id
+     */
+    createRunnersTable(): Promise<void>;
+    /**
+     * Check if runners table exists
+     */
+    runnersTableExists(): Promise<boolean>;
+    /**
+     * Ensure both tables exist
      */
     ensureTable(): Promise<void>;
     /**
@@ -114,77 +211,86 @@ export declare class QueueStore {
     /**
      * Enqueue a new task
      * Creates item with status=QUEUED
-     *
-     * @param sessionId - Session ID
-     * @param taskGroupId - Task Group ID
-     * @param prompt - User prompt
-     * @param taskId - Optional task ID (generates if not provided)
-     * @returns Created queue item
      */
     enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string): Promise<QueueItem>;
     /**
-     * Get item by task_id
+     * Get item by task_id (v2: uses composite key)
      */
-    getItem(taskId: string): Promise<QueueItem | null>;
+    getItem(taskId: string, targetNamespace?: string): Promise<QueueItem | null>;
     /**
-     * Claim the oldest QUEUED task (atomic QUEUED -> RUNNING)
-     * Per spec: Uses conditional update for double execution prevention
-     *
-     * @returns ClaimResult with success flag and item if claimed
+     * Claim the oldest QUEUED task for this namespace
      */
     claim(): Promise<ClaimResult>;
     /**
      * Update task status
-     * Per spec: RUNNING -> COMPLETE or RUNNING -> ERROR
-     *
-     * @param taskId - Task ID
-     * @param status - New status
-     * @param errorMessage - Optional error message (for ERROR status)
      */
     updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string): Promise<void>;
     /**
      * Update task status with validation
-     * Per spec/19_WEB_UI.md: PATCH /api/tasks/:task_id/status
-     *
-     * @param taskId - Task ID
-     * @param newStatus - Target status
-     * @returns StatusUpdateResult with success/error info
      */
     updateStatusWithValidation(taskId: string, newStatus: QueueItemStatus): Promise<StatusUpdateResult>;
     /**
-     * Get items by session ID
-     * Uses session-index GSI
+     * Set task to AWAITING_RESPONSE with clarification details
      */
-    getBySession(sessionId: string): Promise<QueueItem[]>;
+    setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[]): Promise<StatusUpdateResult>;
     /**
-     * Get items by status
-     * Uses status-index GSI
+     * Resume task from AWAITING_RESPONSE with user response
+     */
+    resumeWithResponse(taskId: string, userResponse: string): Promise<StatusUpdateResult>;
+    /**
+     * Get items by status for this namespace
      */
     getByStatus(status: QueueItemStatus): Promise<QueueItem[]>;
     /**
-     * Get items by task group ID
-     * Uses task-group-index GSI
-     * Per spec/19_WEB_UI.md: for listing tasks in a task group
+     * Get items by task group ID for this namespace
      */
-    getByTaskGroup(taskGroupId: string): Promise<QueueItem[]>;
+    getByTaskGroup(taskGroupId: string, targetNamespace?: string): Promise<QueueItem[]>;
     /**
-     * Get all distinct task groups with summary
-     * Per spec/19_WEB_UI.md: for task group list view
-     * Note: Uses Scan - consider pagination for large datasets
+     * Get all items in a namespace
      */
-    getAllTaskGroups(): Promise<TaskGroupSummary[]>;
+    getAllItems(targetNamespace?: string): Promise<QueueItem[]>;
+    /**
+     * Get all distinct task groups for a namespace with summary
+     */
+    getAllTaskGroups(targetNamespace?: string): Promise<TaskGroupSummary[]>;
+    /**
+     * Get all distinct namespaces (scan entire table)
+     */
+    getAllNamespaces(): Promise<NamespaceSummary[]>;
     /**
      * Delete item (for testing)
      */
     deleteItem(taskId: string): Promise<void>;
     /**
      * Mark stale RUNNING tasks as ERROR
-     * Per spec: fail-closed - don't leave tasks in "limbo"
-     *
-     * @param maxAgeMs - Max age in milliseconds for RUNNING tasks
-     * @returns Number of tasks marked as ERROR
      */
     recoverStaleTasks(maxAgeMs?: number): Promise<number>;
+    /**
+     * Register or update runner heartbeat
+     */
+    updateRunnerHeartbeat(runnerId: string, projectRoot: string): Promise<void>;
+    /**
+     * Get runner by ID
+     */
+    getRunner(runnerId: string): Promise<RunnerRecord | null>;
+    /**
+     * Get all runners for this namespace
+     */
+    getAllRunners(targetNamespace?: string): Promise<RunnerRecord[]>;
+    /**
+     * Get runners with their alive status
+     */
+    getRunnersWithStatus(heartbeatTimeoutMs?: number, targetNamespace?: string): Promise<Array<RunnerRecord & {
+        isAlive: boolean;
+    }>>;
+    /**
+     * Mark runner as stopped
+     */
+    markRunnerStopped(runnerId: string): Promise<void>;
+    /**
+     * Delete runner record
+     */
+    deleteRunner(runnerId: string): Promise<void>;
     /**
      * Close the client connection
      */
