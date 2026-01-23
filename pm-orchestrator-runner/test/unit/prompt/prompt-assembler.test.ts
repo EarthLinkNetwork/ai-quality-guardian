@@ -761,4 +761,135 @@ describe('PromptAssembler (spec/17_PROMPT_TEMPLATE.md)', () => {
       assert.ok(result.prompt.includes('tg-modification-test'));
     });
   });
+
+  describe('Template Auto-Injection (spec/32_TEMPLATE_INJECTION.md)', () => {
+    // Mock Template for testing
+    const mockTemplate = {
+      id: 'test-template-id',
+      name: 'TestTemplate',
+      rulesText: 'RULE_1: Follow standards\nRULE_2: No shortcuts',
+      outputFormatText: 'FORMAT: JSON response required',
+      enabled: true,
+      isBuiltIn: false,
+      createdAt: '2026-01-23T00:00:00.000Z',
+      updatedAt: '2026-01-23T00:00:00.000Z',
+    };
+
+    it('should not inject when activeTemplate is null', () => {
+      const result = assembler.assemble('User task', undefined, null);
+
+      // Verify no template injection markers in prompt
+      assert.ok(!result.prompt.includes('Injected Rules'), 'Should not contain injected rules');
+      assert.ok(!result.prompt.includes('Required Output Format'), 'Should not contain output format');
+      assert.strictEqual(result.sections.templateRules, undefined, 'templateRules should be undefined');
+      assert.strictEqual(result.sections.templateOutputFormat, undefined, 'templateOutputFormat should be undefined');
+    });
+
+    it('should not inject when activeTemplate is undefined', () => {
+      const result = assembler.assemble('User task', undefined, undefined);
+
+      // Verify no template injection markers in prompt
+      assert.ok(!result.prompt.includes('Injected Rules'), 'Should not contain injected rules');
+      assert.ok(!result.prompt.includes('Required Output Format'), 'Should not contain output format');
+      assert.strictEqual(result.sections.templateRules, undefined, 'templateRules should be undefined');
+      assert.strictEqual(result.sections.templateOutputFormat, undefined, 'templateOutputFormat should be undefined');
+    });
+
+    it('should not inject when activeTemplate is not provided (omitted)', () => {
+      const result = assembler.assemble('User task');
+
+      // Verify no template injection markers in prompt
+      assert.ok(!result.prompt.includes('Injected Rules'), 'Should not contain injected rules');
+      assert.ok(!result.prompt.includes('Required Output Format'), 'Should not contain output format');
+      assert.strictEqual(result.sections.templateRules, undefined, 'templateRules should be undefined');
+      assert.strictEqual(result.sections.templateOutputFormat, undefined, 'templateOutputFormat should be undefined');
+    });
+
+    it('should inject rules after global prelude when activeTemplate is provided', () => {
+      const result = assembler.assemble('User task', undefined, mockTemplate);
+
+      // Verify rules injection is present
+      assert.ok(result.prompt.includes('Injected Rules (Template: TestTemplate)'),
+        'Should contain injected rules header');
+      assert.ok(result.prompt.includes('RULE_1: Follow standards'),
+        'Should contain rule text');
+
+      // Verify order: global prelude < rules injection < user input
+      const mandatoryRulesIndex = result.prompt.indexOf('省略禁止');
+      const rulesInjectionIndex = result.prompt.indexOf('Injected Rules');
+      const userInputIndex = result.prompt.indexOf('User task');
+
+      assert.ok(mandatoryRulesIndex >= 0, 'Should have mandatory rules');
+      assert.ok(rulesInjectionIndex >= 0, 'Should have rules injection');
+      assert.ok(mandatoryRulesIndex < rulesInjectionIndex,
+        'Rules injection should come after mandatory rules (global prelude)');
+      assert.ok(rulesInjectionIndex < userInputIndex,
+        'Rules injection should come before user input');
+    });
+
+    it('should inject output format before epilogue when activeTemplate is provided', () => {
+      // Create output epilogue file
+      fs.writeFileSync(path.join(templateDir, 'output-epilogue.md'), '## Epilogue Section');
+
+      const result = assembler.assemble('User task', undefined, mockTemplate);
+
+      // Verify output format injection is present
+      assert.ok(result.prompt.includes('Required Output Format (Template: TestTemplate)'),
+        'Should contain output format header');
+      assert.ok(result.prompt.includes('FORMAT: JSON response required'),
+        'Should contain output format text');
+
+      // Verify order: user input < output format injection < epilogue
+      const userInputIndex = result.prompt.indexOf('User task');
+      const outputFormatIndex = result.prompt.indexOf('Required Output Format');
+      const epilogueIndex = result.prompt.indexOf('Epilogue Section');
+
+      assert.ok(userInputIndex >= 0, 'Should have user input');
+      assert.ok(outputFormatIndex >= 0, 'Should have output format injection');
+      assert.ok(epilogueIndex >= 0, 'Should have epilogue');
+      assert.ok(userInputIndex < outputFormatIndex,
+        'Output format should come after user input');
+      assert.ok(outputFormatIndex < epilogueIndex,
+        'Output format should come before epilogue');
+    });
+
+    it('should populate sections.templateRules and sections.templateOutputFormat', () => {
+      const result = assembler.assemble('User task', undefined, mockTemplate);
+
+      // Verify sections are populated
+      assert.ok(result.sections.templateRules, 'templateRules should be defined');
+      assert.ok(result.sections.templateOutputFormat, 'templateOutputFormat should be defined');
+      assert.ok(result.sections.templateRules.includes('RULE_1'), 'templateRules should contain rule text');
+      assert.ok(result.sections.templateOutputFormat.includes('FORMAT:'),
+        'templateOutputFormat should contain format text');
+    });
+
+    it('should work with assembleWithModification when activeTemplate is provided', () => {
+      const modification: ModificationPromptInput = {
+        detectedIssues: ['Missing validation'],
+        originalTask: 'Implement feature',
+      };
+
+      const result = assembler.assembleWithModification('Fix it', modification, undefined, mockTemplate);
+
+      // Verify both modification and template injection are present
+      assert.ok(result.prompt.includes('Missing validation'), 'Should contain modification issue');
+      assert.ok(result.prompt.includes('Injected Rules'), 'Should contain rules injection');
+      assert.ok(result.prompt.includes('Required Output Format'), 'Should contain output format injection');
+    });
+
+    it('should not inject in assembleWithModification when activeTemplate is null', () => {
+      const modification: ModificationPromptInput = {
+        detectedIssues: ['Issue'],
+        originalTask: 'Task',
+      };
+
+      const result = assembler.assembleWithModification('Fix', modification, undefined, null);
+
+      // Modification should be present, template should not
+      assert.ok(result.prompt.includes('Issue'), 'Should contain modification');
+      assert.ok(!result.prompt.includes('Injected Rules'), 'Should not contain rules injection');
+      assert.ok(!result.prompt.includes('Required Output Format'), 'Should not contain output format');
+    });
+  });
 });

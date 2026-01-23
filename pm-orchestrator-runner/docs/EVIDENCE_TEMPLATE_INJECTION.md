@@ -149,34 +149,51 @@ ProjectSettingsStore (spec/33_PROJECT_SETTINGS_PERSISTENCE.md)
     ✔ should emit SETTINGS_ERROR on corrupted file
 ```
 
+### Template Auto-Injection Unit Tests (PromptAssembler)
+
+```
+PromptAssembler (spec/17_PROMPT_TEMPLATE.md)
+  Template Auto-Injection (spec/32_TEMPLATE_INJECTION.md)
+    ✔ should not inject when activeTemplate is null
+    ✔ should not inject when activeTemplate is undefined
+    ✔ should not inject when activeTemplate is not provided (omitted)
+    ✔ should inject rules after global prelude when activeTemplate is provided
+    ✔ should inject output format before epilogue when activeTemplate is provided
+    ✔ should populate sections.templateRules and sections.templateOutputFormat
+    ✔ should work with assembleWithModification when activeTemplate is provided
+    ✔ should not inject in assembleWithModification when activeTemplate is null
+```
+
 ### Integration Tests
 
 ```
-Template and Project Settings Integration Tests
-  Template Injection in Prompt Assembly
-    ✔ should inject template rules after global prelude
-    ✔ should inject template output format before epilogue
-    ✔ should not inject when template is disabled
-    ✔ should not inject when no template selected
-    ✔ should handle template injection in assembleWithModification
-  Project Settings and Template Coordination
-    ✔ should persist template selection across sessions
+Template Injection and Settings Persistence Integration
+  Template Storage
+    ✔ should write and read template from file system
+    ✔ should handle built-in templates with isBuiltIn flag
+  Project Settings Storage
+    ✔ should write and read project settings from file system
+    ✔ should generate consistent hash for same project path
+  Template + Settings Integration
+    ✔ should persist template selection in project settings
+    ✔ should handle template deletion gracefully
+  Settings Restoration Simulation
+    ✔ should restore settings on simulated restart
+    ✔ should use defaults when settings file does not exist
+    ✔ should handle corrupted settings file (fail-closed)
+  Template Injection Format
+    ✔ should format template injection correctly
+    ✔ should construct full prompt with template injection
+  File Permissions
+    ✔ should create files with secure permissions
+    ✔ should create directories with secure permissions
+  Settings Update Scenarios
+    ✔ should update template selection and persist
     ✔ should toggle template enabled state
-    ✔ should clear template selection
-    ✔ should switch between templates
-  /template and /templates Commands
-    ✔ should list all templates including built-ins
-    ✔ should create and use custom template
-    ✔ should enable and disable template injection
-    ✔ should copy built-in template
-    ✔ should delete user template and clear selection
-  File System Persistence
-    ✔ should persist settings across store instances
-    ✔ should persist templates across store instances
-    ✔ should survive corrupted settings file
-    ✔ should survive corrupted template file
-  Complete Workflow
-    ✔ should complete full template workflow
+    ✔ should update LLM settings
+  Index Management
+    ✔ should add project to index on first access
+    ✔ should update lastAccessedAt in index
 ```
 
 ## 主要な実装コンポーネント
@@ -189,6 +206,7 @@ interface Template {
   name: string;            // e.g., 'Standard', 'my-custom'
   rulesText: string;       // Rules to inject (Markdown)
   outputFormatText: string; // Output format to inject (Markdown)
+  enabled: boolean;        // Whether this template is enabled
   isBuiltIn: boolean;      // true for Minimal/Standard/Strict
   createdAt: string;       // ISO 8601
   updatedAt: string;       // ISO 8601
@@ -301,7 +319,7 @@ interface Template {
 ```
 typecheck: PASS (tsc --noEmit)
 lint: PASS (新規ファイルに警告なし)
-test: 2033 passing, 88 pending, 0 failing
+test: 2041 passing, 88 pending, 0 failing
 build: PASS (tsc)
 ```
 
