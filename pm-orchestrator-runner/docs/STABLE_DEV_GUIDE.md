@@ -17,6 +17,104 @@ This guide explains how to run stable and development versions of PM Orchestrato
 - Even if dev source is corrupted, stable binary remains intact
 - Worst case: delete dev worktree and re-clone; stable continues working
 
+## Auto-Derived Namespace ("Same Folder = Same Queue")
+
+Starting from v1.1.0, PM Orchestrator Runner automatically derives namespace from the project path. This ensures that:
+
+- **Same folder always uses same queue** - No need to remember `--namespace` flag
+- **Different folders never share queue** - Even with same folder name
+
+### How It Works
+
+When you run `pm repl` without `--namespace`, the runner automatically derives a namespace from your project path:
+
+```
+Format: {folder_name}-{path_hash_4_chars}
+
+Examples:
+  /Users/masa/dev/my-project     -> my-project-a1b2
+  /Users/john/dev/my-project     -> my-project-c3d4  (different hash)
+  /Users/masa/dev/another-project -> another-project-e5f6
+```
+
+### Priority Order
+
+Namespace resolution follows this priority:
+
+1. **Explicit `--namespace` option** (highest priority)
+2. **`PM_RUNNER_NAMESPACE` environment variable**
+3. **Auto-derived from project path** (default behavior)
+4. **`default` namespace** (if auto-derive disabled)
+
+### Examples
+
+```bash
+# Auto-derived namespace (recommended for most use cases)
+pm repl --project /path/to/my-project
+# Uses: my-project-xxxx (auto-derived)
+
+# Explicit namespace (when you need specific name)
+pm repl --namespace stable --project /path/to/my-project
+# Uses: stable
+
+# Environment variable (for CI/CD or scripts)
+export PM_RUNNER_NAMESPACE=ci-runner
+pm repl --project /path/to/my-project
+# Uses: ci-runner
+```
+
+### Verifying Auto-Derived Namespace
+
+Check current namespace via API:
+
+```bash
+# Health check shows namespace info
+curl http://localhost:5678/api/health
+
+# Response:
+{
+  "status": "ok",
+  "timestamp": "2025-01-21T...",
+  "namespace": "my-project-a1b2",
+  "namespace_auto_derived": true,
+  "table_name": "pm-runner-queue-my-project-a1b2",
+  "state_dir": "/path/to/my-project/.claude/state/my-project-a1b2"
+}
+
+# Dedicated namespace endpoint
+curl http://localhost:5678/api/namespace
+
+# Response:
+{
+  "namespace": "my-project-a1b2",
+  "auto_derived": true,
+  "table_name": "pm-runner-queue-my-project-a1b2",
+  "state_dir": "/path/to/my-project/.claude/state/my-project-a1b2",
+  "port": 5678
+}
+```
+
+### Folder Name Normalization
+
+Folder names are normalized for valid namespace format:
+
+| Original | Normalized |
+|----------|------------|
+| `MyProject` | `myproject` |
+| `my_project` | `my-project` |
+| `my.project@v2` | `myprojectv2` |
+| `very-long-project-name-...` | (truncated to 27 chars) |
+
+### When to Use Explicit Namespace
+
+Use `--namespace` flag when:
+
+1. **Stable/Dev separation** - `--namespace stable` or `--namespace dev`
+2. **CI/CD pipelines** - Consistent namespace across runs
+3. **Multiple runners same folder** - Different namespaces for parallel testing
+4. **Backward compatibility** - Existing workflows using explicit namespace
+
+
 ## Directory Structure
 
 ```
@@ -47,7 +145,7 @@ Each namespace maintains completely separate state:
 |-----------|--------|-----|
 | QueueStore Table | `pm-runner-queue-stable` | `pm-runner-queue-dev` |
 | State Directory | `.claude/state/stable/` | `.claude/state/dev/` |
-| Web UI Port | 3000 | 3001 |
+| Web UI Port | 5678 | 5679 |
 | Evidence Dir | `.claude/state/stable/evidence/` | `.claude/state/dev/evidence/` |
 
 ## Startup Commands
@@ -59,7 +157,7 @@ Each namespace maintains completely separate state:
 pm repl --namespace stable --project /path/to/dev
 
 # With custom port
-pm repl --namespace stable --port 3000 --project /path/to/dev
+pm repl --namespace stable --port 5678 --project /path/to/dev
 
 # Non-interactive mode (for scripts)
 pm repl --namespace stable --non-interactive --exit-on-eof
@@ -154,7 +252,7 @@ npm update pm-orchestrator-runner
    - Fix: Verify `--namespace` flag is set correctly
 
 2. **Web UI port conflict**: "EADDRINUSE" error on startup
-   - Check: `lsof -i :3000` and `lsof -i :3001`
+   - Check: `lsof -i :5678` and `lsof -i :5679`
    - Fix: Use different `--port` values
 
 3. **State directory collision**: Evidence files mixed
@@ -185,8 +283,8 @@ ls -la .claude/state/
 # drwxr-xr-x  dev/
 
 # 3. Check port allocation
-lsof -i :3000  # Should show stable server
-lsof -i :3001  # Should show dev server
+lsof -i :5678  # Should show stable server
+lsof -i :5679  # Should show dev server
 ```
 
 ## Self-Development Procedure
@@ -310,8 +408,18 @@ npm publish
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--namespace <name>` | State separation namespace | `default` |
-| `--port <number>` | Web UI port | 3000 (stable), 3001 (dev) |
+| `--namespace <name>` | Override auto-derived namespace | auto-derived from path |
+| `--port <number>` | Web UI port | Based on namespace |
+
+**Note**: Since v1.1.0, namespace is auto-derived from project path by default. Use `--namespace` to override.
+
+### Namespace Resolution
+
+Namespace is resolved in this order (first match wins):
+
+1. `--namespace` CLI option
+2. `PM_RUNNER_NAMESPACE` environment variable
+3. Auto-derived from project path (format: `{folder}-{hash}`)
 
 ### Namespace Validation
 
@@ -326,9 +434,13 @@ Invalid namespaces cause immediate exit (fail-closed).
 ### Environment Variables
 
 ```bash
-# Set default namespace via environment
+# Override namespace via environment (takes priority over auto-derive)
 export PM_RUNNER_NAMESPACE=stable
-pm repl  # Uses stable namespace
+pm repl  # Uses stable namespace instead of auto-derived
+
+# Unset to use auto-derived namespace
+unset PM_RUNNER_NAMESPACE
+pm repl  # Uses auto-derived namespace
 ```
 
 ## Troubleshooting
@@ -344,7 +456,7 @@ pm repl  # Uses stable namespace
 **Cause**: Another instance is already running on that port.
 
 **Solution**:
-1. Check running processes: `lsof -i :3000`
+1. Check running processes: `lsof -i :5678`
 2. Use different port: `--port 3002`
 3. Stop existing instance first
 
@@ -366,13 +478,13 @@ Expose Web UI to mobile devices for testing:
 
 ```bash
 # 1. Start stable runner with Web UI
-pm repl --namespace stable --port 3000 --project /path/to/dev
+pm repl --namespace stable --port 5678 --project /path/to/dev
 
 # 2. In another terminal, start ngrok
-ngrok http 3000
+ngrok http 5678
 
 # 3. ngrok outputs a public URL:
-#    Forwarding: https://xxxx-xx-xx-xx-xx.ngrok-free.app -> http://localhost:3000
+#    Forwarding: https://xxxx-xx-xx-xx-xx.ngrok-free.app -> http://localhost:5678
 
 # 4. Open the https URL on mobile browser
 ```

@@ -22,6 +22,8 @@ class QueuePoller extends events_1.EventEmitter {
     pollIntervalMs;
     maxStaleTaskAgeMs;
     recoverOnStartup;
+    runnerId;
+    projectRoot;
     pollTimer = null;
     inFlight = null;
     isRunning = false;
@@ -35,6 +37,16 @@ class QueuePoller extends events_1.EventEmitter {
         this.pollIntervalMs = config.pollIntervalMs ?? 1000;
         this.maxStaleTaskAgeMs = config.maxStaleTaskAgeMs ?? 5 * 60 * 1000;
         this.recoverOnStartup = config.recoverOnStartup ?? true;
+        this.runnerId = config.runnerId ?? this.generateRunnerId();
+        this.projectRoot = config.projectRoot ?? process.cwd();
+    }
+    /**
+     * Generate a unique runner ID
+     */
+    generateRunnerId() {
+        const timestamp = Date.now().toString(36);
+        const random = Math.random().toString(36).substring(2, 8);
+        return 'runner-' + timestamp + '-' + random;
     }
     /**
      * Start polling
@@ -72,7 +84,7 @@ class QueuePoller extends events_1.EventEmitter {
     /**
      * Stop polling
      */
-    stop() {
+    async stop() {
         if (!this.isRunning) {
             return;
         }
@@ -81,10 +93,20 @@ class QueuePoller extends events_1.EventEmitter {
             clearInterval(this.pollTimer);
             this.pollTimer = null;
         }
+        // Mark runner as stopped (v2)
+        try {
+            await this.store.markRunnerStopped(this.runnerId);
+        }
+        catch (error) {
+            // Log but don't fail stop - marking stopped is best-effort
+            // eslint-disable-next-line no-console
+            console.error('[QueuePoller] Failed to mark runner as stopped:', error);
+        }
         this.emit('stopped');
     }
     /**
      * Single poll iteration
+     * - Update heartbeat (v2)
      * - Skip if task in-flight
      * - Claim oldest QUEUED task
      * - Execute and update status
@@ -94,6 +116,15 @@ class QueuePoller extends events_1.EventEmitter {
             return;
         }
         this.lastPollAt = new Date().toISOString();
+        // Update heartbeat (v2) - register this runner as alive
+        try {
+            await this.store.updateRunnerHeartbeat(this.runnerId, this.projectRoot);
+        }
+        catch (error) {
+            // Log but don't fail poll - heartbeat is best-effort
+            // eslint-disable-next-line no-console
+            console.error('[QueuePoller] Heartbeat update failed:', error);
+        }
         // In-flight limit: 1
         if (this.inFlight) {
             return;
@@ -156,7 +187,15 @@ class QueuePoller extends events_1.EventEmitter {
             lastPollAt: this.lastPollAt,
             tasksProcessed: this.tasksProcessed,
             errors: this.errors,
+            runnerId: this.runnerId,
+            projectRoot: this.projectRoot,
         };
+    }
+    /**
+     * Get runner ID (v2)
+     */
+    getRunnerId() {
+        return this.runnerId;
     }
     /**
      * Check if poller is running

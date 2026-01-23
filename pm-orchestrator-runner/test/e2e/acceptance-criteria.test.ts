@@ -57,16 +57,16 @@ describe('E2E: Acceptance Criteria - Stable/Dev Separation', () => {
       assert.ok(devStateDir.includes('state/dev'));
     });
 
-    it('should generate different table names for stable and dev namespaces', () => {
+    it('should use same table name for all namespaces (v2: single-table design)', () => {
       const stableTableName = getTableName('stable');
       const devTableName = getTableName('dev');
 
-      // Table names should be different
-      assert.notEqual(stableTableName, devTableName);
+      // v2: Table names are the same (single-table design)
+      assert.equal(stableTableName, devTableName); // v2: same table, different namespace partition
 
       // Verify naming convention
-      assert.equal(stableTableName, 'pm-runner-queue-stable');
-      assert.equal(devTableName, 'pm-runner-queue-dev');
+      assert.equal(stableTableName, 'pm-runner-queue');
+      assert.equal(devTableName, 'pm-runner-queue');
     });
 
     it('should build separate namespace configs for stable and dev', () => {
@@ -80,15 +80,15 @@ describe('E2E: Acceptance Criteria - Stable/Dev Separation', () => {
         projectRoot,
       });
 
-      // All config values should be different
+      // v2: tableName is same (single-table), but namespace, stateDir, port are different
       assert.notEqual(stableConfig.namespace, devConfig.namespace);
-      assert.notEqual(stableConfig.tableName, devConfig.tableName);
+      assert.equal(stableConfig.tableName, devConfig.tableName); // v2: same table
       assert.notEqual(stableConfig.stateDir, devConfig.stateDir);
       assert.notEqual(stableConfig.port, devConfig.port);
 
       // Verify specific values
-      assert.equal(stableConfig.port, 3000);
-      assert.equal(devConfig.port, 3001);
+      assert.equal(stableConfig.port, 5678);
+      assert.equal(devConfig.port, 5679);
     });
 
     it('should create isolated session directories for each namespace', () => {
@@ -235,19 +235,31 @@ describe('E2E: Acceptance Criteria - Stable/Dev Separation', () => {
     let dynamoDBAvailable = false;
 
     before(async function() {
-      this.timeout(10000);
+      this.timeout(15000);
 
-      // Check if DynamoDB Local is available
+      // Check if DynamoDB Local is available and reset table with v2 schema
       try {
         const testStore = new QueueStore({
           endpoint: 'http://localhost:8000',
-          tableName: 'test-connection-check',
+          namespace: 'test-connection-check',
         });
-        await testStore.tableExists();
+        
+        // Delete existing table to ensure v2 schema is used
+        console.log('    [INFO] Resetting DynamoDB tables for v2 schema...');
+        await testStore.deleteTable();
+        
+        // Wait a bit for deletion to complete
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Create table with v2 schema
+        await testStore.ensureTable();
+        
         testStore.destroy();
         dynamoDBAvailable = true;
-      } catch {
+        console.log('    [OK] DynamoDB tables ready with v2 schema');
+      } catch (error) {
         console.log('    [SKIP] DynamoDB Local not available - skipping QueueStore tests');
+        console.log('    Error:', error);
         dynamoDBAvailable = false;
       }
     });
@@ -261,12 +273,12 @@ describe('E2E: Acceptance Criteria - Stable/Dev Separation', () => {
       // Create separate QueueStores for stable and dev
       stableQueueStore = new QueueStore({
         endpoint: 'http://localhost:8000',
-        tableName: getTableName('stable'),
+        namespace: 'stable',
       });
 
       devQueueStore = new QueueStore({
         endpoint: 'http://localhost:8000',
-        tableName: getTableName('dev'),
+        namespace: 'dev',
       });
 
       // Ensure tables exist
@@ -283,7 +295,7 @@ describe('E2E: Acceptance Criteria - Stable/Dev Separation', () => {
       }
     });
 
-    it('should use different table names for stable and dev', function() {
+    it('should use same table for stable and dev (v2: single-table design)', function() {
       if (!dynamoDBAvailable) {
         this.skip();
         return;
@@ -295,9 +307,9 @@ describe('E2E: Acceptance Criteria - Stable/Dev Separation', () => {
       const stableTableName = stableQueueStore!.getTableName();
       const devTableName = devQueueStore!.getTableName();
 
-      assert.notEqual(stableTableName, devTableName);
-      assert.equal(stableTableName, 'pm-runner-queue-stable');
-      assert.equal(devTableName, 'pm-runner-queue-dev');
+      assert.equal(stableTableName, devTableName); // v2: same table, different namespace partition
+      assert.equal(stableTableName, 'pm-runner-queue');
+      assert.equal(devTableName, 'pm-runner-queue');
     });
 
     it('should isolate tasks between stable and dev queues', async function() {
@@ -333,8 +345,8 @@ describe('E2E: Acceptance Criteria - Stable/Dev Separation', () => {
       );
 
       // Verify tasks are in separate queues
-      const stableTasks = await stableQueueStore!.getBySession('stable-session-1');
-      const devTasks = await devQueueStore!.getBySession('dev-session-1');
+      const stableTasks = await stableQueueStore!.getByTaskGroup('stable-group-1');
+      const devTasks = await devQueueStore!.getByTaskGroup('dev-group-1');
 
       // Stable queue should only have stable tasks
       assert.equal(stableTasks.length, 2);
@@ -345,8 +357,8 @@ describe('E2E: Acceptance Criteria - Stable/Dev Separation', () => {
       assert.ok(devTasks.every(t => t.prompt.startsWith('Dev')));
 
       // Verify no cross-contamination
-      const stableDevTasks = await stableQueueStore!.getBySession('dev-session-1');
-      const devStableTasks = await devQueueStore!.getBySession('stable-session-1');
+      const stableDevTasks = await stableQueueStore!.getByTaskGroup('dev-group-1');
+      const devStableTasks = await devQueueStore!.getByTaskGroup('stable-group-1');
 
       assert.equal(stableDevTasks.length, 0, 'Stable queue should not contain dev session');
       assert.equal(devStableTasks.length, 0, 'Dev queue should not contain stable session');
@@ -532,7 +544,7 @@ describe('E2E: Acceptance Criteria - Stable/Dev Separation', () => {
       const config = buildNamespaceConfig({ projectRoot });
 
       assert.equal(config.namespace, 'test-env-namespace');
-      assert.equal(config.tableName, 'pm-runner-queue-test-env-namespace');
+      assert.equal(config.tableName, 'pm-runner-queue');
     });
 
     it('should prefer explicit namespace over environment variable', () => {

@@ -1,6 +1,10 @@
 /**
- * Web Module
+ * Web Module (v2)
  * Per spec/19_WEB_UI.md
+ *
+ * v2 Changes:
+ * - WebServer requires namespace parameter
+ * - Project root for display
  *
  * Exports:
  * - WebServer: Express HTTP server
@@ -27,6 +31,8 @@ export interface NamespaceWebConfig {
   namespace: string;
   /** Port number derived from namespace */
   port: number;
+  /** Project root path */
+  projectRoot?: string;
 }
 
 /**
@@ -42,7 +48,7 @@ export interface NamespaceWebConfig {
  * @example
  * ```typescript
  * const namespaceConfig = buildNamespaceConfig({ namespace: 'dev', projectRoot: '/path' });
- * const store = createNamespacedQueueStore({ ... });
+ * const store = new QueueStore({ namespace: 'dev' });
  * const server = createNamespacedWebServer(
  *   { namespace: namespaceConfig.namespace, port: namespaceConfig.port },
  *   store,
@@ -61,5 +67,7 @@ export function createNamespacedWebServer(
     host,
     queueStore,
     sessionId,
+    namespace: namespaceConfig.namespace,
+    projectRoot: namespaceConfig.projectRoot,
   });
 }

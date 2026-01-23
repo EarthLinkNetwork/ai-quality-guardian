@@ -48,6 +48,73 @@
       cursor: pointer;
     }
 
+    .namespace-badge {
+      background: rgba(255, 255, 255, 0.2);
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-family: monospace;
+    }
+
+    .namespace-badge.auto-derived {
+      background: rgba(34, 197, 94, 0.3);
+    }
+
+    .namespace-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .namespace-selector select {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: white;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-family: monospace;
+      cursor: pointer;
+    }
+
+    .namespace-selector select:focus {
+      outline: none;
+      border-color: rgba(255, 255, 255, 0.5);
+    }
+
+    .namespace-selector select option {
+      background: #2563eb;
+      color: white;
+    }
+
+    .runner-status {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .runner-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .runner-dot.alive {
+      background: #22c55e;
+      box-shadow: 0 0 4px #22c55e;
+    }
+
+    .runner-dot.dead {
+      background: #ef4444;
+    }
+
+    .runner-count {
+      margin-left: 4px;
+    }
+
     nav {
       display: flex;
       gap: 16px;
@@ -459,6 +526,15 @@
   <header>
     <div class="header-content">
       <h1 onclick="navigate('/')">PM Orchestrator Runner</h1>
+      <div class="namespace-selector" id="namespace-selector" style="display: none;">
+        <select id="namespace-select" onchange="onNamespaceChange(this.value)">
+          <!-- Populated by JavaScript -->
+        </select>
+        <div class="runner-status" id="runner-status">
+          <span class="runner-dot" id="runner-dot"></span>
+          <span id="runner-text">-</span>
+        </div>
+      </div>
       <nav id="main-nav">
         <a href="/" data-nav="home">Task Groups</a>
         <a href="/new" data-nav="new">+ New Command</a>
@@ -476,9 +552,15 @@
     const app = document.getElementById('app');
     let currentPath = '/';
 
-    // API helper
+    // API helper with namespace support
     async function api(path, options = {}) {
-      const response = await fetch(`/api${path}`, {
+      // Add namespace query parameter if currentNamespace is set
+      let url = `/api${path}`;
+      if (typeof currentNamespace !== 'undefined' && currentNamespace) {
+        const separator = path.includes('?') ? '&' : '?';
+        url = `${url}${separator}namespace=${encodeURIComponent(currentNamespace)}`;
+      }
+      const response = await fetch(url, {
         headers: { 'Content-Type': 'application/json' },
         ...options,
       });
@@ -989,7 +1071,115 @@
       });
     });
 
+    // Current namespace state
+    let currentNamespace = '';
+    let runnerRefreshInterval = null;
+
+    // Load namespaces and populate selector
+    async function loadNamespaces() {
+      try {
+        // Don't pass namespace param to /namespaces - it returns all namespaces
+        const response = await fetch('/api/namespaces');
+        const data = await response.json();
+
+        const selector = document.getElementById('namespace-selector');
+        const select = document.getElementById('namespace-select');
+
+        if (!selector || !select) return;
+
+        // Set current namespace only if not already set by user selection
+        if (!currentNamespace) {
+          currentNamespace = data.current_namespace;
+        }
+        const namespaces = data.namespaces || [];
+
+        // Build options
+        let options = '';
+        if (namespaces.length === 0) {
+          // No namespaces from scan, just show current
+          options = `<option value="${escapeHtml(currentNamespace)}">${escapeHtml(currentNamespace)}</option>`;
+        } else {
+          options = namespaces.map(ns => {
+            const selected = ns.namespace === currentNamespace ? 'selected' : '';
+            const counts = `(${ns.queued_count}Q/${ns.running_count}R/${ns.task_count}T)`;
+            return `<option value="${escapeHtml(ns.namespace)}" ${selected}>${escapeHtml(ns.namespace)} ${counts}</option>`;
+          }).join('');
+        }
+
+        select.innerHTML = options;
+        selector.style.display = 'flex';
+
+        // Load runners for current namespace
+        loadRunnerStatus();
+      } catch (e) {
+        console.warn('Failed to load namespaces:', e);
+      }
+    }
+
+    // Handle namespace change
+    function onNamespaceChange(namespace) {
+      if (namespace === currentNamespace) return;
+
+      // Update current namespace and reload data
+      currentNamespace = namespace;
+
+      // Reload runner status for new namespace
+      loadRunnerStatus();
+
+      // Re-navigate to refresh current page data with new namespace
+      navigate(currentPath);
+    }
+
+    // Load runner status
+    async function loadRunnerStatus() {
+      try {
+        const data = await api('/runners');
+        const runners = data.runners || [];
+
+        const dot = document.getElementById('runner-dot');
+        const text = document.getElementById('runner-text');
+
+        if (!dot || !text) return;
+
+        const aliveCount = runners.filter(r => r.is_alive).length;
+        const totalCount = runners.length;
+
+        if (aliveCount > 0) {
+          dot.className = 'runner-dot alive';
+          text.textContent = aliveCount + ' runner' + (aliveCount > 1 ? 's' : '') + ' active';
+        } else if (totalCount > 0) {
+          dot.className = 'runner-dot dead';
+          text.textContent = 'No active runners';
+        } else {
+          dot.className = 'runner-dot dead';
+          text.textContent = 'No runners';
+        }
+      } catch (e) {
+        console.warn('Failed to load runner status:', e);
+        const dot = document.getElementById('runner-dot');
+        const text = document.getElementById('runner-text');
+        if (dot) dot.className = 'runner-dot dead';
+        if (text) text.textContent = 'Error';
+      }
+    }
+
+    // Start periodic runner status refresh
+    function startRunnerRefresh() {
+      // Refresh every 30 seconds
+      runnerRefreshInterval = setInterval(loadRunnerStatus, 30000);
+    }
+
+    // Stop runner refresh
+    function stopRunnerRefresh() {
+      if (runnerRefreshInterval) {
+        clearInterval(runnerRefreshInterval);
+        runnerRefreshInterval = null;
+      }
+    }
+
     // Initial load
+    loadNamespaces();
+    startRunnerRefresh();
     router();
   </script>
 </body>

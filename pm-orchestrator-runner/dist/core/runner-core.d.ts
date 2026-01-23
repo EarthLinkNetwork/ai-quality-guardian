@@ -25,7 +25,9 @@ import { OverallStatus, Phase, TaskStatus } from '../models/enums';
 import { Session, SessionStatus } from '../models/session';
 import { ErrorCode } from '../errors/error-codes';
 import { IExecutor } from '../executor/claude-code-executor';
+import { UserResponseHandler } from '../executor/auto-resolve-executor';
 import { ClarificationReason } from '../mediation/llm-mediation-layer';
+import { Template } from '../template';
 /**
  * Runner Core Error
  */
@@ -49,6 +51,16 @@ export interface RunnerOptions {
     useClaudeCode?: boolean;
     /** Timeout for Claude Code execution in milliseconds */
     claudeCodeTimeout?: number;
+    /**
+     * Enable LLM-based auto-resolution of clarification questions.
+     * When enabled, uses AutoResolvingExecutor instead of ClaudeCodeExecutor.
+     * Requires API keys (OPENAI_API_KEY or ANTHROPIC_API_KEY) to be set.
+     */
+    enableAutoResolve?: boolean;
+    /** LLM provider for auto-resolution (default: openai) */
+    autoResolveLLMProvider?: 'openai' | 'anthropic';
+    /** Handler for clarification questions that LLM cannot auto-resolve */
+    userResponseHandler?: UserResponseHandler;
     /**
      * Injected executor for dependency injection (testing).
      * If provided, this executor is used instead of creating ClaudeCodeExecutor.
@@ -249,10 +261,22 @@ export declare class RunnerCore extends EventEmitter {
     private currentSelectedModel;
     private promptAssembler;
     private currentTaskGroupContext;
+    private templateProvider;
+    private stateDir;
     /**
      * Create a new RunnerCore
      */
     constructor(options: RunnerOptions);
+    /**
+     * Set the template provider callback
+     *
+     * Per spec 32_TEMPLATE_INJECTION.md:
+     * This callback is invoked during prompt assembly to get the active template.
+     * The template's rulesText and outputFormatText will be injected into prompts.
+     *
+     * @param provider - Function that returns the active template or null
+     */
+    setTemplateProvider(provider: () => Template | null): void;
     /**
      * Initialize the runner with a target project
      */

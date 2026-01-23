@@ -35,6 +35,7 @@ class MockQueueStore {
     const now = new Date().toISOString();
     const id = taskId || `mock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const item: QueueItem = {
+      namespace: 'test-namespace',
       task_id: id,
       task_group_id: taskGroupId,
       session_id: sessionId,

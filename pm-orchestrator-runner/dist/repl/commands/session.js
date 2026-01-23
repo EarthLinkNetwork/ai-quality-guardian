@@ -52,17 +52,26 @@ class SessionCommands {
     }
     /**
      * Start a new session
+     * @param projectPath - Path to project directory
+     * @param options - Optional session options including userResponseHandler
      */
-    async start(projectPath) {
+    async start(projectPath, options) {
         const absolutePath = path.resolve(projectPath);
         try {
             // Create new runner with Claude Code enabled for natural language task execution
             // This ensures that when REPL executes natural language tasks (e.g., "Create README.md"),
             // the actual Claude CLI is spawned to perform file operations.
+            //
+            // If enableAutoResolve is set in config, use AutoResolvingExecutor with LLM
+            // to auto-answer best-practice questions and route case-by-case to user
             const runner = new runner_core_1.RunnerCore({
                 evidenceDir: this.config.evidenceDir || '',
                 useClaudeCode: true,
                 claudeCodeTimeout: this.config.timeout || 120000,
+                // Enable LLM auto-resolution if configured
+                enableAutoResolve: this.config.enableAutoResolve,
+                autoResolveLLMProvider: this.config.autoResolveLLMProvider,
+                userResponseHandler: options?.userResponseHandler,
             });
             // Initialize runner with project path
             const result = await runner.initialize(absolutePath);
@@ -81,14 +90,21 @@ class SessionCommands {
     }
     /**
      * Continue an existing session
+     * @param sessionId - Session ID to resume
+     * @param options - Optional session options including userResponseHandler
      */
-    async continueSession(sessionId) {
+    async continueSession(sessionId, options) {
         try {
             // Create new runner with Claude Code enabled and resume session
+            // Also enable auto-resolve if configured
             const runner = new runner_core_1.RunnerCore({
                 evidenceDir: this.config.evidenceDir || '',
                 useClaudeCode: true,
                 claudeCodeTimeout: this.config.timeout || 120000,
+                // Enable LLM auto-resolution if configured
+                enableAutoResolve: this.config.enableAutoResolve,
+                autoResolveLLMProvider: this.config.autoResolveLLMProvider,
+                userResponseHandler: options?.userResponseHandler,
             });
             await runner.resume(sessionId);
             return {

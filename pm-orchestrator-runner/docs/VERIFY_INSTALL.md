@@ -169,10 +169,10 @@ After `pm` is working:
 
 ```bash
 # 1. Start Web UI
-pm web --port 3000 --namespace stable
+pm web --port 5678 --namespace stable
 
 # 2. In another terminal, verify health endpoint
-curl http://localhost:3000/api/health
+curl http://localhost:5678/api/health
 
 # Expected response:
 # {"status":"ok","timestamp":"...","namespace":"stable"}

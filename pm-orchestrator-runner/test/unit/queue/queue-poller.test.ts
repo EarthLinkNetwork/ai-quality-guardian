@@ -28,6 +28,7 @@ class MockQueueStore {
 
   addQueuedItem(item: Partial<QueueItem>): QueueItem {
     const fullItem: QueueItem = {
+      namespace: 'test-namespace',
       task_id: item.task_id || `task-${Date.now()}-${Math.random()}`,
       task_group_id: item.task_group_id || 'test-group',
       session_id: item.session_id || 'test-session',
@@ -281,6 +282,7 @@ describe('QueuePoller', () => {
 
       // Manually set in-flight to simulate task execution in progress
       const fakeInFlight: QueueItem = {
+        namespace: 'test-namespace',
         task_id: 'in-progress-task',
         task_group_id: 'tg',
         session_id: 's',

@@ -28,6 +28,10 @@ export interface QueuePollerConfig {
     maxStaleTaskAgeMs?: number;
     /** Recover stale tasks on startup (default: true) */
     recoverOnStartup?: boolean;
+    /** Runner ID for heartbeat tracking (v2) */
+    runnerId?: string;
+    /** Project root for runner identification (v2) */
+    projectRoot?: string;
 }
 /**
  * Poller state
@@ -38,6 +42,10 @@ export interface QueuePollerState {
     lastPollAt: string | null;
     tasksProcessed: number;
     errors: number;
+    /** Runner ID (v2) */
+    runnerId: string;
+    /** Project root (v2) */
+    projectRoot: string;
 }
 /**
  * Poller events
@@ -65,6 +73,8 @@ export declare class QueuePoller extends EventEmitter {
     private readonly pollIntervalMs;
     private readonly maxStaleTaskAgeMs;
     private readonly recoverOnStartup;
+    private readonly runnerId;
+    private readonly projectRoot;
     private pollTimer;
     private inFlight;
     private isRunning;
@@ -73,15 +83,20 @@ export declare class QueuePoller extends EventEmitter {
     private errors;
     constructor(store: QueueStore, executor: TaskExecutor, config?: QueuePollerConfig);
     /**
+     * Generate a unique runner ID
+     */
+    private generateRunnerId;
+    /**
      * Start polling
      */
     start(): Promise<void>;
     /**
      * Stop polling
      */
-    stop(): void;
+    stop(): Promise<void>;
     /**
      * Single poll iteration
+     * - Update heartbeat (v2)
      * - Skip if task in-flight
      * - Claim oldest QUEUED task
      * - Execute and update status
@@ -91,6 +106,10 @@ export declare class QueuePoller extends EventEmitter {
      * Get current state
      */
     getState(): QueuePollerState;
+    /**
+     * Get runner ID (v2)
+     */
+    getRunnerId(): string;
     /**
      * Check if poller is running
      */

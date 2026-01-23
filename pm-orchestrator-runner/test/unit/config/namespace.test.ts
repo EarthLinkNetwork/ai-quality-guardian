@@ -111,15 +111,15 @@ describe('Namespace Configuration (21_STABLE_DEV.md)', () => {
       assert.equal(getTableName('default'), 'pm-runner-queue');
     });
 
-    it('should append namespace suffix for non-default namespaces', () => {
-      assert.equal(getTableName('stable'), 'pm-runner-queue-stable');
-      assert.equal(getTableName('dev'), 'pm-runner-queue-dev');
-      assert.equal(getTableName('test-1'), 'pm-runner-queue-test-1');
+    it('should return fixed table name for all namespaces (v2: single-table design)', () => {
+      assert.equal(getTableName('stable'), 'pm-runner-queue');
+      assert.equal(getTableName('dev'), 'pm-runner-queue');
+      assert.equal(getTableName('test-1'), 'pm-runner-queue');
     });
 
-    it('should handle custom namespace names', () => {
-      assert.equal(getTableName('my-project'), 'pm-runner-queue-my-project');
-      assert.equal(getTableName('feature123'), 'pm-runner-queue-feature123');
+    it('should return fixed table name for custom namespaces (v2: single-table design)', () => {
+      assert.equal(getTableName('my-project'), 'pm-runner-queue');
+      assert.equal(getTableName('feature123'), 'pm-runner-queue');
     });
   });
 
@@ -138,29 +138,29 @@ describe('Namespace Configuration (21_STABLE_DEV.md)', () => {
       assert.equal(getStateDir('/var/app', 'dev'), '/var/app/.claude/state/dev');
     });
 
-    it('should handle custom namespace names', () => {
+    it('should return fixed table name for custom namespaces (v2: single-table design)', () => {
       assert.equal(getStateDir('/project', 'my-ns'), '/project/.claude/state/my-ns');
       assert.equal(getStateDir('/project', 'test-1'), '/project/.claude/state/test-1');
     });
   });
 
   describe('getDefaultPort', () => {
-    it('should return 3000 for default namespace', () => {
-      assert.equal(getDefaultPort('default'), 3000);
+    it('should return 5678 for default namespace', () => {
+      assert.equal(getDefaultPort('default'), 5678);
     });
 
-    it('should return 3000 for stable namespace', () => {
-      assert.equal(getDefaultPort('stable'), 3000);
+    it('should return 5678 for stable namespace', () => {
+      assert.equal(getDefaultPort('stable'), 5678);
     });
 
-    it('should return 3001 for dev namespace', () => {
-      assert.equal(getDefaultPort('dev'), 3001);
+    it('should return 5679 for dev namespace', () => {
+      assert.equal(getDefaultPort('dev'), 5679);
     });
 
-    it('should return hash-based port (3002-3999) for other namespaces', () => {
+    it('should return hash-based port (5680-6677) for other namespaces', () => {
       const port = getDefaultPort('my-custom-namespace');
-      assert.ok(port >= 3002, 'Port ' + port + ' should be >= 3002');
-      assert.ok(port <= 3999, 'Port ' + port + ' should be <= 3999');
+      assert.ok(port >= 5680, 'Port ' + port + ' should be >= 5680');
+      assert.ok(port <= 6677, 'Port ' + port + ' should be <= 6677');
     });
 
     it('should return consistent port for same namespace', () => {
@@ -174,8 +174,8 @@ describe('Namespace Configuration (21_STABLE_DEV.md)', () => {
       const portB = getDefaultPort('namespace-b');
       // Not guaranteed to be different, but very likely
       // Just check they are in valid range
-      assert.ok(portA >= 3002 && portA <= 3999);
-      assert.ok(portB >= 3002 && portB <= 3999);
+      assert.ok(portA >= 5680 && portA <= 6677);
+      assert.ok(portB >= 5680 && portB <= 6677);
     });
   });
 
@@ -189,7 +189,7 @@ describe('Namespace Configuration (21_STABLE_DEV.md)', () => {
         assert.equal(config.namespace, 'default');
         assert.equal(config.tableName, 'pm-runner-queue');
         assert.equal(config.stateDir, '/project/.claude');
-        assert.equal(config.port, 3000);
+        assert.equal(config.port, 5678);
       });
 
       it('should build config for explicit namespace', () => {
@@ -199,9 +199,9 @@ describe('Namespace Configuration (21_STABLE_DEV.md)', () => {
         });
 
         assert.equal(config.namespace, 'stable');
-        assert.equal(config.tableName, 'pm-runner-queue-stable');
+        assert.equal(config.tableName, 'pm-runner-queue');
         assert.equal(config.stateDir, '/project/.claude/state/stable');
-        assert.equal(config.port, 3000);
+        assert.equal(config.port, 5678);
       });
 
       it('should build config for dev namespace', () => {
@@ -211,9 +211,9 @@ describe('Namespace Configuration (21_STABLE_DEV.md)', () => {
         });
 
         assert.equal(config.namespace, 'dev');
-        assert.equal(config.tableName, 'pm-runner-queue-dev');
+        assert.equal(config.tableName, 'pm-runner-queue');
         assert.equal(config.stateDir, '/project/.claude/state/dev');
-        assert.equal(config.port, 3001);
+        assert.equal(config.port, 5679);
       });
 
       it('should override default port with explicit port', () => {
@@ -235,7 +235,7 @@ describe('Namespace Configuration (21_STABLE_DEV.md)', () => {
           });
 
           assert.equal(config.namespace, 'from-env');
-          assert.equal(config.tableName, 'pm-runner-queue-from-env');
+          assert.equal(config.tableName, 'pm-runner-queue');
         } finally {
           if (originalEnv === undefined) {
             delete process.env.PM_RUNNER_NAMESPACE;

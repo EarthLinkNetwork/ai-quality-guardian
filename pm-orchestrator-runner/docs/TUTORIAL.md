@@ -85,7 +85,7 @@ Once complete, you should have:
 ```javascript
 const http = require('http');
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5678;
 
 const server = http.createServer((req, res) => {
   if (req.url === '/health' && req.method === 'GET') {
@@ -123,7 +123,7 @@ node server.js
 In another terminal:
 
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:5678/health
 # Output: {"status":"ok"}
 ```
 

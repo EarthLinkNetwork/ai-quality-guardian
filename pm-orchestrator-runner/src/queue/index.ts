@@ -1,11 +1,15 @@
 /**
- * Queue Module
+ * Queue Module (v2)
  * Per spec/20_QUEUE_STORE.md
+ *
+ * v2 Changes:
+ * - Single fixed table: pm-runner-queue
+ * - Namespace is a required config field
+ * - Runner heartbeat support
  *
  * Exports:
  * - QueueStore: DynamoDB-backed queue storage
  * - QueuePoller: Polling and task execution
- * - createNamespacedQueueStore: Factory for namespace-separated QueueStore
  */
 
 export {
@@ -16,8 +20,13 @@ export {
   ClaimResult,
   TaskGroupSummary,
   StatusUpdateResult,
+  NamespaceSummary,
+  RunnerRecord,
+  RunnerStatus,
   VALID_STATUS_TRANSITIONS,
   isValidStatusTransition,
+  QUEUE_TABLE_NAME,
+  RUNNERS_TABLE_NAME,
 } from './queue-store';
 
 export {
@@ -27,43 +36,3 @@ export {
   QueuePollerEvents,
   TaskExecutor,
 } from './queue-poller';
-
-import { QueueStore, QueueStoreConfig } from './queue-store';
-
-/**
- * Namespace configuration for QueueStore
- * Per spec/21_STABLE_DEV.md
- */
-export interface NamespaceQueueConfig {
-  /** Namespace name (e.g., 'stable', 'dev') */
-  namespace: string;
-  /** Table name derived from namespace */
-  tableName: string;
-}
-
-/**
- * Create a QueueStore instance with namespace separation
- * Per spec/21_STABLE_DEV.md
- *
- * @param namespaceConfig - Namespace configuration with tableName
- * @param storeConfig - Optional additional QueueStore configuration
- * @returns Configured QueueStore instance
- *
- * @example
- * ```typescript
- * const namespaceConfig = buildNamespaceConfig({ namespace: 'dev', projectRoot: '/path' });
- * const store = createNamespacedQueueStore({
- *   namespace: namespaceConfig.namespace,
- *   tableName: namespaceConfig.tableName,
- * });
- * ```
- */
-export function createNamespacedQueueStore(
-  namespaceConfig: NamespaceQueueConfig,
-  storeConfig?: Omit<QueueStoreConfig, 'tableName'>
-): QueueStore {
-  return new QueueStore({
-    ...storeConfig,
-    tableName: namespaceConfig.tableName,
-  });
-}

@@ -1,6 +1,11 @@
 /**
- * Web Server - Express HTTP server
+ * Web Server - Express HTTP server (v2)
  * Per spec/19_WEB_UI.md
+ *
+ * v2 Changes:
+ * - Namespace selector support
+ * - Runner status API
+ * - All namespaces listing API
  *
  * Provides:
  * - REST API for queue operations (read/write to QueueStore)
@@ -16,7 +21,7 @@ import { QueueStore } from '../queue';
  * Web Server configuration
  */
 export interface WebServerConfig {
-    /** Port number (default: 3000) */
+    /** Port number (default: 5678) */
     port?: number;
     /** Host (default: localhost) */
     host?: string;
@@ -24,6 +29,12 @@ export interface WebServerConfig {
     queueStore: QueueStore;
     /** Session ID for new tasks */
     sessionId: string;
+    /** Current namespace (from queueStore) */
+    namespace: string;
+    /** Project root for display */
+    projectRoot?: string;
+    /** State directory for trace files (per spec/28_CONVERSATION_TRACE.md Section 5.2) */
+    stateDir?: string;
 }
 /**
  * Web Server state
@@ -32,6 +43,7 @@ export interface WebServerState {
     isRunning: boolean;
     port: number;
     host: string;
+    namespace: string;
 }
 /**
  * Create configured Express app
@@ -45,6 +57,7 @@ export declare class WebServer {
     private readonly app;
     private readonly port;
     private readonly host;
+    private readonly namespace;
     private server;
     constructor(config: WebServerConfig);
     /**

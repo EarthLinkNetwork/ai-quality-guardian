@@ -26,6 +26,7 @@ import {
 class MockDynamoDBStore {
   private items: Map<string, QueueItem> = new Map();
   private claimedIds: Set<string> = new Set();
+  private readonly namespace: string = 'test-namespace';
 
   clear(): void {
     this.items.clear();
@@ -41,6 +42,7 @@ class MockDynamoDBStore {
     const now = new Date().toISOString();
     const id = taskId || `mock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const item: QueueItem = {
+      namespace: this.namespace,
       task_id: id,
       task_group_id: taskGroupId,
       session_id: sessionId,
@@ -341,14 +343,13 @@ describe('QueueStore (Real DynamoDB - Integration)', function() {
   });
 
   let store: QueueStore;
-  const testTableName = `pm-runner-queue-test-${Date.now()}`;
 
   before(async function() {
     if (!endpoint) return;
 
     store = new QueueStore({
       endpoint,
-      tableName: testTableName,
+      namespace: 'test-integration',
     });
 
     // Create test table

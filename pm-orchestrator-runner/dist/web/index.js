@@ -1,7 +1,11 @@
 "use strict";
 /**
- * Web Module
+ * Web Module (v2)
  * Per spec/19_WEB_UI.md
+ *
+ * v2 Changes:
+ * - WebServer requires namespace parameter
+ * - Project root for display
  *
  * Exports:
  * - WebServer: Express HTTP server
@@ -28,7 +32,7 @@ const server_2 = require("./server");
  * @example
  * ```typescript
  * const namespaceConfig = buildNamespaceConfig({ namespace: 'dev', projectRoot: '/path' });
- * const store = createNamespacedQueueStore({ ... });
+ * const store = new QueueStore({ namespace: 'dev' });
  * const server = createNamespacedWebServer(
  *   { namespace: namespaceConfig.namespace, port: namespaceConfig.port },
  *   store,
@@ -42,6 +46,8 @@ function createNamespacedWebServer(namespaceConfig, queueStore, sessionId, host)
         host,
         queueStore,
         sessionId,
+        namespace: namespaceConfig.namespace,
+        projectRoot: namespaceConfig.projectRoot,
     });
 }
 //# sourceMappingURL=index.js.map

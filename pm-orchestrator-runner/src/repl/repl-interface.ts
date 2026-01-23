@@ -33,7 +33,12 @@ import { ProviderCommand } from './commands/provider';
 import { ModelsCommand } from './commands/models';
 import { KeysCommand } from './commands/keys';
 import { LogsCommand } from './commands/logs';
+import { TraceCommand } from './commands/trace';
+import { TemplateCommand } from './commands/template';
+import { ConfigCommand } from './commands/config';
 import { TwoPaneRenderer } from './two-pane-renderer';
+import { TemplateStore } from '../template';
+import { ProjectSettingsStore } from '../settings';
 import {
   loadGlobalConfig,
   saveGlobalConfig,
@@ -44,6 +49,66 @@ import {
 } from '../config/global-config';
 import { ClaudeCodeExecutor, AuthCheckResult } from '../executor/claude-code-executor';
 import { validateApiKey, promptForApiKey, isKeyFormatValid } from '../keys';
+import { QueueStore, QueueItem, QueueItemStatus, QueueStoreConfig } from '../queue/queue-store';
+import { setNonInteractiveMode } from '../logging';
+
+/**
+ * Known REPL commands (without slash) for typo rescue and tab completion
+ * When user types "exit" instead of "/exit", suggest the correct form
+ * Per spec 10_REPL_UX.md: includes all valid slash commands
+ */
+const KNOWN_COMMANDS = [
+  'exit',
+  'help',
+  'start',
+  'continue',
+  'status',
+  'tasks',
+  'logs',
+  'trace',
+  'respond',
+  'approve',
+  'init',
+  'provider',
+  'model',
+  'models',
+  'keys',
+  'clear',
+  'version',
+  // Template and Config commands per spec 32 and 33
+  'templates',
+  'template',
+  'config',
+];
+
+/**
+ * Commands with slash prefix for tab completion
+ * Per spec 10_REPL_UX.md: Tab completion for slash commands
+ */
+const SLASH_COMMANDS = KNOWN_COMMANDS.map(cmd => '/' + cmd);
+
+/**
+ * Check if input looks like a command typo (missing slash)
+ * Returns suggested command or null if not a typo
+ */
+function detectCommandTypo(input: string): { command: string; args: string } | null {
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.startsWith('/')) {
+    return null;
+  }
+
+  // Split into command and args
+  const parts = trimmed.split(/\s+/);
+  const firstWord = parts[0].toLowerCase();
+  const args = parts.slice(1).join(' ');
+
+  // Check if first word matches a known command
+  if (KNOWN_COMMANDS.includes(firstWord)) {
+    return { command: firstWord, args };
+  }
+
+  return null;
+}
 
 /**
  * Project Mode - per spec 10_REPL_UX.md
@@ -131,6 +196,18 @@ export interface REPLConfig {
     stateDir: string;
     port: number;
   };
+
+  /**
+   * Enable LLM auto-resolution of clarification questions
+   * When true, uses AutoResolvingExecutor with LLM to auto-answer
+   * best-practice questions and route case-by-case to user
+   */
+  enableAutoResolve?: boolean;
+
+  /**
+   * LLM provider for auto-resolution (default: 'openai')
+   */
+  autoResolveLLMProvider?: 'openai' | 'anthropic';
 }
 
 /**
@@ -172,9 +249,10 @@ export type TaskLogStatus = 'queued' | 'running' | 'complete' | 'incomplete' | '
  * Task queue state - for non-blocking task execution
  * QUEUED: Waiting to be executed
  * RUNNING: Currently executing
+ * AWAITING_RESPONSE: Waiting for user clarification
  * COMPLETE/INCOMPLETE/ERROR: Terminal states
  */
-export type TaskQueueState = 'QUEUED' | 'RUNNING' | 'COMPLETE' | 'INCOMPLETE' | 'ERROR';
+export type TaskQueueState = 'QUEUED' | 'RUNNING' | 'AWAITING_RESPONSE' | 'COMPLETE' | 'INCOMPLETE' | 'ERROR';
 
 /**
  * Queued task structure for non-blocking execution
@@ -199,6 +277,10 @@ export interface QueuedTask {
   errorMessage?: string;
   /** Files modified (set on completion) */
   filesModified?: string[];
+  /** Clarification question (set when AWAITING_RESPONSE) */
+  clarificationQuestion?: string;
+  /** Clarification reason - why LLM couldn't auto-resolve (set when AWAITING_RESPONSE) */
+  clarificationReason?: string;
   /** Response summary (set on completion) */
   responseSummary?: string;
 }
@@ -230,24 +312,7 @@ const INIT_ONLY_ALLOWED_COMMANDS = ['help', 'init', 'exit'];
  * When no API key is configured, only these commands are available
  * This enforces fail-closed + interactive onboarding behavior
  */
-const KEY_SETUP_ALLOWED_COMMANDS = ['help', 'keys', 'provider', 'exit'];
-
-/**
- * All known commands (for unknown command detection)
- * Updated per spec 10_REPL_UX.md to include new commands
- */
-const KNOWN_COMMANDS = [
-  'help', 'init', 'model', 'start', 'continue',
-  'status', 'tasks', 'approve', 'exit',
-  // New commands per spec 10_REPL_UX.md
-  'provider', 'models', 'keys', 'logs'
-];
-
-/**
- * Commands with slash prefix for tab completion
- * Per spec 10_REPL_UX.md: Tab completion for slash commands
- */
-const SLASH_COMMANDS = KNOWN_COMMANDS.map(cmd => '/' + cmd);
+const KEY_SETUP_ALLOWED_COMMANDS = ['help', 'keys', 'provider', 'exit', 'templates', 'template', 'config'];
 
 /**
  * REPL Interface class
@@ -276,9 +341,18 @@ export class REPLInterface extends EventEmitter {
   // Session completion tracking (prevents double completion)
   private sessionCompleted: boolean = false;
 
+  // Close handler tracking (prevents double execution of close handler)
+  // The close event can fire multiple times: once when stdin ends, once when rl.close() is called
+  private closeHandlerExecuted: boolean = false;
+
   // Non-blocking task queue (allows input while tasks are running)
   private taskQueue: QueuedTask[] = [];
   private isTaskWorkerRunning: boolean = false;
+
+  // QueueStore for persistence (per spec 21_STABLE_DEV.md)
+  // When namespace is provided, tasks are persisted to DynamoDB Local
+  // and can be restored on restart
+  private queueStore: QueueStore | null = null;
 
   // Project mode support (per spec 10_REPL_UX.md, Property 32, 33)
   private projectMode: ProjectMode;
@@ -296,9 +370,39 @@ export class REPLInterface extends EventEmitter {
   private modelsCommand: ModelsCommand;
   private keysCommand: KeysCommand;
   private logsCommand: LogsCommand;
+  private traceCommand: TraceCommand;
+
+  // Template and Config command handlers per spec 32 and 33
+  private templateCommand: TemplateCommand;
+  private configCommand: ConfigCommand;
+  private templateStore: TemplateStore;
+  private settingsStore: ProjectSettingsStore;
 
   // Two-pane renderer per spec 18_CLI_TWO_PANE.md
   private renderer: TwoPaneRenderer;
+
+  // Pending user response tracking for auto-resolve executor
+  // When LLM can't auto-resolve a case-by-case question, it calls userResponseHandler
+  // which stores the pending response here and waits for /respond command
+  private pendingUserResponse: {
+    taskId: string;
+    question: string;
+    context?: string;
+    resolve: (response: string) => void;
+    reject: (error: Error) => void;
+  } | null = null;
+
+  // Pending command suggestion (typo rescue)
+  // When user types "exit" instead of "/exit", we suggest the correct form
+  // and wait for confirmation (Enter/y) or cancellation (n/Esc)
+  private pendingCommandSuggestion: {
+    suggestedCommand: string;
+    args: string;
+  } | null = null;
+
+  // Task number mapping for /logs <number> support
+  // Maps display numbers (1, 2, 3...) to task IDs
+  private taskNumberMap: Map<number, string> = new Map();
 
   constructor(config: REPLConfig = {}) {
     super();
@@ -370,6 +474,10 @@ export class REPLInterface extends EventEmitter {
     // Non-interactive when: stdin is not TTY, or forced via config/env
     this.executionMode = this.detectExecutionMode();
 
+    // Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 11.2:
+    // Set non-interactive mode for logging (enables fsync guarantee)
+    setNonInteractiveMode(this.executionMode === 'non_interactive');
+
     this.session = {
       sessionId: null,
       projectPath: this.config.projectPath!,
@@ -391,11 +499,33 @@ export class REPLInterface extends EventEmitter {
     this.modelsCommand = new ModelsCommand();
     this.keysCommand = new KeysCommand();
     this.logsCommand = new LogsCommand();
+    this.traceCommand = new TraceCommand();
+
+    // Initialize Template and Config command handlers per spec 32 and 33
+    this.templateStore = new TemplateStore();
+    this.settingsStore = new ProjectSettingsStore();
+    this.templateCommand = new TemplateCommand();
+    this.configCommand = new ConfigCommand();
+    // Wire up stores to command handlers
+    this.templateCommand.setTemplateStore(this.templateStore);
+    this.templateCommand.setSettingsStore(this.settingsStore);
+    this.configCommand.setSettingsStore(this.settingsStore);
+    this.configCommand.setTemplateStore(this.templateStore);
 
     // Initialize two-pane renderer per spec 18_CLI_TWO_PANE.md
     this.renderer = new TwoPaneRenderer({
       prompt: this.config.prompt,
     });
+
+    // Initialize QueueStore for persistence when namespace is provided
+    // Per spec 21_STABLE_DEV.md: namespace enables task persistence and restart recovery
+    if (config.namespace || config.namespaceConfig) {
+      const ns = config.namespaceConfig?.namespace || config.namespace!;
+      this.queueStore = new QueueStore({
+        namespace: ns,
+        endpoint: 'http://localhost:8000',
+      });
+    }
   }
 
   /**
@@ -469,6 +599,118 @@ export class REPLInterface extends EventEmitter {
     // This ensures validateProjectStructure checks the right path
     this.config.projectPath = tempDir;
     this.session.projectPath = tempDir;
+  }
+
+  /**
+   * Restore tasks from QueueStore on startup
+   * Per spec 21_STABLE_DEV.md: Resume previous tasks on restart
+   * Only restores non-terminal tasks (QUEUED, RUNNING, AWAITING_RESPONSE)
+   */
+  async restoreTasksFromQueueStore(): Promise<number> {
+    if (!this.queueStore) {
+      return 0;
+    }
+
+    try {
+      const items = await this.queueStore.getAllItems();
+      let restoredCount = 0;
+
+      for (const item of items) {
+        // Only restore non-terminal tasks
+        if (['QUEUED', 'RUNNING', 'AWAITING_RESPONSE'].includes(item.status)) {
+          const task: QueuedTask = {
+            id: item.task_id,
+            description: item.prompt,
+            state: item.status === 'RUNNING' ? 'QUEUED' : item.status as TaskQueueState, // Reset RUNNING to QUEUED
+            queuedAt: new Date(item.created_at).getTime(),
+            startedAt: null,
+            completedAt: null,
+          };
+
+          // Restore AWAITING_RESPONSE with clarification info
+          if (item.status === 'AWAITING_RESPONSE' && item.clarification) {
+            task.clarificationQuestion = item.clarification.question;
+            task.clarificationReason = item.clarification.context;
+          }
+
+          this.taskQueue.push(task);
+          restoredCount++;
+        }
+      }
+
+      if (restoredCount > 0) {
+        this.print('Restored ' + restoredCount + ' task(s) from previous session.');
+
+        // Check for tasks needing response
+        const awaitingTasks = this.taskQueue.filter(t => t.state === 'AWAITING_RESPONSE');
+        if (awaitingTasks.length > 0) {
+          this.print('Tasks awaiting response:');
+          for (const t of awaitingTasks) {
+            this.print('  [?] ' + t.id + ': ' + (t.clarificationQuestion || 'Unknown question'));
+          }
+          this.print('Use /respond <answer> to continue.');
+        }
+      }
+
+      return restoredCount;
+    } catch (err) {
+      // Fail-closed: if QueueStore is unavailable, continue without restoration
+      console.error('[QueueStore] Failed to restore tasks:', (err as Error).message);
+      return 0;
+    }
+  }
+
+  /**
+   * Sync a task state change to QueueStore
+   * Called after any task state change for persistence
+   */
+  private async syncTaskToQueueStore(task: QueuedTask): Promise<void> {
+    if (!this.queueStore) {
+      return;
+    }
+
+    try {
+      // Map TaskQueueState to QueueItemStatus
+      const statusMap: Record<TaskQueueState, QueueItemStatus> = {
+        'QUEUED': 'QUEUED',
+        'RUNNING': 'RUNNING',
+        'AWAITING_RESPONSE': 'AWAITING_RESPONSE',
+        'COMPLETE': 'COMPLETE',
+        'INCOMPLETE': 'COMPLETE', // Map INCOMPLETE to COMPLETE in QueueStore
+        'ERROR': 'ERROR',
+      };
+
+      const status = statusMap[task.state];
+
+      // For new tasks, enqueue them
+      if (task.state === 'QUEUED' && !task.startedAt) {
+        await this.queueStore.enqueue(
+          task.description,
+          'repl-session', // task_group_id
+          this.session.sessionId || 'no-session' // session_id
+        );
+        return;
+      }
+
+      // For state changes, update existing item
+      const item = await this.queueStore.getItem(task.id);
+      if (item) {
+        if (task.state === 'AWAITING_RESPONSE') {
+          await this.queueStore.setAwaitingResponse(task.id, {
+            type: 'case_by_case', // User response required
+            question: task.clarificationQuestion || '',
+            context: task.clarificationReason,
+          });
+        } else if (status === 'COMPLETE' || status === 'ERROR') {
+          await this.queueStore.updateStatus(task.id, status, task.errorMessage);
+        } else if (status === 'RUNNING') {
+          await this.queueStore.updateStatus(task.id, status);
+        }
+      }
+    } catch (err) {
+      // Fail-soft: log error but don't interrupt task execution
+      console.error('[QueueStore] Failed to sync task:', (err as Error).message);
+    }
   }
 
   /**
@@ -705,62 +947,166 @@ export class REPLInterface extends EventEmitter {
       completer: this.completer.bind(this),
     });
 
-    // Print welcome message (or init-only mode reminder)
-    if (!this.initOnlyMode) {
-      this.printWelcome();
-    }
-
-    this.rl.prompt();
-
+    // CRITICAL: Set up 'line' handler IMMEDIATELY after creating readline
+    // In non-interactive (piped) mode, stdin may already have data buffered
+    // and may close immediately after readline is created.
+    // If we delay setting up this handler, buffered lines will be lost.
     this.rl.on('line', (line) => {
       // Queue-based sequential processing to prevent race conditions
       // This ensures /start completes before subsequent commands are processed
       this.enqueueInput(line);
     });
 
-    // Return a promise that resolves when REPL exits
-    // CRITICAL: Single 'close' handler to avoid race conditions
-    // Previous bug: two handlers - one waiting for queue drain, one resolving immediately
-    return new Promise((resolve) => {
-      this.rl!.on('close', async () => {
-        // In non-interactive mode, wait for all queued input to be processed
-        // This ensures all commands complete before EOF handling
-        if (this.executionMode === 'non_interactive') {
-          // Wait for input queue to drain, OR exit immediately if running is false
-          // running = false means /exit was called, so remaining queue items should be ignored
-          while ((this.inputQueue.length > 0 || this.isProcessingInput) && this.running) {
-            await new Promise(r => setTimeout(r, 10));
-          }
-        }
-
-        this.running = false;
-
-        // Ensure all output is flushed before cleanup
-        // Per spec 18_CLI_TWO_PANE.md: Flush renderer pending logs
-        this.renderer.flush();
-        await this.flushStdout();
-
-        await this.cleanup();
-
-        // In non-interactive mode, set process exit code
-        if (this.executionMode === 'non_interactive') {
-          this.updateExitCode();
-          process.exitCode = this.exitCode;
-        }
-        resolve();
-      });
+    // CRITICAL: Create the close Promise IMMEDIATELY, before any async operations.
+    // In piped mode, stdin may close during async init (restoreTasksFromQueueStore).
+    // If we delay setting up the close handler, the close event will be lost and
+    // the returned Promise will never resolve.
+    //
+    // Pattern: Create promise and store resolver, set up handler that calls resolver
+    // when fully complete (after queue drains, cleanup, etc.)
+    let closePromiseResolve: (() => void) | null = null;
+    const closePromise = new Promise<void>((resolve) => {
+      closePromiseResolve = resolve;
     });
+
+    this.rl.on('close', async () => {
+      // Prevent double execution of close handler
+      // The close event can fire multiple times: once when stdin ends, once when rl.close() is called
+      if (this.closeHandlerExecuted) {
+        return;
+      }
+      this.closeHandlerExecuted = true;
+
+      // In non-interactive mode, wait for all queued input to be processed
+      // This ensures all commands complete before EOF handling
+      if (this.executionMode === 'non_interactive') {
+        // Wait for input queue to drain, OR exit immediately if running is false
+        // running = false means /exit was called, so remaining queue items should be ignored
+        while ((this.inputQueue.length > 0 || this.isProcessingInput) && this.running) {
+          await new Promise(r => setTimeout(r, 10));
+        }
+      }
+
+      this.running = false;
+
+      // Ensure all output is flushed before cleanup
+      // Per spec 18_CLI_TWO_PANE.md: Flush renderer pending logs
+      this.renderer.flush();
+      await this.flushStdout();
+
+      await this.cleanup();
+
+      // In non-interactive mode, set process exit code
+      if (this.executionMode === 'non_interactive') {
+        this.updateExitCode();
+        process.exitCode = this.exitCode;
+      }
+
+      // Resolve the promise AFTER all work is complete
+      closePromiseResolve!();
+    });
+
+    // Set up keypress events for TTY (multi-line mode Esc handling)
+    if (process.stdin.isTTY) {
+      readline.emitKeypressEvents(process.stdin, this.rl);
+      if (process.stdin.setRawMode) {
+        process.stdin.setRawMode(true);
+      }
+      process.stdin.on('keypress', (_str, key) => {
+        // Per spec: Esc cancels current multi-line input
+        if (key && key.name === 'escape' && this.multiLineBuffer.length > 0) {
+          this.multiLineBuffer = [];
+          this.print('\nMulti-line input cancelled.');
+          this.rl?.prompt();
+        }
+      });
+    }
+
+    // Restore tasks from QueueStore (DynamoDB Local persistence)
+    await this.restoreTasksFromQueueStore();
+
+    // Print welcome message
+    this.printWelcome();
+
+    // Show initial prompt (only in interactive mode)
+    // In non-interactive mode (piped input), readline may already be closed
+    // by the time we get here, and calling prompt() would throw an error.
+    // Also, in piped mode, there's no user waiting for a prompt.
+    if (this.executionMode === 'interactive') {
+      this.rl.prompt();
+    }
+
+    // Return the close promise - it resolves when the close handler completes
+    return closePromise;
   }
 
   /**
    * Process input line
+   * Includes typo rescue for common commands (exit -> /exit suggestion)
    */
   private async processInput(input: string): Promise<void> {
-    if (input.startsWith('/')) {
-      await this.processCommand(input);
-    } else {
-      await this.processNaturalLanguage(input);
+    const trimmed = input.trim();
+
+    // Handle pending command suggestion confirmation
+    if (this.pendingCommandSuggestion) {
+      const suggestion = this.pendingCommandSuggestion;
+      this.pendingCommandSuggestion = null;
+
+      const lowerInput = trimmed.toLowerCase();
+
+      // Empty input (Enter) or 'y' confirms the suggestion
+      if (trimmed === '' || lowerInput === 'y' || lowerInput === 'yes') {
+        const fullCommand = suggestion.args
+          ? `/${suggestion.suggestedCommand} ${suggestion.args}`
+          : `/${suggestion.suggestedCommand}`;
+        this.print('Executing: ' + fullCommand);
+        await this.processCommand(fullCommand);
+        return;
+      }
+
+      // 'n', 'no', or Esc cancels
+      if (lowerInput === 'n' || lowerInput === 'no') {
+        this.print('Cancelled.');
+        return;
+      }
+
+      // Any other input is treated as new input
+      // Fall through to normal processing
     }
+
+    // Check for pending AWAITING_RESPONSE - allow numeric shortcuts
+    if (this.hasPendingResponse() && /^\d+$/.test(trimmed)) {
+      // Numeric input while pending response - treat as /respond <number>
+      await this.handleRespond(['respond', trimmed]);
+      return;
+    }
+
+    if (trimmed.startsWith('/')) {
+      await this.processCommand(trimmed);
+      return;
+    }
+
+    // Check for command typo (exit -> /exit)
+    const typo = detectCommandTypo(trimmed);
+    if (typo) {
+      const suggestion = typo.args
+        ? `/${typo.command} ${typo.args}`
+        : `/${typo.command}`;
+
+      this.print('');
+      this.print('Did you mean: ' + suggestion + ' ?');
+      this.print('Press Enter or y to confirm, n to cancel.');
+      this.print('');
+
+      this.pendingCommandSuggestion = {
+        suggestedCommand: typo.command,
+        args: typo.args,
+      };
+      return;
+    }
+
+    // Normal natural language processing
+    await this.processNaturalLanguage(trimmed);
   }
 
   /**
@@ -781,6 +1127,8 @@ export class REPLInterface extends EventEmitter {
     if (!trimmed) {
       // Empty line - submit accumulated multi-line buffer
       if (this.multiLineBuffer.length > 0) {
+        // Show visual feedback that we're submitting
+        this.print('Sending...');
         // Join accumulated lines and submit as single input
         const fullInput = this.multiLineBuffer.join('\n');
         this.multiLineBuffer = [];
@@ -811,6 +1159,7 @@ export class REPLInterface extends EventEmitter {
     }
 
     // Non-empty line without slash - accumulate in multi-line buffer
+    const isFirstLine = this.multiLineBuffer.length === 0;
     this.multiLineBuffer.push(trimmed);
 
     // In non-interactive mode, no empty line expected - process immediately
@@ -822,8 +1171,12 @@ export class REPLInterface extends EventEmitter {
       return;
     }
 
-    // In interactive mode, show continuation indicator
+    // In interactive mode, show continuation indicator and hint
     if (this.running && !this.isProcessingInput) {
+      // Show multi-line mode hint on first line
+      if (isFirstLine) {
+        this.print('(multi-line: Enter=newline, Enter x2=send, Esc=cancel)');
+      }
       // Show continuation prompt to indicate multi-line mode
       process.stdout.write('... ');
     }
@@ -977,6 +1330,22 @@ export class REPLInterface extends EventEmitter {
       case 'logs':
         return await this.handleLogs(args);
 
+      case 'trace':
+        return await this.handleTrace(args);
+
+      case 'respond':
+        return await this.handleRespond(args);
+
+      // Template and Config commands per spec 32 and 33
+      case 'templates':
+        return await this.handleTemplates(args);
+
+      case 'template':
+        return await this.handleTemplate(args);
+
+      case 'config':
+        return await this.handleConfig(args);
+
       default:
         // This should never be reached since unknown commands are handled above
         // If we reach here, KNOWN_COMMANDS list is inconsistent with switch cases
@@ -1073,6 +1442,11 @@ export class REPLInterface extends EventEmitter {
     // Add to task queue
     this.taskQueue.push(queuedTask);
 
+    // Sync new task to QueueStore for persistence
+    this.syncTaskToQueueStore(queuedTask).catch(err => {
+      console.error('[QueueStore] Failed to sync new task:', err.message);
+    });
+
     // Display task queued info (per redesign: visibility)
     // Per user requirement: Provider/Mode/Auth must be shown at task start
     this.print('');
@@ -1146,6 +1520,9 @@ export class REPLInterface extends EventEmitter {
     task.startedAt = Date.now();
     this.session.current_task_id = task.id;
 
+    // Sync to QueueStore for persistence
+    await this.syncTaskToQueueStore(task);
+
     // Print status update
     this.print('');
     this.print('--- Task Started ---');
@@ -1198,16 +1575,25 @@ export class REPLInterface extends EventEmitter {
       if (result.overall_status === OverallStatus.INCOMPLETE &&
           result.incomplete_task_reasons &&
           result.incomplete_task_reasons.length > 0) {
-        await this.handleClarificationNeeded(task.description, result.incomplete_task_reasons);
+        const needsClarification = await this.handleClarificationNeeded(task, task.description, result.incomplete_task_reasons);
+        if (needsClarification) {
+          task.state = 'AWAITING_RESPONSE';
+        }
       }
 
       this.printExecutionResult(result);
+
+      // Sync final state to QueueStore
+      await this.syncTaskToQueueStore(task);
     } catch (err) {
       console.log(`[DEBUG executeQueuedTask] error: ${(err as Error).message}`);
       task.state = 'ERROR';
       task.completedAt = Date.now();
       task.errorMessage = (err as Error).message;
       this.printError(err as Error);
+
+      // Sync error state to QueueStore
+      await this.syncTaskToQueueStore(task);
     } finally {
       // Clear current_task_id
       this.session.last_task_id = this.session.current_task_id;
@@ -1222,6 +1608,7 @@ export class REPLInterface extends EventEmitter {
    * Returns true if clarification was requested (and will be processed separately)
    */
   private async handleClarificationNeeded(
+    task: QueuedTask,
     originalInput: string,
     reasons: Array<{ task_id: string; reason: string }>
   ): Promise<boolean> {
@@ -1250,6 +1637,8 @@ export class REPLInterface extends EventEmitter {
         this.print('Example: "Create docs/clipboard-tool-spec.md with the specification for a clipboard tool"');
         this.print('----------------------------');
         this.print('');
+        this.print('Use /respond to provide your answer.');
+        task.clarificationQuestion = 'Where should the file be saved?';
         return true;
       }
 
@@ -1264,6 +1653,8 @@ export class REPLInterface extends EventEmitter {
         this.print('Please provide more details in your next input.');
         this.print('----------------------------');
         this.print('');
+        this.print('Use /respond to provide your answer.');
+        task.clarificationQuestion = reason;
         return true;
       }
     }
@@ -1338,11 +1729,34 @@ export class REPLInterface extends EventEmitter {
     this.print('  /status              Show session status and phase');
     this.print('  /tasks               Show tasks in current session');
     this.print('  /approve             Approve continuation for INCOMPLETE session');
+    this.print('  /respond <text>     Respond to a task awaiting clarification');
     this.print('');
     this.print('Logging:');
     this.print('  /logs                List task logs for current session');
-    this.print('  /logs <task-id>      Show task details (summary view)');
-    this.print('  /logs <task-id> --full  Show task details with executor logs');
+    this.print('  /logs <id|#>         Show task details (use task-id or number from /tasks)');
+    this.print('  /logs <id|#> --full  Show task details with executor logs');
+    this.print('');
+    this.print('Conversation Trace:');
+    this.print('  /trace <id|#>          Show conversation trace for a task');
+    this.print('  /trace <id|#> --latest Show only latest iteration');
+    this.print('  /trace <id|#> --raw    Show raw JSONL data');
+    this.print('');
+    this.print('Template Injection (per spec 32):');
+    this.print('  /templates             List all templates');
+    this.print('  /templates new <name>  Create a new template');
+    this.print('  /templates edit <name> Edit a template');
+    this.print('  /templates delete <n>  Delete a template');
+    this.print('  /templates copy <s> <n> Copy a template');
+    this.print('  /template              Show current template settings');
+    this.print('  /template use <name>   Select and enable a template');
+    this.print('  /template on           Enable template injection');
+    this.print('  /template off          Disable template injection');
+    this.print('');
+    this.print('Project Configuration (per spec 33):');
+    this.print('  /config                Show project settings');
+    this.print('  /config set <k> <v>    Set a configuration value');
+    this.print('  /config reset          Reset settings to defaults');
+    this.print('  /config keys           Show available config keys');
     this.print('');
     this.print('Other:');
     this.print('  /exit                Exit REPL (saves state)');
@@ -1645,9 +2059,27 @@ export class REPLInterface extends EventEmitter {
         return { success: false, error: result.error };
       }
     } else {
-      // /logs <task-id> [--full]
-      const taskId = args[0];
+      // /logs <task-id | number> [--full]
+      // Support task number (1, 2, 3...) or full task ID
+      let taskId = args[0];
       const full = args.includes('--full');
+
+      // Check if first arg is a number (task number reference)
+      const taskNum = parseInt(taskId, 10);
+      if (!isNaN(taskNum) && taskNum > 0 && this.taskNumberMap.has(taskNum)) {
+        taskId = this.taskNumberMap.get(taskNum)!;
+      } else if (!isNaN(taskNum) && taskNum > 0) {
+        // Number provided but not in map - might need to run /tasks first
+        this.print('Task number ' + taskNum + ' not found. Run /tasks to see available tasks.');
+        return {
+          success: false,
+          error: { code: 'E105', message: 'Task number not found' },
+        };
+      }
+
+      // First check if task is in queue (for AWAITING_RESPONSE status)
+      const queuedTask = this.taskQueue.find(t => t.id === taskId);
+
       // Per redesign: Pass sessionId for visibility fields
       const result = await this.logsCommand.getTaskDetail(
         this.session.projectPath,
@@ -1657,8 +2089,51 @@ export class REPLInterface extends EventEmitter {
       );
       if (result.success) {
         this.print(result.output || 'No log detail found.');
+
+        // Add pending question/reason info if task is AWAITING_RESPONSE
+        if (queuedTask && queuedTask.state === 'AWAITING_RESPONSE') {
+          this.print('');
+          this.print('Pending Response Required:');
+          if (queuedTask.clarificationQuestion) {
+            this.print('  Question: ' + queuedTask.clarificationQuestion);
+          }
+          if (queuedTask.clarificationReason) {
+            this.print('  Reason: ' + queuedTask.clarificationReason);
+          }
+          this.print('  How to respond: /respond <your answer>');
+        }
+
         return { success: true };
       } else {
+        // If not found in logs, check if it's a queued task
+        if (queuedTask) {
+          this.print('');
+          this.print('Task: ' + queuedTask.id);
+          this.print('State: ' + queuedTask.state);
+          this.print('Description: ' + queuedTask.description);
+          if (queuedTask.queuedAt) {
+            this.print('Queued at: ' + new Date(queuedTask.queuedAt).toISOString());
+          }
+          if (queuedTask.startedAt) {
+            this.print('Started at: ' + new Date(queuedTask.startedAt).toISOString());
+          }
+
+          // Show pending question/reason info if AWAITING_RESPONSE
+          if (queuedTask.state === 'AWAITING_RESPONSE') {
+            this.print('');
+            this.print('Pending Response Required:');
+            if (queuedTask.clarificationQuestion) {
+              this.print('  Question: ' + queuedTask.clarificationQuestion);
+            }
+            if (queuedTask.clarificationReason) {
+              this.print('  Reason: ' + queuedTask.clarificationReason);
+            }
+            this.print('  How to respond: /respond <your answer>');
+          }
+
+          return { success: true };
+        }
+
         this.print('Error [' + result.error?.code + ']: ' + (result.error?.message || result.message));
         return { success: false, error: result.error };
       }
@@ -1666,14 +2141,80 @@ export class REPLInterface extends EventEmitter {
   }
 
   /**
+   * Handle /trace command
+   * Per spec 28_CONVERSATION_TRACE.md Section 5.1
+   */
+  private async handleTrace(args: string[]): Promise<CommandResult> {
+    if (args.length === 0) {
+      this.print('Usage: /trace <task-id|#> [--latest] [--raw]');
+      this.print('');
+      this.print('Options:');
+      this.print('  --latest  Show only the latest iteration');
+      this.print('  --raw     Show raw JSONL data');
+      return {
+        success: false,
+        error: { code: 'E123', message: 'Task ID required' },
+      };
+    }
+
+    // Parse task ID (support number reference from /tasks)
+    let taskId = args[0];
+    const taskNum = parseInt(taskId, 10);
+    if (!isNaN(taskNum) && this.taskNumberMap.has(taskNum)) {
+      taskId = this.taskNumberMap.get(taskNum)!;
+    }
+
+    // Parse options
+    const latest = args.includes('--latest');
+    const raw = args.includes('--raw');
+
+    // Get state directory from runner
+    if (!this.session.runner) {
+      this.print('No active session. Use /start to begin a session.');
+      return {
+        success: false,
+        error: { code: 'E104', message: 'No active session' },
+      };
+    }
+
+    const stateDir = this.session.runner.getSessionDirectory();
+    if (!stateDir) {
+      this.print('Session directory not available.');
+      return {
+        success: false,
+        error: { code: 'E124', message: 'Session directory not available' },
+      };
+    }
+
+    const result = this.traceCommand.getTrace(stateDir, taskId, {
+      latest,
+      raw,
+    });
+
+    if (result.success) {
+      this.print('--- Conversation Trace for ' + taskId + ' ---');
+      this.print(result.output || 'No trace data found.');
+      this.print('---');
+      return { success: true };
+    } else {
+      this.print('Error [' + result.error?.code + ']: ' + (result.error?.message || result.message));
+      return { success: false, error: result.error };
+    }
+  }
+
+  /**
    * Handle /tasks command
    * Shows task queue with RUNNING/QUEUED/COMPLETE/ERROR/INCOMPLETE states
    * Per redesign: proves non-blocking by showing multiple tasks simultaneously
+   * Per spec 21_STABLE_DEV.md: Task numbers (1, 2, 3...) for easier reference
    */
   private async handleTasks(): Promise<void> {
     this.print('');
-    this.print('=== Task Queue ===');
+    this.print('Task Queue');
     this.print('');
+
+    // Clear and rebuild task number map on each display
+    this.taskNumberMap.clear();
 
     if (this.taskQueue.length === 0) {
       this.print('No tasks in queue.');
@@ -1681,7 +2222,7 @@ export class REPLInterface extends EventEmitter {
       // Also show legacy tasks from statusCommands if available
       const legacyResult = await this.statusCommands.getTasks();
       if (legacyResult && legacyResult.trim()) {
-        this.print('--- Session Tasks ---');
+        this.print('Session Tasks:');
         this.print(legacyResult);
       }
       return;
@@ -1693,12 +2234,28 @@ export class REPLInterface extends EventEmitter {
     const complete = this.taskQueue.filter(t => t.state === 'COMPLETE').length;
     const incomplete = this.taskQueue.filter(t => t.state === 'INCOMPLETE').length;
     const error = this.taskQueue.filter(t => t.state === 'ERROR').length;
+    const awaiting = this.taskQueue.filter(t => t.state === 'AWAITING_RESPONSE').length;
 
-    this.print('Summary: ' + running + ' RUNNING, ' + queued + ' QUEUED, ' + complete + ' COMPLETE, ' + incomplete + ' INCOMPLETE, ' + error + ' ERROR');
+    // Build summary string with awaiting count
+    let summary = running + ' RUNNING, ' + queued + ' QUEUED, ' + complete + ' COMPLETE';
+    if (awaiting > 0) {
+      summary += ', ' + awaiting + ' AWAITING_RESPONSE';
+    }
+    if (incomplete > 0) {
+      summary += ', ' + incomplete + ' INCOMPLETE';
+    }
+    if (error > 0) {
+      summary += ', ' + error + ' ERROR';
+    }
+    this.print('Summary: ' + summary);
     this.print('');
 
-    // List all tasks with state
+    // List all tasks with state and task number
+    let taskNum = 1;
     for (const task of this.taskQueue) {
+      // Build task number map for /logs <number> support
+      this.taskNumberMap.set(taskNum, task.id);
+
       const promptSummary = task.description.length > 50
         ? task.description.substring(0, 50) + '...'
         : task.description;
@@ -1728,26 +2285,41 @@ export class REPLInterface extends EventEmitter {
         case 'ERROR':
           stateMarker = '[X]';
           break;
+        case 'AWAITING_RESPONSE':
+          stateMarker = '[?]';
+          break;
       }
 
-      this.print(stateMarker + ' ' + task.id + ' | ' + task.state + durationStr);
-      this.print('    ' + promptSummary);
+      // Show task number prefix for easier reference (e.g., "1. [*] task-123...")
+      this.print(taskNum + '. ' + stateMarker + ' ' + task.id + ' | ' + task.state + durationStr);
+      this.print('      ' + promptSummary);
+      taskNum++;
 
       // Show error message if error
       if (task.state === 'ERROR' && task.errorMessage) {
-        this.print('    Error: ' + task.errorMessage);
+        this.print('      Error: ' + task.errorMessage);
+      }
+
+      // Show clarification question if awaiting response
+      if (task.state === 'AWAITING_RESPONSE') {
+        if (task.clarificationQuestion) {
+          this.print('      Question: ' + task.clarificationQuestion);
+        }
+        if (task.clarificationReason) {
+          this.print('      Reason: ' + task.clarificationReason);
+        }
+        this.print('      How to respond: /respond <your answer>');
       }
 
       // Show files modified if complete
       if (task.state === 'COMPLETE' && task.filesModified && task.filesModified.length > 0) {
-        this.print('    Files: ' + task.filesModified.slice(0, 3).join(', ') +
+        this.print('      Files: ' + task.filesModified.slice(0, 3).join(', ') +
           (task.filesModified.length > 3 ? ' (+' + (task.filesModified.length - 3) + ' more)' : ''));
       }
     }
 
     this.print('');
-    this.print('Use /logs <task-id> for details.');
-    this.print('==================');
+    this.print('Use /logs <task-id> or /logs <number> for details.');
     this.print('');
   }
 
@@ -1757,6 +2329,18 @@ export class REPLInterface extends EventEmitter {
   private async handleStatus(): Promise<void> {
     const result = await this.statusCommands.getStatus();
     this.print(result);
+
+    // Add awaiting_user_response status from task queue
+    const awaitingTask = this.taskQueue.find(t => t.state === 'AWAITING_RESPONSE');
+    const hasPending = this.hasPendingResponse();
+
+    this.print('');
+    this.print('User Response Status:');
+    this.print('  awaiting_user_response: ' + (hasPending || awaitingTask !== undefined));
+    this.print('  pending_task_id: ' + (awaitingTask?.id || this.pendingUserResponse?.taskId || 'null'));
+    if (awaitingTask?.clarificationQuestion) {
+      this.print('  pending_question: ' + awaitingTask.clarificationQuestion);
+    }
   }
 
   /**
@@ -1775,7 +2359,12 @@ export class REPLInterface extends EventEmitter {
         : this.session.projectPath);
 
     try {
-      const result = await this.sessionCommands.start(projectPath);
+      // Create userResponseHandler if auto-resolve is enabled
+      const sessionOptions = this.config.enableAutoResolve
+        ? { userResponseHandler: this.createUserResponseHandler() }
+        : undefined;
+
+      const result = await this.sessionCommands.start(projectPath, sessionOptions);
 
       if (result.success) {
         this.session.sessionId = result.sessionId!;
@@ -1783,6 +2372,10 @@ export class REPLInterface extends EventEmitter {
         this.session.status = 'running';
         // Keep session.projectPath as verificationRoot in temp mode
         this.session.projectPath = projectPath;
+
+        // Wire up template provider per spec 32_TEMPLATE_INJECTION.md
+        // This allows RunnerCore to get the active template during prompt assembly
+        this.session.runner.setTemplateProvider(() => this.templateCommand.getActive());
 
         // Initialize supervisor
         const supervisorConfig: SupervisorConfig = {
@@ -1797,6 +2390,9 @@ export class REPLInterface extends EventEmitter {
 
         this.print('Session started: ' + result.sessionId);
         this.print('Project: ' + projectPath);
+        if (this.config.enableAutoResolve) {
+          this.print('LLM Auto-Resolve: Enabled');
+        }
         this.print('');
         this.print('You can now describe tasks in natural language.');
         return { success: true };
@@ -1831,12 +2427,19 @@ export class REPLInterface extends EventEmitter {
     }
 
     try {
-      const result = await this.sessionCommands.continueSession(sessionId);
+      // Pass userResponseHandler if auto-resolve is enabled
+      const sessionOptions = this.config.enableAutoResolve
+        ? { userResponseHandler: this.createUserResponseHandler() }
+        : undefined;
+      const result = await this.sessionCommands.continueSession(sessionId, sessionOptions);
 
       if (result.success) {
         this.session.sessionId = sessionId;
         this.session.runner = result.runner!;
         this.session.status = 'running';
+
+        // Wire up template provider per spec 32_TEMPLATE_INJECTION.md
+        this.session.runner.setTemplateProvider(() => this.templateCommand.getActive());
 
         this.print('Session resumed: ' + sessionId);
         return { success: true };
@@ -1889,6 +2492,128 @@ export class REPLInterface extends EventEmitter {
         error: { code: 'E106', message: (err as Error).message },
       };
     }
+  }
+
+  /**
+   * Handle /respond command
+   * Allows user to respond to a task awaiting clarification
+   * Usage: /respond <text> or /respond <task-id> <text>
+   */
+  private async handleRespond(args: string[]): Promise<CommandResult> {
+    // Find task awaiting response
+    const awaitingTasks = this.taskQueue.filter(t => t.state === 'AWAITING_RESPONSE');
+
+    // Fail-closed: no tasks awaiting response
+    if (awaitingTasks.length === 0) {
+      this.print('');
+      this.print('[FAIL-CLOSED] No tasks awaiting response.');
+      this.print('');
+      if (this.taskQueue.length === 0) {
+        this.print('Task queue is empty. Use a prompt to create a task first.');
+      } else {
+        this.print('Current task states:');
+        for (const task of this.taskQueue) {
+          this.print('  ' + task.id + ': ' + task.state);
+        }
+        this.print('');
+        this.print('Tip: Only AWAITING_RESPONSE tasks can receive /respond.');
+        this.print('     Use /tasks to see the full task queue.');
+      }
+      return {
+        success: false,
+        error: { code: 'E107', message: 'No tasks awaiting response - nothing to respond to' },
+      };
+    }
+
+    if (args.length === 0) {
+      // Show awaiting tasks and their questions
+      this.print('');
+      this.print('Tasks awaiting response:');
+      this.print('');
+      for (const task of awaitingTasks) {
+        this.print('Task: ' + task.id);
+        this.print('Description: ' + task.description);
+        if (task.clarificationQuestion) {
+          this.print('Question: ' + task.clarificationQuestion);
+        }
+        if (task.clarificationReason) {
+          this.print('Reason: ' + task.clarificationReason);
+        }
+        this.print('');
+      }
+      this.print('Usage: /respond <your response>');
+      this.print('       /respond <task-id> <your response>');
+      return { success: true };
+    }
+    
+    // Determine which task to respond to and what the response is
+    let targetTask: QueuedTask | undefined;
+    let responseText: string;
+    
+    // Check if first arg is a task ID
+    const possibleTaskId = args[0];
+    const matchingTask = awaitingTasks.find(t => t.id === possibleTaskId);
+    
+    if (matchingTask) {
+      // First arg is task ID, rest is response
+      targetTask = matchingTask;
+      responseText = args.slice(1).join(' ');
+    } else if (awaitingTasks.length === 1) {
+      // Only one task awaiting, respond to it
+      targetTask = awaitingTasks[0];
+      responseText = args.join(' ');
+    } else {
+      // Multiple tasks awaiting, need task ID
+      this.print('Multiple tasks awaiting response. Please specify task ID:');
+      for (const task of awaitingTasks) {
+        this.print('  ' + task.id + ': ' + (task.clarificationQuestion || task.description));
+      }
+      return {
+        success: false,
+        error: { code: 'E108', message: 'Multiple tasks awaiting response - specify task ID' },
+      };
+    }
+    
+    if (!responseText.trim()) {
+      this.print('Error: Response text is required.');
+      this.print('Usage: /respond <your response>');
+      return {
+        success: false,
+        error: { code: 'E109', message: 'Response text is required' },
+      };
+    }
+    
+    // Update task state and resolve pending response
+    this.print('');
+    this.print('Resuming task ' + targetTask.id + ' with response...');
+
+    // Store the response in the task for the executor to use
+    (targetTask as any).userResponse = responseText;
+
+    // Check if there's a pending auto-resolve response to resolve
+    // This handles the case where AutoResolvingExecutor is waiting for user input
+    if (this.hasPendingResponse() && this.pendingUserResponse?.taskId === targetTask.id) {
+      // Resolve the pending Promise - executor will continue automatically
+      this.resolvePendingResponse(responseText);
+      this.print('Response delivered to executor.');
+    } else {
+      // Legacy behavior: re-queue the task for execution
+      targetTask.state = 'QUEUED';
+
+      // Sync re-queued state to QueueStore
+      this.syncTaskToQueueStore(targetTask).catch(err => {
+        console.error('[QueueStore] Failed to sync re-queued task:', err.message);
+      });
+
+      // Restart task worker if not running
+      if (!this.isTaskWorkerRunning) {
+        this.startTaskWorker();
+      }
+
+      this.print('Task ' + targetTask.id + ' re-queued with response.');
+    }
+
+    return { success: true };
   }
 
   /**
@@ -2347,5 +3072,419 @@ export class REPLInterface extends EventEmitter {
    */
   isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * Create a userResponseHandler for AutoResolvingExecutor
+   * This handler is called when LLM cannot auto-resolve a case-by-case question
+   * It displays the question to the user and waits for /respond command
+   *
+   * @returns UserResponseHandler callback function
+   */
+  createUserResponseHandler(): (question: string, options?: string[], context?: string) => Promise<string> {
+    return async (question: string, options?: string[], context?: string): Promise<string> => {
+      // Get current task ID
+      const currentTask = this.taskQueue.find(t => t.state === 'RUNNING');
+      const taskId = currentTask?.id || this.session.current_task_id || 'unknown';
+
+      // Determine clarification reason from context
+      const clarificationReason = context || 'Case-by-case decision required (cannot be auto-resolved)';
+
+      // Mark task as awaiting response
+      if (currentTask) {
+        currentTask.state = 'AWAITING_RESPONSE';
+        currentTask.clarificationQuestion = question;
+        currentTask.clarificationReason = clarificationReason;
+
+        // Sync to QueueStore for persistence (AWAITING_RESPONSE survives restart)
+        await this.syncTaskToQueueStore(currentTask);
+      }
+
+      // Display the question to the user (no decorative characters per spec)
+      this.print('');
+      this.print('[AWAITING_RESPONSE] Task ' + taskId + ' needs your input');
+      this.print('');
+      this.print('Question: ' + question);
+      this.print('Reason: ' + clarificationReason);
+      if (options && options.length > 0) {
+        this.print('');
+        this.print('Options:');
+        options.forEach((opt, i) => {
+          this.print('  ' + (i + 1) + '. ' + opt);
+        });
+      }
+      this.print('');
+      this.print('How to respond: /respond <your answer>');
+      this.print('');
+
+      // Create a Promise that will be resolved when user provides /respond
+      return new Promise<string>((resolve, reject) => {
+        this.pendingUserResponse = {
+          taskId,
+          question,
+          context: clarificationReason,
+          resolve,
+          reject,
+        };
+      });
+    };
+  }
+
+  /**
+   * Resolve a pending user response (called by /respond command)
+   * @param response - User's response text
+   * @returns true if response was delivered, false if no pending response
+   */
+  resolvePendingResponse(response: string): boolean {
+    if (!this.pendingUserResponse) {
+      return false;
+    }
+
+    const pending = this.pendingUserResponse;
+    this.pendingUserResponse = null;
+
+    // Resolve the Promise with user's response
+    pending.resolve(response);
+
+    // Mark task back to RUNNING (executor will continue)
+    const task = this.taskQueue.find(t => t.id === pending.taskId);
+    if (task && task.state === 'AWAITING_RESPONSE') {
+      task.state = 'RUNNING';
+      // Sync to QueueStore (resuming from AWAITING_RESPONSE)
+      this.syncTaskToQueueStore(task).catch(err => {
+        console.error('[QueueStore] Failed to sync resumed task:', err.message);
+      });
+    }
+
+    return true;
+  }
+
+  /**
+   * Check if there's a pending user response
+   */
+  hasPendingResponse(): boolean {
+    return this.pendingUserResponse !== null;
+  }
+
+  /**
+   * Get the pending response question (for display)
+   */
+  getPendingResponseQuestion(): string | null {
+    return this.pendingUserResponse?.question || null;
+  }
+
+  /**
+   * Get REPL configuration for passing to SessionCommands
+   */
+  getConfig(): REPLConfig {
+    return { ...this.config };
+  }
+
+  // ============================================================================
+  // Template and Config command handlers per spec 32 and 33
+  // ============================================================================
+
+  /**
+   * Initialize stores for a project
+   * Called when session starts to load project-specific settings
+   */
+  private async initializeStoresForProject(projectPath: string): Promise<void> {
+    try {
+      await this.templateStore.initialize();
+      await this.settingsStore.initialize(projectPath);
+    } catch (error) {
+      console.error('[Stores] Failed to initialize:', error);
+    }
+  }
+
+  /**
+   * Handle /templates command
+   * Per spec 32_TEMPLATE_INJECTION.md: list, new, edit, delete, copy
+   */
+  private async handleTemplates(args: string[]): Promise<CommandResult> {
+    const subCommand = args[0]?.toLowerCase();
+
+    // Ensure stores are initialized
+    if (!this.session.projectPath) {
+      this.print('No project path set. Use /start first.');
+      return {
+        success: false,
+        error: { code: 'E420', message: 'No project path set' },
+      };
+    }
+    await this.initializeStoresForProject(this.session.projectPath);
+
+    switch (subCommand) {
+      case undefined:
+      case 'list': {
+        const result = await this.templateCommand.list();
+        if (result.success && result.templates) {
+          const settings = this.settingsStore.get();
+          this.print(this.templateCommand.formatList(result.templates, settings.template.selectedId));
+        } else if (result.error) {
+          this.print('Error: ' + result.error.message);
+        }
+        return { success: result.success, error: result.error };
+      }
+
+      case 'new': {
+        const name = args[1];
+        if (!name) {
+          this.print('Usage: /templates new <name>');
+          this.print('Then provide rules and output format interactively.');
+          return {
+            success: false,
+            error: { code: 'E421', message: 'Template name required' },
+          };
+        }
+        // For now, create with empty content - user can edit later
+        const result = await this.templateCommand.create(name, '', '');
+        if (result.success) {
+          this.print(result.message || 'Template created.');
+        } else if (result.error) {
+          this.print('Error: ' + result.error.message);
+        }
+        return { success: result.success, error: result.error };
+      }
+
+      case 'edit': {
+        const nameOrId = args[1];
+        if (!nameOrId) {
+          this.print('Usage: /templates edit <name|id>');
+          return {
+            success: false,
+            error: { code: 'E422', message: 'Template name or ID required' },
+          };
+        }
+        // Find the template first
+        const listResult = await this.templateCommand.list();
+        const template = listResult.templates?.find(
+          t => t.id === nameOrId || t.name === nameOrId
+        );
+        if (!template) {
+          this.print('Template not found: ' + nameOrId);
+          return {
+            success: false,
+            error: { code: 'E405', message: 'Template not found' },
+          };
+        }
+        // Show current content
+        this.print(this.templateCommand.formatDetail(template));
+        this.print('To update, use: /templates edit <name|id> rules "<new rules>"');
+        this.print('           or: /templates edit <name|id> format "<new format>"');
+        return { success: true };
+      }
+
+      case 'delete': {
+        const nameOrId = args[1];
+        if (!nameOrId) {
+          this.print('Usage: /templates delete <name|id>');
+          return {
+            success: false,
+            error: { code: 'E423', message: 'Template name or ID required' },
+          };
+        }
+        const result = await this.templateCommand.delete(nameOrId);
+        if (result.success) {
+          this.print(result.message || 'Template deleted.');
+        } else if (result.error) {
+          this.print('Error: ' + result.error.message);
+        }
+        return { success: result.success, error: result.error };
+      }
+
+      case 'copy': {
+        const sourceNameOrId = args[1];
+        const newName = args[2];
+        if (!sourceNameOrId || !newName) {
+          this.print('Usage: /templates copy <source-name|id> <new-name>');
+          return {
+            success: false,
+            error: { code: 'E424', message: 'Source and new name required' },
+          };
+        }
+        const result = await this.templateCommand.copy(sourceNameOrId, newName);
+        if (result.success) {
+          this.print(result.message || 'Template copied.');
+        } else if (result.error) {
+          this.print('Error: ' + result.error.message);
+        }
+        return { success: result.success, error: result.error };
+      }
+
+      default:
+        this.print('Unknown subcommand: ' + subCommand);
+        this.print('Usage: /templates [list|new|edit|delete|copy]');
+        return {
+          success: false,
+          error: { code: 'E425', message: 'Unknown subcommand: ' + subCommand },
+        };
+    }
+  }
+
+  /**
+   * Handle /template command
+   * Per spec 32_TEMPLATE_INJECTION.md: use, on, off, show
+   */
+  private async handleTemplate(args: string[]): Promise<CommandResult> {
+    const subCommand = args[0]?.toLowerCase();
+
+    // Ensure stores are initialized
+    if (!this.session.projectPath) {
+      this.print('No project path set. Use /start first.');
+      return {
+        success: false,
+        error: { code: 'E420', message: 'No project path set' },
+      };
+    }
+    await this.initializeStoresForProject(this.session.projectPath);
+
+    switch (subCommand) {
+      case undefined:
+      case 'show': {
+        const result = await this.templateCommand.show();
+        if (result.success) {
+          this.print(result.message || 'No template information available.');
+        } else if (result.error) {
+          this.print('Error: ' + result.error.message);
+        }
+        return { success: result.success, error: result.error };
+      }
+
+      case 'use': {
+        const nameOrId = args[1];
+        if (!nameOrId) {
+          this.print('Usage: /template use <name|id>');
+          return {
+            success: false,
+            error: { code: 'E426', message: 'Template name or ID required' },
+          };
+        }
+        const result = await this.templateCommand.use(nameOrId);
+        if (result.success) {
+          this.print(result.message || 'Template selected.');
+        } else if (result.error) {
+          this.print('Error: ' + result.error.message);
+        }
+        return { success: result.success, error: result.error };
+      }
+
+      case 'on': {
+        const result = await this.templateCommand.enable();
+        if (result.success) {
+          this.print(result.message || 'Template injection enabled.');
+        } else if (result.error) {
+          this.print('Error: ' + result.error.message);
+        }
+        return { success: result.success, error: result.error };
+      }
+
+      case 'off': {
+        const result = await this.templateCommand.disable();
+        if (result.success) {
+          this.print(result.message || 'Template injection disabled.');
+        } else if (result.error) {
+          this.print('Error: ' + result.error.message);
+        }
+        return { success: result.success, error: result.error };
+      }
+
+      default:
+        this.print('Unknown subcommand: ' + subCommand);
+        this.print('Usage: /template [show|use|on|off]');
+        return {
+          success: false,
+          error: { code: 'E427', message: 'Unknown subcommand: ' + subCommand },
+        };
+    }
+  }
+
+  /**
+   * Handle /config command
+   * Per spec 33_PROJECT_SETTINGS_PERSISTENCE.md: show, set, reset
+   */
+  private async handleConfig(args: string[]): Promise<CommandResult> {
+    const subCommand = args[0]?.toLowerCase();
+
+    // Ensure stores are initialized
+    if (!this.session.projectPath) {
+      this.print('No project path set. Use /start first.');
+      return {
+        success: false,
+        error: { code: 'E420', message: 'No project path set' },
+      };
+    }
+    await this.initializeStoresForProject(this.session.projectPath);
+
+    switch (subCommand) {
+      case undefined:
+      case 'show': {
+        const result = await this.configCommand.show();
+        if (result.success) {
+          this.print(result.message || 'No configuration information available.');
+        } else if (result.error) {
+          this.print('Error: ' + result.error.message);
+        }
+        return { success: result.success, error: result.error };
+      }
+
+      case 'set': {
+        const key = args[1];
+        const value = args[2];
+        if (!key || !value) {
+          this.print('Usage: /config set <key> <value>');
+          this.print(this.configCommand.formatAvailableKeys());
+          return {
+            success: false,
+            error: { code: 'E502', message: 'Key and value required' },
+          };
+        }
+        const result = await this.configCommand.set(key, value);
+        if (result.success) {
+          this.print(result.message || 'Configuration updated.');
+        } else if (result.error) {
+          this.print('Error: ' + result.error.message);
+        }
+        return { success: result.success, error: result.error };
+      }
+
+      case 'reset': {
+        const result = await this.configCommand.reset();
+        if (result.success) {
+          this.print(result.message || 'Configuration reset to defaults.');
+        } else if (result.error) {
+          this.print('Error: ' + result.error.message);
+        }
+        return { success: result.success, error: result.error };
+      }
+
+      case 'keys': {
+        this.print(this.configCommand.formatAvailableKeys());
+        return { success: true };
+      }
+
+      default:
+        this.print('Unknown subcommand: ' + subCommand);
+        this.print('Usage: /config [show|set|reset|keys]');
+        return {
+          success: false,
+          error: { code: 'E505', message: 'Unknown subcommand: ' + subCommand },
+        };
+    }
+  }
+
+  /**
+   * Get the active template for prompt injection
+   * Used by RunnerCore to inject template content
+   */
+  getActiveTemplate(): { rulesText: string; outputFormatText: string } | null {
+    const template = this.templateCommand.getActive();
+    if (!template) {
+      return null;
+    }
+    return {
+      rulesText: template.rulesText,
+      outputFormatText: template.outputFormatText,
+    };
   }
 }

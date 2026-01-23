@@ -259,6 +259,26 @@
 
 ---
 
+## テンプレート・設定永続化仕様（Template & Settings Persistence）
+
+32_TEMPLATE_INJECTION.md
+
+- テンプレート自動差し込み仕様。
+- ルール（Rules）と出力形式（Output Format）のテンプレート管理。
+- 組み込みテンプレート（minimal, standard, strict）。
+- TemplateStore API と遅延ロード。
+- 注入タイミングと位置。
+
+33_PROJECT_SETTINGS_PERSISTENCE.md
+
+- プロジェクト設定永続化仕様。
+- プロジェクト固有設定（テンプレート選択、LLM設定）の保存。
+- 起動時復元フロー。
+- ProjectSettingsStore API。
+- グローバル設定との優先順位。
+
+---
+
 ## 運用仕様（Operations）
 
 99_RUNBOOK.md
@@ -294,6 +314,8 @@
   18. 29_TASK_PLANNING.md（Task Planning 仕様）
   19. 30_RETRY_AND_RECOVERY.md（Retry and Recovery 仕様）
   20. 31_PROVIDER_MODEL_POLICY.md（Provider/Model Policy 仕様）
-  21. 99_RUNBOOK.md（運用仕様）
+  21. 32_TEMPLATE_INJECTION.md（テンプレート注入仕様）
+  22. 33_PROJECT_SETTINGS_PERSISTENCE.md（プロジェクト設定永続化仕様）
+  23. 99_RUNBOOK.md（運用仕様）
 
 - 本インデックスに記載のない挙動は仕様外とし、fail-closed とする。

@@ -37,6 +37,7 @@ export type RunTrigger = 'USER_INPUT' | 'USER_RESPONSE' | 'CONTINUATION' | 'EXEC
 /**
  * Log event types
  * Per spec 05_DATA_MODELS.md
+ * Per spec 25_REVIEW_LOOP.md: REVIEW_LOOP_* events
  */
 export type LogEventType =
   | 'USER_INPUT'
@@ -50,11 +51,30 @@ export type LogEventType =
   | 'EXECUTOR_DISPATCH'
   | 'EXECUTOR_OUTPUT'
   | 'FILE_OPERATION'
-  | 'TEST_EXECUTION';
+  | 'TEST_EXECUTION'
+  // Review Loop events (per spec/25_REVIEW_LOOP.md)
+  | 'REVIEW_LOOP_START'
+  | 'REVIEW_ITERATION_START'
+  | 'QUALITY_JUDGMENT'
+  | 'REJECTION_DETAILS'
+  | 'MODIFICATION_PROMPT'
+  | 'REVIEW_ITERATION_END'
+  | 'REVIEW_LOOP_END'
+  // Task Chunking events (per spec/26_TASK_CHUNKING.md)
+  | 'CHUNKING_START'
+  | 'CHUNKING_ANALYSIS'
+  | 'SUBTASK_CREATED'
+  | 'SUBTASK_START'
+  | 'SUBTASK_COMPLETE'
+  | 'SUBTASK_FAILED'
+  | 'SUBTASK_RETRY'
+  | 'CHUNKING_AGGREGATION'
+  | 'CHUNKING_COMPLETE';
 
 /**
  * Summary-level event types (visible by default)
  * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 3.1
+ * Per spec 25_REVIEW_LOOP.md Section 6.1
  */
 export const SUMMARY_VISIBLE_EVENTS: LogEventType[] = [
   'USER_INPUT',
@@ -63,11 +83,23 @@ export const SUMMARY_VISIBLE_EVENTS: LogEventType[] = [
   'TASK_STARTED',
   'TASK_COMPLETED',
   'TASK_ERROR',
+  // Review Loop events (summary level per spec/25_REVIEW_LOOP.md)
+  'REVIEW_LOOP_START',
+  'QUALITY_JUDGMENT',
+  'REVIEW_LOOP_END',
+  // Task Chunking events (summary level per spec/26_TASK_CHUNKING.md)
+  'CHUNKING_START',
+  'SUBTASK_START',
+  'SUBTASK_COMPLETE',
+  'SUBTASK_FAILED',
+  'SUBTASK_RETRY',
+  'CHUNKING_COMPLETE',
 ];
 
 /**
  * Full-level event types (visible only with --full)
  * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 3.1
+ * Per spec 25_REVIEW_LOOP.md Section 6.1
  */
 export const FULL_ONLY_EVENTS: LogEventType[] = [
   'LLM_MEDIATION_REQUEST',
@@ -76,6 +108,15 @@ export const FULL_ONLY_EVENTS: LogEventType[] = [
   'EXECUTOR_OUTPUT',
   'FILE_OPERATION',
   'TEST_EXECUTION',
+  // Review Loop events (full level per spec/25_REVIEW_LOOP.md)
+  'REVIEW_ITERATION_START',
+  'REJECTION_DETAILS',
+  'MODIFICATION_PROMPT',
+  'REVIEW_ITERATION_END',
+  // Task Chunking events (full level per spec/26_TASK_CHUNKING.md)
+  'CHUNKING_ANALYSIS',
+  'SUBTASK_CREATED',
+  'CHUNKING_AGGREGATION',
 ];
 
 /**
@@ -139,44 +180,119 @@ export interface GlobalLogIndex {
 /**
  * LogEvent content structure
  * Per spec 05_DATA_MODELS.md
+ * Per spec 25_REVIEW_LOOP.md: Review Loop specific fields
  */
 export interface LogEventContent {
   // Common fields
   text?: string;
-  
+
   // RUNNER_CLARIFICATION specific
   question?: string;
   clarification_reason?: string;
-  
+
   // TASK_STARTED specific
   action?: string;
   target_file?: string;
-  
+
   // TASK_COMPLETED / TASK_ERROR specific
   status?: string;
   files_modified?: string[];
   evidence_ref?: string;
   error_message?: string;
-  
+
   // LLM_MEDIATION_REQUEST specific
   provider?: string;
   model?: string;
   prompt_summary?: string;
   tokens_input?: number;
-  
+
   // LLM_MEDIATION_RESPONSE specific
   response_type?: string;
   tokens_output?: number;
   latency_ms?: number;
-  
+
   // EXECUTOR_DISPATCH specific
   executor?: string;
   task_summary?: string;
-  
+
   // EXECUTOR_OUTPUT specific
   exit_code?: number;
   output_summary?: string;
   raw_output_ref?: string;
+
+  // Review Loop specific (per spec/25_REVIEW_LOOP.md)
+  // REVIEW_LOOP_START / REVIEW_LOOP_END
+  original_prompt?: string;
+  max_iterations?: number;
+  total_iterations?: number;
+  final_status?: string;
+
+  // REVIEW_ITERATION_START / REVIEW_ITERATION_END
+  iteration?: number;
+  started_at?: string;
+  ended_at?: string;
+
+  // QUALITY_JUDGMENT
+  judgment?: 'PASS' | 'REJECT' | 'RETRY';
+  criteria_results?: Array<{
+    criteria_id: string;
+    passed: boolean;
+    details?: string;
+  }>;
+  criteria_failed?: string[];
+  judgment_summary?: string;
+
+  // REJECTION_DETAILS
+  issues_detected?: Array<{
+    type: 'omission' | 'incomplete' | 'missing_file' | 'early_termination' | 'syntax_error' | 'todo_left';
+    location?: string;
+    description: string;
+    suggestion?: string;
+  }>;
+
+  // MODIFICATION_PROMPT
+  modification_prompt?: string;
+
+  // Task Chunking specific (per spec/26_TASK_CHUNKING.md)
+  // CHUNKING_START / CHUNKING_COMPLETE
+  parent_task_id?: string;
+  analysis_started?: boolean;
+  total_subtasks?: number;
+  completed_subtasks?: number;
+  failed_subtasks?: number;
+  total_retries?: number;
+  total_duration_ms?: number;
+  execution_mode?: 'parallel' | 'sequential';
+
+  // CHUNKING_ANALYSIS
+  is_decomposable?: boolean;
+  decomposition_reason?: string;
+  subtask_count?: number;
+  dependencies_detected?: boolean;
+
+  // SUBTASK_CREATED / SUBTASK_START / SUBTASK_COMPLETE / SUBTASK_FAILED / SUBTASK_RETRY
+  subtask_id?: string;
+  subtask_prompt?: string;
+  subtask_dependencies?: string[];
+  execution_order?: number;
+  worker_id?: string;
+  retry_count?: number;
+  subtask_result?: {
+    status: 'COMPLETE' | 'INCOMPLETE' | 'ERROR';
+    output_summary: string;
+    files_modified: string[];
+    review_loop_iterations?: number;
+  };
+  failure_reason?: string;
+
+  // CHUNKING_AGGREGATION
+  aggregation_strategy?: 'merge_all' | 'last_wins' | 'custom';
+  conflict_resolution?: 'fail' | 'overwrite' | 'manual';
+  aggregation_result?: {
+    total_files_modified: string[];
+    conflicts_detected: boolean;
+    conflicts?: Array<{ file: string; sources: string[] }>;
+  };
 }
 
 /**

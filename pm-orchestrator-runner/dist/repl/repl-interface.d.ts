@@ -97,6 +97,16 @@ export interface REPLConfig {
         stateDir: string;
         port: number;
     };
+    /**
+     * Enable LLM auto-resolution of clarification questions
+     * When true, uses AutoResolvingExecutor with LLM to auto-answer
+     * best-practice questions and route case-by-case to user
+     */
+    enableAutoResolve?: boolean;
+    /**
+     * LLM provider for auto-resolution (default: 'openai')
+     */
+    autoResolveLLMProvider?: 'openai' | 'anthropic';
 }
 /**
  * REPL Execution Mode - per spec 05_DATA_MODELS.md
@@ -133,9 +143,10 @@ export type TaskLogStatus = 'queued' | 'running' | 'complete' | 'incomplete' | '
  * Task queue state - for non-blocking task execution
  * QUEUED: Waiting to be executed
  * RUNNING: Currently executing
+ * AWAITING_RESPONSE: Waiting for user clarification
  * COMPLETE/INCOMPLETE/ERROR: Terminal states
  */
-export type TaskQueueState = 'QUEUED' | 'RUNNING' | 'COMPLETE' | 'INCOMPLETE' | 'ERROR';
+export type TaskQueueState = 'QUEUED' | 'RUNNING' | 'AWAITING_RESPONSE' | 'COMPLETE' | 'INCOMPLETE' | 'ERROR';
 /**
  * Queued task structure for non-blocking execution
  * Allows multiple tasks to be submitted while previous tasks are running
@@ -159,6 +170,10 @@ export interface QueuedTask {
     errorMessage?: string;
     /** Files modified (set on completion) */
     filesModified?: string[];
+    /** Clarification question (set when AWAITING_RESPONSE) */
+    clarificationQuestion?: string;
+    /** Clarification reason - why LLM couldn't auto-resolve (set when AWAITING_RESPONSE) */
+    clarificationReason?: string;
     /** Response summary (set on completion) */
     responseSummary?: string;
 }
@@ -195,8 +210,10 @@ export declare class REPLInterface extends EventEmitter {
     private hasError;
     private hasIncompleteTasks;
     private sessionCompleted;
+    private closeHandlerExecuted;
     private taskQueue;
     private isTaskWorkerRunning;
+    private queueStore;
     private projectMode;
     private verificationRoot;
     private tempVerificationRoot;
@@ -208,7 +225,15 @@ export declare class REPLInterface extends EventEmitter {
     private modelsCommand;
     private keysCommand;
     private logsCommand;
+    private traceCommand;
+    private templateCommand;
+    private configCommand;
+    private templateStore;
+    private settingsStore;
     private renderer;
+    private pendingUserResponse;
+    private pendingCommandSuggestion;
+    private taskNumberMap;
     constructor(config?: REPLConfig);
     /**
      * Get project mode - per spec 10_REPL_UX.md
@@ -231,6 +256,17 @@ export declare class REPLInterface extends EventEmitter {
      * Also creates minimal .claude structure to avoid init-only mode
      */
     initializeTempProjectRoot(): Promise<void>;
+    /**
+     * Restore tasks from QueueStore on startup
+     * Per spec 21_STABLE_DEV.md: Resume previous tasks on restart
+     * Only restores non-terminal tasks (QUEUED, RUNNING, AWAITING_RESPONSE)
+     */
+    restoreTasksFromQueueStore(): Promise<number>;
+    /**
+     * Sync a task state change to QueueStore
+     * Called after any task state change for persistence
+     */
+    private syncTaskToQueueStore;
     /**
      * Verify files and return verification records - per spec Property 33
      * @param absolutePaths - Array of absolute file paths to verify
@@ -289,6 +325,7 @@ export declare class REPLInterface extends EventEmitter {
     start(): Promise<void>;
     /**
      * Process input line
+     * Includes typo rescue for common commands (exit -> /exit suggestion)
      */
     private processInput;
     /**
@@ -402,9 +439,15 @@ export declare class REPLInterface extends EventEmitter {
      */
     private handleLogs;
     /**
+     * Handle /trace command
+     * Per spec 28_CONVERSATION_TRACE.md Section 5.1
+     */
+    private handleTrace;
+    /**
      * Handle /tasks command
      * Shows task queue with RUNNING/QUEUED/COMPLETE/ERROR/INCOMPLETE states
      * Per redesign: proves non-blocking by showing multiple tasks simultaneously
+     * Per spec 21_STABLE_DEV.md: Task numbers (1, 2, 3...) for easier reference
      */
     private handleTasks;
     /**
@@ -427,6 +470,12 @@ export declare class REPLInterface extends EventEmitter {
      * Handle /approve command
      */
     private handleApprove;
+    /**
+     * Handle /respond command
+     * Allows user to respond to a task awaiting clarification
+     * Usage: /respond <text> or /respond <task-id> <text>
+     */
+    private handleRespond;
     /**
      * Handle /exit command
      * Per spec 10_REPL_UX.md: Ensure clean exit with flushed output
@@ -539,6 +588,60 @@ export declare class REPLInterface extends EventEmitter {
      * Check if running (for testing)
      */
     isRunning(): boolean;
+    /**
+     * Create a userResponseHandler for AutoResolvingExecutor
+     * This handler is called when LLM cannot auto-resolve a case-by-case question
+     * It displays the question to the user and waits for /respond command
+     *
+     * @returns UserResponseHandler callback function
+     */
+    createUserResponseHandler(): (question: string, options?: string[], context?: string) => Promise<string>;
+    /**
+     * Resolve a pending user response (called by /respond command)
+     * @param response - User's response text
+     * @returns true if response was delivered, false if no pending response
+     */
+    resolvePendingResponse(response: string): boolean;
+    /**
+     * Check if there's a pending user response
+     */
+    hasPendingResponse(): boolean;
+    /**
+     * Get the pending response question (for display)
+     */
+    getPendingResponseQuestion(): string | null;
+    /**
+     * Get REPL configuration for passing to SessionCommands
+     */
+    getConfig(): REPLConfig;
+    /**
+     * Initialize stores for a project
+     * Called when session starts to load project-specific settings
+     */
+    private initializeStoresForProject;
+    /**
+     * Handle /templates command
+     * Per spec 32_TEMPLATE_INJECTION.md: list, new, edit, delete, copy
+     */
+    private handleTemplates;
+    /**
+     * Handle /template command
+     * Per spec 32_TEMPLATE_INJECTION.md: use, on, off, show
+     */
+    private handleTemplate;
+    /**
+     * Handle /config command
+     * Per spec 33_PROJECT_SETTINGS_PERSISTENCE.md: show, set, reset
+     */
+    private handleConfig;
+    /**
+     * Get the active template for prompt injection
+     * Used by RunnerCore to inject template content
+     */
+    getActiveTemplate(): {
+        rulesText: string;
+        outputFormatText: string;
+    } | null;
 }
 export {};
 //# sourceMappingURL=repl-interface.d.ts.map

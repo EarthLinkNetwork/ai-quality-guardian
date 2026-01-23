@@ -43,9 +43,12 @@ import { ErrorCode, getErrorMessage } from '../errors/error-codes';
 import { ClaudeCodeExecutor, ExecutorResult, IExecutor, ExecutorConfig } from '../executor/claude-code-executor';
 import { DeterministicExecutor, isDeterministicMode } from '../executor/deterministic-executor';
 import { RecoveryExecutor, isRecoveryMode, assertRecoveryModeAllowed } from '../executor/recovery-executor';
+import { AutoResolvingExecutor, UserResponseHandler } from '../executor/auto-resolve-executor';
 import { ClarificationReason } from '../mediation/llm-mediation-layer';
 import { PromptAssembler, TaskGroupPreludeInput } from '../prompt/prompt-assembler';
 import { TaskGroupContext } from '../models/task-group';
+import { ConversationTracer } from '../trace/conversation-tracer';
+import { Template } from '../template';
 
 /**
  * Runner Core Error
@@ -77,6 +80,16 @@ export interface RunnerOptions {
   useClaudeCode?: boolean;
   /** Timeout for Claude Code execution in milliseconds */
   claudeCodeTimeout?: number;
+  /**
+   * Enable LLM-based auto-resolution of clarification questions.
+   * When enabled, uses AutoResolvingExecutor instead of ClaudeCodeExecutor.
+   * Requires API keys (OPENAI_API_KEY or ANTHROPIC_API_KEY) to be set.
+   */
+  enableAutoResolve?: boolean;
+  /** LLM provider for auto-resolution (default: openai) */
+  autoResolveLLMProvider?: 'openai' | 'anthropic';
+  /** Handler for clarification questions that LLM cannot auto-resolve */
+  userResponseHandler?: UserResponseHandler;
   /**
    * Injected executor for dependency injection (testing).
    * If provided, this executor is used instead of creating ClaudeCodeExecutor.
@@ -315,6 +328,14 @@ export class RunnerCore extends EventEmitter {
   // Per spec/16_TASK_GROUP.md: context persists within task group
   private currentTaskGroupContext: TaskGroupPreludeInput | null = null;
 
+  // Template provider for template injection per spec 32_TEMPLATE_INJECTION.md
+  // Returns the active template or null if none is active
+  private templateProvider: (() => Template | null) | null = null;
+
+  // State directory for conversation traces
+  // Per spec/28_CONVERSATION_TRACE.md: traces stored in <state_dir>/traces/
+  private stateDir: string = '';
+
   /**
    * Create a new RunnerCore
    */
@@ -357,6 +378,19 @@ export class RunnerCore extends EventEmitter {
   }
 
   /**
+   * Set the template provider callback
+   *
+   * Per spec 32_TEMPLATE_INJECTION.md:
+   * This callback is invoked during prompt assembly to get the active template.
+   * The template's rulesText and outputFormatText will be injected into prompts.
+   *
+   * @param provider - Function that returns the active template or null
+   */
+  setTemplateProvider(provider: () => Template | null): void {
+    this.templateProvider = provider;
+  }
+
+  /**
    * Initialize the runner with a target project
    */
   async initialize(targetProject: string): Promise<Session> {
@@ -378,6 +412,9 @@ export class RunnerCore extends EventEmitter {
     if (!fs.existsSync(this.sessionDir)) {
       fs.mkdirSync(this.sessionDir, { recursive: true });
     }
+
+    // Set state directory for conversation traces (per spec/28_CONVERSATION_TRACE.md)
+    this.stateDir = this.sessionDir;
 
     // Initialize evidence manager for this session
     this.evidenceManager.initializeSession(session.session_id);
@@ -418,6 +455,17 @@ export class RunnerCore extends EventEmitter {
         // Per spec 06_CORRECTNESS_PROPERTIES.md Property 37: Deterministic testing
         this.claudeCodeExecutor = new DeterministicExecutor();
         this.currentExecutorMode = 'deterministic';
+      } else if (this.options.enableAutoResolve) {
+        // LLM-based auto-resolution enabled: Use AutoResolvingExecutor
+        // This executor will automatically resolve clarification questions using LLM
+        // and fall back to userResponseHandler for case-by-case decisions
+        this.claudeCodeExecutor = new AutoResolvingExecutor({
+          projectPath: targetProject,
+          timeout: this.options.claudeCodeTimeout || 120000,
+          llmProvider: this.options.autoResolveLLMProvider || 'openai',
+          userResponseHandler: this.options.userResponseHandler,
+        });
+        this.currentExecutorMode = 'api'; // API mode with LLM auto-resolution
       } else {
         this.claudeCodeExecutor = new ClaudeCodeExecutor({
           projectPath: targetProject,
@@ -664,6 +712,22 @@ export class RunnerCore extends EventEmitter {
       );
     }
 
+    // Per spec/28_CONVERSATION_TRACE.md: Create ConversationTracer for this task
+    // Records USER_REQUEST, SYSTEM_RULES, and FINAL_SUMMARY
+    let conversationTracer: ConversationTracer | null = null;
+    if (this.stateDir && this.session) {
+      conversationTracer = new ConversationTracer({
+        stateDir: this.stateDir,
+        sessionId: this.session.session_id,
+        taskId: task.id,
+      });
+
+      // Log USER_REQUEST (per spec/28_CONVERSATION_TRACE.md Section 4.3)
+      if (task.naturalLanguageTask) {
+        conversationTracer.logUserRequest(task.naturalLanguageTask);
+      }
+    }
+
     // Per spec 10_REPL_UX.md Section 10: Track executor blocking info (Property 34-36)
     // This info is captured from ExecutorResult and passed to TaskLog completion
     let executorBlockingInfo: {
@@ -733,16 +797,29 @@ export class RunnerCore extends EventEmitter {
           executionLog.push(`[${new Date().toISOString()}] Executing via Claude Code CLI...`);
 
           // Per spec/17_PROMPT_TEMPLATE.md: Assemble prompt in fixed order
-          // Order: global prelude → project prelude → task group prelude → user input → output epilogue
+          // Order: global prelude → [template rules] → project prelude → task group prelude → user input → [template output format] → output epilogue
+          // Template injection per spec 32_TEMPLATE_INJECTION.md
           let assembledPrompt = task.naturalLanguageTask;
           if (this.promptAssembler && task.naturalLanguageTask) {
             try {
+              // Get active template from provider per spec 32
+              const activeTemplate = this.templateProvider ? this.templateProvider() : null;
+
               const assemblyResult = this.promptAssembler.assemble(
                 task.naturalLanguageTask,
-                this.currentTaskGroupContext || undefined
+                this.currentTaskGroupContext || undefined,
+                activeTemplate
               );
               assembledPrompt = assemblyResult.prompt;
-              executionLog.push(`[${new Date().toISOString()}] Prompt assembled (5 sections)`);
+
+              // Log section count (5 base + 2 optional template sections)
+              const templateSections = activeTemplate ? 2 : 0;
+              executionLog.push(`[${new Date().toISOString()}] Prompt assembled (${5 + templateSections} sections${activeTemplate ? `, template: ${activeTemplate.name}` : ''})`);
+
+              // Per spec/28_CONVERSATION_TRACE.md Section 4.3: Log SYSTEM_RULES (Mandatory Rules)
+              if (conversationTracer && assemblyResult.sections.globalPrelude) {
+                conversationTracer.logSystemRules(assemblyResult.sections.globalPrelude);
+              }
             } catch (assemblyError) {
               // Fail-closed: if assembly fails, use original prompt but log warning
               executionLog.push(`[${new Date().toISOString()}] WARNING: Prompt assembly failed, using raw input`);
@@ -987,6 +1064,16 @@ export class RunnerCore extends EventEmitter {
           executorMode: this.currentExecutorMode,
           responseSummary: responseSummary || undefined,
         }
+      );
+    }
+
+    // Per spec/28_CONVERSATION_TRACE.md Section 4.3: Log FINAL_SUMMARY at task end
+    if (conversationTracer) {
+      const totalIterations = 1; // RunnerCore doesn't use Review Loop iterations directly
+      conversationTracer.logFinalSummary(
+        result.status === TaskStatus.COMPLETED ? 'COMPLETE' : result.status === TaskStatus.ERROR ? 'ERROR' : 'INCOMPLETE',
+        totalIterations,
+        filesCreated.map(f => path.basename(f)) // Use relative filenames
       );
     }
 

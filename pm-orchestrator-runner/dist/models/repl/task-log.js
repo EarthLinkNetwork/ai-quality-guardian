@@ -23,6 +23,7 @@ exports.filterEventsByVisibility = filterEventsByVisibility;
 /**
  * Summary-level event types (visible by default)
  * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 3.1
+ * Per spec 25_REVIEW_LOOP.md Section 6.1
  */
 exports.SUMMARY_VISIBLE_EVENTS = [
     'USER_INPUT',
@@ -31,10 +32,22 @@ exports.SUMMARY_VISIBLE_EVENTS = [
     'TASK_STARTED',
     'TASK_COMPLETED',
     'TASK_ERROR',
+    // Review Loop events (summary level per spec/25_REVIEW_LOOP.md)
+    'REVIEW_LOOP_START',
+    'QUALITY_JUDGMENT',
+    'REVIEW_LOOP_END',
+    // Task Chunking events (summary level per spec/26_TASK_CHUNKING.md)
+    'CHUNKING_START',
+    'SUBTASK_START',
+    'SUBTASK_COMPLETE',
+    'SUBTASK_FAILED',
+    'SUBTASK_RETRY',
+    'CHUNKING_COMPLETE',
 ];
 /**
  * Full-level event types (visible only with --full)
  * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 3.1
+ * Per spec 25_REVIEW_LOOP.md Section 6.1
  */
 exports.FULL_ONLY_EVENTS = [
     'LLM_MEDIATION_REQUEST',
@@ -43,6 +56,15 @@ exports.FULL_ONLY_EVENTS = [
     'EXECUTOR_OUTPUT',
     'FILE_OPERATION',
     'TEST_EXECUTION',
+    // Review Loop events (full level per spec/25_REVIEW_LOOP.md)
+    'REVIEW_ITERATION_START',
+    'REJECTION_DETAILS',
+    'MODIFICATION_PROMPT',
+    'REVIEW_ITERATION_END',
+    // Task Chunking events (full level per spec/26_TASK_CHUNKING.md)
+    'CHUNKING_ANALYSIS',
+    'SUBTASK_CREATED',
+    'CHUNKING_AGGREGATION',
 ];
 /**
  * Get visibility level for an event type

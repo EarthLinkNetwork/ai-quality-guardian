@@ -9,6 +9,7 @@
  */
 import { TaskLog, TaskLogIndex, TaskLogEntry, LogEvent, LogEventType, LogEventContent, VisibilityLevel, Thread, Run, RunTrigger, RunStatus, ThreadType, SessionMetadata } from '../models/repl/task-log';
 import type { BlockedReason, TerminatedBy } from '../models/enums';
+import { AtomicWriteResult } from './atomic-file-writer';
 /**
  * Options for completing a task
  * Per spec 10_REPL_UX.md Section 10: Executor blocking fields (Property 34-36)
@@ -79,6 +80,7 @@ export declare class TaskLogManager {
     initializeSession(sessionId: string): Promise<SessionMetadata>;
     /**
      * Update global index with new session
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     private updateGlobalIndex;
     /**
@@ -87,6 +89,7 @@ export declare class TaskLogManager {
     getSessionMetadata(sessionId: string): Promise<SessionMetadata>;
     /**
      * Save session metadata
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     private saveSessionMetadata;
     /**
@@ -95,6 +98,7 @@ export declare class TaskLogManager {
     getSessionIndex(sessionId: string): Promise<TaskLogIndex>;
     /**
      * Save session index
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     private saveSessionIndex;
     /**
@@ -147,6 +151,7 @@ export declare class TaskLogManager {
     createTaskWithContext(sessionId: string, threadId: string, runId: string, parentTaskId?: string, externalTaskId?: string): Promise<TaskLog>;
     /**
      * Increment task count in global index
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     private incrementGlobalTaskCount;
     /**
@@ -155,6 +160,7 @@ export declare class TaskLogManager {
     getTaskLogWithSession(taskId: string, sessionId: string): Promise<TaskLog | null>;
     /**
      * Save task log with session context
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     private saveTaskLogWithSession;
     /**
@@ -180,6 +186,7 @@ export declare class TaskLogManager {
     getOrCreateIndex(sessionId: string): Promise<TaskLogIndex>;
     /**
      * Save log index (legacy)
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     saveIndex(index: TaskLogIndex): Promise<void>;
     /**
@@ -192,6 +199,7 @@ export declare class TaskLogManager {
     getTaskLog(taskId: string): Promise<TaskLog | null>;
     /**
      * Save task log (legacy)
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     saveTaskLog(log: TaskLog): Promise<void>;
     /**
@@ -225,6 +233,54 @@ export declare class TaskLogManager {
      * Per redesign: Shows summary section with description, executor mode, files modified, and response
      */
     formatTaskDetail(taskId: string, log: TaskLog, events: LogEvent[], isFull: boolean, entry?: TaskLogEntry): string;
+    /**
+     * Flush all pending log writes
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 11.2
+     * Called before REPL exit to ensure all logs are persisted
+     *
+     * @returns Results of all flushed writes
+     */
+    flushAll(): Promise<AtomicWriteResult[]>;
+    /**
+     * Get count of pending writes
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 11.2
+     */
+    getPendingWriteCount(): number;
+    /**
+     * Restore session from disk
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 8: Session restoration
+     *
+     * Loads session metadata, index, and reconstructs counters from existing data.
+     *
+     * @param sessionId - Session ID to restore
+     * @returns Session metadata if found, null if session doesn't exist
+     */
+    restoreSession(sessionId: string): Promise<SessionMetadata | null>;
+    /**
+     * List all available sessions
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 2.1
+     *
+     * @returns Array of session IDs with metadata
+     */
+    listSessions(): Promise<Array<{
+        session_id: string;
+        started_at: string;
+        task_count: number;
+    }>>;
+    /**
+     * Get the most recent session ID
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 8: Session restoration
+     *
+     * @returns Most recent session ID or null if no sessions exist
+     */
+    getMostRecentSession(): Promise<string | null>;
+    /**
+     * Check if a session exists
+     *
+     * @param sessionId - Session ID to check
+     * @returns true if session exists
+     */
+    sessionExists(sessionId: string): Promise<boolean>;
 }
 export { LOG_DIR, INDEX_FILE, TASKS_DIR, RAW_DIR, SESSIONS_DIR, SESSION_FILE };
 //# sourceMappingURL=task-log-manager.d.ts.map

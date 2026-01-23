@@ -30,6 +30,10 @@ export interface QueuePollerConfig {
   maxStaleTaskAgeMs?: number;
   /** Recover stale tasks on startup (default: true) */
   recoverOnStartup?: boolean;
+  /** Runner ID for heartbeat tracking (v2) */
+  runnerId?: string;
+  /** Project root for runner identification (v2) */
+  projectRoot?: string;
 }
 
 /**
@@ -41,6 +45,10 @@ export interface QueuePollerState {
   lastPollAt: string | null;
   tasksProcessed: number;
   errors: number;
+  /** Runner ID (v2) */
+  runnerId: string;
+  /** Project root (v2) */
+  projectRoot: string;
 }
 
 /**
@@ -68,6 +76,8 @@ export class QueuePoller extends EventEmitter {
   private readonly pollIntervalMs: number;
   private readonly maxStaleTaskAgeMs: number;
   private readonly recoverOnStartup: boolean;
+  private readonly runnerId: string;
+  private readonly projectRoot: string;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private inFlight: QueueItem | null = null;
@@ -87,6 +97,17 @@ export class QueuePoller extends EventEmitter {
     this.pollIntervalMs = config.pollIntervalMs ?? 1000;
     this.maxStaleTaskAgeMs = config.maxStaleTaskAgeMs ?? 5 * 60 * 1000;
     this.recoverOnStartup = config.recoverOnStartup ?? true;
+    this.runnerId = config.runnerId ?? this.generateRunnerId();
+    this.projectRoot = config.projectRoot ?? process.cwd();
+  }
+
+  /**
+   * Generate a unique runner ID
+   */
+  private generateRunnerId(): string {
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 8);
+    return 'runner-' + timestamp + '-' + random;
   }
 
   /**
@@ -130,7 +151,7 @@ export class QueuePoller extends EventEmitter {
   /**
    * Stop polling
    */
-  stop(): void {
+  async stop(): Promise<void> {
     if (!this.isRunning) {
       return;
     }
@@ -142,11 +163,21 @@ export class QueuePoller extends EventEmitter {
       this.pollTimer = null;
     }
 
+    // Mark runner as stopped (v2)
+    try {
+      await this.store.markRunnerStopped(this.runnerId);
+    } catch (error) {
+      // Log but don't fail stop - marking stopped is best-effort
+      // eslint-disable-next-line no-console
+      console.error('[QueuePoller] Failed to mark runner as stopped:', error);
+    }
+
     this.emit('stopped');
   }
 
   /**
    * Single poll iteration
+   * - Update heartbeat (v2)
    * - Skip if task in-flight
    * - Claim oldest QUEUED task
    * - Execute and update status
@@ -157,6 +188,15 @@ export class QueuePoller extends EventEmitter {
     }
 
     this.lastPollAt = new Date().toISOString();
+
+    // Update heartbeat (v2) - register this runner as alive
+    try {
+      await this.store.updateRunnerHeartbeat(this.runnerId, this.projectRoot);
+    } catch (error) {
+      // Log but don't fail poll - heartbeat is best-effort
+      // eslint-disable-next-line no-console
+      console.error('[QueuePoller] Heartbeat update failed:', error);
+    }
 
     // In-flight limit: 1
     if (this.inFlight) {
@@ -229,7 +269,16 @@ export class QueuePoller extends EventEmitter {
       lastPollAt: this.lastPollAt,
       tasksProcessed: this.tasksProcessed,
       errors: this.errors,
+      runnerId: this.runnerId,
+      projectRoot: this.projectRoot,
     };
+  }
+
+  /**
+   * Get runner ID (v2)
+   */
+  getRunnerId(): string {
+    return this.runnerId;
   }
 
   /**

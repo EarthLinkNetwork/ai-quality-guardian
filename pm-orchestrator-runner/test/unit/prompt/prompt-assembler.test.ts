@@ -20,6 +20,9 @@ import {
   PromptAssemblerError,
   TaskGroupPreludeInput,
   AssemblyResult,
+  ModificationPromptInput,
+  DEFAULT_MANDATORY_RULES,
+  DEFAULT_MODIFICATION_TEMPLATE,
 } from '../../../src/prompt/prompt-assembler';
 import { TaskResult } from '../../../src/models/task-group';
 
@@ -92,23 +95,31 @@ describe('PromptAssembler (spec/17_PROMPT_TEMPLATE.md)', () => {
 
       const result = assembler.assemble('User Input', taskGroupContext);
 
-      assert.equal(result.sections.globalPrelude, '# Global');
+      // globalPrelude should include mandatory rules + custom template
+      assert.ok(result.sections.globalPrelude.includes('絶対厳守ルール'),
+        'Should include Mandatory Rules');
+      assert.ok(result.sections.globalPrelude.includes('# Global'),
+        'Should include custom global prelude');
       assert.equal(result.sections.projectPrelude, '# Project');
       assert.ok(result.sections.taskGroupPrelude.includes('tg-002'));
       assert.equal(result.sections.userInput, 'User Input');
       assert.equal(result.sections.outputEpilogue, '# Output');
     });
 
-    it('should work without template files (only user input)', () => {
-      // No template files created
+    it('should work without template files but include mandatory rules', () => {
+      // No template files created - but mandatory rules are always included
       const result = assembler.assemble('User Input Only');
 
-      assert.equal(result.sections.globalPrelude, '');
+      // Mandatory rules are always injected per spec/17 L69-95
+      assert.ok(result.sections.globalPrelude.includes('絶対厳守ルール'),
+        'Should include Mandatory Rules even without template files');
       assert.equal(result.sections.projectPrelude, '');
       assert.equal(result.sections.taskGroupPrelude, '');
       assert.equal(result.sections.userInput, 'User Input Only');
       assert.equal(result.sections.outputEpilogue, '');
-      assert.equal(result.prompt, 'User Input Only');
+      // Prompt should contain mandatory rules + user input
+      assert.ok(result.prompt.includes('User Input Only'));
+      assert.ok(result.prompt.includes('絶対厳守ルール'));
     });
   });
 
@@ -406,12 +417,20 @@ describe('PromptAssembler (spec/17_PROMPT_TEMPLATE.md)', () => {
   });
 
   describe('Template File Loading (spec/17 L36-45)', () => {
-    it('should load global-prelude.md from template directory', () => {
+    it('should load global-prelude.md from template directory and prepend mandatory rules', () => {
       fs.writeFileSync(path.join(templateDir, 'global-prelude.md'), '# Global Rules\nNo profanity.');
 
       const result = assembler.assemble('User Input');
 
-      assert.equal(result.sections.globalPrelude, '# Global Rules\nNo profanity.');
+      // Mandatory rules should be prepended, then custom prelude follows
+      assert.ok(result.sections.globalPrelude.includes('絶対厳守ルール'),
+        'Should include Mandatory Rules');
+      assert.ok(result.sections.globalPrelude.includes('# Global Rules\nNo profanity.'),
+        'Should include custom global prelude');
+      // Verify order: mandatory rules before custom prelude
+      const mandatoryIndex = result.sections.globalPrelude.indexOf('絶対厳守ルール');
+      const customIndex = result.sections.globalPrelude.indexOf('# Global Rules');
+      assert.ok(mandatoryIndex < customIndex, 'Mandatory rules should come before custom prelude');
     });
 
     it('should load project-prelude.md from template directory', () => {
@@ -430,11 +449,13 @@ describe('PromptAssembler (spec/17_PROMPT_TEMPLATE.md)', () => {
       assert.equal(result.sections.outputEpilogue, '## Output Format\nReturn JSON.');
     });
 
-    it('should return empty string for missing template files', () => {
-      // No template files created
+    it('should include mandatory rules even when template files are missing', () => {
+      // No template files created - but mandatory rules are always injected
       const result = assembler.assemble('User Input');
 
-      assert.equal(result.sections.globalPrelude, '');
+      // globalPrelude should contain mandatory rules even without template
+      assert.ok(result.sections.globalPrelude.includes('絶対厳守ルール'),
+        'Should include Mandatory Rules');
       assert.equal(result.sections.projectPrelude, '');
       assert.equal(result.sections.outputEpilogue, '');
     });
@@ -444,7 +465,11 @@ describe('PromptAssembler (spec/17_PROMPT_TEMPLATE.md)', () => {
 
       const result = assembler.assemble('User Input');
 
-      assert.equal(result.sections.globalPrelude, '# Global');
+      // Should include mandatory rules + trimmed custom prelude
+      assert.ok(result.sections.globalPrelude.includes('絶対厳守ルール'));
+      assert.ok(result.sections.globalPrelude.includes('# Global'));
+      // Should not have extra whitespace around custom prelude
+      assert.ok(!result.sections.globalPrelude.includes('  \n# Global'));
     });
   });
 
@@ -461,7 +486,11 @@ describe('PromptAssembler (spec/17_PROMPT_TEMPLATE.md)', () => {
 
       const result = customAssembler.assemble('User Input');
 
-      assert.equal(result.sections.globalPrelude, '# Custom Global');
+      // Should include both mandatory rules and custom prelude from custom directory
+      assert.ok(result.sections.globalPrelude.includes('絶対厳守ルール'),
+        'Should include Mandatory Rules');
+      assert.ok(result.sections.globalPrelude.includes('# Custom Global'),
+        'Should include custom global prelude from custom directory');
     });
   });
 
@@ -470,14 +499,16 @@ describe('PromptAssembler (spec/17_PROMPT_TEMPLATE.md)', () => {
       fs.writeFileSync(path.join(templateDir, 'global-prelude.md'), '# Version 1');
 
       const result1 = assembler.assemble('User Input');
-      assert.equal(result1.sections.globalPrelude, '# Version 1');
+      assert.ok(result1.sections.globalPrelude.includes('# Version 1'));
 
       // Modify template file
       fs.writeFileSync(path.join(templateDir, 'global-prelude.md'), '# Version 2');
 
       // Should read new content (no caching)
       const result2 = assembler.assemble('User Input');
-      assert.equal(result2.sections.globalPrelude, '# Version 2');
+      assert.ok(result2.sections.globalPrelude.includes('# Version 2'));
+      assert.ok(!result2.sections.globalPrelude.includes('# Version 1'),
+        'Should not contain old version (no caching)');
     });
   });
 
@@ -498,7 +529,236 @@ describe('PromptAssembler (spec/17_PROMPT_TEMPLATE.md)', () => {
       fs.writeFileSync(path.join(templateDir, 'global-prelude.md'), '# Default Location');
 
       const result = defaultAssembler.assemble('User Input');
-      assert.equal(result.sections.globalPrelude, '# Default Location');
+      // Should include both mandatory rules and custom prelude
+      assert.ok(result.sections.globalPrelude.includes('絶対厳守ルール'));
+      assert.ok(result.sections.globalPrelude.includes('# Default Location'));
+    });
+  });
+
+  describe('Mandatory Rules Auto-Injection (spec/17 L69-95)', () => {
+    it('should export DEFAULT_MANDATORY_RULES constant', () => {
+      assert.ok(DEFAULT_MANDATORY_RULES);
+      assert.ok(typeof DEFAULT_MANDATORY_RULES === 'string');
+      assert.ok(DEFAULT_MANDATORY_RULES.length > 0);
+    });
+
+    it('should include all 5 mandatory rules in DEFAULT_MANDATORY_RULES', () => {
+      // Per spec/17 L69-95: 5 mandatory rules
+      assert.ok(DEFAULT_MANDATORY_RULES.includes('省略禁止'),
+        'Should include rule 1: No Omission');
+      assert.ok(DEFAULT_MANDATORY_RULES.includes('不完全禁止'),
+        'Should include rule 2: No Incomplete');
+      assert.ok(DEFAULT_MANDATORY_RULES.includes('証跡必須'),
+        'Should include rule 3: Evidence Required');
+      assert.ok(DEFAULT_MANDATORY_RULES.includes('早期終了禁止'),
+        'Should include rule 4: No Early Termination');
+      assert.ok(DEFAULT_MANDATORY_RULES.includes('Fail-Closed'),
+        'Should include rule 5: Fail-Closed');
+    });
+
+    it('should always inject mandatory rules into global prelude', () => {
+      // Without any template files
+      const result = assembler.assemble('User Input');
+
+      assert.ok(result.sections.globalPrelude.includes('絶対厳守ルール'),
+        'Should include Mandatory Rules header');
+      assert.ok(result.sections.globalPrelude.includes('省略禁止'),
+        'Should include No Omission rule');
+    });
+
+    it('should prepend mandatory rules before custom global prelude', () => {
+      fs.writeFileSync(path.join(templateDir, 'global-prelude.md'), '# Custom Project Rules');
+
+      const result = assembler.assemble('User Input');
+
+      // Mandatory rules should come first
+      const mandatoryIndex = result.sections.globalPrelude.indexOf('絶対厳守ルール');
+      const customIndex = result.sections.globalPrelude.indexOf('# Custom Project Rules');
+
+      assert.ok(mandatoryIndex >= 0, 'Should contain mandatory rules');
+      assert.ok(customIndex >= 0, 'Should contain custom rules');
+      assert.ok(mandatoryIndex < customIndex,
+        'Mandatory rules should be prepended before custom prelude');
+    });
+
+    it('should include mandatory rules in final assembled prompt', () => {
+      const result = assembler.assemble('My Task');
+
+      // Final prompt should contain mandatory rules
+      assert.ok(result.prompt.includes('省略禁止'));
+      assert.ok(result.prompt.includes('不完全禁止'));
+      assert.ok(result.prompt.includes('証跡必須'));
+
+      // Mandatory rules should come before user input
+      const mandatoryIndex = result.prompt.indexOf('省略禁止');
+      const userInputIndex = result.prompt.indexOf('My Task');
+      assert.ok(mandatoryIndex < userInputIndex,
+        'Mandatory rules should appear before user input in assembled prompt');
+    });
+  });
+
+  describe('Modification Prompt Template (spec/17 L105-124)', () => {
+    it('should export DEFAULT_MODIFICATION_TEMPLATE constant', () => {
+      assert.ok(DEFAULT_MODIFICATION_TEMPLATE);
+      assert.ok(typeof DEFAULT_MODIFICATION_TEMPLATE === 'string');
+    });
+
+    it('should contain {{detected_issues}} placeholder', () => {
+      assert.ok(DEFAULT_MODIFICATION_TEMPLATE.includes('{{detected_issues}}'),
+        'Should have detected_issues placeholder');
+    });
+
+    it('should contain {{original_task}} placeholder', () => {
+      assert.ok(DEFAULT_MODIFICATION_TEMPLATE.includes('{{original_task}}'),
+        'Should have original_task placeholder');
+    });
+
+    it('should contain modification request section', () => {
+      assert.ok(DEFAULT_MODIFICATION_TEMPLATE.includes('修正要求'),
+        'Should have modification request section');
+    });
+  });
+
+  describe('buildModificationPrompt() (spec/17 L109-124)', () => {
+    it('should replace {{detected_issues}} with formatted issues', () => {
+      const input: ModificationPromptInput = {
+        detectedIssues: ['Issue 1', 'Issue 2', 'Issue 3'],
+        originalTask: 'Original task description',
+      };
+
+      const result = assembler.buildModificationPrompt(input);
+
+      assert.ok(result.includes('- Issue 1'));
+      assert.ok(result.includes('- Issue 2'));
+      assert.ok(result.includes('- Issue 3'));
+    });
+
+    it('should replace {{original_task}} with original task', () => {
+      const input: ModificationPromptInput = {
+        detectedIssues: ['Some issue'],
+        originalTask: 'Create a TypeScript function',
+      };
+
+      const result = assembler.buildModificationPrompt(input);
+
+      assert.ok(result.includes('Create a TypeScript function'));
+    });
+
+    it('should use custom template when modification-template.md exists', () => {
+      fs.writeFileSync(
+        path.join(templateDir, 'modification-template.md'),
+        '## Custom Modification\n\nIssues:\n{{detected_issues}}\n\nOriginal:\n{{original_task}}'
+      );
+
+      const input: ModificationPromptInput = {
+        detectedIssues: ['Custom issue'],
+        originalTask: 'Custom task',
+      };
+
+      const result = assembler.buildModificationPrompt(input);
+
+      assert.ok(result.includes('## Custom Modification'),
+        'Should use custom template header');
+      assert.ok(result.includes('- Custom issue'),
+        'Should include formatted issues');
+      assert.ok(result.includes('Custom task'),
+        'Should include original task');
+    });
+
+    it('should fall back to default template when no custom template exists', () => {
+      const input: ModificationPromptInput = {
+        detectedIssues: ['Fallback issue'],
+        originalTask: 'Fallback task',
+      };
+
+      const result = assembler.buildModificationPrompt(input);
+
+      assert.ok(result.includes('前回の出力に問題が検出されました'),
+        'Should use default template header');
+    });
+  });
+
+  describe('assembleWithModification() (spec/17 L102-124)', () => {
+    it('should include modification prompt in assembled result', () => {
+      const modification: ModificationPromptInput = {
+        detectedIssues: ['Q3: Omission detected'],
+        originalTask: 'Implement feature X',
+      };
+
+      const result = assembler.assembleWithModification('Retry task', modification);
+
+      // Should have modificationPrompt in sections
+      assert.ok(result.sections.modificationPrompt);
+      assert.ok(result.sections.modificationPrompt.includes('Q3: Omission detected'));
+    });
+
+    it('should insert modification prompt before user input in final prompt', () => {
+      const modification: ModificationPromptInput = {
+        detectedIssues: ['TODO left in code'],
+        originalTask: 'Fix the bug',
+      };
+
+      const result = assembler.assembleWithModification('Please fix', modification);
+
+      // Per spec/17 L102-103: Modification prompt before user input
+      const modificationIndex = result.prompt.indexOf('TODO left in code');
+      const userInputIndex = result.prompt.indexOf('Please fix');
+
+      assert.ok(modificationIndex >= 0, 'Should contain modification prompt');
+      assert.ok(userInputIndex >= 0, 'Should contain user input');
+      assert.ok(modificationIndex < userInputIndex,
+        'Modification prompt should appear before user input');
+    });
+
+    it('should include mandatory rules + modification prompt + user input', () => {
+      const modification: ModificationPromptInput = {
+        detectedIssues: ['Missing file'],
+        originalTask: 'Create file',
+      };
+
+      const result = assembler.assembleWithModification('Retry', modification);
+
+      // Verify order: mandatory rules < modification prompt < user input
+      const mandatoryIndex = result.prompt.indexOf('省略禁止');
+      const modificationIndex = result.prompt.indexOf('Missing file');
+      const userInputIndex = result.prompt.indexOf('Retry');
+
+      assert.ok(mandatoryIndex < modificationIndex,
+        'Mandatory rules should come before modification prompt');
+      assert.ok(modificationIndex < userInputIndex,
+        'Modification prompt should come before user input');
+    });
+
+    it('should throw PromptAssemblerError when user input is empty', () => {
+      const modification: ModificationPromptInput = {
+        detectedIssues: ['Issue'],
+        originalTask: 'Task',
+      };
+
+      assert.throws(
+        () => assembler.assembleWithModification('', modification),
+        PromptAssemblerError,
+        'Should throw for empty user input'
+      );
+    });
+
+    it('should include task group context when provided', () => {
+      const modification: ModificationPromptInput = {
+        detectedIssues: ['Issue'],
+        originalTask: 'Task',
+      };
+
+      const context: TaskGroupPreludeInput = {
+        task_group_id: 'tg-modification-test',
+        conversation_history: [],
+        working_files: ['file.ts'],
+        last_task_result: null,
+      };
+
+      const result = assembler.assembleWithModification('Retry', modification, context);
+
+      assert.ok(result.sections.taskGroupPrelude.includes('tg-modification-test'));
+      assert.ok(result.prompt.includes('tg-modification-test'));
     });
   });
 });

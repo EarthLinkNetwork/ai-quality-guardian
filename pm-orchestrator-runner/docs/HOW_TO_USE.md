@@ -258,3 +258,121 @@ pm status session-abc123
 # Continue if needed
 pm continue session-abc123
 ```
+
+## Web UI Mode
+
+Web UI allows you to submit tasks and monitor queue status from a web browser. This is especially useful for external access via ngrok.
+
+### Start Web UI Server
+
+```bash
+# Start in foreground (Ctrl+C to stop)
+pm web [--port <number>] [--namespace <name>]
+
+# Start in background (detached process)
+pm web --background [--port <number>] [--namespace <name>]
+```
+
+**Options:**
+- `--port <number>`: Server port (default: 5678)
+- `--namespace <name>`: Queue namespace for state separation
+- `--background`: Run server as a background daemon process
+
+**Examples:**
+```bash
+# Start on default port (5678)
+pm web
+
+# Start on custom port
+pm web --port 3000
+
+# Start in background mode
+pm web --background --port 5678
+
+# Start with specific namespace
+pm web --namespace dev --port 5679
+```
+
+### Stop Background Web Server
+
+```bash
+# Stop Web UI running on the current namespace
+pm web-stop [--namespace <name>] [--port <number>]
+```
+
+**Options:**
+- `--namespace <name>`: Stop server for specific namespace
+- `--port <number>`: Stop server running on specific port
+
+**Examples:**
+```bash
+# Stop web server for default namespace
+pm web-stop
+
+# Stop web server for 'dev' namespace
+pm web-stop --namespace dev
+
+# Stop web server on specific port
+pm web-stop --port 5679
+```
+
+**Notes:**
+- The `web-stop` command sends a graceful shutdown signal to the background process
+- If the process does not respond, it will be forcefully terminated
+- PID file is stored in the namespace state directory
+
+### Queue Sharing Behavior
+
+**Important:** All Web UI servers and REPL instances using the **same namespace** share the **same queue**.
+
+- Same namespace = Same DynamoDB table = Same queue
+- Different namespaces are completely isolated
+
+| Namespace | DynamoDB Table Name | Default Port |
+|-----------|---------------------|--------------|
+| `default` | `pm-runner-queue` | 5678 |
+| `stable`  | `pm-runner-queue-stable` | 5678 |
+| `dev`     | `pm-runner-queue-dev` | 5679 |
+| `<custom>`| `pm-runner-queue-<custom>` | 5680+ |
+
+**Example: Multiple instances sharing a queue**
+```bash
+# Terminal 1: Start Web UI
+pm web --namespace stable --port 5678
+
+# Terminal 2: Start REPL (same namespace - shares queue)
+pm repl --namespace stable
+
+# Terminal 3: Start another Web UI (different namespace - separate queue)
+pm web --namespace dev --port 5679
+```
+
+### Web UI REST API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | Health check |
+| `/api/task-groups` | GET | List all task groups |
+| `/api/task-groups` | POST | Create task group with first task |
+| `/api/task-groups/:id/tasks` | GET | List tasks in a group |
+| `/api/tasks` | POST | Submit a new task |
+| `/api/tasks/:id` | GET | Get task details |
+| `/api/tasks/:id/status` | PATCH | Update task status |
+
+### Verification Steps
+
+```bash
+# 1. Start Web UI
+pm web --port 5678
+
+# 2. Health check
+curl http://localhost:5678/api/health
+
+# 3. Submit a task
+curl -X POST http://localhost:5678/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"task_group_id":"test","prompt":"hello"}'
+
+# 4. View task groups
+curl http://localhost:5678/api/task-groups
+```

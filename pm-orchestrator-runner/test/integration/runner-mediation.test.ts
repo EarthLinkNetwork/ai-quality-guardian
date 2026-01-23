@@ -295,7 +295,7 @@ describe('REPL Natural Language Task Mediation', function () {
   });
 
   describe('Natural language input handling', () => {
-    it('should pass user prompt to executor as-is (no forced template)', async () => {
+    it('should pass user prompt to executor with Mandatory Rules prefix', async () => {
       class MockExecutor implements IExecutor {
         public receivedPrompt: string = '';
 
@@ -338,13 +338,22 @@ describe('REPL Natural Language Task Mediation', function () {
 
       await runner.executeTasksSequentially([task]);
 
-      // User prompt is passed as-is (no forced template prepended)
-      assert.strictEqual(mockExecutor.receivedPrompt, userPrompt);
+      // User prompt is included in the assembled prompt (with Mandatory Rules prefix)
+      assert.ok(
+        mockExecutor.receivedPrompt.includes(userPrompt),
+        'Prompt should include user prompt'
+      );
+      // Mandatory Rules are prepended for quality assurance
+      assert.ok(
+        mockExecutor.receivedPrompt.includes('絶対厳守ルール') ||
+        mockExecutor.receivedPrompt.includes('Mandatory Rules'),
+        'Prompt should include Mandatory Rules'
+      );
 
       await runner.shutdown();
     });
 
-    it('should not constrain user task content with fixed templates', async () => {
+    it('should not constrain user task content with arbitrary forced templates', async () => {
       class MockExecutor implements IExecutor {
         public receivedPrompt: string = '';
 
@@ -386,16 +395,20 @@ describe('REPL Natural Language Task Mediation', function () {
 
       await runner.executeTasksSequentially([task]);
 
-      // Prompt should NOT contain forced content constraints
+      // Prompt should NOT contain arbitrary forced content constraints
       assert.ok(
         !mockExecutor.receivedPrompt.includes('You must create'),
-        'Prompt should not have forced template'
+        'Prompt should not have arbitrary forced template'
       );
       assert.ok(
         !mockExecutor.receivedPrompt.includes('Hard requirements'),
-        'Prompt should not have forced requirements'
+        'Prompt should not have arbitrary forced requirements'
       );
-      assert.strictEqual(mockExecutor.receivedPrompt, userPrompt);
+      // User prompt is included (with Mandatory Rules prefix for quality assurance)
+      assert.ok(
+        mockExecutor.receivedPrompt.includes(userPrompt),
+        'Prompt should include user prompt'
+      );
 
       await runner.shutdown();
     });

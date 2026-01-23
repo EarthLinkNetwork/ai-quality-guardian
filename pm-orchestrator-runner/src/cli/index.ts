@@ -5,7 +5,8 @@
  * Usage:
  *   pm [options]                              - Start interactive REPL (default)
  *   pm repl [--project <path>]               - Start interactive REPL
- *   pm web [--port <number>]                 - Start Web UI server
+ *   pm web [--port <number>] [--background]  - Start Web UI server
+ *   pm web-stop [--namespace <name>]         - Stop background Web UI server
  *   pm start <path> [options]                - Start a new session (per spec 05_CLI.md L20)
  *   pm continue <session-id>                 - Continue a session
  *   pm status <session-id>                   - Get session status
@@ -23,6 +24,12 @@ import {
   buildNamespaceConfig,
 } from '../config/namespace';
 import { runApiKeyOnboarding, isOnboardingRequired } from '../keys/api-key-onboarding';
+import {
+  PidFileManager,
+  WebServerProcess,
+  WebStopCommand,
+  WebStopExitCode,
+} from '../web/background';
 
 /**
  * Help text
@@ -37,6 +44,7 @@ Usage:
 Commands:
   repl                   Start interactive REPL mode (default if no command)
   web                    Start Web UI server for task queue management
+  web-stop               Stop background Web UI server
   start <path>           Start a new session on a project
   continue <session-id>  Continue a paused session
   status <session-id>    Get session status
@@ -64,6 +72,10 @@ REPL Options:
 Web Options:
   --port <number>        Web UI port (default: 5678)
   --namespace <name>     Namespace for state separation
+  --background           Start server in background (detached) mode
+
+Web-Stop Options:
+  --namespace <name>     Namespace of server to stop
 
 General Options:
   --help, -h             Show this help message
@@ -74,6 +86,8 @@ Examples:
   pm --project ./my-project             # Start REPL with specific project
   pm repl --namespace stable            # Start REPL with stable namespace
   pm web --port 5678                    # Start Web UI on port 5678
+  pm web --port 5678 --background       # Start Web UI in background
+  pm web-stop --namespace stable        # Stop background Web UI server
   pm start ./my-project --dry-run       # Start session with dry-run
   pm continue session-2025-01-15-abc123 # Continue a session
 
@@ -282,6 +296,7 @@ async function startRepl(replArgs: ReplArguments): Promise<void> {
 interface WebArguments {
   port?: number;
   namespace?: string;
+  background?: boolean;
 }
 
 /**
@@ -312,6 +327,10 @@ function parseWebArgs(args: string[]): WebArguments {
         process.exit(1);
       }
       result.namespace = ns;
+    }
+    // Background mode (per spec/19_WEB_UI.md lines 361-398)
+    else if (arg === '--background') {
+      result.background = true;
     }
   }
 
@@ -377,9 +396,56 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
 }
 
 /**
- * Start Web UI server
+ * Start Web UI server in background mode
+ * Per spec/19_WEB_UI.md lines 361-398
+ */
+async function startWebServerBackground(webArgs: WebArguments): Promise<void> {
+  const projectPath = process.cwd();
+
+  // Build namespace configuration
+  const namespaceConfig = buildNamespaceConfig({
+    autoDerive: true,
+    namespace: webArgs.namespace,
+    projectRoot: projectPath,
+    port: webArgs.port,
+  });
+
+  const port = webArgs.port || namespaceConfig.port;
+
+  const serverProcess = new WebServerProcess({
+    projectRoot: projectPath,
+    namespace: namespaceConfig.namespace,
+    port,
+  });
+
+  const result = await serverProcess.spawnBackground();
+
+  if (!result.success) {
+    console.error(`Failed to start background server: ${result.error}`);
+    process.exit(1);
+  }
+
+  console.log(`Web UI server started in background (PID: ${result.pid})`);
+  console.log(`Namespace: ${namespaceConfig.namespace}`);
+  console.log(`Port: ${port}`);
+  console.log(`PID file: ${serverProcess.getPidManager().getPidFilePath(namespaceConfig.namespace)}`);
+  console.log(`Log file: ${serverProcess.getPidManager().getLogFilePath(namespaceConfig.namespace)}`);
+  console.log('');
+  console.log(`To stop: pm web-stop --namespace ${namespaceConfig.namespace}`);
+  console.log(`Health check: curl http://localhost:${port}/api/health`);
+
+  process.exit(0);
+}
+
+/**
+ * Start Web UI server (foreground)
  */
 async function startWebServer(webArgs: WebArguments): Promise<void> {
+  // Handle background mode
+  if (webArgs.background) {
+    return startWebServerBackground(webArgs);
+  }
+
   const projectPath = process.cwd();
 
   // Build namespace configuration
@@ -462,6 +528,82 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
 }
 
 /**
+ * Web-stop arguments interface
+ */
+interface WebStopArguments {
+  namespace?: string;
+}
+
+/**
+ * Parse web-stop arguments
+ */
+function parseWebStopArgs(args: string[]): WebStopArguments {
+  const result: WebStopArguments = {};
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '--namespace' && args[i + 1]) {
+      const ns = args[++i];
+      const error = validateNamespace(ns);
+      if (error) {
+        console.error(`Invalid namespace: ${error}`);
+        process.exit(1);
+      }
+      result.namespace = ns;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Stop background Web UI server
+ * Per spec/19_WEB_UI.md lines 400-432
+ */
+async function stopWebServer(args: WebStopArguments): Promise<void> {
+  const projectPath = process.cwd();
+
+  // Build namespace configuration
+  const namespaceConfig = buildNamespaceConfig({
+    autoDerive: true,
+    namespace: args.namespace,
+    projectRoot: projectPath,
+  });
+
+  const pidManager = new PidFileManager(projectPath);
+  const stopCmd = new WebStopCommand(pidManager);
+
+  console.log(`Stopping Web UI server (namespace: ${namespaceConfig.namespace})...`);
+
+  const result = await stopCmd.execute(namespaceConfig.namespace);
+
+  switch (result.exitCode) {
+    case WebStopExitCode.SUCCESS:
+      console.log(result.message);
+      if (result.pid) {
+        console.log(`PID: ${result.pid}`);
+      }
+      process.exit(0);
+      break;
+
+    case WebStopExitCode.PID_FILE_NOT_FOUND:
+      console.error(result.message);
+      console.error(`PID file location: ${pidManager.getPidFilePath(namespaceConfig.namespace)}`);
+      process.exit(1);
+      break;
+
+    case WebStopExitCode.FORCE_KILLED:
+      console.warn(result.message);
+      if (result.pid) {
+        console.warn(`PID: ${result.pid}`);
+      }
+      process.exit(2);
+      break;
+  }
+}
+
+/**
  * Check if argument looks like an option (starts with -)
  */
 function isOption(arg: string): boolean {
@@ -511,6 +653,13 @@ async function main(): Promise<void> {
       case 'web': {
         const webArgs = parseWebArgs(restArgs);
         await startWebServer(webArgs);
+        break;
+      }
+
+      case 'web-stop': {
+        // Per spec/19_WEB_UI.md lines 400-432
+        const webStopArgs = parseWebStopArgs(restArgs);
+        await stopWebServer(webStopArgs);
         break;
       }
 

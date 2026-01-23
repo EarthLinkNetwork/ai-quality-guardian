@@ -1,6 +1,11 @@
 /**
- * Web Server - Express HTTP server
+ * Web Server - Express HTTP server (v2)
  * Per spec/19_WEB_UI.md
+ *
+ * v2 Changes:
+ * - Namespace selector support
+ * - Runner status API
+ * - All namespaces listing API
  *
  * Provides:
  * - REST API for queue operations (read/write to QueueStore)
@@ -14,12 +19,13 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { QueueStore, QueueItemStatus } from '../queue';
+import { ConversationTracer } from '../trace/conversation-tracer';
 
 /**
  * Web Server configuration
  */
 export interface WebServerConfig {
-  /** Port number (default: 3000) */
+  /** Port number (default: 5678) */
   port?: number;
   /** Host (default: localhost) */
   host?: string;
@@ -27,6 +33,12 @@ export interface WebServerConfig {
   queueStore: QueueStore;
   /** Session ID for new tasks */
   sessionId: string;
+  /** Current namespace (from queueStore) */
+  namespace: string;
+  /** Project root for display */
+  projectRoot?: string;
+  /** State directory for trace files (per spec/28_CONVERSATION_TRACE.md Section 5.2) */
+  stateDir?: string;
 }
 
 /**
@@ -36,6 +48,7 @@ export interface WebServerState {
   isRunning: boolean;
   port: number;
   host: string;
+  namespace: string;
 }
 
 /**
@@ -51,7 +64,7 @@ interface ErrorResponse {
  */
 export function createApp(config: WebServerConfig): Express {
   const app = express();
-  const { queueStore, sessionId } = config;
+  const { queueStore, sessionId, namespace, projectRoot, stateDir } = config;
 
   // Middleware
   app.use(express.json());
@@ -69,18 +82,65 @@ export function createApp(config: WebServerConfig): Express {
   });
 
   // ===================
-  // REST API Routes
-  // Per spec/19_WEB_UI.md
+  // REST API Routes (v2)
   // ===================
 
   /**
-   * GET /api/task-groups
-   * List all task groups with summary
+   * GET /api/namespaces
+   * List all namespaces with summary
    */
-  app.get('/api/task-groups', async (_req: Request, res: Response) => {
+  app.get('/api/namespaces', async (_req: Request, res: Response) => {
     try {
-      const groups = await queueStore.getAllTaskGroups();
-      res.json({ task_groups: groups });
+      const namespaces = await queueStore.getAllNamespaces();
+      res.json({ 
+        namespaces,
+        current_namespace: namespace,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * GET /api/runners
+   * List all runners with status for specified namespace (or current)
+   * Query: ?namespace=xxx (optional)
+   */
+  app.get('/api/runners', async (req: Request, res: Response) => {
+    try {
+      const targetNamespace = (req.query.namespace as string) || namespace;
+      const runners = await queueStore.getRunnersWithStatus(2 * 60 * 1000, targetNamespace);
+      res.json({
+        namespace: targetNamespace,
+        runners: runners.map(r => ({
+          runner_id: r.runner_id,
+          status: r.status,
+          is_alive: r.isAlive,
+          last_heartbeat: r.last_heartbeat,
+          started_at: r.started_at,
+          project_root: r.project_root,
+        })),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * GET /api/task-groups
+   * List all task groups with summary for specified namespace (or current)
+   * Query: ?namespace=xxx (optional)
+   */
+  app.get('/api/task-groups', async (req: Request, res: Response) => {
+    try {
+      const targetNamespace = (req.query.namespace as string) || namespace;
+      const groups = await queueStore.getAllTaskGroups(targetNamespace);
+      res.json({
+        namespace: targetNamespace,
+        task_groups: groups,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
@@ -96,7 +156,6 @@ export function createApp(config: WebServerConfig): Express {
     try {
       const { task_group_id, prompt } = req.body;
 
-      // Fail-closed: validate input
       if (!task_group_id || typeof task_group_id !== 'string' || task_group_id.trim() === '') {
         res.status(400).json({
           error: 'INVALID_INPUT',
@@ -113,12 +172,12 @@ export function createApp(config: WebServerConfig): Express {
         return;
       }
 
-      // Enqueue the first task in this group
       const item = await queueStore.enqueue(sessionId, task_group_id.trim(), prompt.trim());
 
       res.status(201).json({
         task_id: item.task_id,
         task_group_id: item.task_group_id,
+        namespace: item.namespace,
         status: item.status,
         created_at: item.created_at,
       });
@@ -131,13 +190,16 @@ export function createApp(config: WebServerConfig): Express {
   /**
    * GET /api/task-groups/:task_group_id/tasks
    * List tasks in a task group
+   * Query: ?namespace=xxx (optional)
    */
   app.get('/api/task-groups/:task_group_id/tasks', async (req: Request, res: Response) => {
     try {
       const task_group_id = req.params.task_group_id as string;
-      const tasks = await queueStore.getByTaskGroup(task_group_id);
+      const targetNamespace = (req.query.namespace as string) || namespace;
+      const tasks = await queueStore.getByTaskGroup(task_group_id, targetNamespace);
 
       res.json({
+        namespace: targetNamespace,
         task_group_id,
         tasks: tasks.map(t => ({
           task_id: t.task_id,
@@ -157,16 +219,18 @@ export function createApp(config: WebServerConfig): Express {
   /**
    * GET /api/tasks/:task_id
    * Get task detail
+   * Query: ?namespace=xxx (optional)
    */
   app.get('/api/tasks/:task_id', async (req: Request, res: Response) => {
     try {
       const task_id = req.params.task_id as string;
-      const task = await queueStore.getItem(task_id);
+      const targetNamespace = (req.query.namespace as string) || namespace;
+      const task = await queueStore.getItem(task_id, targetNamespace);
 
       if (!task) {
         res.status(404).json({
           error: 'NOT_FOUND',
-          message: `Task not found: ${task_id}`,
+          message: 'Task not found: ' + task_id,
         } as ErrorResponse);
         return;
       }
@@ -174,14 +238,114 @@ export function createApp(config: WebServerConfig): Express {
       res.json({
         task_id: task.task_id,
         task_group_id: task.task_group_id,
+        namespace: task.namespace,
         session_id: task.session_id,
         status: task.status,
         prompt: task.prompt,
         created_at: task.created_at,
         updated_at: task.updated_at,
         error_message: task.error_message,
-        // TODO: Add logs and changed_files when available
       });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * GET /api/tasks/:task_id/trace
+   * Get conversation trace for a task
+   * Per spec/28_CONVERSATION_TRACE.md Section 5.2
+   * Query: ?latest=true, ?raw=true
+   */
+  app.get('/api/tasks/:task_id/trace', async (req: Request, res: Response) => {
+    try {
+      const task_id = req.params.task_id as string;
+      const latest = req.query.latest === 'true';
+      const raw = req.query.raw === 'true';
+
+      // Check if stateDir is configured
+      if (!stateDir) {
+        res.status(503).json({
+          error: 'SERVICE_UNAVAILABLE',
+          message: 'Trace functionality not available: stateDir not configured',
+        } as ErrorResponse);
+        return;
+      }
+
+      // Find trace file for the task
+      const traceFile = ConversationTracer.getLatestTraceFile(stateDir, task_id);
+
+      if (!traceFile) {
+        res.status(404).json({
+          error: 'NOT_FOUND',
+          message: 'No conversation trace found for task: ' + task_id,
+        } as ErrorResponse);
+        return;
+      }
+
+      // Read trace entries
+      const entries = ConversationTracer.readTrace(traceFile);
+
+      if (entries.length === 0) {
+        res.status(404).json({
+          error: 'NOT_FOUND',
+          message: 'Conversation trace is empty for task: ' + task_id,
+        } as ErrorResponse);
+        return;
+      }
+
+      // Build summary
+      const judgments = entries.filter(e => e.event === 'QUALITY_JUDGMENT');
+      const finalEntry = entries[entries.length - 1];
+      const iterations = entries.filter(e => e.event === 'ITERATION_END').length;
+
+      const summary = {
+        total_iterations: iterations,
+        judgments: judgments.map(j => ({
+          iteration: j.iteration_index,
+          passed: j.data?.passed,
+          reason: j.data?.reason,
+        })),
+        final_status: finalEntry?.event === 'FINAL_SUMMARY' ? finalEntry.data?.status : undefined,
+      };
+
+      // Format output based on options
+      if (raw) {
+        // Return raw JSONL entries
+        res.json({
+          task_id,
+          trace_file: traceFile,
+          entries,
+          summary,
+        });
+      } else if (latest) {
+        // Return only latest iteration entries
+        const latestIteration = Math.max(
+          ...entries
+            .filter(e => e.iteration_index !== undefined)
+            .map(e => e.iteration_index as number),
+          0
+        );
+        const latestEntries = entries.filter(e =>
+          e.iteration_index === undefined || e.iteration_index === latestIteration
+        );
+        res.json({
+          task_id,
+          trace_file: traceFile,
+          entries: latestEntries,
+          summary,
+        });
+      } else {
+        // Return formatted entries (default)
+        const formatted = ConversationTracer.formatTraceForDisplay(entries, { latestOnly: false, raw: false });
+        res.json({
+          task_id,
+          trace_file: traceFile,
+          formatted,
+          summary,
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
@@ -192,14 +356,11 @@ export function createApp(config: WebServerConfig): Express {
    * POST /api/tasks
    * Enqueue a new task (does NOT run it directly)
    * Body: { task_group_id: string, prompt: string }
-   *
-   * IMPORTANT: This only inserts into queue. Runner polls separately.
    */
   app.post('/api/tasks', async (req: Request, res: Response) => {
     try {
       const { task_group_id, prompt } = req.body;
 
-      // Fail-closed: validate input
       if (!task_group_id || typeof task_group_id !== 'string' || task_group_id.trim() === '') {
         res.status(400).json({
           error: 'INVALID_INPUT',
@@ -216,13 +377,13 @@ export function createApp(config: WebServerConfig): Express {
         return;
       }
 
-      // Enqueue only - does NOT run directly
       const item = await queueStore.enqueue(sessionId, task_group_id.trim(), prompt.trim());
 
       res.status(201).json({
         task_id: item.task_id,
         task_group_id: item.task_group_id,
-        status: item.status, // Always QUEUED
+        namespace: item.namespace,
+        status: item.status,
         created_at: item.created_at,
       });
     } catch (error) {
@@ -235,15 +396,12 @@ export function createApp(config: WebServerConfig): Express {
    * PATCH /api/tasks/:task_id/status
    * Update task status
    * Body: { status: 'CANCELLED' | other valid status }
-   *
-   * Per spec/19_WEB_UI.md: Status change API
    */
   app.patch('/api/tasks/:task_id/status', async (req: Request, res: Response) => {
     try {
       const task_id = req.params.task_id as string;
       const { status } = req.body;
 
-      // Fail-closed: validate input
       if (!status || typeof status !== 'string') {
         res.status(400).json({
           error: 'INVALID_INPUT',
@@ -252,17 +410,15 @@ export function createApp(config: WebServerConfig): Express {
         return;
       }
 
-      // Validate status value
       const validStatuses: QueueItemStatus[] = ['QUEUED', 'RUNNING', 'COMPLETE', 'ERROR', 'CANCELLED'];
       if (!validStatuses.includes(status as QueueItemStatus)) {
         res.status(400).json({
           error: 'INVALID_STATUS',
-          message: `Invalid status: ${status}. Must be one of: ${validStatuses.join(', ')}`,
+          message: 'Invalid status: ' + status + '. Must be one of: ' + validStatuses.join(', '),
         } as ErrorResponse);
         return;
       }
 
-      // Update with validation
       const result = await queueStore.updateStatusWithValidation(task_id, status as QueueItemStatus);
 
       if (!result.success) {
@@ -273,7 +429,6 @@ export function createApp(config: WebServerConfig): Express {
             message: result.message,
           });
         } else {
-          // Invalid status transition
           res.status(400).json({
             error: result.error,
             message: result.message,
@@ -336,14 +491,32 @@ export function createApp(config: WebServerConfig): Express {
 
   /**
    * GET /api/health
-   * Health check endpoint
+   * Health check endpoint with namespace info
    */
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      namespace,
+      table_name: queueStore.getTableName(),
+      project_root: projectRoot,
+    });
+  });
+
+  /**
+   * GET /api/namespace
+   * Get current namespace configuration
+   */
+  app.get('/api/namespace', (_req: Request, res: Response) => {
+    res.json({
+      namespace,
+      table_name: queueStore.getTableName(),
+      project_root: projectRoot,
+    });
   });
 
   // ===================
-  // Route List (for testing - verify no direct Runner command API)
+  // Route List
   // ===================
 
   /**
@@ -351,16 +524,18 @@ export function createApp(config: WebServerConfig): Express {
    * List all registered routes (for testing)
    */
   app.get('/api/routes', (_req: Request, res: Response) => {
-    // Return a predefined list of routes for safety and testability
-    // This also serves as documentation of available endpoints
     const routes: string[] = [
+      'GET /api/namespaces',
+      'GET /api/runners',
       'GET /api/task-groups',
       'POST /api/task-groups',
       'GET /api/task-groups/:task_group_id/tasks',
       'GET /api/tasks/:task_id',
+      'GET /api/tasks/:task_id/trace',
       'POST /api/tasks',
       'PATCH /api/tasks/:task_id/status',
       'GET /api/health',
+      'GET /api/namespace',
       'GET /api/routes',
     ];
     res.json({ routes });
@@ -377,11 +552,13 @@ export class WebServer {
   private readonly app: Express;
   private readonly port: number;
   private readonly host: string;
+  private readonly namespace: string;
   private server: ReturnType<Express['listen']> | null = null;
 
   constructor(config: WebServerConfig) {
-    this.port = config.port || 3000;
+    this.port = config.port || 5678;
     this.host = config.host || 'localhost';
+    this.namespace = config.namespace;
     this.app = createApp(config);
   }
 
@@ -429,6 +606,7 @@ export class WebServer {
       isRunning: this.server !== null,
       port: this.port,
       host: this.host,
+      namespace: this.namespace,
     };
   }
 
@@ -443,6 +621,6 @@ export class WebServer {
    * Get server URL
    */
   getUrl(): string {
-    return `http://${this.host}:${this.port}`;
+    return 'http://' + this.host + ':' + this.port;
   }
 }

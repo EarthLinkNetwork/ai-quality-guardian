@@ -39,6 +39,7 @@ class MockQueueStore {
     const now = new Date().toISOString();
     const id = taskId || `task-${++this.taskCounter}`;
     const item: QueueItem = {
+      namespace: 'test-namespace',
       task_id: id,
       task_group_id: taskGroupId,
       session_id: sessionId,
@@ -143,6 +144,10 @@ class MockQueueStore {
     return 0;
   }
 
+  getTableName(): string {
+    return 'pm-runner-queue';
+  }
+
   destroy(): void {
     // No-op for mock
   }
@@ -156,7 +161,7 @@ describe('Web Server', () => {
   beforeEach(() => {
     store = new MockQueueStore();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    app = createApp({ queueStore: store as any, sessionId: testSessionId });
+    app = createApp({ queueStore: store as any, sessionId: testSessionId, namespace: 'test-namespace', projectRoot: '/tmp/test' });
   });
 
   afterEach(() => {

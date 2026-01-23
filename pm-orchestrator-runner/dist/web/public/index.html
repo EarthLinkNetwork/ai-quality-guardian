@@ -48,6 +48,19 @@
       cursor: pointer;
     }
 
+    .namespace-badge {
+      background: rgba(255, 255, 255, 0.2);
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-family: monospace;
+    }
+
+    .namespace-badge.auto-derived {
+      background: rgba(34, 197, 94, 0.3);
+    }
+
     nav {
       display: flex;
       gap: 16px;
@@ -184,6 +197,11 @@
     .badge-error {
       background: #fee2e2;
       color: #991b1b;
+    }
+
+    .badge-cancelled {
+      background: #e5e7eb;
+      color: #4b5563;
     }
 
     .form-group {
@@ -454,6 +472,7 @@
   <header>
     <div class="header-content">
       <h1 onclick="navigate('/')">PM Orchestrator Runner</h1>
+      <span id="namespace-badge" class="namespace-badge" style="display: none;"></span>
       <nav id="main-nav">
         <a href="/" data-nav="home">Task Groups</a>
         <a href="/new" data-nav="new">+ New Command</a>
@@ -517,6 +536,7 @@
         'RUNNING': 'badge-running',
         'COMPLETE': 'badge-complete',
         'ERROR': 'badge-error',
+        'CANCELLED': 'badge-cancelled',
       };
       return map[status] || 'badge-queued';
     }
@@ -730,6 +750,13 @@
                 <div class="log-content">${escapeHtml(task.error_message || 'Unknown error')}</div>
               </div>
               ` : ''}
+              ${task.status === 'CANCELLED' ? `
+              <div class="log-entry" style="border-left-color: #6b7280;">
+                <div class="log-time">${formatFullDate(task.updated_at)}</div>
+                <div class="log-type">TASK CANCELLED</div>
+                <div class="log-content">Task was cancelled by user.</div>
+              </div>
+              ` : ''}
             </div>
           `;
         }
@@ -745,7 +772,12 @@
 
           <div class="card">
             <h3>Status</h3>
-            <span class="badge ${getStatusBadgeClass(task.status)}" style="font-size: 1rem; padding: 8px 16px;">${task.status}</span>
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <span class="badge ${getStatusBadgeClass(task.status)}" style="font-size: 1rem; padding: 8px 16px;">${task.status}</span>
+              ${(task.status === 'QUEUED' || task.status === 'RUNNING') ? `
+                <button class="btn btn-secondary" onclick="cancelTask('${escapeHtml(task.task_id)}')" style="padding: 8px 16px;">Cancel Task</button>
+              ` : ''}
+            </div>
           </div>
 
           <div class="card">
@@ -898,6 +930,33 @@
       });
     }
 
+    // Cancel task
+    async function cancelTask(taskId) {
+      if (!confirm('Are you sure you want to cancel this task?')) {
+        return;
+      }
+
+      try {
+        const result = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'CANCELLED' }),
+        });
+
+        const data = await result.json();
+
+        if (!result.ok) {
+          alert(`Error: ${data.message || 'Failed to cancel task'}`);
+          return;
+        }
+
+        // Refresh the task detail page
+        renderTaskDetail(taskId);
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    }
+
     // Router
     function router() {
       const path = window.location.pathname;
@@ -944,7 +1003,28 @@
       });
     });
 
+    // Load namespace info
+    async function loadNamespaceInfo() {
+      try {
+        const data = await api('/namespace');
+        const badge = document.getElementById('namespace-badge');
+        if (badge && data.namespace) {
+          badge.textContent = data.namespace;
+          badge.style.display = 'inline-block';
+          if (data.auto_derived) {
+            badge.classList.add('auto-derived');
+            badge.title = 'Auto-derived from project folder';
+          } else {
+            badge.title = 'Explicitly configured namespace';
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load namespace info:', e);
+      }
+    }
+
     // Initial load
+    loadNamespaceInfo();
     router();
   </script>
 </body>

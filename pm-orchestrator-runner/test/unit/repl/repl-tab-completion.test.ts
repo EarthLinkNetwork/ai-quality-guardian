@@ -18,12 +18,18 @@ describe('REPL Tab Completion', () => {
   let tempDir: string;
   let repl: REPLInterface;
 
-  // Spec-defined commands (13 total with new provider/models/keys/logs)
+  // Spec-defined commands (20 total: spec commands + clear/version for typo rescue + template commands)
   const SPEC_COMMANDS = [
     '/help', '/init', '/model', '/start', '/continue',
     '/status', '/tasks', '/approve', '/exit',
     // New commands per spec 10_REPL_UX.md update
-    '/provider', '/models', '/keys', '/logs'
+    '/provider', '/models', '/keys', '/logs', '/respond',
+    // Conversation trace command per spec 28_CONVERSATION_TRACE.md
+    '/trace',
+    // Additional utility commands (for typo rescue support)
+    '/clear', '/version',
+    // Template and Config commands per spec 32 and 33
+    '/templates', '/template', '/config'
   ];
 
   beforeEach(() => {
@@ -50,12 +56,12 @@ describe('REPL Tab Completion', () => {
   }
 
   describe('Spec compliance', () => {
-    it('should return exactly 13 commands for "/" (spec list, no /quit)', () => {
+    it('should return exactly 20 commands for "/" (spec list + clear/version + template commands, no /quit)', () => {
       const completer = getCompleter(repl);
       const [completions, line] = completer('/');
 
       assert.equal(line, '/');
-      assert.equal(completions.length, 13, 'Should return exactly 13 commands');
+      assert.equal(completions.length, 20, 'Should return exactly 20 commands');
 
       // Verify all spec commands are present
       for (const cmd of SPEC_COMMANDS) {
@@ -147,12 +153,15 @@ describe('REPL Tab Completion', () => {
       assert.deepEqual(completions, ['/help']);
     });
 
-    it('should complete /con to /continue', () => {
+    it('should complete /con to /config and /continue', () => {
       const completer = getCompleter(repl);
       const [completions, line] = completer('/con');
 
       assert.equal(line, '/con');
-      assert.deepEqual(completions, ['/continue']);
+      // Both /config and /continue match /con
+      assert.ok(completions.includes('/continue'), 'should include /continue');
+      assert.ok(completions.includes('/config'), 'should include /config');
+      assert.equal(completions.length, 2, 'should have exactly 2 matches');
     });
 
     it('should return [] for empty input', () => {

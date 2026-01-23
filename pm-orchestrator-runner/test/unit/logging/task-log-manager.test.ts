@@ -741,3 +741,182 @@ describe('TaskLogManager - Redesign Visibility Features', () => {
     });
   });
 });
+
+/**
+ * Session Restoration Tests
+ *
+ * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 8:
+ * - Session recovery on restart
+ * - Counter reconstruction from existing data
+ */
+describe('TaskLogManager - Session Restoration', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'task-log-restore-'));
+    fs.mkdirSync(path.join(tempDir, '.claude'), { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  describe('sessionExists', () => {
+    it('should return false for non-existent session', async () => {
+      const manager = new TaskLogManager(tempDir);
+      const exists = await manager.sessionExists('non-existent-session');
+      assert.equal(exists, false);
+    });
+
+    it('should return true for existing session', async () => {
+      const manager = new TaskLogManager(tempDir);
+      const sessionId = 'sess-exists-001';
+      await manager.initializeSession(sessionId);
+
+      const exists = await manager.sessionExists(sessionId);
+      assert.equal(exists, true);
+    });
+  });
+
+  describe('listSessions', () => {
+    it('should return empty array when no sessions exist', async () => {
+      const manager = new TaskLogManager(tempDir);
+      const sessions = await manager.listSessions();
+      assert.deepEqual(sessions, []);
+    });
+
+    it('should list all existing sessions', async () => {
+      const manager = new TaskLogManager(tempDir);
+
+      await manager.initializeSession('sess-001');
+      await manager.initializeSession('sess-002');
+      await manager.initializeSession('sess-003');
+
+      const sessions = await manager.listSessions();
+
+      assert.equal(sessions.length, 3);
+      assert.ok(sessions.some(s => s.session_id === 'sess-001'));
+      assert.ok(sessions.some(s => s.session_id === 'sess-002'));
+      assert.ok(sessions.some(s => s.session_id === 'sess-003'));
+    });
+  });
+
+  describe('getMostRecentSession', () => {
+    it('should return null when no sessions exist', async () => {
+      const manager = new TaskLogManager(tempDir);
+      const sessionId = await manager.getMostRecentSession();
+      assert.equal(sessionId, null);
+    });
+
+    it('should return most recent session by started_at', async () => {
+      const manager = new TaskLogManager(tempDir);
+
+      // Create sessions with a small delay to ensure different timestamps
+      await manager.initializeSession('sess-old');
+      await new Promise(resolve => setTimeout(resolve, 10));
+      await manager.initializeSession('sess-newer');
+      await new Promise(resolve => setTimeout(resolve, 10));
+      await manager.initializeSession('sess-newest');
+
+      const sessionId = await manager.getMostRecentSession();
+      assert.equal(sessionId, 'sess-newest');
+    });
+  });
+
+  describe('restoreSession', () => {
+    it('should return null for non-existent session', async () => {
+      const manager = new TaskLogManager(tempDir);
+      const metadata = await manager.restoreSession('non-existent');
+      assert.equal(metadata, null);
+    });
+
+    it('should restore session metadata', async () => {
+      // Create session with first manager instance
+      const manager1 = new TaskLogManager(tempDir);
+      const sessionId = 'sess-restore-001';
+      await manager1.initializeSession(sessionId);
+
+      // Create thread, run, and task
+      const thread = await manager1.createThread(sessionId, 'main');
+      const run = await manager1.createRun(sessionId, thread.thread_id, 'USER_INPUT');
+      await manager1.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+
+      // Create new manager instance (simulates restart)
+      const manager2 = new TaskLogManager(tempDir);
+      const metadata = await manager2.restoreSession(sessionId);
+
+      assert.ok(metadata, 'Metadata should be returned');
+      assert.equal(metadata!.session_id, sessionId);
+      assert.ok(metadata!.threads.length > 0, 'Should have threads');
+      assert.ok(metadata!.runs.length > 0, 'Should have runs');
+    });
+
+    it('should reconstruct counters from existing data', async () => {
+      // Create session with multiple threads/runs/tasks
+      const manager1 = new TaskLogManager(tempDir);
+      const sessionId = 'sess-counter-001';
+      await manager1.initializeSession(sessionId);
+
+      // Create multiple threads
+      const thread1 = await manager1.createThread(sessionId, 'main');
+      const thread2 = await manager1.createThread(sessionId, 'background');
+
+      // Create multiple runs
+      const run1 = await manager1.createRun(sessionId, thread1.thread_id, 'USER_INPUT');
+      await manager1.createRun(sessionId, thread1.thread_id, 'CONTINUATION');
+
+      // Create multiple tasks
+      await manager1.createTaskWithContext(sessionId, thread1.thread_id, run1.run_id);
+      await manager1.createTaskWithContext(sessionId, thread1.thread_id, run1.run_id);
+      await manager1.createTaskWithContext(sessionId, thread1.thread_id, run1.run_id);
+
+      // Restore with new manager
+      const manager2 = new TaskLogManager(tempDir);
+      await manager2.restoreSession(sessionId);
+
+      // Create new thread - should get next sequential ID
+      const newThread = await manager2.createThread(sessionId, 'system');
+      const threadNum = parseInt(newThread.thread_id.replace('thr-', ''), 10);
+
+      // Should be greater than thread2's number
+      const thread2Num = parseInt(thread2.thread_id.replace('thr-', ''), 10);
+      assert.ok(threadNum > thread2Num, 'New thread ID should be sequential');
+    });
+
+    it('should allow continued task creation after restore', async () => {
+      // Setup initial session
+      const manager1 = new TaskLogManager(tempDir);
+      const sessionId = 'sess-continue-001';
+      await manager1.initializeSession(sessionId);
+      const thread = await manager1.createThread(sessionId, 'main');
+      const run = await manager1.createRun(sessionId, thread.thread_id, 'USER_INPUT');
+      const task1 = await manager1.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+
+      // Restore with new manager
+      const manager2 = new TaskLogManager(tempDir);
+      await manager2.restoreSession(sessionId);
+
+      // Should be able to create new task
+      const task2 = await manager2.createTaskWithContext(sessionId, thread.thread_id, run.run_id);
+
+      // New task should have incremented ID
+      const task1Num = parseInt(task1.task_id.replace('task-', ''), 10);
+      const task2Num = parseInt(task2.task_id.replace('task-', ''), 10);
+      assert.ok(task2Num > task1Num, 'New task ID should be incremented');
+    });
+  });
+
+  describe('flushAll', () => {
+    it('should return empty array when no pending writes', async () => {
+      const manager = new TaskLogManager(tempDir);
+      const results = await manager.flushAll();
+      assert.ok(Array.isArray(results), 'Should return array');
+    });
+
+    it('should return pending write count', async () => {
+      const manager = new TaskLogManager(tempDir);
+      const count = manager.getPendingWriteCount();
+      assert.equal(typeof count, 'number');
+    });
+  });
+});

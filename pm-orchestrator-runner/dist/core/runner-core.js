@@ -66,7 +66,9 @@ const error_codes_1 = require("../errors/error-codes");
 const claude_code_executor_1 = require("../executor/claude-code-executor");
 const deterministic_executor_1 = require("../executor/deterministic-executor");
 const recovery_executor_1 = require("../executor/recovery-executor");
+const auto_resolve_executor_1 = require("../executor/auto-resolve-executor");
 const prompt_assembler_1 = require("../prompt/prompt-assembler");
+const conversation_tracer_1 = require("../trace/conversation-tracer");
 /**
  * Runner Core Error
  */
@@ -138,6 +140,12 @@ class RunnerCore extends events_1.EventEmitter {
     // Current task group context for prompt assembly
     // Per spec/16_TASK_GROUP.md: context persists within task group
     currentTaskGroupContext = null;
+    // Template provider for template injection per spec 32_TEMPLATE_INJECTION.md
+    // Returns the active template or null if none is active
+    templateProvider = null;
+    // State directory for conversation traces
+    // Per spec/28_CONVERSATION_TRACE.md: traces stored in <state_dir>/traces/
+    stateDir = '';
     /**
      * Create a new RunnerCore
      */
@@ -174,6 +182,18 @@ class RunnerCore extends events_1.EventEmitter {
         }
     }
     /**
+     * Set the template provider callback
+     *
+     * Per spec 32_TEMPLATE_INJECTION.md:
+     * This callback is invoked during prompt assembly to get the active template.
+     * The template's rulesText and outputFormatText will be injected into prompts.
+     *
+     * @param provider - Function that returns the active template or null
+     */
+    setTemplateProvider(provider) {
+        this.templateProvider = provider;
+    }
+    /**
      * Initialize the runner with a target project
      */
     async initialize(targetProject) {
@@ -189,6 +209,8 @@ class RunnerCore extends events_1.EventEmitter {
         if (!fs.existsSync(this.sessionDir)) {
             fs.mkdirSync(this.sessionDir, { recursive: true });
         }
+        // Set state directory for conversation traces (per spec/28_CONVERSATION_TRACE.md)
+        this.stateDir = this.sessionDir;
         // Initialize evidence manager for this session
         this.evidenceManager.initializeSession(session.session_id);
         // Initialize lifecycle controller
@@ -225,6 +247,18 @@ class RunnerCore extends events_1.EventEmitter {
                 // Per spec 06_CORRECTNESS_PROPERTIES.md Property 37: Deterministic testing
                 this.claudeCodeExecutor = new deterministic_executor_1.DeterministicExecutor();
                 this.currentExecutorMode = 'deterministic';
+            }
+            else if (this.options.enableAutoResolve) {
+                // LLM-based auto-resolution enabled: Use AutoResolvingExecutor
+                // This executor will automatically resolve clarification questions using LLM
+                // and fall back to userResponseHandler for case-by-case decisions
+                this.claudeCodeExecutor = new auto_resolve_executor_1.AutoResolvingExecutor({
+                    projectPath: targetProject,
+                    timeout: this.options.claudeCodeTimeout || 120000,
+                    llmProvider: this.options.autoResolveLLMProvider || 'openai',
+                    userResponseHandler: this.options.userResponseHandler,
+                });
+                this.currentExecutorMode = 'api'; // API mode with LLM auto-resolution
             }
             else {
                 this.claudeCodeExecutor = new claude_code_executor_1.ClaudeCodeExecutor({
@@ -424,6 +458,20 @@ class RunnerCore extends events_1.EventEmitter {
             // Add TASK_STARTED event
             await this.taskLogManager.addEventWithSession(taskLog.task_id, this.session.session_id, 'TASK_STARTED', { action: task.description || task.naturalLanguageTask || task.id });
         }
+        // Per spec/28_CONVERSATION_TRACE.md: Create ConversationTracer for this task
+        // Records USER_REQUEST, SYSTEM_RULES, and FINAL_SUMMARY
+        let conversationTracer = null;
+        if (this.stateDir && this.session) {
+            conversationTracer = new conversation_tracer_1.ConversationTracer({
+                stateDir: this.stateDir,
+                sessionId: this.session.session_id,
+                taskId: task.id,
+            });
+            // Log USER_REQUEST (per spec/28_CONVERSATION_TRACE.md Section 4.3)
+            if (task.naturalLanguageTask) {
+                conversationTracer.logUserRequest(task.naturalLanguageTask);
+            }
+        }
         // Per spec 10_REPL_UX.md Section 10: Track executor blocking info (Property 34-36)
         // This info is captured from ExecutorResult and passed to TaskLog completion
         let executorBlockingInfo = {};
@@ -475,13 +523,22 @@ class RunnerCore extends events_1.EventEmitter {
                 if (this.claudeCodeExecutor && this.session?.target_project) {
                     executionLog.push(`[${new Date().toISOString()}] Executing via Claude Code CLI...`);
                     // Per spec/17_PROMPT_TEMPLATE.md: Assemble prompt in fixed order
-                    // Order: global prelude → project prelude → task group prelude → user input → output epilogue
+                    // Order: global prelude → [template rules] → project prelude → task group prelude → user input → [template output format] → output epilogue
+                    // Template injection per spec 32_TEMPLATE_INJECTION.md
                     let assembledPrompt = task.naturalLanguageTask;
                     if (this.promptAssembler && task.naturalLanguageTask) {
                         try {
-                            const assemblyResult = this.promptAssembler.assemble(task.naturalLanguageTask, this.currentTaskGroupContext || undefined);
+                            // Get active template from provider per spec 32
+                            const activeTemplate = this.templateProvider ? this.templateProvider() : null;
+                            const assemblyResult = this.promptAssembler.assemble(task.naturalLanguageTask, this.currentTaskGroupContext || undefined, activeTemplate);
                             assembledPrompt = assemblyResult.prompt;
-                            executionLog.push(`[${new Date().toISOString()}] Prompt assembled (5 sections)`);
+                            // Log section count (5 base + 2 optional template sections)
+                            const templateSections = activeTemplate ? 2 : 0;
+                            executionLog.push(`[${new Date().toISOString()}] Prompt assembled (${5 + templateSections} sections${activeTemplate ? `, template: ${activeTemplate.name}` : ''})`);
+                            // Per spec/28_CONVERSATION_TRACE.md Section 4.3: Log SYSTEM_RULES (Mandatory Rules)
+                            if (conversationTracer && assemblyResult.sections.globalPrelude) {
+                                conversationTracer.logSystemRules(assemblyResult.sections.globalPrelude);
+                            }
                         }
                         catch (assemblyError) {
                             // Fail-closed: if assembly fails, use original prompt but log warning
@@ -690,6 +747,12 @@ class RunnerCore extends events_1.EventEmitter {
                 executorMode: this.currentExecutorMode,
                 responseSummary: responseSummary || undefined,
             });
+        }
+        // Per spec/28_CONVERSATION_TRACE.md Section 4.3: Log FINAL_SUMMARY at task end
+        if (conversationTracer) {
+            const totalIterations = 1; // RunnerCore doesn't use Review Loop iterations directly
+            conversationTracer.logFinalSummary(result.status === enums_1.TaskStatus.COMPLETED ? 'COMPLETE' : result.status === enums_1.TaskStatus.ERROR ? 'ERROR' : 'INCOMPLETE', totalIterations, filesCreated.map(f => path.basename(f)) // Use relative filenames
+            );
         }
         this.taskResults.push(result);
         // Emit task completion event

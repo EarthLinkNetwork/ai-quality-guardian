@@ -5,7 +5,7 @@ PM Orchestrator Runner の Web UI を外部からアクセス可能にするた�
 ## 前提条件
 
 - ngrok がインストール済みであること
-- PM Orchestrator Runner が起動していること（デフォルト: localhost:3000）
+- PM Orchestrator Runner が起動していること（デフォルト: localhost:5678）
 
 ## ngrok のインストール
 
@@ -37,8 +37,8 @@ npm start
 ### 2. ngrok でトンネルを作成
 
 ```bash
-# デフォルトポート 3000 の場合
-ngrok http 3000
+# デフォルトポート 5678 の場合
+ngrok http 5678
 
 # ポートを指定する場合
 ngrok http 8080
@@ -49,7 +49,7 @@ ngrok http 8080
 ngrok は以下のような URL を生成します：
 
 ```
-Forwarding    https://xxxx-xxxx-xxxx.ngrok-free.app -> http://localhost:3000
+Forwarding    https://xxxx-xxxx-xxxx.ngrok-free.app -> http://localhost:5678
 ```
 
 この URL（`https://xxxx-xxxx-xxxx.ngrok-free.app`）をスマートフォンや他のデバイスからアクセスできます。
@@ -81,7 +81,7 @@ ngrok URL を知っている人は誰でもアクセスできます。
 ngrok の基本認証機能を使用できます：
 
 ```bash
-ngrok http 3000 --basic-auth="username:password"
+ngrok http 5678 --basic-auth="username:password"
 ```
 
 ### 3. IP 制限（有料版）
@@ -94,7 +94,7 @@ ngrok の有料版では IP 制限が可能です。
 
 1. PM Orchestrator Runner が起動しているか確認
    ```bash
-   curl http://localhost:3000/api/health
+   curl http://localhost:5678/api/health
    ```
 
 2. ポート番号が正しいか確認
@@ -109,7 +109,7 @@ ngrok の有料版では IP 制限が可能です。
 ### 遅延が大きい
 
 - ngrok サーバーは海外にある場合があります
-- 日本のユーザーは `ngrok http 3000 --region=ap` で Asia Pacific リージョンを指定できます（有料版）
+- 日本のユーザーは `ngrok http 5678 --region=ap` で Asia Pacific リージョンを指定できます（有料版）
 
 ## 推奨ワークフロー
 

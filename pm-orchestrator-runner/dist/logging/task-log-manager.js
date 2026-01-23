@@ -47,6 +47,7 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const task_log_1 = require("../models/repl/task-log");
 const sensitive_data_masker_1 = require("./sensitive-data-masker");
+const atomic_file_writer_1 = require("./atomic-file-writer");
 /**
  * Log directory structure
  * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 1.1
@@ -134,17 +135,19 @@ class TaskLogManager {
         // Create session metadata
         const sessionMeta = (0, task_log_1.createSessionMetadata)(sessionId);
         const sessionMetaPath = path.join(this.getSessionPath(sessionId), SESSION_FILE);
-        fs.writeFileSync(sessionMetaPath, JSON.stringify(sessionMeta, null, 2), 'utf-8');
+        // Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3, 11.2: Atomic recording with fsync
+        (0, atomic_file_writer_1.atomicWriteFileSync)(sessionMetaPath, JSON.stringify(sessionMeta, null, 2));
         // Create session index
         const sessionIndex = (0, task_log_1.createTaskLogIndex)(sessionId);
         const sessionIndexPath = path.join(this.getSessionPath(sessionId), INDEX_FILE);
-        fs.writeFileSync(sessionIndexPath, JSON.stringify(sessionIndex, null, 2), 'utf-8');
+        (0, atomic_file_writer_1.atomicWriteFileSync)(sessionIndexPath, JSON.stringify(sessionIndex, null, 2));
         // Update global index
         await this.updateGlobalIndex(sessionId);
         return sessionMeta;
     }
     /**
      * Update global index with new session
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     async updateGlobalIndex(sessionId) {
         const globalIndexPath = path.join(this.logsPath, INDEX_FILE);
@@ -170,7 +173,8 @@ class TaskLogManager {
             });
         }
         globalIndex.updated_at = new Date().toISOString();
-        fs.writeFileSync(globalIndexPath, JSON.stringify(globalIndex, null, 2), 'utf-8');
+        // Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3, 11.2: Atomic recording with fsync
+        (0, atomic_file_writer_1.atomicWriteFileSync)(globalIndexPath, JSON.stringify(globalIndex, null, 2));
     }
     /**
      * Get session metadata
@@ -190,10 +194,12 @@ class TaskLogManager {
     }
     /**
      * Save session metadata
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     async saveSessionMetadata(sessionId, metadata) {
         const sessionMetaPath = path.join(this.getSessionPath(sessionId), SESSION_FILE);
-        fs.writeFileSync(sessionMetaPath, JSON.stringify(metadata, null, 2), 'utf-8');
+        // Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3, 11.2: Atomic recording with fsync
+        (0, atomic_file_writer_1.atomicWriteFileSync)(sessionMetaPath, JSON.stringify(metadata, null, 2));
     }
     /**
      * Get session index
@@ -214,11 +220,13 @@ class TaskLogManager {
     }
     /**
      * Save session index
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     async saveSessionIndex(sessionId, index) {
         const sessionIndexPath = path.join(this.getSessionPath(sessionId), INDEX_FILE);
         index.updated_at = new Date().toISOString();
-        fs.writeFileSync(sessionIndexPath, JSON.stringify((0, sensitive_data_masker_1.maskSensitiveObject)(index), null, 2), 'utf-8');
+        // Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3, 11.2: Atomic recording with fsync
+        (0, atomic_file_writer_1.atomicWriteFileSync)(sessionIndexPath, JSON.stringify((0, sensitive_data_masker_1.maskSensitiveObject)(index), null, 2));
     }
     /**
      * Generate next thread ID for session
@@ -407,6 +415,7 @@ class TaskLogManager {
     }
     /**
      * Increment task count in global index
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     async incrementGlobalTaskCount(sessionId) {
         const globalIndexPath = path.join(this.logsPath, INDEX_FILE);
@@ -418,7 +427,8 @@ class TaskLogManager {
                 if (session) {
                     session.task_count++;
                     globalIndex.updated_at = new Date().toISOString();
-                    fs.writeFileSync(globalIndexPath, JSON.stringify(globalIndex, null, 2), 'utf-8');
+                    // Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3, 11.2: Atomic recording with fsync
+                    (0, atomic_file_writer_1.atomicWriteFileSync)(globalIndexPath, JSON.stringify(globalIndex, null, 2));
                 }
             }
             catch {
@@ -444,13 +454,15 @@ class TaskLogManager {
     }
     /**
      * Save task log with session context
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     async saveTaskLogWithSession(log, sessionId) {
         await this.ensureSessionDirectories(sessionId);
         const logPath = path.join(this.getSessionTasksPath(sessionId), log.task_id + '.json');
         // Mask sensitive data before saving
         const maskedLog = (0, sensitive_data_masker_1.maskSensitiveObject)(log);
-        fs.writeFileSync(logPath, JSON.stringify(maskedLog, null, 2), 'utf-8');
+        // Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3, 11.2: Atomic recording with fsync
+        (0, atomic_file_writer_1.atomicWriteFileSync)(logPath, JSON.stringify(maskedLog, null, 2));
     }
     /**
      * Add event to task log with session context
@@ -533,6 +545,7 @@ class TaskLogManager {
     }
     /**
      * Save log index (legacy)
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     async saveIndex(index) {
         await this.ensureLogDirectories();
@@ -541,7 +554,8 @@ class TaskLogManager {
         // Mask any sensitive data before saving
         const maskedIndex = (0, sensitive_data_masker_1.maskSensitiveObject)(index);
         maskedIndex.updated_at = new Date().toISOString();
-        fs.writeFileSync(indexPath, JSON.stringify(maskedIndex, null, 2), 'utf-8');
+        // Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3, 11.2: Atomic recording with fsync
+        (0, atomic_file_writer_1.atomicWriteFileSync)(indexPath, JSON.stringify(maskedIndex, null, 2));
     }
     /**
      * Create a new task log (legacy - without thread/run context)
@@ -587,6 +601,7 @@ class TaskLogManager {
     }
     /**
      * Save task log (legacy)
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3: Atomic recording
      */
     async saveTaskLog(log) {
         await this.ensureLogDirectories();
@@ -597,7 +612,8 @@ class TaskLogManager {
         const logPath = path.join(tasksDir, log.task_id + '.json');
         // Mask sensitive data before saving
         const maskedLog = (0, sensitive_data_masker_1.maskSensitiveObject)(log);
-        fs.writeFileSync(logPath, JSON.stringify(maskedLog, null, 2), 'utf-8');
+        // Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 7.3, 11.2: Atomic recording with fsync
+        (0, atomic_file_writer_1.atomicWriteFileSync)(logPath, JSON.stringify(maskedLog, null, 2));
     }
     /**
      * Add event to task log (legacy)
@@ -827,6 +843,134 @@ class TaskLogManager {
             output += 'Use --full to see executor details.';
         }
         return output;
+    }
+    // ========================================
+    // Session Restoration and Flush Methods
+    // Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 11
+    // ========================================
+    /**
+     * Flush all pending log writes
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 11.2
+     * Called before REPL exit to ensure all logs are persisted
+     *
+     * @returns Results of all flushed writes
+     */
+    async flushAll() {
+        return (0, atomic_file_writer_1.flushAllPendingWrites)();
+    }
+    /**
+     * Get count of pending writes
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 11.2
+     */
+    getPendingWriteCount() {
+        return (0, atomic_file_writer_1.getPendingWriteCount)();
+    }
+    /**
+     * Restore session from disk
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 8: Session restoration
+     *
+     * Loads session metadata, index, and reconstructs counters from existing data.
+     *
+     * @param sessionId - Session ID to restore
+     * @returns Session metadata if found, null if session doesn't exist
+     */
+    async restoreSession(sessionId) {
+        const sessionPath = this.getSessionPath(sessionId);
+        const sessionMetaPath = path.join(sessionPath, SESSION_FILE);
+        // Check if session exists
+        if (!fs.existsSync(sessionMetaPath)) {
+            return null;
+        }
+        try {
+            // Load session metadata
+            const metadata = await this.getSessionMetadata(sessionId);
+            // Load session index to reconstruct counters
+            const index = await this.getSessionIndex(sessionId);
+            // Reconstruct thread counter
+            let maxThread = 0;
+            for (const threadInfo of metadata.threads) {
+                const match = threadInfo.thread_id.match(/^thr-(\d+)$/);
+                if (match) {
+                    const num = parseInt(match[1], 10);
+                    if (num > maxThread)
+                        maxThread = num;
+                }
+            }
+            this.threadCounters.set(sessionId, maxThread);
+            // Reconstruct run counter
+            let maxRun = 0;
+            for (const runInfo of metadata.runs) {
+                const match = runInfo.run_id.match(/^run-(\d+)$/);
+                if (match) {
+                    const num = parseInt(match[1], 10);
+                    if (num > maxRun)
+                        maxRun = num;
+                }
+            }
+            this.runCounters.set(sessionId, maxRun);
+            // Reconstruct task counter
+            let maxTask = 0;
+            for (const entry of index.entries) {
+                const match = entry.task_id.match(/^task-(\d+)$/);
+                if (match) {
+                    const num = parseInt(match[1], 10);
+                    if (num > maxTask)
+                        maxTask = num;
+                }
+            }
+            this.taskCounters.set(sessionId, maxTask);
+            return metadata;
+        }
+        catch (error) {
+            // Session data corrupted - return null
+            return null;
+        }
+    }
+    /**
+     * List all available sessions
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 2.1
+     *
+     * @returns Array of session IDs with metadata
+     */
+    async listSessions() {
+        const globalIndexPath = path.join(this.logsPath, INDEX_FILE);
+        if (!fs.existsSync(globalIndexPath)) {
+            return [];
+        }
+        try {
+            const content = fs.readFileSync(globalIndexPath, 'utf-8');
+            const globalIndex = JSON.parse(content);
+            return globalIndex.sessions;
+        }
+        catch {
+            return [];
+        }
+    }
+    /**
+     * Get the most recent session ID
+     * Per spec 13_LOGGING_AND_OBSERVABILITY.md Section 8: Session restoration
+     *
+     * @returns Most recent session ID or null if no sessions exist
+     */
+    async getMostRecentSession() {
+        const sessions = await this.listSessions();
+        if (sessions.length === 0) {
+            return null;
+        }
+        // Sort by started_at descending
+        sessions.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
+        return sessions[0].session_id;
+    }
+    /**
+     * Check if a session exists
+     *
+     * @param sessionId - Session ID to check
+     * @returns true if session exists
+     */
+    async sessionExists(sessionId) {
+        const sessionPath = this.getSessionPath(sessionId);
+        const sessionMetaPath = path.join(sessionPath, SESSION_FILE);
+        return fs.existsSync(sessionMetaPath);
     }
 }
 exports.TaskLogManager = TaskLogManager;

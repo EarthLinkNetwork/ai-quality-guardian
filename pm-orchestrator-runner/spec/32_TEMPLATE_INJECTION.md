@@ -1,0 +1,264 @@
+# 32. Template Injection
+
+## 1. 概要
+
+タスク投入時に自動差し込みされる「ルール（Rules）」と「出力形式（Output Format）」をテンプレートとして管理する機能。
+
+### 1.1 目的
+- 毎回同じルールを手入力する手間を削減
+- プロジェクト固有のルールを永続化
+- チーム間でテンプレートを共有可能にする
+
+### 1.2 設計原則
+- **明示的ON/USE時のみ注入**: デフォルトでは巨大文字列を注入しない
+- **context肥大化回避**: テンプレートIDで参照し、必要時のみ本文を展開
+- **永続化**: `/exit`やプロセス終了後も設定を保持
+
+## 2. データモデル
+
+### 2.1 Template
+
+```typescript
+interface Template {
+  id: string;                    // UUID v4
+  name: string;                  // 表示名（例: "default", "strict", "eln-pm"）
+  rulesText: string;             // 差し込むルール本文
+  outputFormatText: string;      // 出力形式指定本文
+  enabled: boolean;              // 有効/無効
+  isBuiltIn: boolean;            // 組み込みテンプレートか
+  createdAt: string;             // ISO 8601
+  updatedAt: string;             // ISO 8601
+}
+```
+
+### 2.2 組み込みテンプレート
+
+以下の組み込みテンプレートを提供（ユーザーは編集不可、コピーして使用可）:
+
+| ID | 名前 | 内容 |
+|----|------|------|
+| `builtin-minimal` | Minimal | 最小限のルール（品質チェックのみ） |
+| `builtin-standard` | Standard | 標準ルール（UI/UX破綻=未完了含む） |
+| `builtin-strict` | Strict | 厳格ルール（全チェック有効） |
+
+### 2.3 Standard テンプレート例
+
+```yaml
+# builtin-standard
+rules: |
+  ## 完了条件
+  - UI/UX破綻（白画面、クラッシュ、操作不能）は完了条件未達とする
+  - テスト失敗は完了条件未達とする
+  - lint/typecheck エラーは完了条件未達とする
+
+  ## 品質基準
+  - TODO/FIXME を残さない
+  - 省略マーカー（...、// etc.）を残さない
+
+outputFormat: |
+  ## 出力形式
+  - 変更ファイル一覧（パス）
+  - 実行したテスト結果
+  - 残課題（あれば）
+```
+
+## 3. ストレージ
+
+### 3.1 保存場所
+
+```
+~/.pm-orchestrator/
+├── templates/
+│   ├── index.json          # テンプレート一覧（メタデータのみ）
+│   └── {id}.json           # 各テンプレート本文
+└── projects/
+    └── {project-hash}.json # プロジェクト設定（選択テンプレートID含む）
+```
+
+### 3.2 index.json 形式
+
+```json
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "abc-123",
+      "name": "my-rules",
+      "enabled": true,
+      "isBuiltIn": false,
+      "createdAt": "2026-01-23T...",
+      "updatedAt": "2026-01-23T..."
+    }
+  ]
+}
+```
+
+### 3.3 テンプレート本文ファイル形式
+
+```json
+{
+  "id": "abc-123",
+  "name": "my-rules",
+  "rulesText": "## Rules\n...",
+  "outputFormatText": "## Output\n...",
+  "enabled": true,
+  "isBuiltIn": false,
+  "createdAt": "2026-01-23T...",
+  "updatedAt": "2026-01-23T..."
+}
+```
+
+## 4. 注入メカニズム
+
+### 4.1 注入タイミング
+
+```
+タスク投入
+    │
+    ▼
+PromptAssembler.assemble()
+    │
+    ├── ProjectSettingsStore.get(projectPath)
+    │   └── selectedTemplateId, templateEnabled
+    │
+    ├── [templateEnabled && selectedTemplateId]
+    │   │
+    │   ▼
+    │   TemplateStore.get(selectedTemplateId)
+    │   └── rulesText, outputFormatText
+    │
+    ▼
+プロンプト組み立て
+    │
+    ├── システムプロンプト
+    ├── [注入] rulesText
+    ├── ユーザータスク
+    └── [注入] outputFormatText
+```
+
+### 4.2 注入位置
+
+```
+[System Prompt]
+...existing system instructions...
+
+[Injected Rules - if enabled]
+---
+## Injected Rules (Template: {name})
+{rulesText}
+---
+
+[User Task]
+{userTask}
+
+[Injected Output Format - if enabled]
+---
+## Required Output Format (Template: {name})
+{outputFormatText}
+---
+```
+
+### 4.3 context肥大化回避
+
+1. **メタデータのみロード**: 起動時は `index.json` のみ読み込み
+2. **遅延ロード**: テンプレート本文は使用時のみ読み込み
+3. **キャッシュ**: 同一セッション内では本文をキャッシュ
+4. **無効時スキップ**: `enabled: false` または未選択時は注入しない
+
+## 5. API
+
+### 5.1 TemplateStore
+
+```typescript
+class TemplateStore {
+  // 一覧取得（メタデータのみ）
+  list(): TemplateMetadata[];
+
+  // 詳細取得（本文含む）
+  get(id: string): Template | null;
+
+  // 作成
+  create(input: CreateTemplateInput): Template;
+
+  // 更新
+  update(id: string, input: UpdateTemplateInput): Template;
+
+  // 削除（組み込みは削除不可）
+  delete(id: string): boolean;
+
+  // 組み込みテンプレート初期化
+  initBuiltIn(): void;
+}
+
+interface CreateTemplateInput {
+  name: string;
+  rulesText: string;
+  outputFormatText: string;
+}
+
+interface UpdateTemplateInput {
+  name?: string;
+  rulesText?: string;
+  outputFormatText?: string;
+  enabled?: boolean;
+}
+```
+
+### 5.2 注入ヘルパー
+
+```typescript
+// PromptAssembler 内で使用
+function injectTemplate(
+  prompt: string,
+  template: Template | null,
+  position: 'rules' | 'output'
+): string;
+```
+
+## 6. エラーハンドリング
+
+### 6.1 破損時の挙動（fail-closed）
+
+| 状態 | 挙動 |
+|------|------|
+| index.json 破損 | 警告表示、組み込みのみで起動 |
+| テンプレートファイル破損 | 該当テンプレート無効化、警告表示 |
+| 選択テンプレートが存在しない | 選択解除、警告表示 |
+
+### 6.2 警告メッセージ
+
+```
+[WARN] Template file corrupted: abc-123.json - template disabled
+[WARN] Selected template not found: xyz-456 - selection cleared
+```
+
+## 7. イベント
+
+```typescript
+type TemplateEvent =
+  | { type: 'TEMPLATE_CREATED'; template: TemplateMetadata }
+  | { type: 'TEMPLATE_UPDATED'; template: TemplateMetadata }
+  | { type: 'TEMPLATE_DELETED'; id: string }
+  | { type: 'TEMPLATE_INJECTED'; templateId: string; position: string }
+  | { type: 'TEMPLATE_INJECTION_SKIPPED'; reason: string };
+```
+
+## 8. 制約
+
+- テンプレート名: 1-50文字、英数字・ハイフン・アンダースコアのみ
+- rulesText: 最大10,000文字
+- outputFormatText: 最大5,000文字
+- テンプレート数上限: 100個
+- 組み込みテンプレートは編集・削除不可（コピーは可）
+
+## 9. セキュリティ
+
+- テンプレート本文はプレーンテキストとして保存
+- 実行時のサニタイズは不要（LLMへのプロンプトとして使用）
+- ファイルパーミッション: 0600（ユーザーのみ読み書き可）
+
+## 10. 関連仕様
+
+- spec/33_PROJECT_SETTINGS_PERSISTENCE.md - プロジェクト設定永続化
+- spec/17_PROMPT_TEMPLATE.md - プロンプト組み立て
+- spec/12_LLM_PROVIDER_AND_MODELS.md - LLMプロバイダー設定

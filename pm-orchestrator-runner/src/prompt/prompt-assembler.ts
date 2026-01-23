@@ -8,11 +8,66 @@
  * 3. task group prelude (dynamic)
  * 4. user input
  * 5. output format epilogue
+ *
+ * Includes:
+ * - Mandatory Rules Auto-Injection (spec/17 L59-95)
+ * - Modification Prompt Injection on REJECT (spec/17 L105-124)
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { ConversationEntry, TaskResult } from '../models/task-group';
+import { Template, formatRulesInjection, formatOutputInjection } from '../template';
+
+/**
+ * Default Mandatory Rules
+ * Per spec/17_PROMPT_TEMPLATE.md L69-95
+ *
+ * These rules are ALWAYS injected into global prelude
+ */
+export const DEFAULT_MANDATORY_RULES = `## 絶対厳守ルール（Mandatory Rules）
+
+1. **省略禁止（No Omission）**
+   - \`...\` \`// 残り省略\` \`// etc.\` \`// 以下同様\` 等の省略マーカー禁止
+   - 全てのコードを完全に出力すること
+
+2. **不完全禁止（No Incomplete）**
+   - \`TODO\` \`FIXME\` \`TBD\` を残さない
+   - 構文エラー、閉じ括弧の欠落を残さない
+   - 部分的な実装で終わらない
+
+3. **証跡必須（Evidence Required）**
+   - 完了を主張する前に、ファイルの存在を確認すること
+   - 作成・変更したファイルのパスを明示すること
+
+4. **早期終了禁止（No Early Termination）**
+   - 「これで完了です」「以上です」等の早期終了宣言禁止
+   - Runner が完了を判定する
+
+5. **Fail-Closed 原則**
+   - 不明な場合は安全側に倒す
+   - 推測で進めない
+   - 確認が必要な場合は明示する`;
+
+/**
+ * Modification Prompt Template
+ * Per spec/17_PROMPT_TEMPLATE.md L109-124
+ *
+ * Used when Review Loop returns REJECT
+ */
+export const DEFAULT_MODIFICATION_TEMPLATE = `## 前回の出力に問題が検出されました
+
+### 検出された問題
+{{detected_issues}}
+
+### 修正要求
+以下の点を修正して、再度完全な実装を提供してください:
+1. 省略せず全てのコードを出力する
+2. TODO/FIXME を残さない
+3. 全ての期待されるファイルを作成する
+
+### 前回のタスク
+{{original_task}}`;
 
 /**
  * Configuration for PromptAssembler
@@ -52,7 +107,26 @@ export interface AssemblyResult {
     taskGroupPrelude: string;
     userInput: string;
     outputEpilogue: string;
+    /** Modification prompt (only present when assembleWithModification is used) */
+    modificationPrompt?: string;
+    /** Injected rules (only present when template is active) per spec 32 */
+    templateRules?: string;
+    /** Injected output format (only present when template is active) per spec 32 */
+    templateOutputFormat?: string;
   };
+}
+
+/**
+ * Input for assembleWithModification
+ * Per spec/17_PROMPT_TEMPLATE.md L105-124
+ *
+ * Used when Review Loop returns REJECT
+ */
+export interface ModificationPromptInput {
+  /** List of detected issues (for {{detected_issues}} placeholder) */
+  detectedIssues: string[];
+  /** Original task content (for {{original_task}} placeholder) */
+  originalTask: string;
 }
 
 /**
@@ -88,36 +162,50 @@ export class PromptAssembler {
    * Per spec/17_PROMPT_TEMPLATE.md:
    * Order is fixed and non-negotiable:
    * 1. global prelude
-   * 2. project prelude
-   * 3. task group prelude
-   * 4. user input
-   * 5. output format epilogue
+   * 2. [template rules injection] - per spec 32_TEMPLATE_INJECTION.md
+   * 3. project prelude
+   * 4. task group prelude
+   * 5. user input
+   * 6. [template output format injection] - per spec 32_TEMPLATE_INJECTION.md
+   * 7. output format epilogue
    *
    * @param userInput - The user's input (task.naturalLanguageTask)
    * @param taskGroupContext - Optional task group context for prelude generation
+   * @param activeTemplate - Optional active template for injection per spec 32
    * @returns AssemblyResult with assembled prompt and sections
    * @throws PromptAssemblerError if user input is empty
    */
-  assemble(userInput: string, taskGroupContext?: TaskGroupPreludeInput): AssemblyResult {
+  assemble(userInput: string, taskGroupContext?: TaskGroupPreludeInput, activeTemplate?: Template | null): AssemblyResult {
     // Fail-closed: user input must not be empty
     if (!userInput || userInput.trim().length === 0) {
       throw new PromptAssemblerError('User input is required (fail-closed: empty input not allowed)');
     }
 
+    // Build template injections per spec 32_TEMPLATE_INJECTION.md
+    const templateRules = activeTemplate ? formatRulesInjection(activeTemplate) : '';
+    const templateOutputFormat = activeTemplate ? formatOutputInjection(activeTemplate) : '';
+
     // Load/build each section (no caching per spec)
-    const sections = {
+    const sections: AssemblyResult['sections'] = {
       globalPrelude: this.loadGlobalPrelude(),
       projectPrelude: this.loadProjectPrelude(),
       taskGroupPrelude: taskGroupContext ? this.buildTaskGroupPrelude(taskGroupContext) : '',
       userInput: userInput.trim(),
       outputEpilogue: this.loadOutputEpilogue(),
+      templateRules: templateRules || undefined,
+      templateOutputFormat: templateOutputFormat || undefined,
     };
 
-    // Assemble in fixed order
+    // Assemble in fixed order per spec 17 and 32
     const parts: string[] = [];
 
     if (sections.globalPrelude) {
       parts.push(sections.globalPrelude);
+    }
+
+    // Template rules injection (after global prelude) per spec 32
+    if (templateRules) {
+      parts.push(templateRules);
     }
 
     if (sections.projectPrelude) {
@@ -131,6 +219,11 @@ export class PromptAssembler {
     // User input is always included (already validated non-empty)
     parts.push(sections.userInput);
 
+    // Template output format injection (before output epilogue) per spec 32
+    if (templateOutputFormat) {
+      parts.push(templateOutputFormat);
+    }
+
     if (sections.outputEpilogue) {
       parts.push(sections.outputEpilogue);
     }
@@ -142,16 +235,140 @@ export class PromptAssembler {
   }
 
   /**
+   * Assemble the prompt with modification instructions
+   *
+   * Per spec/17_PROMPT_TEMPLATE.md L102-124:
+   * - Used when Review Loop returns REJECT
+   * - Modification prompt is inserted between task group prelude and user input
+   * - Original task is preserved
+   *
+   * @param userInput - The user's input (task.naturalLanguageTask)
+   * @param modification - Modification prompt input (issues and original task)
+   * @param taskGroupContext - Optional task group context for prelude generation
+   * @param activeTemplate - Optional active template for injection per spec 32
+   * @returns AssemblyResult with assembled prompt including modification instructions
+   * @throws PromptAssemblerError if user input is empty
+   */
+  assembleWithModification(
+    userInput: string,
+    modification: ModificationPromptInput,
+    taskGroupContext?: TaskGroupPreludeInput,
+    activeTemplate?: Template | null
+  ): AssemblyResult {
+    // Fail-closed: user input must not be empty
+    if (!userInput || userInput.trim().length === 0) {
+      throw new PromptAssemblerError('User input is required (fail-closed: empty input not allowed)');
+    }
+
+    // Build modification prompt from template
+    const modificationPrompt = this.buildModificationPrompt(modification);
+
+    // Build template injections per spec 32_TEMPLATE_INJECTION.md
+    const templateRules = activeTemplate ? formatRulesInjection(activeTemplate) : '';
+    const templateOutputFormat = activeTemplate ? formatOutputInjection(activeTemplate) : '';
+
+    // Load/build each section (no caching per spec)
+    const sections: AssemblyResult['sections'] = {
+      globalPrelude: this.loadGlobalPrelude(),
+      projectPrelude: this.loadProjectPrelude(),
+      taskGroupPrelude: taskGroupContext ? this.buildTaskGroupPrelude(taskGroupContext) : '',
+      userInput: userInput.trim(),
+      outputEpilogue: this.loadOutputEpilogue(),
+      modificationPrompt,
+      templateRules: templateRules || undefined,
+      templateOutputFormat: templateOutputFormat || undefined,
+    };
+
+    // Assemble in fixed order with modification prompt
+    // Per spec/17 L102-103: REJECT 時は user input 直前に Modification Prompt を追加注入
+    const parts: string[] = [];
+
+    if (sections.globalPrelude) {
+      parts.push(sections.globalPrelude);
+    }
+
+    // Template rules injection (after global prelude) per spec 32
+    if (templateRules) {
+      parts.push(templateRules);
+    }
+
+    if (sections.projectPrelude) {
+      parts.push(sections.projectPrelude);
+    }
+
+    if (sections.taskGroupPrelude) {
+      parts.push(sections.taskGroupPrelude);
+    }
+
+    // Insert modification prompt before user input (per spec L102)
+    parts.push(modificationPrompt);
+
+    // User input is always included (already validated non-empty)
+    parts.push(sections.userInput);
+
+    // Template output format injection (before output epilogue) per spec 32
+    if (templateOutputFormat) {
+      parts.push(templateOutputFormat);
+    }
+
+    if (sections.outputEpilogue) {
+      parts.push(sections.outputEpilogue);
+    }
+
+    return {
+      prompt: parts.join('\n\n'),
+      sections,
+    };
+  }
+
+  /**
+   * Build modification prompt from template
+   *
+   * Per spec/17_PROMPT_TEMPLATE.md L109-124:
+   * - Load template from modification-template.md or use default
+   * - Replace {{detected_issues}} and {{original_task}} placeholders
+   *
+   * @param modification - Modification prompt input
+   * @returns Modification prompt string
+   */
+  buildModificationPrompt(modification: ModificationPromptInput): string {
+    // Try to load custom template, fall back to default
+    const customTemplate = this.loadTemplateFile('modification-template.md');
+    const template = customTemplate || DEFAULT_MODIFICATION_TEMPLATE;
+
+    // Format detected issues as bullet points
+    const issuesList = modification.detectedIssues
+      .map(issue => `- ${issue}`)
+      .join('\n');
+
+    // Replace placeholders
+    return template
+      .replace('{{detected_issues}}', issuesList)
+      .replace('{{original_task}}', modification.originalTask);
+  }
+
+  /**
    * Load global prelude from template file
    *
-   * Per spec/17_PROMPT_TEMPLATE.md:
+   * Per spec/17_PROMPT_TEMPLATE.md L69-101:
    * - File: .claude/prompt-templates/global-prelude.md
    * - Contains: rules, prohibitions, output format assumptions
+   * - Mandatory Rules are ALWAYS included (auto-injected)
    *
-   * @returns Global prelude content (empty string if file not found)
+   * @returns Global prelude content with mandatory rules
    */
   loadGlobalPrelude(): string {
-    return this.loadTemplateFile('global-prelude.md');
+    const customPrelude = this.loadTemplateFile('global-prelude.md');
+
+    // Per spec/17 L69-95, L99-101:
+    // Mandatory Rules are ALWAYS injected into global prelude
+    const parts: string[] = [DEFAULT_MANDATORY_RULES];
+
+    if (customPrelude) {
+      parts.push(customPrelude);
+    }
+
+    return parts.join('\n\n');
   }
 
   /**
