@@ -638,6 +638,42 @@ Events:
 | EXECUTOR_ERROR        | No      | Yes  | Executorエラー（内部詳細）        |
 | EVIDENCE_CREATED      | No      | Yes  | Evidence生成（検証用）            |
 | MODEL_CHANGE          | No      | Yes  | モデル変更（設定変更）            |
+| REVIEW_LOOP_START     | Yes     | Yes  | Review Loop開始                   |
+| REVIEW_ITERATION_START| No      | Yes  | Review Loopイテレーション開始     |
+| QUALITY_JUDGMENT      | Yes     | Yes  | 品質判定（PASS/REJECT/RETRY）     |
+| REJECTION_DETAILS     | No      | Yes  | REJECT詳細（失敗基準・修正指示）  |
+| MODIFICATION_PROMPT   | No      | Yes  | 修正指示プロンプト全文            |
+| REVIEW_ITERATION_END  | No      | Yes  | Review Loopイテレーション終了     |
+| REVIEW_LOOP_END       | Yes     | Yes  | Review Loop終了（最終結果）       |
+| CHUNKING_START        | Yes     | Yes  | Task Chunking開始                 |
+| CHUNKING_ANALYSIS     | No      | Yes  | タスク分割分析結果                |
+| SUBTASK_CREATED       | No      | Yes  | サブタスク生成                    |
+| SUBTASK_START         | Yes     | Yes  | サブタスク実行開始                |
+| SUBTASK_COMPLETE      | Yes     | Yes  | サブタスク完了                    |
+| SUBTASK_FAILED        | Yes     | Yes  | サブタスク失敗                    |
+| SUBTASK_RETRY         | Yes     | Yes  | サブタスクリトライ                |
+| CHUNKING_AGGREGATION  | No      | Yes  | 結果集約                          |
+| CHUNKING_COMPLETE     | Yes     | Yes  | Task Chunking完了                 |
+| PLANNING_START        | Yes     | Yes  | Task Planning開始                 |
+| SIZE_ESTIMATION       | No      | Yes  | サイズ推定結果                    |
+| CHUNKING_DECISION     | No      | Yes  | チャンク判定結果                  |
+| DEPENDENCY_ANALYSIS   | No      | Yes  | 依存関係分析結果                  |
+| EXECUTION_PLAN        | Yes     | Yes  | 実行計画確定                      |
+| PLANNING_END          | Yes     | Yes  | Task Planning完了                 |
+| RETRY_DECISION        | Yes     | Yes  | リトライ判定（RETRY/ESCALATE）    |
+| RETRY_START           | Yes     | Yes  | リトライ開始                      |
+| RETRY_SUCCESS         | Yes     | Yes  | リトライ成功                      |
+| ESCALATE_DECISION     | Yes     | Yes  | ESCALATE判定                      |
+| ESCALATE_EXECUTED     | Yes     | Yes  | ESCALATE実行                      |
+| RECOVERY_START        | No      | Yes  | リカバリー開始                    |
+| SNAPSHOT_RESTORE      | No      | Yes  | スナップショット復元              |
+| RECOVERY_COMPLETE     | Yes     | Yes  | リカバリー完了                    |
+| MODEL_SELECTED        | No      | Yes  | モデル選択                        |
+| MODEL_SWITCH          | Yes     | Yes  | モデル切り替え（エスカレーション）|
+| MODEL_USAGE           | No      | Yes  | トークン使用量                    |
+| COST_WARNING          | Yes     | Yes  | コスト警告（80%超過）             |
+| COST_LIMIT_EXCEEDED   | Yes     | Yes  | コスト上限到達                    |
+| MODEL_FALLBACK        | Yes     | Yes  | フォールバック発動                |
 
 ### 5.4 Default Behavior
 
@@ -788,6 +824,42 @@ const TEST_CASES = [
 | EVIDENCE_CREATED      | Evidence が生成された時点                |
 | EVIDENCE_MISSING      | Evidence が不足している（検証失敗）時点  |
 | MODEL_CHANGE          | モデル設定が変更された時点               |
+| REVIEW_LOOP_START     | Review Loop を開始した時点               |
+| REVIEW_ITERATION_START| Review Loop の各イテレーション開始時点   |
+| QUALITY_JUDGMENT      | LLM Layer が品質判定を完了した時点       |
+| REJECTION_DETAILS     | REJECT 判定の詳細を記録した時点          |
+| MODIFICATION_PROMPT   | 修正指示プロンプトを生成した時点         |
+| REVIEW_ITERATION_END  | Review Loop の各イテレーション終了時点   |
+| REVIEW_LOOP_END       | Review Loop が終了した時点               |
+| CHUNKING_START        | Task Chunking 分析を開始した時点         |
+| CHUNKING_ANALYSIS     | タスク分割分析が完了した時点             |
+| SUBTASK_CREATED       | サブタスクが生成された時点               |
+| SUBTASK_START         | サブタスクの実行を開始した時点           |
+| SUBTASK_COMPLETE      | サブタスクが正常完了した時点             |
+| SUBTASK_FAILED        | サブタスクが失敗した時点                 |
+| SUBTASK_RETRY         | サブタスクをリトライ開始した時点         |
+| CHUNKING_AGGREGATION  | サブタスク結果の集約を開始した時点       |
+| CHUNKING_COMPLETE     | Task Chunking が完了した時点             |
+| PLANNING_START        | Task Planning を開始した時点             |
+| SIZE_ESTIMATION       | サイズ推定が完了した時点                 |
+| CHUNKING_DECISION     | チャンク判定が完了した時点               |
+| DEPENDENCY_ANALYSIS   | 依存関係分析が完了した時点               |
+| EXECUTION_PLAN        | 実行計画が確定した時点                   |
+| PLANNING_END          | Task Planning が完了した時点             |
+| RETRY_DECISION        | リトライ判定（RETRY/ESCALATE）を決定した時点 |
+| RETRY_START           | リトライを開始した時点                   |
+| RETRY_SUCCESS         | リトライが成功した時点                   |
+| ESCALATE_DECISION     | ESCALATE 判定を決定した時点              |
+| ESCALATE_EXECUTED     | ESCALATE を実行した時点                  |
+| RECOVERY_START        | リカバリーを開始した時点                 |
+| SNAPSHOT_RESTORE      | スナップショットを復元した時点           |
+| RECOVERY_COMPLETE     | リカバリーが完了した時点                 |
+| MODEL_SELECTED        | モデルを選択した時点                     |
+| MODEL_SWITCH          | モデルを切り替えた時点（エスカレーション）|
+| MODEL_USAGE           | トークン使用量を記録した時点             |
+| COST_WARNING          | コスト警告（80%超過）を発行した時点      |
+| COST_LIMIT_EXCEEDED   | コスト上限に到達した時点                 |
+| MODEL_FALLBACK        | フォールバックを発動した時点             |
 
 ### 7.2 イベント記録フォーマット
 
@@ -1047,3 +1119,7 @@ async function executeWithTimeout(task: Task): Promise<TaskResult> {
 - /logs Command (spec/10_REPL_UX.md)
 - Non-Interactive Mode (spec/10_REPL_UX.md)
 - Project Mode (spec/10_REPL_UX.md)
+- Task Planning イベント (spec/29_TASK_PLANNING.md)
+- Retry/Recovery イベント (spec/30_RETRY_AND_RECOVERY.md)
+- Model Policy イベント (spec/31_PROVIDER_MODEL_POLICY.md)
+- Conversation Trace イベント (spec/28_CONVERSATION_TRACE.md)

@@ -208,6 +208,57 @@
 
 ---
 
+## LLM レイヤー仕様（Self-Improvement Loop）
+
+25_REVIEW_LOOP.md
+
+- Review Loop（PASS/REJECT/RETRY 自動品質判定）仕様。
+- Claude Code 出力の自動品質検証。
+- REJECT 時の修正指示生成と再投入。
+- イテレーション制御と履歴ログ。
+- Fail-Closed 原則（判定不能 → REJECT）。
+
+26_TASK_CHUNKING.md
+
+- Task Chunking（自動タスク分割）仕様。
+- 大きなタスクを N 個のサブタスクに自動分割。
+- 並列/逐次実行モード。
+- サブタスク毎の Auto-Retry 戦略。
+- 全サブタスク完了まで親タスクは COMPLETE にならない。
+
+28_CONVERSATION_TRACE.md
+
+- Conversation Trace（会話トレース）仕様。
+- LLM 往復・品質判定・修正フローを JSONL 形式で記録。
+- セルフヒーリングの証跡を事後検証可能に。
+- /trace コマンドと Web API で参照。
+
+29_TASK_PLANNING.md
+
+- Task Planning（タスク計画）仕様。
+- サイズ推定（トークン数、ファイル数、複雑度）。
+- チャンク判定（分割要否の決定）。
+- 依存関係分析と実行計画生成。
+- PLANNING_* トレースイベント。
+
+30_RETRY_AND_RECOVERY.md
+
+- Retry and Recovery（リトライ・リカバリー）仕様。
+- 原因別リトライ戦略（INCOMPLETE, QUALITY_FAILURE, TIMEOUT 等）。
+- バックオフ戦略（exponential, fixed, linear）。
+- ESCALATE フロー（リトライ上限到達時の人間エスカレ）。
+- 部分成功時のリカバリーメカニズム。
+
+31_PROVIDER_MODEL_POLICY.md
+
+- Provider/Model Policy（Provider/Model 切り替え）仕様。
+- フェーズ別モデル選択（計画=安価、実装=標準、リトライ=高品質）。
+- プロファイル設定（stable, cheap, fast）。
+- 失敗時の自動エスカレーション。
+- コスト追跡と上限管理。
+
+---
+
 ## 運用仕様（Operations）
 
 99_RUNBOOK.md
@@ -237,6 +288,12 @@
   12. 12_LLM_PROVIDER_AND_MODELS.md（Provider/Model 仕様）
   13. 13_LOGGING_AND_OBSERVABILITY.md（ログ仕様）
   14. 11_VIBE_CODING_ACCEPTANCE.md（検証・受入仕様）
-  15. 99_RUNBOOK.md（運用仕様）
+  15. 25_REVIEW_LOOP.md（Review Loop 仕様）
+  16. 26_TASK_CHUNKING.md（Task Chunking 仕様）
+  17. 28_CONVERSATION_TRACE.md（Conversation Trace 仕様）
+  18. 29_TASK_PLANNING.md（Task Planning 仕様）
+  19. 30_RETRY_AND_RECOVERY.md（Retry and Recovery 仕様）
+  20. 31_PROVIDER_MODEL_POLICY.md（Provider/Model Policy 仕様）
+  21. 99_RUNBOOK.md（運用仕様）
 
 - 本インデックスに記載のない挙動は仕様外とし、fail-closed とする。
