@@ -40,7 +40,7 @@ interface Template {
 | `builtin-minimal` | Minimal | 最小限のルール（品質チェックのみ） |
 | `builtin-standard` | Standard | 標準ルール（UI/UX破綻=未完了含む） |
 | `builtin-strict` | Strict | 厳格ルール（全チェック有効） |
-| `builtin-goal_drift_guard` | Goal_Drift_Guard | ゴールドリフト防止（完了条件厳守） |
+| `goal_drift_guard` | Goal_Drift_Guard | ゴールドリフト防止（完了条件厳守） |
 
 ### 2.3 Standard テンプレート例
 
@@ -66,7 +66,7 @@ outputFormat: |
 ### 2.4 Goal_Drift_Guard テンプレート例
 
 ```yaml
-# builtin-goal_drift_guard
+# id: goal_drift_guard
 # 選択時のみ注入（デフォルトOFF）
 # プロジェクト非依存（サンプルプロジェクト固有の文言を含まない）
 rules: |
@@ -278,6 +278,30 @@ function injectTemplate(
   template: Template | null,
   position: 'rules' | 'output'
 ): string;
+```
+
+### 5.3 テンプレート選択フロー（Settings経由）
+
+```typescript
+// 1. ProjectSettingsStore でテンプレートを選択
+const settingsStore = new ProjectSettingsStore();
+await settingsStore.initialize('/path/to/project');
+await settingsStore.setTemplate('goal_drift_guard');  // ID で指定
+
+// 2. 選択状態を確認
+const settings = settingsStore.get();
+// settings.template.selectedId === 'goal_drift_guard'
+// settings.template.enabled === true
+
+// 3. TemplateStore からテンプレート取得
+const templateStore = new TemplateStore();
+await templateStore.initialize();
+const activeTemplate = templateStore.get(settings.template.selectedId);
+
+// 4. PromptAssembler で注入
+const result = assembler.assemble(userInput, undefined, activeTemplate);
+// result.sections.templateRules に Goal Drift Guard ルールが含まれる
+// result.sections.templateOutputFormat に完了報告形式が含まれる
 ```
 
 ## 6. エラーハンドリング

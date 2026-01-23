@@ -895,7 +895,7 @@ describe('PromptAssembler (spec/17_PROMPT_TEMPLATE.md)', () => {
     describe('Goal Drift Guard Template Injection', () => {
       // Goal Drift Guard template for testing
       const goalDriftGuardTemplate = {
-        id: 'builtin-goal_drift_guard',
+        id: 'goal_drift_guard',
         name: 'Goal_Drift_Guard',
         rulesText: `## Goal Drift Prevention Rules
 

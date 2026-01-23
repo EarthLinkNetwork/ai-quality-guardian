@@ -217,7 +217,7 @@ export const BUILTIN_STRICT: Template = {
  * - Prohibits escape phrases and premature completion language
  */
 export const BUILTIN_GOAL_DRIFT_GUARD: Template = {
-  id: 'builtin-goal_drift_guard',
+  id: 'goal_drift_guard',
   name: 'Goal_Drift_Guard',
   rulesText: `## Goal Drift Prevention Rules
 

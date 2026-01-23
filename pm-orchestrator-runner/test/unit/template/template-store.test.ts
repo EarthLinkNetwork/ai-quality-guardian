@@ -112,15 +112,15 @@ describe('TemplateStore (spec/32_TEMPLATE_INJECTION.md)', () => {
       assert.ok(goalDriftGuard?.outputFormatText.includes('INCOMPLETE:'), 'should have incomplete statement format');
     });
 
-    it('should have Goal_Drift_Guard template with id builtin-goal_drift_guard', () => {
+    it('should have Goal_Drift_Guard template with id goal_drift_guard', () => {
       const goalDriftGuard = store.getByName('Goal_Drift_Guard');
       assert.ok(goalDriftGuard);
-      assert.strictEqual(goalDriftGuard?.id, 'builtin-goal_drift_guard');
+      assert.strictEqual(goalDriftGuard?.id, 'goal_drift_guard');
     });
 
     it('should export BUILTIN_GOAL_DRIFT_GUARD constant', () => {
       assert.ok(BUILTIN_GOAL_DRIFT_GUARD, 'BUILTIN_GOAL_DRIFT_GUARD should exist');
-      assert.strictEqual(BUILTIN_GOAL_DRIFT_GUARD.id, 'builtin-goal_drift_guard');
+      assert.strictEqual(BUILTIN_GOAL_DRIFT_GUARD.id, 'goal_drift_guard');
       assert.strictEqual(BUILTIN_GOAL_DRIFT_GUARD.name, 'Goal_Drift_Guard');
       assert.strictEqual(BUILTIN_GOAL_DRIFT_GUARD.isBuiltIn, true);
     });

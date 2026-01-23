@@ -359,6 +359,62 @@ Goal_Drift_Guard は、AIがタスクの本来の目的から逸脱すること�
 /template use Goal_Drift_Guard
 ```
 
+### 再現可能なデモンストレーション
+
+#### テンプレートID確認
+
+```bash
+# Goal Drift Guard の canonical ID を確認
+grep -n "id:" src/template/template-store.ts | grep goal_drift
+# 出力例: 220:  id: 'goal_drift_guard',
+```
+
+#### Settings経由での選択
+
+```typescript
+// 1. ProjectSettingsStore で goal_drift_guard を選択
+await settingsStore.setTemplate('goal_drift_guard');
+
+// 2. 設定確認
+const settings = settingsStore.get();
+console.log(settings.template.selectedId);  // 'goal_drift_guard'
+console.log(settings.template.enabled);     // true
+```
+
+#### 注入結果の確認
+
+```typescript
+// TemplateStore から取得
+const template = templateStore.get('goal_drift_guard');
+
+// PromptAssembler で注入
+const result = assembler.assemble('Implement feature X', undefined, template);
+
+// sections に注入内容が含まれる
+console.log(result.sections.templateRules);
+// 出力: "## Goal Drift Prevention Rules..."
+
+console.log(result.sections.templateOutputFormat);
+// 出力: "## Required Completion Report..."
+```
+
+#### テストで検証
+
+```bash
+# Goal Drift Guard 関連テスト実行
+npm test -- --grep "Goal"
+
+# 期待される出力:
+#   Goal Drift Guard Template Injection
+#     ✔ should inject Goal Drift Guard rules when selected as activeTemplate
+#     ✔ should inject Goal Drift Guard output format when selected
+#     ✔ should NOT inject Goal Drift Guard when a different template is selected
+#     ✔ should inject Goal Drift Guard in correct order
+#     ✔ should work with assembleWithModification when Goal Drift Guard is active
+#     ✔ should populate sections with Goal Drift Guard content
+#   8 passing
+```
+
 ### 禁止されるフレーズ
 
 - "if needed" / "if required"
