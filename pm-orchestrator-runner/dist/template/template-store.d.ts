@@ -112,6 +112,16 @@ export declare const BUILTIN_STANDARD: Template;
  */
 export declare const BUILTIN_STRICT: Template;
 /**
+ * Goal Drift Guard template - prevents goal drift and premature completion
+ *
+ * Per spec/32_TEMPLATE_INJECTION.md:
+ * - Only injected when activeTemplate === "goal_drift_guard"
+ * - Project-agnostic (no sample-project specific wording)
+ * - Defines failures generically as "task not complete from user's perspective"
+ * - Prohibits escape phrases and premature completion language
+ */
+export declare const BUILTIN_GOAL_DRIFT_GUARD: Template;
+/**
  * All built-in templates
  */
 export declare const BUILTIN_TEMPLATES: Template[];

@@ -5,7 +5,7 @@
  * Per spec 32_TEMPLATE_INJECTION.md
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TemplateStore = exports.formatOutputInjection = exports.formatRulesInjection = exports.generateId = exports.validateTemplate = exports.validateTemplateContent = exports.validateTemplateName = exports.getDefaultStorageDir = exports.DEFAULT_TEMPLATE_STORE_CONFIG = exports.BUILTIN_STRICT = exports.BUILTIN_STANDARD = exports.BUILTIN_MINIMAL = exports.BUILTIN_TEMPLATES = exports.NAME_PATTERN = exports.TEMPLATE_LIMITS = void 0;
+exports.TemplateStore = exports.formatOutputInjection = exports.formatRulesInjection = exports.generateId = exports.validateTemplate = exports.validateTemplateContent = exports.validateTemplateName = exports.getDefaultStorageDir = exports.DEFAULT_TEMPLATE_STORE_CONFIG = exports.BUILTIN_GOAL_DRIFT_GUARD = exports.BUILTIN_STRICT = exports.BUILTIN_STANDARD = exports.BUILTIN_MINIMAL = exports.BUILTIN_TEMPLATES = exports.NAME_PATTERN = exports.TEMPLATE_LIMITS = void 0;
 var template_store_1 = require("./template-store");
 // Constants
 Object.defineProperty(exports, "TEMPLATE_LIMITS", { enumerable: true, get: function () { return template_store_1.TEMPLATE_LIMITS; } });
@@ -14,6 +14,7 @@ Object.defineProperty(exports, "BUILTIN_TEMPLATES", { enumerable: true, get: fun
 Object.defineProperty(exports, "BUILTIN_MINIMAL", { enumerable: true, get: function () { return template_store_1.BUILTIN_MINIMAL; } });
 Object.defineProperty(exports, "BUILTIN_STANDARD", { enumerable: true, get: function () { return template_store_1.BUILTIN_STANDARD; } });
 Object.defineProperty(exports, "BUILTIN_STRICT", { enumerable: true, get: function () { return template_store_1.BUILTIN_STRICT; } });
+Object.defineProperty(exports, "BUILTIN_GOAL_DRIFT_GUARD", { enumerable: true, get: function () { return template_store_1.BUILTIN_GOAL_DRIFT_GUARD; } });
 Object.defineProperty(exports, "DEFAULT_TEMPLATE_STORE_CONFIG", { enumerable: true, get: function () { return template_store_1.DEFAULT_TEMPLATE_STORE_CONFIG; } });
 // Functions
 Object.defineProperty(exports, "getDefaultStorageDir", { enumerable: true, get: function () { return template_store_1.getDefaultStorageDir; } });
