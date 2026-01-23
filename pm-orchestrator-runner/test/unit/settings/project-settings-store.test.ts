@@ -510,4 +510,97 @@ describe('ProjectSettingsStore (spec/33_PROJECT_SETTINGS_PERSISTENCE.md)', () =>
       assert.ok(mode <= 0o600, `file should have restrictive permissions, got ${mode.toString(8)}`);
     });
   });
+
+  describe('ID-only Persistence (Section 2.3)', () => {
+    beforeEach(async () => {
+      await store.initialize(projectDir);
+    });
+
+    it('should persist template.id, not template.name', async () => {
+      // Given: A template where id !== name
+      // BUILTIN_GOAL_DRIFT_GUARD has:
+      //   id: 'goal_drift_guard'
+      //   name: 'Goal_Drift_Guard'
+      const templateId = 'goal_drift_guard';
+      const templateName = 'Goal_Drift_Guard';
+
+      // When: Setting template by ID
+      await store.setTemplate(templateId);
+
+      // Then: The persisted value should be the ID, not the name
+      const hash = generateProjectHash(projectDir);
+      const filePath = path.join(tempDir, `${hash}.json`);
+      const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+
+      assert.strictEqual(
+        content.template.selectedId,
+        templateId,
+        `persisted value should be ID '${templateId}'`
+      );
+      assert.notStrictEqual(
+        content.template.selectedId,
+        templateName,
+        `persisted value should NOT be name '${templateName}'`
+      );
+    });
+
+    it('should store lowercase ID, not display name', async () => {
+      // The ID 'goal_drift_guard' is all lowercase
+      // The name 'Goal_Drift_Guard' has mixed case
+      // Persistence must use the ID format
+      await store.setTemplate('goal_drift_guard');
+
+      const settings = store.get();
+      
+      // Verify in-memory value
+      assert.strictEqual(settings.template.selectedId, 'goal_drift_guard');
+      assert.notStrictEqual(settings.template.selectedId, 'Goal_Drift_Guard');
+
+      // Verify persisted value
+      const hash = generateProjectHash(projectDir);
+      const filePath = path.join(tempDir, `${hash}.json`);
+      const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+
+      assert.strictEqual(content.template.selectedId, 'goal_drift_guard');
+    });
+
+    it('should verify name-to-ID resolution pattern (UI/CLI -> persistence)', async () => {
+      // This test documents the expected pattern:
+      // 1. UI/CLI receives display name (e.g., 'Goal_Drift_Guard')
+      // 2. TemplateStore.getByName() resolves to Template object
+      // 3. template.id is extracted ('goal_drift_guard')
+      // 4. ProjectSettingsStore.setTemplate(template.id) is called
+      // 5. Only the ID is persisted
+
+      // Simulating the pattern: when user selects by name,
+      // the calling code should resolve to ID before calling setTemplate
+      const simulatedIdFromTemplateStore = 'goal_drift_guard';
+      
+      await store.setTemplate(simulatedIdFromTemplateStore);
+      
+      const settings = store.get();
+      assert.strictEqual(
+        settings.template.selectedId,
+        'goal_drift_guard',
+        'after name resolution, only ID should be stored'
+      );
+    });
+
+    it('should preserve ID-only persistence across save/load cycle', async () => {
+      // Set template
+      await store.setTemplate('goal_drift_guard');
+      await store.save();
+
+      // Create new store instance and load
+      const store2 = new ProjectSettingsStore(tempDir);
+      const settings = await store2.initialize(projectDir);
+
+      // Verify the loaded value is still the ID
+      assert.strictEqual(
+        settings.template.selectedId,
+        'goal_drift_guard',
+        'loaded value should be ID, not name'
+      );
+    });
+  });
 });

@@ -73,6 +73,57 @@ const DEFAULT_PROJECT_SETTINGS: Omit<ProjectSettings, 'projectPath' | 'projectHa
 };
 ```
 
+### 2.3 テンプレート選択の永続化ルール（ID-only persistence）
+
+**重要**: テンプレート選択は `template.id` のみを永続化する。表示名（`template.name`）は UI/CLI 専用であり、永続化してはならない。
+
+#### 2.3.1 ルール
+
+| 項目 | 永続化 | 用途 |
+|------|--------|------|
+| `template.id` | する | 一意識別子（例: `goal_drift_guard`） |
+| `template.name` | しない | UI表示専用（例: `Goal_Drift_Guard`） |
+
+#### 2.3.2 理由
+
+1. **一意性保証**: ID は一意であり、テンプレート識別に最適
+2. **表示名の変更耐性**: 将来的に表示名が変更されても設定が壊れない
+3. **大文字小文字の一貫性**: ID は常に小文字（例: `goal_drift_guard`）であり、比較が容易
+4. **Goal Drift 防止**: 名前と ID の混同によるドリフトを防ぐ
+
+#### 2.3.3 実装要件
+
+```typescript
+// UI/CLI で名前選択時、保存前に ID に解決する
+const template = templateStore.getByName('Goal_Drift_Guard');
+if (template) {
+  // 保存するのは template.id のみ
+  await settingsStore.setTemplate(template.id);  // 'goal_drift_guard'
+}
+
+// 永続化ファイル内の例（正しい）
+{
+  "template": {
+    "selectedId": "goal_drift_guard",  // ID のみ保存
+    "enabled": true
+  }
+}
+
+// 永続化ファイル内の例（誤り - してはならない）
+{
+  "template": {
+    "selectedId": "Goal_Drift_Guard",  // 表示名を保存してはならない
+    "enabled": true
+  }
+}
+```
+
+#### 2.3.4 検証ポイント
+
+- `/template use <name>` コマンドは内部で ID に解決する
+- 保存されたファイルの `selectedId` は常に ID（小文字）
+- 表示時は `TemplateStore.get(id)` で名前を取得して表示
+
 ## 3. ストレージ
 
 ### 3.1 保存場所
@@ -374,3 +425,50 @@ type ProjectSettingsEvent =
 - spec/32_TEMPLATE_INJECTION.md - テンプレート管理
 - spec/31_PROVIDER_MODEL_POLICY.md - LLMプロバイダー・モデル管理
 - spec/12_LLM_PROVIDER_AND_MODELS.md - LLMプロバイダー設定
+
+## 12. Appendix: ID-only Persistence Demo
+
+### 12.1 永続化ファイルの実例
+
+以下は `/template use Goal_Drift_Guard` 実行後の永続化ファイル例:
+
+```json
+{
+  "version": 1,
+  "projectPath": "/Users/user/my-project",
+  "projectHash": "a1b2c3d4e5f67890",
+  "template": {
+    "selectedId": "goal_drift_guard",
+    "enabled": true
+  },
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-3-opus",
+    "customEndpoint": null
+  },
+  "preferences": {
+    "autoChunking": true,
+    "costWarningEnabled": true,
+    "costWarningThreshold": 0.5
+  },
+  "createdAt": "2026-01-24T10:00:00Z",
+  "updatedAt": "2026-01-24T10:05:00Z",
+  "lastAccessedAt": "2026-01-24T10:05:00Z"
+}
+```
+
+**注目ポイント**:
+- `template.selectedId` は `"goal_drift_guard"` (ID、小文字)
+- `"Goal_Drift_Guard"` (表示名、混在ケース) ではない
+- UI/CLI で名前選択しても、保存されるのは ID のみ
+
+### 12.2 検証方法
+
+```bash
+# 永続化ファイルの確認
+cat ~/.pm-orchestrator/projects/<hash>.json | jq '.template.selectedId'
+# 出力: "goal_drift_guard"
+
+# 表示名ではなく ID が保存されていることを確認
+cat ~/.pm-orchestrator/projects/<hash>.json | jq '.template.selectedId' | grep -q "goal_drift_guard" && echo "OK: ID persisted" || echo "NG: Name persisted"
+```
