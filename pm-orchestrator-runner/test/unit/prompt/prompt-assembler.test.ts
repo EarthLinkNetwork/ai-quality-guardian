@@ -891,5 +891,134 @@ describe('PromptAssembler (spec/17_PROMPT_TEMPLATE.md)', () => {
       assert.ok(!result.prompt.includes('Injected Rules'), 'Should not contain rules injection');
       assert.ok(!result.prompt.includes('Required Output Format'), 'Should not contain output format');
     });
+
+    describe('Goal Drift Guard Template Injection', () => {
+      // Goal Drift Guard template for testing
+      const goalDriftGuardTemplate = {
+        id: 'builtin-goal_drift_guard',
+        name: 'Goal_Drift_Guard',
+        rulesText: `## Goal Drift Prevention Rules
+
+### Completion Criteria
+- A task is ONLY complete when ALL user-specified requirements are fulfilled
+- "Task not complete from user's perspective" = completion condition NOT met
+
+### Prohibited Language (Escape Phrases)
+The following phrases are PROHIBITED in completion reports:
+- "if needed"
+- "optional"
+- "as needed"`,
+        outputFormatText: `## Required Completion Report
+
+### Requirement Checklist
+For each requirement in the original request:
+- [ ] Requirement 1: [status]
+
+### Completion Statement
+Only use ONE of:
+- "COMPLETE: All N requirements fulfilled" (if truly complete)
+- "INCOMPLETE: Requirements X, Y, Z remain" (if not complete)`,
+        enabled: false,
+        isBuiltIn: true,
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      };
+
+      it('should inject Goal Drift Guard rules when selected as activeTemplate', () => {
+        const result = assembler.assemble('Implement feature X', undefined, goalDriftGuardTemplate);
+
+        // Verify rules injection contains Goal Drift Guard content
+        assert.ok(result.prompt.includes('Goal Drift Prevention Rules'),
+          'Should contain Goal Drift Prevention Rules');
+        assert.ok(result.prompt.includes('Completion Criteria'),
+          'Should contain Completion Criteria section');
+        assert.ok(result.prompt.includes('Prohibited Language'),
+          'Should contain Prohibited Language section');
+        assert.ok(result.prompt.includes('"if needed"'),
+          'Should contain prohibited phrase example');
+      });
+
+      it('should inject Goal Drift Guard output format when selected', () => {
+        const result = assembler.assemble('Implement feature X', undefined, goalDriftGuardTemplate);
+
+        // Verify output format injection contains Goal Drift Guard content
+        assert.ok(result.prompt.includes('Required Completion Report'),
+          'Should contain Required Completion Report');
+        assert.ok(result.prompt.includes('Requirement Checklist'),
+          'Should contain Requirement Checklist section');
+        assert.ok(result.prompt.includes('Completion Statement'),
+          'Should contain Completion Statement section');
+        assert.ok(result.prompt.includes('INCOMPLETE: Requirements X, Y, Z remain'),
+          'Should contain completion statement example');
+      });
+
+      it('should NOT inject Goal Drift Guard when a different template is selected', () => {
+        // Use a different template (mockTemplate defined above)
+        const result = assembler.assemble('Implement feature X', undefined, mockTemplate);
+
+        // Verify Goal Drift Guard content is NOT present
+        assert.ok(!result.prompt.includes('Goal Drift Prevention Rules'),
+          'Should NOT contain Goal Drift Guard rules');
+        assert.ok(!result.prompt.includes('Required Completion Report'),
+          'Should NOT contain Goal Drift Guard output format');
+
+        // But mockTemplate content should be present
+        assert.ok(result.prompt.includes('RULE_1: Follow standards'),
+          'Should contain mockTemplate rules');
+      });
+
+      it('should inject Goal Drift Guard in correct order (rules after prelude, format before epilogue)', () => {
+        // Create output epilogue file
+        fs.writeFileSync(path.join(templateDir, 'output-epilogue.md'), '## Final Epilogue');
+
+        const result = assembler.assemble('Implement feature X', undefined, goalDriftGuardTemplate);
+
+        // Verify injection order
+        const mandatoryRulesIndex = result.prompt.indexOf('省略禁止');
+        const goalDriftRulesIndex = result.prompt.indexOf('Goal Drift Prevention Rules');
+        const userInputIndex = result.prompt.indexOf('Implement feature X');
+        const completionReportIndex = result.prompt.indexOf('Required Completion Report');
+        const epilogueIndex = result.prompt.indexOf('Final Epilogue');
+
+        assert.ok(mandatoryRulesIndex < goalDriftRulesIndex,
+          'Goal Drift rules should come after mandatory rules (global prelude)');
+        assert.ok(goalDriftRulesIndex < userInputIndex,
+          'Goal Drift rules should come before user input');
+        assert.ok(userInputIndex < completionReportIndex,
+          'Completion report should come after user input');
+        assert.ok(completionReportIndex < epilogueIndex,
+          'Completion report should come before epilogue');
+      });
+
+      it('should work with assembleWithModification when Goal Drift Guard is active', () => {
+        const modification: ModificationPromptInput = {
+          detectedIssues: ['Incomplete implementation'],
+          originalTask: 'Implement all features',
+        };
+
+        const result = assembler.assembleWithModification('Complete the task', modification, undefined, goalDriftGuardTemplate);
+
+        // Verify both modification and Goal Drift Guard injection are present
+        assert.ok(result.prompt.includes('Incomplete implementation'),
+          'Should contain modification issue');
+        assert.ok(result.prompt.includes('Goal Drift Prevention Rules'),
+          'Should contain Goal Drift Guard rules');
+        assert.ok(result.prompt.includes('Required Completion Report'),
+          'Should contain Goal Drift Guard output format');
+      });
+
+      it('should populate sections with Goal Drift Guard content', () => {
+        const result = assembler.assemble('Implement feature X', undefined, goalDriftGuardTemplate);
+
+        // Verify sections are populated with Goal Drift Guard content
+        assert.ok(result.sections.templateRules, 'templateRules should be defined');
+        assert.ok(result.sections.templateOutputFormat, 'templateOutputFormat should be defined');
+        assert.ok(result.sections.templateRules.includes('Goal Drift Prevention'),
+          'templateRules should contain Goal Drift content');
+        assert.ok(result.sections.templateOutputFormat.includes('Completion Report'),
+          'templateOutputFormat should contain Goal Drift output format');
+      });
+    });
+
   });
 });

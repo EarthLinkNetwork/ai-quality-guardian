@@ -8,6 +8,7 @@ import {
   Template,
   TemplateIndexEntry,
   BUILTIN_TEMPLATES,
+  BUILTIN_GOAL_DRIFT_GUARD,
   TemplateStoreEvent,
 } from '../../../src/template';
 
@@ -30,7 +31,7 @@ describe('TemplateStore (spec/32_TEMPLATE_INJECTION.md)', () => {
       const templates = store.list();
 
       // Should have all built-in templates
-      assert.ok(templates.length >= 3, 'should have at least 3 built-in templates');
+      assert.ok(templates.length >= 4, 'should have at least 4 built-in templates');
 
       // Check built-in templates exist
       const builtInNames = templates.filter(t => t.isBuiltIn).map(t => t.name);
@@ -75,7 +76,7 @@ describe('TemplateStore (spec/32_TEMPLATE_INJECTION.md)', () => {
     it('should have BUILTIN_TEMPLATES constant', () => {
       assert.ok(BUILTIN_TEMPLATES, 'BUILTIN_TEMPLATES should exist');
       assert.ok(Array.isArray(BUILTIN_TEMPLATES), 'should be an array');
-      assert.ok(BUILTIN_TEMPLATES.length >= 3, 'should have at least 3 templates');
+      assert.ok(BUILTIN_TEMPLATES.length >= 4, 'should have at least 4 templates');
     });
 
     it('should have Minimal template with correct structure', () => {
@@ -97,6 +98,31 @@ describe('TemplateStore (spec/32_TEMPLATE_INJECTION.md)', () => {
       const strict = store.getByName('Strict');
       assert.ok(strict, 'Strict template should exist');
       assert.strictEqual(strict?.isBuiltIn, true);
+    });
+
+    it('should have Goal_Drift_Guard template with correct structure', () => {
+      const goalDriftGuard = store.getByName('Goal_Drift_Guard');
+      assert.ok(goalDriftGuard, 'Goal_Drift_Guard template should exist');
+      assert.strictEqual(goalDriftGuard?.isBuiltIn, true);
+      assert.ok(goalDriftGuard?.rulesText.includes('Goal Drift Prevention'), 'should have goal drift prevention rules');
+      assert.ok(goalDriftGuard?.rulesText.includes('Prohibited Language'), 'should have prohibited language section');
+      assert.ok(goalDriftGuard?.rulesText.includes('if needed'), 'should prohibit "if needed" phrase');
+      assert.ok(goalDriftGuard?.outputFormatText.includes('Requirement Checklist'), 'should require requirement checklist');
+      assert.ok(goalDriftGuard?.outputFormatText.includes('COMPLETE:'), 'should have completion statement format');
+      assert.ok(goalDriftGuard?.outputFormatText.includes('INCOMPLETE:'), 'should have incomplete statement format');
+    });
+
+    it('should have Goal_Drift_Guard template with id builtin-goal_drift_guard', () => {
+      const goalDriftGuard = store.getByName('Goal_Drift_Guard');
+      assert.ok(goalDriftGuard);
+      assert.strictEqual(goalDriftGuard?.id, 'builtin-goal_drift_guard');
+    });
+
+    it('should export BUILTIN_GOAL_DRIFT_GUARD constant', () => {
+      assert.ok(BUILTIN_GOAL_DRIFT_GUARD, 'BUILTIN_GOAL_DRIFT_GUARD should exist');
+      assert.strictEqual(BUILTIN_GOAL_DRIFT_GUARD.id, 'builtin-goal_drift_guard');
+      assert.strictEqual(BUILTIN_GOAL_DRIFT_GUARD.name, 'Goal_Drift_Guard');
+      assert.strictEqual(BUILTIN_GOAL_DRIFT_GUARD.isBuiltIn, true);
     });
 
     it('should not allow editing built-in templates', async () => {
@@ -634,7 +660,7 @@ describe('TemplateStore (spec/32_TEMPLATE_INJECTION.md)', () => {
 
     it('should get built-in templates', () => {
       const builtins = store.getBuiltins();
-      assert.ok(builtins.length >= 3);
+      assert.ok(builtins.length >= 4);
       assert.ok(builtins.every(t => t.isBuiltIn));
     });
 

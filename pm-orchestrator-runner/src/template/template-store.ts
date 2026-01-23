@@ -208,12 +208,84 @@ export const BUILTIN_STRICT: Template = {
 };
 
 /**
+ * Goal Drift Guard template - prevents goal drift and premature completion
+ *
+ * Per spec/32_TEMPLATE_INJECTION.md:
+ * - Only injected when activeTemplate === "goal_drift_guard"
+ * - Project-agnostic (no sample-project specific wording)
+ * - Defines failures generically as "task not complete from user's perspective"
+ * - Prohibits escape phrases and premature completion language
+ */
+export const BUILTIN_GOAL_DRIFT_GUARD: Template = {
+  id: 'builtin-goal_drift_guard',
+  name: 'Goal_Drift_Guard',
+  rulesText: `## Goal Drift Prevention Rules
+
+### Completion Criteria
+- A task is ONLY complete when ALL user-specified requirements are fulfilled
+- "Task not complete from user's perspective" = completion condition NOT met
+- Partial completion is NOT completion
+- If any requirement remains unaddressed, the task is INCOMPLETE
+
+### Prohibited Language (Escape Phrases)
+The following phrases are PROHIBITED in completion reports:
+- "if needed"
+- "if required"
+- "optional"
+- "as needed"
+- "when necessary"
+- "could be added later"
+- "might need"
+- "consider adding"
+- "you may want to"
+
+### Premature Completion Prevention
+The following are PROHIBITED:
+- Declaring completion before all requirements are verified
+- Suggesting user "verify" or "check" instead of doing verification yourself
+- Leaving implementation decisions to user when instructions were explicit
+- Claiming "basic implementation complete" when full implementation was requested
+- Using words like "skeleton", "scaffold", "starter" for what should be complete
+
+### Goal Drift Detection
+Before completing, verify:
+1. Original user request is re-read
+2. Each explicit requirement is checked off
+3. No implicit "scope reduction" has occurred
+4. No requirements were "interpreted away"
+5. Output matches what user actually asked for, not what seemed easier`,
+  outputFormatText: `## Required Completion Report
+
+### Requirement Checklist
+For each requirement in the original request:
+- [ ] Requirement 1: [status]
+- [ ] Requirement 2: [status]
+- (continue for all requirements)
+
+### Verification Evidence
+- What was done to verify each requirement is met
+- Actual output/behavior observed
+
+### Completion Statement
+Only use ONE of:
+- "COMPLETE: All N requirements fulfilled" (if truly complete)
+- "INCOMPLETE: Requirements X, Y, Z remain" (if not complete)
+
+Do NOT use ambiguous completion language.`,
+  enabled: false,
+  isBuiltIn: true,
+  createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-01T00:00:00Z',
+};
+
+/**
  * All built-in templates
  */
 export const BUILTIN_TEMPLATES: Template[] = [
   BUILTIN_MINIMAL,
   BUILTIN_STANDARD,
   BUILTIN_STRICT,
+  BUILTIN_GOAL_DRIFT_GUARD,
 ];
 
 // ============================================================

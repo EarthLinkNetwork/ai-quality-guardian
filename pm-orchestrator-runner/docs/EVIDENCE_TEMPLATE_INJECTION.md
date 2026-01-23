@@ -17,7 +17,7 @@ Project Settings Persistence 機能の動作証跡を記録します。
 
 プロンプトテンプレートをユーザーが定義・選択し、Runner が実行時に自動注入する機能:
 
-1. **Built-in Templates**: Minimal / Standard / Strict の3種類のプリセット
+1. **Built-in Templates**: Minimal / Standard / Strict / Goal_Drift_Guard の4種類のプリセット
 2. **Custom Templates**: ユーザー定義のカスタムテンプレート
 3. **Injection Points**: Global Prelude 後と Output Epilogue 前への自動注入
 
@@ -43,9 +43,11 @@ TemplateStore (spec/32_TEMPLATE_INJECTION.md)
     ✔ should provide Minimal template
     ✔ should provide Standard template
     ✔ should provide Strict template
+    ✔ should provide Goal_Drift_Guard template
     ✔ should have Minimal template with correct structure
     ✔ should have Standard template with correct structure
     ✔ should have Strict template with correct structure
+    ✔ should have Goal_Drift_Guard template with correct structure
     ✔ should not allow editing built-in templates
     ✔ should not allow deleting built-in templates
   list() - Metadata Only (Section 5.1)
@@ -162,6 +164,13 @@ PromptAssembler (spec/17_PROMPT_TEMPLATE.md)
     ✔ should populate sections.templateRules and sections.templateOutputFormat
     ✔ should work with assembleWithModification when activeTemplate is provided
     ✔ should not inject in assembleWithModification when activeTemplate is null
+  Goal Drift Guard Template Injection
+    ✔ should inject Goal Drift Guard rules when selected as activeTemplate
+    ✔ should inject Goal Drift Guard output format when selected
+    ✔ should NOT inject Goal Drift Guard when a different template is selected
+    ✔ should inject Goal Drift Guard in correct order
+    ✔ should work with assembleWithModification when Goal Drift Guard is active
+    ✔ should populate sections with Goal Drift Guard content
 ```
 
 ### Integration Tests
@@ -220,6 +229,7 @@ interface Template {
 | **Minimal** | 最小限の品質基準 | 高速プロトタイピング |
 | **Standard** | バランスの取れた品質基準 | 通常開発（デフォルト推奨） |
 | **Strict** | 厳格な品質基準 | 本番環境・重要機能 |
+| **Goal_Drift_Guard** | ゴールドリフト防止・完了条件厳守 | 要件漏れ防止・厳密な完了判定 |
 
 ### Injection Points
 
@@ -287,7 +297,7 @@ interface Template {
 ### /templates コマンド
 
 ```
-/templates list       - 全テンプレート一覧
+/templates list       - 全テンプレート一覧（Minimal, Standard, Strict, Goal_Drift_Guard）
 /templates new <name> - 新規テンプレート作成
 /templates edit <id>  - テンプレート編集
 /templates delete <n> - テンプレート削除
@@ -321,6 +331,55 @@ typecheck: PASS (tsc --noEmit)
 lint: PASS (新規ファイルに警告なし)
 test: 2041 passing, 88 pending, 0 failing
 build: PASS (tsc)
+```
+
+
+## Goal Drift Guard テンプレート詳細
+
+### 概要
+
+Goal_Drift_Guard は、AIがタスクの本来の目的から逸脱することを防ぐための組み込みテンプレートです。
+
+### 特徴
+
+1. **選択時のみ注入**: デフォルトでは無効。ユーザーが明示的に選択した場合のみ注入
+2. **プロジェクト非依存**: 特定のサンプルプロジェクト固有の文言を含まない
+3. **完了条件の厳格化**: "Task not complete from user's perspective" を失敗と定義
+4. **エスケープフレーズ禁止**: "if needed", "optional" 等の曖昧表現を禁止
+
+### ユースケース
+
+- 要件漏れを防ぎたい重要な実装タスク
+- 「基本実装完了」で終わらせたくない場合
+- 完了報告の明確さが求められる場合
+
+### 使用方法
+
+```
+/template use Goal_Drift_Guard
+```
+
+### 禁止されるフレーズ
+
+- "if needed" / "if required"
+- "optional" / "as needed"
+- "when necessary"
+- "could be added later"
+- "might need" / "consider adding"
+- "you may want to"
+
+### 出力形式
+
+Goal Drift Guard が有効な場合、以下の形式での完了報告が要求されます:
+
+```
+### Requirement Checklist
+- [ ] Requirement 1: [status]
+- [ ] Requirement 2: [status]
+
+### Completion Statement
+- "COMPLETE: All N requirements fulfilled" (全て完了の場合)
+- "INCOMPLETE: Requirements X, Y, Z remain" (未完了の場合)
 ```
 
 ## 結論

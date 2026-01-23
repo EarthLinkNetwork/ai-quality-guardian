@@ -40,6 +40,7 @@ interface Template {
 | `builtin-minimal` | Minimal | 最小限のルール（品質チェックのみ） |
 | `builtin-standard` | Standard | 標準ルール（UI/UX破綻=未完了含む） |
 | `builtin-strict` | Strict | 厳格ルール（全チェック有効） |
+| `builtin-goal_drift_guard` | Goal_Drift_Guard | ゴールドリフト防止（完了条件厳守） |
 
 ### 2.3 Standard テンプレート例
 
@@ -60,6 +61,70 @@ outputFormat: |
   - 変更ファイル一覧（パス）
   - 実行したテスト結果
   - 残課題（あれば）
+```
+
+### 2.4 Goal_Drift_Guard テンプレート例
+
+```yaml
+# builtin-goal_drift_guard
+# 選択時のみ注入（デフォルトOFF）
+# プロジェクト非依存（サンプルプロジェクト固有の文言を含まない）
+rules: |
+  ## Goal Drift Prevention Rules
+
+  ### Completion Criteria
+  - A task is ONLY complete when ALL user-specified requirements are fulfilled
+  - "Task not complete from user's perspective" = completion condition NOT met
+  - Partial completion is NOT completion
+  - If any requirement remains unaddressed, the task is INCOMPLETE
+
+  ### Prohibited Language (Escape Phrases)
+  The following phrases are PROHIBITED in completion reports:
+  - "if needed"
+  - "if required"
+  - "optional"
+  - "as needed"
+  - "when necessary"
+  - "could be added later"
+  - "might need"
+  - "consider adding"
+  - "you may want to"
+
+  ### Premature Completion Prevention
+  The following are PROHIBITED:
+  - Declaring completion before all requirements are verified
+  - Suggesting user "verify" or "check" instead of doing verification yourself
+  - Leaving implementation decisions to user when instructions were explicit
+  - Claiming "basic implementation complete" when full implementation was requested
+  - Using words like "skeleton", "scaffold", "starter" for what should be complete
+
+  ### Goal Drift Detection
+  Before completing, verify:
+  1. Original user request is re-read
+  2. Each explicit requirement is checked off
+  3. No implicit "scope reduction" has occurred
+  4. No requirements were "interpreted away"
+  5. Output matches what user actually asked for, not what seemed easier
+
+outputFormat: |
+  ## Required Completion Report
+
+  ### Requirement Checklist
+  For each requirement in the original request:
+  - [ ] Requirement 1: [status]
+  - [ ] Requirement 2: [status]
+  - (continue for all requirements)
+
+  ### Verification Evidence
+  - What was done to verify each requirement is met
+  - Actual output/behavior observed
+
+  ### Completion Statement
+  Only use ONE of:
+  - "COMPLETE: All N requirements fulfilled" (if truly complete)
+  - "INCOMPLETE: Requirements X, Y, Z remain" (if not complete)
+
+  Do NOT use ambiguous completion language.
 ```
 
 ## 3. ストレージ
