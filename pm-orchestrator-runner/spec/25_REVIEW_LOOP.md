@@ -334,3 +334,114 @@ LLM レイヤーが品質判定できない場合:
 - spec/06_CORRECTNESS_PROPERTIES.md (Evidence 検証)
 - spec/20_QUEUE_STORE.md (Queue との統合)
 - spec/26_TASK_CHUNKING.md (サブタスクでの Review Loop)
+
+## 11. Template-Selected Evaluators
+
+### 11.1 概要
+
+Review Loop は、選択されたテンプレートに応じて追加のエバリュエーターを実行する。
+これにより、テンプレート固有の品質基準を適用できる。
+
+### 11.2 設計原則
+
+- **ゼロオーバーヘッド**: テンプレートが選択されていない場合、追加のエバリュエーターは実行されない
+- **プラガブル**: 新しいテンプレートに対応するエバリュエーターを追加可能
+- **独立動作**: 既存の Q1-Q6 チェックに影響しない
+- **Fail-Closed**: エバリュエーターでエラーが発生した場合、REJECT として扱う
+
+### 11.3 エバリュエーター起動フロー
+
+```
+Review Loop 実行
+    │
+    ├── Q1-Q6 品質チェック（必須）
+    │
+    ├── activeTemplateId を確認
+    │   │
+    │   ├── [activeTemplateId === 'goal_drift_guard']
+    │   │   └── Goal Drift Guard Evaluator (GD1-GD5) 実行
+    │   │
+    │   ├── [activeTemplateId === 'other_template']
+    │   │   └── Other Template Evaluator 実行
+    │   │
+    │   └── [activeTemplateId が null または 未対応]
+    │       └── 追加エバリュエーターなし（Q1-Q6 のみ）
+    │
+    ▼
+最終判定 (PASS/REJECT/RETRY)
+```
+
+### 11.4 エバリュエーター登録
+
+```typescript
+interface TemplateEvaluator {
+  templateId: string;
+  name: string;
+  evaluate(output: string): TemplateEvaluatorResult;
+}
+
+interface TemplateEvaluatorResult {
+  passed: boolean;
+  criteriaResults: CriteriaResult[];
+  structuredReasons?: StructuredReason[];
+}
+
+// 登録例
+const evaluators: TemplateEvaluator[] = [
+  {
+    templateId: 'goal_drift_guard',
+    name: 'Goal Drift Guard Evaluator',
+    evaluate: evaluateGoalDrift,
+  },
+  // 新しいテンプレート用エバリュエーターをここに追加
+];
+```
+
+### 11.5 実装済みエバリュエーター
+
+| Template ID | Evaluator | Criteria | 詳細 |
+|-------------|-----------|----------|------|
+| `goal_drift_guard` | Goal Drift Guard Evaluator | GD1-GD5 | spec/32_TEMPLATE_INJECTION.md Section 11 参照 |
+
+### 11.6 エバリュエーター結果の統合
+
+Template-Selected Evaluator の結果は、既存の Q1-Q6 判定と統合される:
+
+```typescript
+// 最終判定ロジック
+const q1to6Passed = q1to6Results.every(r => r.passed);
+const templateEvalPassed = templateEvalResult?.passed ?? true;
+
+const finalJudgment = (q1to6Passed && templateEvalPassed) ? 'PASS' : 'REJECT';
+```
+
+### 11.7 Modification Prompt への追加
+
+Template-Selected Evaluator が失敗した場合、Modification Prompt に追加セクションが挿入される:
+
+```markdown
+## Template-Specific Issues ({{templateName}})
+
+### 検出された問題
+{{#each templateIssues}}
+- **{{criteria_id}}** ({{violation_type}}): {{description}}
+  Evidence: {{#each evidence}}{{.}}{{/each}}
+{{/each}}
+
+### 修正要求
+{{templateSpecificInstructions}}
+```
+
+### 11.8 新しいエバリュエーターの追加手順
+
+1. `src/review-loop/` に新しいエバリュエーターを作成
+2. `TemplateEvaluator` インターフェースを実装
+3. `src/review-loop/index.ts` でエクスポート
+4. Review Loop に登録
+5. spec/32_TEMPLATE_INJECTION.md に詳細を追加
+
+### 11.9 Cross-References
+
+- spec/32_TEMPLATE_INJECTION.md Section 11 (Goal Drift Guard Enforcement Hook)
+- src/review-loop/goal-drift-evaluator.ts (Goal Drift Guard 実装)
+- src/review-loop/goal-drift-integration.ts (Review Loop 統合)

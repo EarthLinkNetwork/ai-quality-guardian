@@ -351,3 +351,95 @@ type TemplateEvent =
 - spec/33_PROJECT_SETTINGS_PERSISTENCE.md - プロジェクト設定永続化
 - spec/17_PROMPT_TEMPLATE.md - プロンプト組み立て
 - spec/12_LLM_PROVIDER_AND_MODELS.md - LLMプロバイダー設定
+
+## 11. Goal Drift Guard Enforcement Hook
+
+### 11.1 概要
+
+Goal_Drift_Guard テンプレートが選択されている場合、Review Loop は追加のエンフォースメントチェックを実行する。
+このチェックは決定論的で、LLM呼び出しなしに出力を検証する。
+
+### 11.2 Enforcement Criteria (GD1-GD5)
+
+| ID | 名前 | 検出対象 | マッピング |
+|----|------|----------|------------|
+| GD1 | No Escape Phrases | "if needed", "optional", "consider adding" 等 | Q2相当 |
+| GD2 | No Premature Completion | "basic implementation", "please verify" 等 | Q5相当 |
+| GD3 | Requirement Checklist Present | チェックボックス形式の要件リスト | Q5相当 |
+| GD4 | Valid Completion Statement | "COMPLETE: All N requirements fulfilled" 形式 | Q5相当 |
+| GD5 | No Scope Reduction | "simplified version", "for now" 等 | Q3相当 |
+
+### 11.3 Enforcement フロー
+
+```
+Review Loop 実行
+    │
+    ├── Q1-Q6 品質チェック
+    │
+    ├── [activeTemplateId === 'goal_drift_guard']
+    │   │
+    │   ▼
+    │   Goal Drift Evaluator (GD1-GD5)
+    │   │
+    │   ├── PASS: 全GDチェック通過
+    │   │
+    │   └── FAIL: 構造化理由を生成
+    │       │
+    │       ▼
+    │       Modification Prompt に GD 違反セクション追加
+    │
+    ▼
+最終判定 (PASS/REJECT/RETRY)
+```
+
+### 11.4 構造化理由 (Structured Reasons)
+
+違反検出時、以下の形式で機械可読な理由を提供:
+
+```typescript
+interface StructuredReason {
+  criteria_id: 'GD1' | 'GD2' | 'GD3' | 'GD4' | 'GD5';
+  violation_type: 'escape_phrase' | 'premature_completion' | 
+                  'missing_checklist' | 'invalid_completion_statement' | 
+                  'scope_reduction';
+  description: string;
+  evidence: string[];  // 行番号・コンテキスト
+}
+```
+
+### 11.5 ゼロオーバーヘッド原則
+
+- Goal_Drift_Guard テンプレートが選択されていない場合、エバリュエーターは実行されない
+- トークン使用量の増加なし
+- 既存の Q1-Q6 チェックへの影響なし
+
+### 11.6 Fail-Closed 原則
+
+- エバリュエーターでエラーが発生した場合、REJECT として扱う
+- 不明な状態は安全側（REJECT）に倒す
+
+### 11.7 API
+
+```typescript
+import { 
+  runGoalDriftIntegration,
+  generateGoalDriftModificationSection,
+  GOAL_DRIFT_GUARD_TEMPLATE_ID,
+} from './review-loop';
+
+// テンプレートが goal_drift_guard の場合のみ実行
+const gdResult = runGoalDriftIntegration(executorResult, activeTemplateId);
+
+if (gdResult.ran && !gdResult.passed) {
+  // 違反あり -> Modification Prompt に追加
+  const modSection = generateGoalDriftModificationSection(gdResult.goalDriftResult!);
+  modificationPrompt += modSection;
+}
+```
+
+### 11.8 関連ファイル
+
+- `src/review-loop/goal-drift-evaluator.ts` - エバリュエーター実装
+- `src/review-loop/goal-drift-integration.ts` - Review Loop 統合
+- `test/unit/review-loop/goal-drift-evaluator.test.ts` - ユニットテスト
+- `test/unit/review-loop/goal-drift-integration.test.ts` - 統合テスト
