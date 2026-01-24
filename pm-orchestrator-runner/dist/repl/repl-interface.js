@@ -105,6 +105,7 @@ const KNOWN_COMMANDS = [
     'templates',
     'template',
     'config',
+    'send', // Multi-line buffer submit command
 ];
 /**
  * Commands with slash prefix for tab completion
@@ -1045,6 +1046,8 @@ class REPLInterface extends events_1.EventEmitter {
                 return await this.handleTemplates(args);
             case 'template':
                 return await this.handleTemplate(args);
+            case 'send':
+                return this.handleSend();
             case 'config':
                 return await this.handleConfig(args);
             default:
@@ -1425,6 +1428,7 @@ class REPLInterface extends events_1.EventEmitter {
         this.print('');
         this.print('Other:');
         this.print('  /exit                Exit REPL (saves state)');
+        this.print('  /send                Submit multi-line input buffer');
         this.print('');
         this.print('Natural Language:');
         this.print('  Just type your task description without a slash prefix.');
@@ -2905,6 +2909,30 @@ class REPLInterface extends events_1.EventEmitter {
                     error: { code: 'E427', message: 'Unknown subcommand: ' + subCommand },
                 };
         }
+    }
+    /**
+     * Handle /send command
+     * Flushes multi-line buffer and submits as a single task
+     * Per spec: Alternative to empty line for submitting buffered input
+     */
+    handleSend() {
+        if (this.multiLineBuffer.length === 0) {
+            this.print('No buffered input to send.');
+            return {
+                success: false,
+                error: {
+                    code: 'E501',
+                    message: 'No buffered input. Type your message first, then /send.',
+                },
+            };
+        }
+        // Join accumulated lines and submit as single input
+        const fullInput = this.multiLineBuffer.join('\n');
+        this.multiLineBuffer = [];
+        this.inputQueue.push(fullInput);
+        this.print('Task Queued');
+        this.processQueue();
+        return { success: true };
     }
     /**
      * Handle /config command

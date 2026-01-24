@@ -29,7 +29,9 @@ describe('REPL Tab Completion', () => {
     // Additional utility commands (for typo rescue support)
     '/clear', '/version',
     // Template and Config commands per spec 32 and 33
-    '/templates', '/template', '/config'
+    '/templates', '/template', '/config',
+    // Multi-line buffer submit command
+    '/send'
   ];
 
   beforeEach(() => {
@@ -56,12 +58,12 @@ describe('REPL Tab Completion', () => {
   }
 
   describe('Spec compliance', () => {
-    it('should return exactly 20 commands for "/" (spec list + clear/version + template commands, no /quit)', () => {
+    it('should return exactly 21 commands for "/" (spec list + clear/version + template commands, no /quit)', () => {
       const completer = getCompleter(repl);
       const [completions, line] = completer('/');
 
       assert.equal(line, '/');
-      assert.equal(completions.length, 20, 'Should return exactly 20 commands');
+      assert.equal(completions.length, 21, 'Should return exactly 21 commands');
 
       // Verify all spec commands are present
       for (const cmd of SPEC_COMMANDS) {

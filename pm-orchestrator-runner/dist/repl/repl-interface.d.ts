@@ -630,6 +630,12 @@ export declare class REPLInterface extends EventEmitter {
      */
     private handleTemplate;
     /**
+     * Handle /send command
+     * Flushes multi-line buffer and submits as a single task
+     * Per spec: Alternative to empty line for submitting buffered input
+     */
+    private handleSend;
+    /**
      * Handle /config command
      * Per spec 33_PROJECT_SETTINGS_PERSISTENCE.md: show, set, reset
      */

@@ -79,6 +79,7 @@ const KNOWN_COMMANDS = [
   'templates',
   'template',
   'config',
+  'send',  // Multi-line buffer submit command
 ];
 
 /**
@@ -1343,6 +1344,9 @@ export class REPLInterface extends EventEmitter {
       case 'template':
         return await this.handleTemplate(args);
 
+      case 'send':
+        return this.handleSend();
+
       case 'config':
         return await this.handleConfig(args);
 
@@ -1760,6 +1764,7 @@ export class REPLInterface extends EventEmitter {
     this.print('');
     this.print('Other:');
     this.print('  /exit                Exit REPL (saves state)');
+    this.print('  /send                Submit multi-line input buffer');
     this.print('');
     this.print('Natural Language:');
     this.print('  Just type your task description without a slash prefix.');
@@ -3399,6 +3404,33 @@ export class REPLInterface extends EventEmitter {
     }
   }
 
+
+  /**
+   * Handle /send command
+   * Flushes multi-line buffer and submits as a single task
+   * Per spec: Alternative to empty line for submitting buffered input
+   */
+  private handleSend(): CommandResult {
+    if (this.multiLineBuffer.length === 0) {
+      this.print('No buffered input to send.');
+      return {
+        success: false,
+        error: {
+          code: 'E501',
+          message: 'No buffered input. Type your message first, then /send.',
+        },
+      };
+    }
+
+    // Join accumulated lines and submit as single input
+    const fullInput = this.multiLineBuffer.join('\n');
+    this.multiLineBuffer = [];
+    this.inputQueue.push(fullInput);
+    this.print('Task Queued');
+    this.processQueue();
+
+    return { success: true };
+  }
   /**
    * Handle /config command
    * Per spec 33_PROJECT_SETTINGS_PERSISTENCE.md: show, set, reset
