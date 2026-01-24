@@ -1,6 +1,6 @@
 {
   "name": "pm-orchestrator-runner",
-  "version": "1.0.22",
+  "version": "1.0.23",
   "description": "CLI tool that enforces controlled execution of Claude Code through mandatory orchestration",
   "main": "dist/cli/index.js",
   "bin": {
