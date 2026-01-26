@@ -239,6 +239,7 @@ export declare class REPLInterface extends EventEmitter {
     private pendingUserResponse;
     private pendingCommandSuggestion;
     private taskNumberMap;
+    private pendingSelectionMode;
     constructor(config?: REPLConfig);
     /**
      * Get project mode - per spec 10_REPL_UX.md
@@ -444,6 +445,16 @@ export declare class REPLInterface extends EventEmitter {
      */
     private handleLogs;
     /**
+     * Handle /logs ui - interactive log selection
+     * Shows numbered list and enters selection mode
+     */
+    private handleLogsInteractive;
+    /**
+     * Handle /tasks ui - interactive task selection
+     * Shows numbered list and enters selection mode
+     */
+    private handleTasksInteractive;
+    /**
      * Handle /trace command
      * Per spec 28_CONVERSATION_TRACE.md Section 5.1
      */
@@ -453,6 +464,7 @@ export declare class REPLInterface extends EventEmitter {
      * Shows task queue with RUNNING/QUEUED/COMPLETE/ERROR/INCOMPLETE states
      * Per redesign: proves non-blocking by showing multiple tasks simultaneously
      * Per spec 21_STABLE_DEV.md: Task numbers (1, 2, 3...) for easier reference
+     * Per v1.0.26: /tasks ui for interactive selection
      */
     private handleTasks;
     /**

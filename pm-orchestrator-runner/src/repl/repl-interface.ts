@@ -462,6 +462,13 @@ export class REPLInterface extends EventEmitter {
   // Maps display numbers (1, 2, 3...) to task IDs
   private taskNumberMap: Map<number, string> = new Map();
 
+  // Interactive selection mode for /logs ui and /tasks ui
+  // When active, numeric input selects an item from the displayed list
+  private pendingSelectionMode: {
+    type: 'logs' | 'tasks';
+    items: Map<number, string>; // number -> task ID
+  } | null = null;
+
   constructor(config: REPLConfig = {}) {
     super();
     
@@ -1133,6 +1140,41 @@ export class REPLInterface extends EventEmitter {
       // Fall through to normal processing
     }
 
+    // Handle interactive selection mode (for /logs ui and /tasks ui)
+    if (this.pendingSelectionMode) {
+      const selection = this.pendingSelectionMode;
+
+      // 'q' or 'cancel' exits selection mode
+      const lowerInput = trimmed.toLowerCase();
+      if (lowerInput === 'q' || lowerInput === 'cancel' || lowerInput === 'exit') {
+        this.pendingSelectionMode = null;
+        this.print('Selection cancelled.');
+        return;
+      }
+
+      // Numeric input selects an item
+      const num = parseInt(trimmed, 10);
+      if (!isNaN(num) && selection.items.has(num)) {
+        const taskId = selection.items.get(num)!;
+        this.pendingSelectionMode = null;
+
+        if (selection.type === 'logs') {
+          // Show log details for selected task
+          await this.handleLogs([taskId, '--full']);
+        } else {
+          // Show task details for selected task
+          await this.handleLogs([taskId]);
+        }
+        return;
+      }
+
+      // Invalid input - show help
+      if (trimmed) {
+        this.print('Invalid selection. Enter a number (1-' + selection.items.size + ') or q to cancel.');
+      }
+      return;
+    }
+
     // Check for pending AWAITING_RESPONSE - allow numeric shortcuts
     if (this.hasPendingResponse() && /^\d+$/.test(trimmed)) {
       // Numeric input while pending response - treat as /respond <number>
@@ -1365,7 +1407,7 @@ export class REPLInterface extends EventEmitter {
         return await this.handleModel(args);
 
       case 'tasks':
-        await this.handleTasks();
+        await this.handleTasks(args);
         return { success: true };
 
       case 'status':
@@ -1806,11 +1848,13 @@ export class REPLInterface extends EventEmitter {
     this.print('  /continue [session]  Continue a paused session');
     this.print('  /status              Show session status and phase');
     this.print('  /tasks               Show tasks in current session');
+    this.print('  /tasks ui            Interactive task selection');
     this.print('  /approve             Approve continuation for INCOMPLETE session');
     this.print('  /respond <text>     Respond to a task awaiting clarification');
     this.print('');
     this.print('Logging:');
     this.print('  /logs                List task logs for current session');
+    this.print('  /logs ui             Interactive log selection');
     this.print('  /logs <id|#>         Show task details (use task-id or number from /tasks)');
     this.print('  /logs <id|#> --full  Show task details with executor logs');
     this.print('');
@@ -2119,6 +2163,11 @@ export class REPLInterface extends EventEmitter {
    * Per spec 10_REPL_UX.md Section 2.4
    */
   private async handleLogs(args: string[]): Promise<CommandResult> {
+    // /logs ui - interactive selection mode
+    if (args.length > 0 && args[0].toLowerCase() === 'ui') {
+      return await this.handleLogsInteractive();
+    }
+
     if (args.length === 0) {
       // /logs - list all logs for current session
       if (!this.session.sessionId) {
@@ -2222,6 +2271,117 @@ export class REPLInterface extends EventEmitter {
   }
 
   /**
+   * Handle /logs ui - interactive log selection
+   * Shows numbered list and enters selection mode
+   */
+  private async handleLogsInteractive(): Promise<CommandResult> {
+    if (!this.session.sessionId) {
+      this.print('No active session. Use /start to begin a session.');
+      return {
+        success: false,
+        error: { code: 'E104', message: 'No active session' },
+      };
+    }
+
+    // Build list from task queue
+    if (this.taskQueue.length === 0) {
+      this.print('No tasks in queue. Submit a task first.');
+      return { success: true };
+    }
+
+    this.print('');
+    this.print('Select a task to view logs:');
+    this.print('');
+
+    const items = new Map<number, string>();
+    let num = 1;
+
+    for (const task of this.taskQueue) {
+      items.set(num, task.id);
+
+      // State marker
+      let stateMarker = '';
+      switch (task.state) {
+        case 'RUNNING': stateMarker = '[*]'; break;
+        case 'QUEUED': stateMarker = '[ ]'; break;
+        case 'COMPLETE': stateMarker = '[v]'; break;
+        case 'INCOMPLETE': stateMarker = '[!]'; break;
+        case 'ERROR': stateMarker = '[X]'; break;
+        case 'AWAITING_RESPONSE': stateMarker = '[?]'; break;
+      }
+
+      const desc = task.description.length > 40
+        ? task.description.substring(0, 40) + '...'
+        : task.description;
+
+      this.print('  ' + num + '. ' + stateMarker + ' ' + desc);
+      num++;
+    }
+
+    this.print('');
+    this.print('Enter number (1-' + (num - 1) + ') to view details, or q to cancel:');
+
+    // Enter selection mode
+    this.pendingSelectionMode = {
+      type: 'logs',
+      items,
+    };
+
+    return { success: true };
+  }
+
+  /**
+   * Handle /tasks ui - interactive task selection
+   * Shows numbered list and enters selection mode
+   */
+  private handleTasksInteractive(): CommandResult {
+    if (this.taskQueue.length === 0) {
+      this.print('No tasks in queue. Submit a task first.');
+      return { success: true };
+    }
+
+    this.print('');
+    this.print('Select a task to view details:');
+    this.print('');
+
+    const items = new Map<number, string>();
+    let num = 1;
+
+    for (const task of this.taskQueue) {
+      items.set(num, task.id);
+
+      // State marker
+      let stateMarker = '';
+      switch (task.state) {
+        case 'RUNNING': stateMarker = '[*]'; break;
+        case 'QUEUED': stateMarker = '[ ]'; break;
+        case 'COMPLETE': stateMarker = '[v]'; break;
+        case 'INCOMPLETE': stateMarker = '[!]'; break;
+        case 'ERROR': stateMarker = '[X]'; break;
+        case 'AWAITING_RESPONSE': stateMarker = '[?]'; break;
+      }
+
+      const desc = task.description.length > 40
+        ? task.description.substring(0, 40) + '...'
+        : task.description;
+
+      this.print('  ' + num + '. ' + stateMarker + ' ' + desc);
+      num++;
+    }
+
+    this.print('');
+    this.print('Enter number (1-' + (num - 1) + ') to view details, or q to cancel:');
+
+    // Enter selection mode
+    this.pendingSelectionMode = {
+      type: 'tasks',
+      items,
+    };
+
+    return { success: true };
+  }
+
+  /**
    * Handle /trace command
    * Per spec 28_CONVERSATION_TRACE.md Section 5.1
    */
@@ -2288,8 +2448,15 @@ export class REPLInterface extends EventEmitter {
    * Shows task queue with RUNNING/QUEUED/COMPLETE/ERROR/INCOMPLETE states
    * Per redesign: proves non-blocking by showing multiple tasks simultaneously
    * Per spec 21_STABLE_DEV.md: Task numbers (1, 2, 3...) for easier reference
+   * Per v1.0.26: /tasks ui for interactive selection
    */
-  private async handleTasks(): Promise<void> {
+  private async handleTasks(args: string[] = []): Promise<void> {
+    // /tasks ui - interactive selection mode
+    if (args.length > 0 && args[0].toLowerCase() === 'ui') {
+      this.handleTasksInteractive();
+      return;
+    }
+
     this.print('');
     this.print('Task Queue');
     this.print('');
