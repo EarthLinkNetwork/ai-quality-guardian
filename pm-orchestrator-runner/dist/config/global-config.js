@@ -48,6 +48,10 @@ exports.getDefaultProvider = getDefaultProvider;
 exports.setDefaultProvider = setDefaultProvider;
 exports.getConfigFilePath = getConfigFilePath;
 exports.getConfigDirPath = getConfigDirPath;
+exports.getVerboseExecutor = getVerboseExecutor;
+exports.setVerboseExecutor = setVerboseExecutor;
+exports.getSingleLineMode = getSingleLineMode;
+exports.setSingleLineMode = setSingleLineMode;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const os = __importStar(require("os"));
@@ -178,5 +182,39 @@ function getConfigFilePath() {
  */
 function getConfigDirPath() {
     return CONFIG_DIR;
+}
+/**
+ * Get verbose executor setting
+ * @returns true if executor should show verbose logs
+ */
+function getVerboseExecutor() {
+    const config = loadGlobalConfig();
+    return config.verboseExecutor ?? false;
+}
+/**
+ * Set verbose executor setting
+ * @param verbose - true to show verbose executor logs
+ */
+function setVerboseExecutor(verbose) {
+    const config = loadGlobalConfig();
+    config.verboseExecutor = verbose;
+    saveGlobalConfig(config);
+}
+/**
+ * Get single-line mode setting
+ * @returns true if single-line input mode (Enter once to send, default: true)
+ */
+function getSingleLineMode() {
+    const config = loadGlobalConfig();
+    return config.singleLineMode ?? true; // Default: single-line mode ON
+}
+/**
+ * Set single-line mode setting
+ * @param enabled - true for single-line mode, false for multi-line mode
+ */
+function setSingleLineMode(enabled) {
+    const config = loadGlobalConfig();
+    config.singleLineMode = enabled;
+    saveGlobalConfig(config);
 }
 //# sourceMappingURL=global-config.js.map

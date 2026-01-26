@@ -23,6 +23,8 @@ export interface ExecutorConfig {
     cliPath?: string;
     softTimeoutMs?: number;
     hardTimeoutMs?: number;
+    /** Show verbose executor logs (default: false) */
+    verbose?: boolean;
 }
 /**
  * Task to execute
@@ -37,6 +39,11 @@ export interface ExecutorTask {
     workingDir: string;
     /** Model to use (from .claude/repl.json). Undefined means use CLI default. */
     selectedModel?: string;
+    /**
+     * Task type for completion judgment.
+     * READ_INFO tasks don't require file changes - response output becomes evidence.
+     */
+    taskType?: 'READ_INFO' | 'IMPLEMENTATION' | 'REPORT' | string;
 }
 /**
  * Verified file information
@@ -117,7 +124,12 @@ export declare class ClaudeCodeExecutor implements IExecutor {
     private readonly cliPath;
     private readonly softTimeoutMs;
     private readonly hardTimeoutMs;
+    private readonly verbose;
     constructor(config: ExecutorConfig);
+    /**
+     * Log message if verbose mode is enabled
+     */
+    private log;
     /**
      * Check if Claude Code CLI is available
      *

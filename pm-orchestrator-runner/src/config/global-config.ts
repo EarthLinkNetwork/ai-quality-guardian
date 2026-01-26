@@ -25,6 +25,10 @@ export interface GlobalConfig {
     openai?: string;
     anthropic?: string;
   };
+  /** Show verbose executor logs in REPL (default: false) */
+  verboseExecutor?: boolean;
+  /** Single-line input mode (Enter once to send, default: true) */
+  singleLineMode?: boolean;
 }
 
 /**
@@ -161,4 +165,42 @@ export function getConfigFilePath(): string {
  */
 export function getConfigDirPath(): string {
   return CONFIG_DIR;
+}
+
+/**
+ * Get verbose executor setting
+ * @returns true if executor should show verbose logs
+ */
+export function getVerboseExecutor(): boolean {
+  const config = loadGlobalConfig();
+  return config.verboseExecutor ?? false;
+}
+
+/**
+ * Set verbose executor setting
+ * @param verbose - true to show verbose executor logs
+ */
+export function setVerboseExecutor(verbose: boolean): void {
+  const config = loadGlobalConfig();
+  config.verboseExecutor = verbose;
+  saveGlobalConfig(config);
+}
+
+/**
+ * Get single-line mode setting
+ * @returns true if single-line input mode (Enter once to send, default: true)
+ */
+export function getSingleLineMode(): boolean {
+  const config = loadGlobalConfig();
+  return config.singleLineMode ?? true;  // Default: single-line mode ON
+}
+
+/**
+ * Set single-line mode setting
+ * @param enabled - true for single-line mode, false for multi-line mode
+ */
+export function setSingleLineMode(enabled: boolean): void {
+  const config = loadGlobalConfig();
+  config.singleLineMode = enabled;
+  saveGlobalConfig(config);
 }

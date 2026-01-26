@@ -174,6 +174,7 @@ class ClaudeCodeExecutor {
     cliPath;
     softTimeoutMs;
     hardTimeoutMs;
+    verbose;
     constructor(config) {
         this.config = config;
         this.cliPath = config.cliPath || 'claude';
@@ -182,6 +183,15 @@ class ClaudeCodeExecutor {
         const envHard = parseInt(process.env.HARD_TIMEOUT_MS || '', 10);
         this.softTimeoutMs = envSoft || config.softTimeoutMs || DEFAULT_SOFT_TIMEOUT_MS;
         this.hardTimeoutMs = envHard || config.hardTimeoutMs || DEFAULT_HARD_TIMEOUT_MS;
+        this.verbose = config.verbose ?? false;
+    }
+    /**
+     * Log message if verbose mode is enabled
+     */
+    log(message) {
+        if (this.verbose) {
+            console.log(message);
+        }
     }
     /**
      * Check if Claude Code CLI is available
@@ -437,13 +447,13 @@ class ClaudeCodeExecutor {
                 blocked = true;
                 blockedReason = reason;
                 terminatedBy = terminator;
-                console.log(`[ClaudeCodeExecutor] Terminating: reason=${reason}, by=${terminator}`);
+                this.log(`[ClaudeCodeExecutor] Terminating: reason=${reason}, by=${terminator}`);
                 if (childProcess && !childProcess.killed) {
                     childProcess.kill('SIGTERM');
                     // Force kill after grace period
                     setTimeout(() => {
                         if (childProcess && !childProcess.killed) {
-                            console.log('[ClaudeCodeExecutor] Force killing with SIGKILL');
+                            this.log('[ClaudeCodeExecutor] Force killing with SIGKILL');
                             childProcess.kill('SIGKILL');
                         }
                     }, SIGTERM_GRACE_MS);
@@ -460,7 +470,7 @@ class ClaudeCodeExecutor {
                 hardTimeoutHandle = setTimeout(() => {
                     if (!blocked && !timedOut && !resolved) {
                         const elapsed = Date.now() - startTime;
-                        console.log(`[ClaudeCodeExecutor] Hard timeout - no output for ${this.hardTimeoutMs}ms (total elapsed: ${elapsed}ms)`);
+                        this.log(`[ClaudeCodeExecutor] Hard timeout - no output for ${this.hardTimeoutMs}ms (total elapsed: ${elapsed}ms)`);
                         terminateWithBlocking('TIMEOUT', 'REPL_FAIL_CLOSED');
                     }
                 }, this.hardTimeoutMs);
@@ -469,7 +479,7 @@ class ClaudeCodeExecutor {
                     const timeSinceStart = Date.now() - startTime;
                     if (timeSinceStart > this.softTimeoutMs) {
                         softTimeoutWarned = true;
-                        console.log(`[ClaudeCodeExecutor] Soft timeout warning - execution taking longer than ${this.softTimeoutMs}ms`);
+                        this.log(`[ClaudeCodeExecutor] Soft timeout warning - execution taking longer than ${this.softTimeoutMs}ms`);
                     }
                 }
             };
@@ -495,11 +505,11 @@ class ClaudeCodeExecutor {
             // Add prompt last (positional argument)
             cliArgs.push(task.prompt);
             // DEBUG: Log prompt and model sent to Claude Code
-            console.log('[ClaudeCodeExecutor] prompt:', task.prompt);
+            this.log(`[ClaudeCodeExecutor] prompt: ${task.prompt}`);
             if (task.selectedModel) {
-                console.log('[ClaudeCodeExecutor] model:', task.selectedModel);
+                this.log(`[ClaudeCodeExecutor] model: ${task.selectedModel}`);
             }
-            console.log(`[ClaudeCodeExecutor] Timeout config: soft=${this.softTimeoutMs}ms, hard=${this.hardTimeoutMs}ms, overall=${this.config.timeout}ms`);
+            this.log(`[ClaudeCodeExecutor] Timeout config: soft=${this.softTimeoutMs}ms, hard=${this.hardTimeoutMs}ms, overall=${this.config.timeout}ms`);
             try {
                 // Per spec/15_API_KEY_ENV_SANITIZE.md: Use ALLOWLIST approach
                 // NEVER pass process.env directly (DELETELIST approach is PROHIBITED)
@@ -519,7 +529,7 @@ class ClaudeCodeExecutor {
             }
             catch (spawnError) {
                 const err = spawnError;
-                console.log(`[ClaudeCodeExecutor] Spawn failed: ${err.message}`);
+                this.log(`[ClaudeCodeExecutor] Spawn failed: ${err.message}`);
                 safeResolve({
                     executed: false,
                     output: '',
@@ -538,7 +548,7 @@ class ClaudeCodeExecutor {
             // Start overall timeout
             overallTimeoutHandle = setTimeout(() => {
                 if (!blocked && !timedOut && !resolved) {
-                    console.log(`[ClaudeCodeExecutor] Overall timeout - execution exceeded ${this.config.timeout}ms`);
+                    this.log(`[ClaudeCodeExecutor] Overall timeout - execution exceeded ${this.config.timeout}ms`);
                     timedOut = true;
                     terminateWithBlocking('TIMEOUT', 'TIMEOUT');
                 }
@@ -589,8 +599,8 @@ class ClaudeCodeExecutor {
                 resetHardTimeout();
                 // Check for interactive prompt patterns (Property 34)
                 if (!blocked && containsInteractivePrompt(chunk)) {
-                    console.log('[ClaudeCodeExecutor] Interactive prompt detected in chunk - terminating');
-                    console.log('[ClaudeCodeExecutor] Detected chunk:', chunk.substring(0, 200));
+                    this.log('[ClaudeCodeExecutor] Interactive prompt detected in chunk - terminating');
+                    this.log(`[ClaudeCodeExecutor] Detected chunk: ${chunk.substring(0, 200)}`);
                     terminateWithBlocking('INTERACTIVE_PROMPT', 'REPL_FAIL_CLOSED');
                 }
             });
@@ -602,14 +612,14 @@ class ClaudeCodeExecutor {
                 resetHardTimeout();
                 // Also check stderr for interactive prompts
                 if (!blocked && containsInteractivePrompt(chunk)) {
-                    console.log('[ClaudeCodeExecutor] Interactive prompt detected in stderr - terminating');
+                    this.log('[ClaudeCodeExecutor] Interactive prompt detected in stderr - terminating');
                     terminateWithBlocking('INTERACTIVE_PROMPT', 'REPL_FAIL_CLOSED');
                 }
             });
             // Handle completion
             childProcess.on('close', async (code) => {
                 const duration_ms = Date.now() - startTime;
-                console.log(`[ClaudeCodeExecutor] Process closed: code=${code}, duration=${duration_ms}ms, blocked=${blocked}, timedOut=${timedOut}`);
+                this.log(`[ClaudeCodeExecutor] Process closed: code=${code}, duration=${duration_ms}ms, blocked=${blocked}, timedOut=${timedOut}`);
                 // Handle blocked case (Property 34-36)
                 if (blocked) {
                     safeResolve({
@@ -725,16 +735,59 @@ class ClaudeCodeExecutor {
                 }
                 else {
                     // Fail-closed: No verified files with exists=true
-                    // But if exit code is 0 and we have output, it might have done something
-                    // Check output for success indicators
-                    if (output.includes('Created') || output.includes('Updated') || output.includes('Modified')) {
+                    // READ_INFO/REPORT tasks: Generate evidence file from response output
+                    if (task.taskType === 'READ_INFO' || task.taskType === 'REPORT') {
+                        // Create evidence directory and file
+                        const evidenceDir = path.join(cwd, '.claude', 'evidence');
+                        const evidenceFileName = `task-${task.id}.md`;
+                        const evidencePath = path.join(evidenceDir, evidenceFileName);
+                        try {
+                            // Ensure evidence directory exists
+                            fs.mkdirSync(evidenceDir, { recursive: true });
+                            // Generate evidence content from response
+                            const evidenceContent = [
+                                `# Evidence: Task ${task.id}`,
+                                ``,
+                                `**Task Type:** ${task.taskType}`,
+                                `**Executed At:** ${new Date().toISOString()}`,
+                                `**Duration:** ${duration_ms}ms`,
+                                ``,
+                                `## Response Output`,
+                                ``,
+                                '```',
+                                output.substring(0, 10000), // Limit to 10KB
+                                '```',
+                                ``,
+                                `---`,
+                                `*Auto-generated evidence for ${task.taskType} task completion*`,
+                            ].join('\n');
+                            // Write evidence file
+                            fs.writeFileSync(evidencePath, evidenceContent, 'utf-8');
+                            // Add evidence file to verified_files
+                            const relPath = path.relative(cwd, evidencePath);
+                            const stat = fs.statSync(evidencePath);
+                            verified_files.push({
+                                path: relPath,
+                                exists: true,
+                                size: stat.size,
+                                content_preview: evidenceContent.substring(0, 100),
+                            });
+                            this.log(`[ClaudeCodeExecutor] READ_INFO/REPORT: Generated evidence file ${relPath}`);
+                            status = 'COMPLETE';
+                        }
+                        catch (evidenceError) {
+                            this.log(`[ClaudeCodeExecutor] Failed to generate evidence file: ${evidenceError.message}`);
+                            status = 'NO_EVIDENCE';
+                        }
+                    }
+                    else if (output.includes('Created') || output.includes('Updated') || output.includes('Modified')) {
                         status = 'INCOMPLETE'; // Claimed success but no file evidence
                     }
                     else {
                         status = 'NO_EVIDENCE';
                     }
                 }
-                console.log(`[ClaudeCodeExecutor] Result: status=${status}, verified=${verified_files.length}, unverified=${unverified_files.length}`);
+                this.log(`[ClaudeCodeExecutor] Result: status=${status}, verified=${verified_files.length}, unverified=${unverified_files.length}`);
                 safeResolve({
                     executed: code === 0,
                     output,
@@ -749,7 +802,7 @@ class ClaudeCodeExecutor {
             });
             // Handle spawn errors
             childProcess.on('error', (err) => {
-                console.log(`[ClaudeCodeExecutor] Process error: ${err.message}`);
+                this.log(`[ClaudeCodeExecutor] Process error: ${err.message}`);
                 safeResolve({
                     executed: false,
                     output: output || '',

@@ -77,6 +77,11 @@ interface Task {
     dependencies?: string[];
     willFail?: boolean;
     naturalLanguageTask?: string;
+    /**
+     * Task type for completion judgment.
+     * READ_INFO/REPORT tasks don't require file changes - response output becomes evidence.
+     */
+    taskType?: 'READ_INFO' | 'IMPLEMENTATION' | 'REPORT' | string;
     expectedOutcome?: {
         type: string;
         path?: string;

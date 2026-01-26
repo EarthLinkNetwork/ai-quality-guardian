@@ -176,6 +176,11 @@ export interface QueuedTask {
     clarificationReason?: string;
     /** Response summary (set on completion) */
     responseSummary?: string;
+    /**
+     * Task type for completion judgment.
+     * READ_INFO/REPORT tasks don't require file changes - response output becomes evidence.
+     */
+    taskType?: 'READ_INFO' | 'IMPLEMENTATION' | 'REPORT' | string;
 }
 /**
  * REPL session state - per spec 05_DATA_MODELS.md
@@ -648,6 +653,18 @@ export declare class REPLInterface extends EventEmitter {
         rulesText: string;
         outputFormatText: string;
     } | null;
+    /**
+     * Handle /verbose command
+     * Toggle or set verbose executor logging mode
+     * Usage: /verbose [on|off]
+     */
+    private handleVerbose;
+    /**
+     * Handle /inputmode command
+     * Toggle or set input mode (single-line vs multi-line)
+     * Usage: /inputmode [single|multi]
+     */
+    private handleInputMode;
 }
 export {};
 //# sourceMappingURL=repl-interface.d.ts.map

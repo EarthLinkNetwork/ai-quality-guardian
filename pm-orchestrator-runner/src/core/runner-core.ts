@@ -48,6 +48,7 @@ import { ClarificationReason } from '../mediation/llm-mediation-layer';
 import { PromptAssembler, TaskGroupPreludeInput } from '../prompt/prompt-assembler';
 import { TaskGroupContext } from '../models/task-group';
 import { ConversationTracer } from '../trace/conversation-tracer';
+import { getVerboseExecutor } from '../config/global-config';
 import { Template } from '../template';
 
 /**
@@ -107,6 +108,11 @@ interface Task {
   dependencies?: string[];
   willFail?: boolean;
   naturalLanguageTask?: string;
+  /**
+   * Task type for completion judgment.
+   * READ_INFO/REPORT tasks don't require file changes - response output becomes evidence.
+   */
+  taskType?: 'READ_INFO' | 'IMPLEMENTATION' | 'REPORT' | string;
   expectedOutcome?: {
     type: string;
     path?: string;
@@ -116,7 +122,6 @@ interface Task {
     path?: string;
   };
 }
-
 /**
  * Task result
  */
@@ -470,6 +475,7 @@ export class RunnerCore extends EventEmitter {
         this.claudeCodeExecutor = new ClaudeCodeExecutor({
           projectPath: targetProject,
           timeout: this.options.claudeCodeTimeout || 120000, // 2 minutes default
+          verbose: getVerboseExecutor(),
         });
         this.currentExecutorMode = 'claude-code';
       }
@@ -833,6 +839,7 @@ export class RunnerCore extends EventEmitter {
             prompt: assembledPrompt,
             workingDir: this.session.target_project,
             selectedModel: this.currentSelectedModel,
+            taskType: task.taskType,
           });
 
           // Save executor output for visibility (per redesign)

@@ -58,12 +58,12 @@ describe('REPL Tab Completion', () => {
   }
 
   describe('Spec compliance', () => {
-    it('should return exactly 21 commands for "/" (spec list + clear/version + template commands, no /quit)', () => {
+    it('should return exactly 23 commands for "/" (spec list + clear/version + template commands, no /quit)', () => {
       const completer = getCompleter(repl);
       const [completions, line] = completer('/');
 
       assert.equal(line, '/');
-      assert.equal(completions.length, 21, 'Should return exactly 21 commands');
+      assert.equal(completions.length, 23, 'Should return exactly 23 commands');
 
       // Verify all spec commands are present
       for (const cmd of SPEC_COMMANDS) {

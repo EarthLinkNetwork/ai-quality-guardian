@@ -104,8 +104,10 @@ const KNOWN_COMMANDS = [
     // Template and Config commands per spec 32 and 33
     'templates',
     'template',
+    'inputmode', // Toggle single-line/multi-line input mode
     'config',
     'send', // Multi-line buffer submit command
+    'verbose', // Toggle verbose executor logs
 ];
 /**
  * Commands with slash prefix for tab completion
@@ -151,6 +153,47 @@ const INIT_ONLY_ALLOWED_COMMANDS = ['help', 'init', 'exit'];
  * This enforces fail-closed + interactive onboarding behavior
  */
 const KEY_SETUP_ALLOWED_COMMANDS = ['help', 'keys', 'provider', 'exit', 'templates', 'template', 'config'];
+/**
+ * Detect task type from user input.
+ * READ_INFO tasks are information requests that don't require file changes.
+ * IMPLEMENTATION tasks involve creating/modifying files.
+ */
+function detectTaskType(input) {
+    const lowerInput = input.toLowerCase();
+    // READ_INFO patterns - questions and information requests
+    const readInfoPatterns = [
+        /^(what|how|why|when|where|who|which|can you explain|tell me|show me|describe|list|find)/i,
+        /\?$/, // Ends with question mark
+        /(explain|analyze|check|verify|review|look at|examine|inspect|investigate)/i,
+        /(status|info|information|details|summary)/i,
+        /^read /i,
+        /^(show|display|print|output)/i,
+    ];
+    // IMPLEMENTATION patterns - file creation/modification
+    const implementationPatterns = [
+        /(create|add|write|implement|build|make|generate|update|modify|change|fix|refactor|delete|remove)/i,
+        /\.(ts|js|tsx|jsx|py|go|rs|java|md|json|yaml|yml|toml|css|scss|html)$/i,
+        /(file|code|function|class|component|module|test)/i,
+    ];
+    // Check for READ_INFO patterns
+    for (const pattern of readInfoPatterns) {
+        if (pattern.test(lowerInput)) {
+            // But check if it also matches implementation patterns
+            let hasImplementation = false;
+            for (const implPattern of implementationPatterns) {
+                if (implPattern.test(lowerInput)) {
+                    hasImplementation = true;
+                    break;
+                }
+            }
+            if (!hasImplementation) {
+                return 'READ_INFO';
+            }
+        }
+    }
+    // Default to IMPLEMENTATION for ambiguous cases
+    return 'IMPLEMENTATION';
+}
 /**
  * REPL Interface class
  */
@@ -546,6 +589,7 @@ class REPLInterface extends events_1.EventEmitter {
         const executor = new claude_code_executor_1.ClaudeCodeExecutor({
             projectPath: this.session.projectPath,
             timeout: 30000,
+            verbose: (0, global_config_1.getVerboseExecutor)(),
         });
         return executor.checkAuthStatus();
     }
@@ -901,7 +945,15 @@ class REPLInterface extends events_1.EventEmitter {
             this.processQueue();
             return;
         }
-        // In interactive mode, show continuation indicator and hint
+        // In single-line mode (default), process immediately on first Enter
+        if ((0, global_config_1.getSingleLineMode)() && isFirstLine) {
+            const fullInput = this.multiLineBuffer.join('\n');
+            this.multiLineBuffer = [];
+            this.inputQueue.push(fullInput);
+            this.processQueue();
+            return;
+        }
+        // In multi-line mode, show continuation indicator and hint
         if (this.running && !this.isProcessingInput) {
             // Show multi-line mode hint on first line
             if (isFirstLine) {
@@ -1050,6 +1102,10 @@ class REPLInterface extends events_1.EventEmitter {
                 return this.handleSend();
             case 'config':
                 return await this.handleConfig(args);
+            case 'verbose':
+                return this.handleVerbose(args);
+            case 'inputmode':
+                return this.handleInputMode(args);
             default:
                 // This should never be reached since unknown commands are handled above
                 // If we reach here, KNOWN_COMMANDS list is inconsistent with switch cases
@@ -1125,6 +1181,8 @@ class REPLInterface extends events_1.EventEmitter {
         // Generate task ID
         // Per spec 05_DATA_MODELS.md Property 38
         const taskId = 'task-' + Date.now();
+        // Detect task type from input
+        const detectedTaskType = detectTaskType(input);
         // Create queued task
         const queuedTask = {
             id: taskId,
@@ -1133,6 +1191,7 @@ class REPLInterface extends events_1.EventEmitter {
             queuedAt: Date.now(),
             startedAt: null,
             completedAt: null,
+            taskType: detectedTaskType,
         };
         // Add to task queue
         this.taskQueue.push(queuedTask);
@@ -1228,6 +1287,7 @@ class REPLInterface extends events_1.EventEmitter {
                         id: task.id,
                         description: task.description,
                         naturalLanguageTask: task.description,
+                        taskType: task.taskType,
                     }],
                 selectedModel,
             });
@@ -1429,6 +1489,8 @@ class REPLInterface extends events_1.EventEmitter {
         this.print('Other:');
         this.print('  /exit                Exit REPL (saves state)');
         this.print('  /send                Submit multi-line input buffer');
+        this.print('  /verbose [on|off]    Toggle verbose executor logs');
+        this.print('  /inputmode [single|multi]  Toggle input mode (default: single-line)');
         this.print('');
         this.print('Natural Language:');
         this.print('  Just type your task description without a slash prefix.');
@@ -3017,6 +3079,84 @@ class REPLInterface extends events_1.EventEmitter {
             rulesText: template.rulesText,
             outputFormatText: template.outputFormatText,
         };
+    }
+    /**
+     * Handle /verbose command
+     * Toggle or set verbose executor logging mode
+     * Usage: /verbose [on|off]
+     */
+    handleVerbose(args) {
+        const subCommand = args[0]?.toLowerCase();
+        const currentValue = (0, global_config_1.getVerboseExecutor)();
+        if (!subCommand) {
+            // Toggle current value
+            const newValue = !currentValue;
+            (0, global_config_1.setVerboseExecutor)(newValue);
+            this.print(`Verbose executor logs: ${newValue ? "ON" : "OFF"}`);
+            return { success: true };
+        }
+        switch (subCommand) {
+            case "on":
+                (0, global_config_1.setVerboseExecutor)(true);
+                this.print("Verbose executor logs: ON");
+                return { success: true };
+            case "off":
+                (0, global_config_1.setVerboseExecutor)(false);
+                this.print("Verbose executor logs: OFF");
+                return { success: true };
+            case "status":
+                this.print(`Verbose executor logs: ${currentValue ? "ON" : "OFF"}`);
+                return { success: true };
+            default:
+                this.print("Usage: /verbose [on|off|status]");
+                this.print("  /verbose       - Toggle verbose mode");
+                this.print("  /verbose on    - Enable verbose executor logs");
+                this.print("  /verbose off   - Disable verbose executor logs");
+                this.print("  /verbose status - Show current status");
+                return {
+                    success: false,
+                    error: { code: "E410", message: "Invalid verbose option: " + subCommand },
+                };
+        }
+    }
+    /**
+     * Handle /inputmode command
+     * Toggle or set input mode (single-line vs multi-line)
+     * Usage: /inputmode [single|multi]
+     */
+    handleInputMode(args) {
+        const subCommand = args[0]?.toLowerCase();
+        const currentMode = (0, global_config_1.getSingleLineMode)();
+        if (!subCommand) {
+            // Toggle current mode
+            const newMode = !currentMode;
+            (0, global_config_1.setSingleLineMode)(newMode);
+            this.print(`Input mode: ${newMode ? "single-line (Enter to send)" : "multi-line (Enter x2 to send)"}`);
+            return { success: true };
+        }
+        switch (subCommand) {
+            case "single":
+                (0, global_config_1.setSingleLineMode)(true);
+                this.print("Input mode: single-line (Enter to send)");
+                return { success: true };
+            case "multi":
+                (0, global_config_1.setSingleLineMode)(false);
+                this.print("Input mode: multi-line (Enter x2 to send)");
+                return { success: true };
+            case "status":
+                this.print(`Input mode: ${currentMode ? "single-line (Enter to send)" : "multi-line (Enter x2 to send)"}`);
+                return { success: true };
+            default:
+                this.print("Usage: /inputmode [single|multi|status]");
+                this.print("  /inputmode        - Toggle input mode");
+                this.print("  /inputmode single - Single-line mode (Enter to send)");
+                this.print("  /inputmode multi  - Multi-line mode (Enter x2 to send)");
+                this.print("  /inputmode status - Show current mode");
+                return {
+                    success: false,
+                    error: { code: "E411", message: "Invalid inputmode option: " + subCommand },
+                };
+        }
     }
 }
 exports.REPLInterface = REPLInterface;

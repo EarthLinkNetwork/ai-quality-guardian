@@ -69,6 +69,7 @@ const recovery_executor_1 = require("../executor/recovery-executor");
 const auto_resolve_executor_1 = require("../executor/auto-resolve-executor");
 const prompt_assembler_1 = require("../prompt/prompt-assembler");
 const conversation_tracer_1 = require("../trace/conversation-tracer");
+const global_config_1 = require("../config/global-config");
 /**
  * Runner Core Error
  */
@@ -264,6 +265,7 @@ class RunnerCore extends events_1.EventEmitter {
                 this.claudeCodeExecutor = new claude_code_executor_1.ClaudeCodeExecutor({
                     projectPath: targetProject,
                     timeout: this.options.claudeCodeTimeout || 120000, // 2 minutes default
+                    verbose: (0, global_config_1.getVerboseExecutor)(),
                 });
                 this.currentExecutorMode = 'claude-code';
             }
@@ -552,6 +554,7 @@ class RunnerCore extends events_1.EventEmitter {
                         prompt: assembledPrompt,
                         workingDir: this.session.target_project,
                         selectedModel: this.currentSelectedModel,
+                        taskType: task.taskType,
                     });
                     // Save executor output for visibility (per redesign)
                     this.lastExecutorOutput = executorResult.output || '';
