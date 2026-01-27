@@ -17,3 +17,6 @@ export { TraceCommand, TraceResult, TraceOptions } from './trace';
 // Template and Config commands per spec 32 and 33
 export { TemplateCommand, TemplateResult } from './template';
 export { ConfigCommand, ConfigResult, CONFIG_KEYS, ConfigKey } from './config';
+
+// Unified event inspection command (replaces symptom-specific commands)
+export { InspectCommand, InspectCommandResult } from './inspect';

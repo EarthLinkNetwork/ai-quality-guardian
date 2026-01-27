@@ -27,7 +27,9 @@
     "e2e:smoke": "ts-node scripts/e2e-smoke.ts",
     "e2e:recovery": "ts-node scripts/e2e-recovery.ts",
     "proof:real": "ts-node scripts/e2e-real-world-proof.ts",
-    "dynamodb:local:init": "ts-node scripts/dynamodb-local-init.ts"
+    "dynamodb:local:init": "ts-node scripts/dynamodb-local-init.ts",
+    "audit:test": "bash scripts/audit/run-tests.sh",
+    "audit:dist-docs-only": "bash scripts/audit/dist-docs-only.sh"
   },
   "keywords": [
     "pm-orchestrator",

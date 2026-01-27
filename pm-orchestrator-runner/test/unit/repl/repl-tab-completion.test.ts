@@ -18,7 +18,7 @@ describe('REPL Tab Completion', () => {
   let tempDir: string;
   let repl: REPLInterface;
 
-  // Spec-defined commands (20 total: spec commands + clear/version for typo rescue + template commands)
+  // Spec-defined commands (24 total: spec commands + clear/version for typo rescue + template commands + inspect)
   const SPEC_COMMANDS = [
     '/help', '/init', '/model', '/start', '/continue',
     '/status', '/tasks', '/approve', '/exit',
@@ -31,7 +31,9 @@ describe('REPL Tab Completion', () => {
     // Template and Config commands per spec 32 and 33
     '/templates', '/template', '/config',
     // Multi-line buffer submit command
-    '/send'
+    '/send',
+    // Unified event inspection command
+    '/inspect'
   ];
 
   beforeEach(() => {
@@ -58,12 +60,12 @@ describe('REPL Tab Completion', () => {
   }
 
   describe('Spec compliance', () => {
-    it('should return exactly 23 commands for "/" (spec list + clear/version + template commands, no /quit)', () => {
+    it('should return exactly 24 commands for "/" (spec list + clear/version + template commands + inspect, no /quit)', () => {
       const completer = getCompleter(repl);
       const [completions, line] = completer('/');
 
       assert.equal(line, '/');
-      assert.equal(completions.length, 23, 'Should return exactly 23 commands');
+      assert.equal(completions.length, 24, 'Should return exactly 24 commands');
 
       // Verify all spec commands are present
       for (const cmd of SPEC_COMMANDS) {

@@ -3,7 +3,7 @@
  * REPL Commands Index
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CONFIG_KEYS = exports.ConfigCommand = exports.TemplateCommand = exports.TraceCommand = exports.LogsCommand = exports.KeysCommand = exports.ModelsCommand = exports.REPL_STATE_FILE = exports.ProviderCommand = exports.StatusCommands = exports.SessionCommands = exports.AVAILABLE_MODELS = exports.ModelCommand = exports.InitCommand = void 0;
+exports.InspectCommand = exports.CONFIG_KEYS = exports.ConfigCommand = exports.TemplateCommand = exports.TraceCommand = exports.LogsCommand = exports.KeysCommand = exports.ModelsCommand = exports.REPL_STATE_FILE = exports.ProviderCommand = exports.StatusCommands = exports.SessionCommands = exports.AVAILABLE_MODELS = exports.ModelCommand = exports.InitCommand = void 0;
 var init_1 = require("./init");
 Object.defineProperty(exports, "InitCommand", { enumerable: true, get: function () { return init_1.InitCommand; } });
 var model_1 = require("./model");
@@ -31,4 +31,7 @@ Object.defineProperty(exports, "TemplateCommand", { enumerable: true, get: funct
 var config_1 = require("./config");
 Object.defineProperty(exports, "ConfigCommand", { enumerable: true, get: function () { return config_1.ConfigCommand; } });
 Object.defineProperty(exports, "CONFIG_KEYS", { enumerable: true, get: function () { return config_1.CONFIG_KEYS; } });
+// Unified event inspection command (replaces symptom-specific commands)
+var inspect_1 = require("./inspect");
+Object.defineProperty(exports, "InspectCommand", { enumerable: true, get: function () { return inspect_1.InspectCommand; } });
 //# sourceMappingURL=index.js.map

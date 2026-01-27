@@ -12,4 +12,5 @@ export { LogsCommand, LogsResult } from './logs';
 export { TraceCommand, TraceResult, TraceOptions } from './trace';
 export { TemplateCommand, TemplateResult } from './template';
 export { ConfigCommand, ConfigResult, CONFIG_KEYS, ConfigKey } from './config';
+export { InspectCommand, InspectCommandResult } from './inspect';
 //# sourceMappingURL=index.d.ts.map

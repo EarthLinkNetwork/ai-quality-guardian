@@ -235,6 +235,7 @@ export declare class REPLInterface extends EventEmitter {
     private configCommand;
     private templateStore;
     private settingsStore;
+    private inspectCommand;
     private renderer;
     private pendingUserResponse;
     private pendingCommandSuggestion;
@@ -677,6 +678,31 @@ export declare class REPLInterface extends EventEmitter {
      * Usage: /inputmode [single|multi]
      */
     private handleInputMode;
+    /**
+     * Handle /inspect command - unified event inspection
+     * Usage: /inspect [ui|<event-id>]
+     */
+    private handleInspect;
+    /**
+     * Handle /inspect ui - interactive event browser
+     */
+    private handleInspectInteractive;
+    /**
+     * Handle /inspect diagnostic ui - interactive diagnostic picker
+     */
+    private handleDiagnosticInteractive;
+    /**
+     * Run a diagnostic by its ID.
+     */
+    private runDiagnosticById;
+    /**
+     * Get or create the diagnostic registry with builtin definitions.
+     */
+    private getDiagnosticRegistry;
+    /**
+     * Format and print a diagnostic result.
+     */
+    private printDiagnosticResult;
 }
 export {};
 //# sourceMappingURL=repl-interface.d.ts.map

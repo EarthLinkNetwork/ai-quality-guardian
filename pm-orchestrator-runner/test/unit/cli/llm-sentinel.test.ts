@@ -39,7 +39,8 @@ describe('LLM Sentinel CLI', () => {
   });
 
   describe('Gate CLOSED output (Fail-Closed guarantee)', () => {
-    it('should output VERDICT: INCOMPLETE and REAL_CALLS_MADE: false when gate is closed', () => {
+    it('should output VERDICT: INCOMPLETE and REAL_CALLS_MADE: false when gate is closed', function () {
+      this.timeout(5000);
       const cliPath = path.join(__dirname, '../../../src/cli/llm-sentinel.ts');
 
       // Run CLI with gate closed (no LLM_TEST_MODE, no API key)

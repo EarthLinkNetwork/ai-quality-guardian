@@ -36,6 +36,15 @@ import { LogsCommand } from './commands/logs';
 import { TraceCommand } from './commands/trace';
 import { TemplateCommand } from './commands/template';
 import { ConfigCommand } from './commands/config';
+import { InspectCommand } from './commands/inspect';
+import {
+  DiagnosticRunner,
+  DiagnosticRegistry,
+  DiagnosticResult,
+  GenericPicker,
+  PickerItem,
+  builtinDiagnostics,
+} from '../diagnostics';
 import { TwoPaneRenderer } from './two-pane-renderer';
 import { TemplateStore } from '../template';
 import { ProjectSettingsStore } from '../settings';
@@ -86,6 +95,7 @@ const KNOWN_COMMANDS = [
   'config',
   'send',  // Multi-line buffer submit command
   'verbose',  // Toggle verbose executor logs
+  'inspect',  // Unified event inspection and diagnostics
 ];
 
 /**
@@ -436,6 +446,9 @@ export class REPLInterface extends EventEmitter {
   private templateStore: TemplateStore;
   private settingsStore: ProjectSettingsStore;
 
+  // Unified event inspection command
+  private inspectCommand: InspectCommand | null = null;
+
   // Two-pane renderer per spec 18_CLI_TWO_PANE.md
   private renderer: TwoPaneRenderer;
 
@@ -462,11 +475,11 @@ export class REPLInterface extends EventEmitter {
   // Maps display numbers (1, 2, 3...) to task IDs
   private taskNumberMap: Map<number, string> = new Map();
 
-  // Interactive selection mode for /logs ui and /tasks ui
+  // Interactive selection mode for /logs ui, /tasks ui, and /inspect ui
   // When active, numeric input selects an item from the displayed list
   private pendingSelectionMode: {
-    type: 'logs' | 'tasks';
-    items: Map<number, string>; // number -> task ID
+    type: 'logs' | 'tasks' | 'inspect' | 'diagnostic';
+    items: Map<number, string>; // number -> task ID, event ID, or diagnostic ID
   } | null = null;
 
   constructor(config: REPLConfig = {}) {
@@ -1161,6 +1174,12 @@ export class REPLInterface extends EventEmitter {
         if (selection.type === 'logs') {
           // Show log details for selected task
           await this.handleLogs([taskId, '--full']);
+        } else if (selection.type === 'inspect') {
+          // Show event details for selected event
+          await this.handleInspect([taskId]);
+        } else if (selection.type === 'diagnostic') {
+          // Run selected diagnostic
+          await this.runDiagnosticById(taskId);
         } else {
           // Show task details for selected task
           await this.handleLogs([taskId]);
@@ -1465,6 +1484,10 @@ export class REPLInterface extends EventEmitter {
 
       case 'inputmode':
         return this.handleInputMode(args);
+
+      case 'inspect':
+        return await this.handleInspect(args);
+
       default:
         // This should never be reached since unknown commands are handled above
         // If we reach here, KNOWN_COMMANDS list is inconsistent with switch cases
@@ -3851,5 +3874,221 @@ export class REPLInterface extends EventEmitter {
           error: { code: "E411", message: "Invalid inputmode option: " + subCommand },
         };
     }
+  }
+
+  /**
+   * Handle /inspect command - unified event inspection
+   * Usage: /inspect [ui|<event-id>]
+   */
+  private async handleInspect(args: string[]): Promise<CommandResult> {
+    // Ensure project path is set
+    const projectPath = this.session.projectPath || process.cwd();
+
+    // Lazy initialize inspectCommand with current project path
+    if (!this.inspectCommand) {
+      this.inspectCommand = new InspectCommand(projectPath);
+    }
+
+    const subCommand = args[0]?.toLowerCase();
+
+    // /inspect or /inspect ui - show picker UI
+    if (!subCommand || subCommand === 'ui') {
+      return await this.handleInspectInteractive();
+    }
+
+    // /inspect diagnostic [ui|<id>] - run diagnostics
+    if (subCommand === 'diagnostic' || subCommand === 'diag') {
+      const diagArg = args[1]?.toLowerCase();
+      if (!diagArg || diagArg === 'ui') {
+        return await this.handleDiagnosticInteractive();
+      }
+      return await this.runDiagnosticById(diagArg);
+    }
+
+    // /inspect <event-id> - show specific event details
+    const result = await this.inspectCommand.execute(args.join(' '));
+    if (result.output) {
+      this.print(result.output);
+    }
+    return { success: result.success, error: result.error };
+  }
+
+  /**
+   * Handle /inspect ui - interactive event browser
+   */
+  private async handleInspectInteractive(): Promise<CommandResult> {
+    const projectPath = this.session.projectPath || process.cwd();
+
+    // Lazy initialize inspectCommand
+    if (!this.inspectCommand) {
+      this.inspectCommand = new InspectCommand(projectPath);
+    }
+
+    const events = await this.inspectCommand.getEventsForPicker();
+
+    if (events.length === 0) {
+      this.print('');
+      this.print('No events recorded yet.');
+      this.print('');
+      this.print('Events are automatically recorded when:');
+      this.print('- Files change (src/, dist/, docs/, etc.)');
+      this.print('- Executors run (Claude Code, etc.)');
+      this.print('- Tasks change status');
+      this.print('- Sessions start/end');
+      this.print('- Commands execute');
+      this.print('');
+      this.print('Start using the REPL to generate events!');
+      return { success: true };
+    }
+
+    this.print('');
+    this.print('Select an event to inspect:');
+    this.print('');
+
+    const items = new Map<number, string>();
+    for (let i = 0; i < events.length; i++) {
+      const event = events[i];
+      this.print(event.display);
+      this.print(`   ${event.id}`);
+      items.set(i + 1, event.id);
+    }
+
+    this.print('');
+    this.print('Enter number (1-' + events.length + ') to view details, or q to cancel:');
+
+    // Enter selection mode
+    this.pendingSelectionMode = {
+      type: 'inspect',
+      items,
+    };
+
+    return { success: true };
+  }
+
+  /**
+   * Handle /inspect diagnostic ui - interactive diagnostic picker
+   */
+  private async handleDiagnosticInteractive(): Promise<CommandResult> {
+    const registry = this.getDiagnosticRegistry();
+    const definitions = registry.getAll();
+
+    if (definitions.length === 0) {
+      this.print('');
+      this.print('No diagnostic definitions registered.');
+      return { success: true };
+    }
+
+    this.print('');
+    this.print('Select a diagnostic to run:');
+    this.print('');
+
+    const items = new Map<number, string>();
+    for (let i = 0; i < definitions.length; i++) {
+      const def = definitions[i];
+      const category = def.category ? `[${def.category}]` : '';
+      this.print(`${i + 1}. ${category} ${def.title}`);
+      this.print(`   ${def.description}`);
+      items.set(i + 1, def.id);
+    }
+
+    this.print('');
+    this.print('Enter number (1-' + definitions.length + ') to run, or q to cancel:');
+
+    this.pendingSelectionMode = {
+      type: 'diagnostic',
+      items,
+    };
+
+    return { success: true };
+  }
+
+  /**
+   * Run a diagnostic by its ID.
+   */
+  private async runDiagnosticById(id: string): Promise<CommandResult> {
+    const registry = this.getDiagnosticRegistry();
+    const definition = registry.get(id);
+
+    if (!definition) {
+      this.print('Unknown diagnostic: ' + id);
+      this.print('');
+      this.print('Available diagnostics:');
+      for (const def of registry.getAll()) {
+        this.print('  ' + def.id + ' - ' + def.title);
+      }
+      return {
+        success: false,
+        error: { code: 'E601', message: 'Unknown diagnostic: ' + id },
+      };
+    }
+
+    const projectPath = this.session.projectPath || process.cwd();
+    const runner = new DiagnosticRunner(projectPath);
+
+    this.print('Running diagnostic: ' + definition.title + '...');
+    this.print('');
+
+    const result = await runner.run(definition);
+    this.printDiagnosticResult(result);
+
+    return { success: result.passed };
+  }
+
+  /**
+   * Get or create the diagnostic registry with builtin definitions.
+   */
+  private getDiagnosticRegistry(): DiagnosticRegistry {
+    const registry = new DiagnosticRegistry();
+    for (const def of builtinDiagnostics) {
+      registry.register(def);
+    }
+    return registry;
+  }
+
+  /**
+   * Format and print a diagnostic result.
+   */
+  private printDiagnosticResult(result: DiagnosticResult): void {
+    const statusIcon = result.passed ? 'PASS' : 'FAIL';
+    this.print('='.repeat(60));
+    this.print(`[${statusIcon}] ${result.title}`);
+    this.print('='.repeat(60));
+    this.print('');
+
+    if (!result.preconditionsMet) {
+      this.print('Preconditions not met:');
+      for (const err of result.preconditionErrors) {
+        this.print('  - ' + err);
+      }
+      this.print('');
+      return;
+    }
+
+    // Step results
+    this.print('Steps:');
+    for (const step of result.stepResults) {
+      const icon = step.success ? 'ok' : 'ERR';
+      this.print(`  [${icon}] ${step.stepId} (${step.durationMs}ms)`);
+      if (step.error) {
+        this.print(`       ${step.error}`);
+      }
+    }
+    this.print('');
+
+    // Assertion results
+    this.print('Assertions:');
+    for (const assertion of result.assertionResults) {
+      const icon = assertion.passed ? 'ok' : (assertion.assertion.severity === 'error' ? 'FAIL' : 'WARN');
+      this.print(`  [${icon}] ${assertion.message}`);
+      if (!assertion.passed && assertion.actual !== undefined) {
+        this.print(`       actual: ${assertion.actual}`);
+      }
+    }
+    this.print('');
+
+    // Summary
+    this.print(`Summary: ${result.summary}`);
+    this.print(`Duration: ${result.durationMs}ms`);
+    this.print('='.repeat(60));
   }
 }
