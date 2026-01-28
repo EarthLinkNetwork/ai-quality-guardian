@@ -31,7 +31,8 @@ describe('Claude Code Executor', () => {
   });
 
   describe('CLI Availability Check', () => {
-    it('should detect if Claude Code CLI is available', async () => {
+    it('should detect if Claude Code CLI is available', async function () {
+      this.timeout(5000);
       const available = await executor.isClaudeCodeAvailable();
       // This test documents the state - may be true or false depending on environment
       assert.ok(typeof available === 'boolean', 'Should return boolean');
