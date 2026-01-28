@@ -29,7 +29,11 @@
     "proof:real": "ts-node scripts/e2e-real-world-proof.ts",
     "dynamodb:local:init": "ts-node scripts/dynamodb-local-init.ts",
     "audit:test": "bash scripts/audit/run-tests.sh",
-    "audit:dist-docs-only": "bash scripts/audit/dist-docs-only.sh"
+    "audit:dist-docs-only": "bash scripts/audit/dist-docs-only.sh",
+    "gate:ui": "ts-node diagnostics/ui-invariants.check.ts",
+    "gate:task": "ts-node diagnostics/task-state.check.ts",
+    "gate:tier0": "npm run gate:ui && npm run gate:task",
+    "gate:all": "npm run gate:tier0"
   },
   "keywords": [
     "pm-orchestrator",

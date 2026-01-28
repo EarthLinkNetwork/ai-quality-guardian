@@ -45,6 +45,7 @@ import {
   PickerItem,
   builtinDiagnostics,
 } from '../diagnostics';
+import { InteractivePicker } from './interactive-picker';
 import { TwoPaneRenderer } from './two-pane-renderer';
 import { TemplateStore } from '../template';
 import { ProjectSettingsStore } from '../settings';
@@ -477,10 +478,14 @@ export class REPLInterface extends EventEmitter {
 
   // Interactive selection mode for /logs ui, /tasks ui, and /inspect ui
   // When active, numeric input selects an item from the displayed list
+  // NOTE: This is the NON-TTY fallback. TTY mode uses InteractivePicker.
   private pendingSelectionMode: {
     type: 'logs' | 'tasks' | 'inspect' | 'diagnostic';
     items: Map<number, string>; // number -> task ID, event ID, or diagnostic ID
   } | null = null;
+
+  // Flag to suppress REPL keypress handling while InteractivePicker is active
+  private pickerActive: boolean = false;
 
   constructor(config: REPLConfig = {}) {
     super();
@@ -1092,6 +1097,9 @@ export class REPLInterface extends EventEmitter {
         process.stdin.setRawMode(true);
       }
       process.stdin.on('keypress', (_str, key) => {
+        // Skip REPL keypress handling while InteractivePicker is active
+        if (this.pickerActive) return;
+
         // Per spec: Esc cancels current multi-line input
         if (key && key.name === 'escape' && this.multiLineBuffer.length > 0) {
           this.multiLineBuffer = [];
@@ -2295,7 +2303,8 @@ export class REPLInterface extends EventEmitter {
 
   /**
    * Handle /logs ui - interactive log selection
-   * Shows numbered list and enters selection mode
+   * TTY: keyboard-navigable picker (Tier-0 Rule E)
+   * Non-TTY: numbered list with pendingSelectionMode fallback
    */
   private async handleLogsInteractive(): Promise<CommandResult> {
     if (!this.session.sessionId) {
@@ -2306,101 +2315,137 @@ export class REPLInterface extends EventEmitter {
       };
     }
 
-    // Build list from task queue
     if (this.taskQueue.length === 0) {
       this.print('No tasks in queue. Submit a task first.');
       return { success: true };
     }
 
-    this.print('');
-    this.print('Select a task to view logs:');
-    this.print('');
-
-    const items = new Map<number, string>();
-    let num = 1;
-
-    for (const task of this.taskQueue) {
-      items.set(num, task.id);
-
-      // State marker
+    // Build PickerItem array from task queue
+    const pickerItems: PickerItem<string>[] = this.taskQueue.map(task => {
       let stateMarker = '';
       switch (task.state) {
-        case 'RUNNING': stateMarker = '[*]'; break;
-        case 'QUEUED': stateMarker = '[ ]'; break;
-        case 'COMPLETE': stateMarker = '[v]'; break;
-        case 'INCOMPLETE': stateMarker = '[!]'; break;
-        case 'ERROR': stateMarker = '[X]'; break;
-        case 'AWAITING_RESPONSE': stateMarker = '[?]'; break;
+        case 'RUNNING': stateMarker = '*'; break;
+        case 'QUEUED': stateMarker = ' '; break;
+        case 'COMPLETE': stateMarker = 'v'; break;
+        case 'INCOMPLETE': stateMarker = '!'; break;
+        case 'ERROR': stateMarker = 'X'; break;
+        case 'AWAITING_RESPONSE': stateMarker = '?'; break;
       }
-
       const desc = task.description.length > 40
         ? task.description.substring(0, 40) + '...'
         : task.description;
+      return {
+        id: task.id,
+        label: desc,
+        data: task.id,
+        prefix: stateMarker,
+      };
+    });
 
-      this.print('  ' + num + '. ' + stateMarker + ' ' + desc);
-      num++;
+    // TTY: use InteractivePicker (keyboard-navigable, Tier-0 Rule E)
+    if (process.stdin.isTTY) {
+      const picker = new InteractivePicker<string>(pickerItems, {
+        title: 'Select a task to view logs:',
+      });
+
+      this.pickerActive = true;
+      this.rl?.pause();
+      try {
+        const result = await picker.prompt();
+        if (result.type === 'selected' && result.item) {
+          await this.handleLogs([result.item.data, '--full']);
+        }
+      } finally {
+        this.pickerActive = false;
+        this.rl?.resume();
+        this.rl?.prompt();
+      }
+      return { success: true };
     }
 
+    // Non-TTY fallback: numbered list + pendingSelectionMode
     this.print('');
-    this.print('Enter number (1-' + (num - 1) + ') to view details, or q to cancel:');
-
-    // Enter selection mode
-    this.pendingSelectionMode = {
-      type: 'logs',
-      items,
-    };
-
+    this.print('Select a task to view logs:');
+    this.print('');
+    const items = new Map<number, string>();
+    pickerItems.forEach((item, i) => {
+      const num = i + 1;
+      items.set(num, item.data);
+      this.print('  ' + num + '. [' + item.prefix + '] ' + item.label);
+    });
+    this.print('');
+    this.print('Enter number (1-' + pickerItems.length + ') to view details, or q to cancel:');
+    this.pendingSelectionMode = { type: 'logs', items };
     return { success: true };
   }
 
   /**
    * Handle /tasks ui - interactive task selection
-   * Shows numbered list and enters selection mode
+   * TTY: keyboard-navigable picker (Tier-0 Rule E)
+   * Non-TTY: numbered list with pendingSelectionMode fallback
    */
-  private handleTasksInteractive(): CommandResult {
+  private async handleTasksInteractive(): Promise<CommandResult> {
     if (this.taskQueue.length === 0) {
       this.print('No tasks in queue. Submit a task first.');
       return { success: true };
     }
 
-    this.print('');
-    this.print('Select a task to view details:');
-    this.print('');
-
-    const items = new Map<number, string>();
-    let num = 1;
-
-    for (const task of this.taskQueue) {
-      items.set(num, task.id);
-
-      // State marker
+    // Build PickerItem array
+    const pickerItems: PickerItem<string>[] = this.taskQueue.map(task => {
       let stateMarker = '';
       switch (task.state) {
-        case 'RUNNING': stateMarker = '[*]'; break;
-        case 'QUEUED': stateMarker = '[ ]'; break;
-        case 'COMPLETE': stateMarker = '[v]'; break;
-        case 'INCOMPLETE': stateMarker = '[!]'; break;
-        case 'ERROR': stateMarker = '[X]'; break;
-        case 'AWAITING_RESPONSE': stateMarker = '[?]'; break;
+        case 'RUNNING': stateMarker = '*'; break;
+        case 'QUEUED': stateMarker = ' '; break;
+        case 'COMPLETE': stateMarker = 'v'; break;
+        case 'INCOMPLETE': stateMarker = '!'; break;
+        case 'ERROR': stateMarker = 'X'; break;
+        case 'AWAITING_RESPONSE': stateMarker = '?'; break;
       }
-
       const desc = task.description.length > 40
         ? task.description.substring(0, 40) + '...'
         : task.description;
+      return {
+        id: task.id,
+        label: desc,
+        data: task.id,
+        prefix: stateMarker,
+      };
+    });
 
-      this.print('  ' + num + '. ' + stateMarker + ' ' + desc);
-      num++;
+    // TTY: use InteractivePicker (keyboard-navigable, Tier-0 Rule E)
+    if (process.stdin.isTTY) {
+      const picker = new InteractivePicker<string>(pickerItems, {
+        title: 'Select a task to view details:',
+      });
+
+      this.pickerActive = true;
+      this.rl?.pause();
+      try {
+        const result = await picker.prompt();
+        if (result.type === 'selected' && result.item) {
+          await this.handleLogs([result.item.data]);
+        }
+      } finally {
+        this.pickerActive = false;
+        this.rl?.resume();
+        this.rl?.prompt();
+      }
+      return { success: true };
     }
 
+    // Non-TTY fallback
     this.print('');
-    this.print('Enter number (1-' + (num - 1) + ') to view details, or q to cancel:');
-
-    // Enter selection mode
-    this.pendingSelectionMode = {
-      type: 'tasks',
-      items,
-    };
-
+    this.print('Select a task to view details:');
+    this.print('');
+    const items = new Map<number, string>();
+    pickerItems.forEach((item, i) => {
+      const num = i + 1;
+      items.set(num, item.data);
+      this.print('  ' + num + '. [' + item.prefix + '] ' + item.label);
+    });
+    this.print('');
+    this.print('Enter number (1-' + pickerItems.length + ') to view details, or q to cancel:');
+    this.pendingSelectionMode = { type: 'tasks', items };
     return { success: true };
   }
 
@@ -2476,7 +2521,7 @@ export class REPLInterface extends EventEmitter {
   private async handleTasks(args: string[] = []): Promise<void> {
     // /tasks ui - interactive selection mode
     if (args.length > 0 && args[0].toLowerCase() === 'ui') {
-      this.handleTasksInteractive();
+      await this.handleTasksInteractive();
       return;
     }
 
@@ -3915,6 +3960,8 @@ export class REPLInterface extends EventEmitter {
 
   /**
    * Handle /inspect ui - interactive event browser
+   * TTY: keyboard-navigable picker (Tier-0 Rule E)
+   * Non-TTY: numbered list with pendingSelectionMode fallback
    */
   private async handleInspectInteractive(): Promise<CommandResult> {
     const projectPath = this.session.projectPath || process.cwd();
@@ -3941,10 +3988,40 @@ export class REPLInterface extends EventEmitter {
       return { success: true };
     }
 
+    // Build PickerItem array
+    const pickerItems: PickerItem<string>[] = events.map(event => ({
+      id: event.id,
+      label: event.display,
+      data: event.id,
+      description: event.id,
+    }));
+
+    // TTY: use InteractivePicker (keyboard-navigable, Tier-0 Rule E)
+    if (process.stdin.isTTY) {
+      const picker = new InteractivePicker<string>(pickerItems, {
+        title: 'Select an event to inspect:',
+        showDescriptions: true,
+      });
+
+      this.pickerActive = true;
+      this.rl?.pause();
+      try {
+        const result = await picker.prompt();
+        if (result.type === 'selected' && result.item) {
+          await this.handleInspect([result.item.data]);
+        }
+      } finally {
+        this.pickerActive = false;
+        this.rl?.resume();
+        this.rl?.prompt();
+      }
+      return { success: true };
+    }
+
+    // Non-TTY fallback
     this.print('');
     this.print('Select an event to inspect:');
     this.print('');
-
     const items = new Map<number, string>();
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
@@ -3952,21 +4029,16 @@ export class REPLInterface extends EventEmitter {
       this.print(`   ${event.id}`);
       items.set(i + 1, event.id);
     }
-
     this.print('');
     this.print('Enter number (1-' + events.length + ') to view details, or q to cancel:');
-
-    // Enter selection mode
-    this.pendingSelectionMode = {
-      type: 'inspect',
-      items,
-    };
-
+    this.pendingSelectionMode = { type: 'inspect', items };
     return { success: true };
   }
 
   /**
    * Handle /inspect diagnostic ui - interactive diagnostic picker
+   * TTY: keyboard-navigable picker (Tier-0 Rule E)
+   * Non-TTY: numbered list with pendingSelectionMode fallback
    */
   private async handleDiagnosticInteractive(): Promise<CommandResult> {
     const registry = this.getDiagnosticRegistry();
@@ -3978,27 +4050,53 @@ export class REPLInterface extends EventEmitter {
       return { success: true };
     }
 
+    // Build PickerItem array
+    const pickerItems: PickerItem<string>[] = definitions.map(def => {
+      const category = def.category ? `[${def.category}]` : '';
+      return {
+        id: def.id,
+        label: `${category} ${def.title}`,
+        data: def.id,
+        description: def.description,
+      };
+    });
+
+    // TTY: use InteractivePicker (keyboard-navigable, Tier-0 Rule E)
+    if (process.stdin.isTTY) {
+      const picker = new InteractivePicker<string>(pickerItems, {
+        title: 'Select a diagnostic to run:',
+        showDescriptions: true,
+      });
+
+      this.pickerActive = true;
+      this.rl?.pause();
+      try {
+        const result = await picker.prompt();
+        if (result.type === 'selected' && result.item) {
+          await this.runDiagnosticById(result.item.data);
+        }
+      } finally {
+        this.pickerActive = false;
+        this.rl?.resume();
+        this.rl?.prompt();
+      }
+      return { success: true };
+    }
+
+    // Non-TTY fallback
     this.print('');
     this.print('Select a diagnostic to run:');
     this.print('');
-
     const items = new Map<number, string>();
     for (let i = 0; i < definitions.length; i++) {
       const def = definitions[i];
-      const category = def.category ? `[${def.category}]` : '';
-      this.print(`${i + 1}. ${category} ${def.title}`);
+      this.print(`${i + 1}. ${pickerItems[i].label}`);
       this.print(`   ${def.description}`);
       items.set(i + 1, def.id);
     }
-
     this.print('');
     this.print('Enter number (1-' + definitions.length + ') to run, or q to cancel:');
-
-    this.pendingSelectionMode = {
-      type: 'diagnostic',
-      items,
-    };
-
+    this.pendingSelectionMode = { type: 'diagnostic', items };
     return { success: true };
   }
 

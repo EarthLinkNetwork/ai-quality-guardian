@@ -62,8 +62,8 @@ check('B', 'TwoPaneRenderer has log batching capability', () => {
     const Cls = mod.TwoPaneRenderer;
     if (!Cls) return 'TwoPaneRenderer class not found';
     const proto = Cls.prototype;
-    const hasAddLog = typeof proto.addLog === 'function' || typeof proto.appendLog === 'function';
-    if (!hasAddLog) return 'No log append method found (addLog or appendLog)';
+    const hasWriteLog = typeof proto.writeLog === 'function' || typeof proto.addLog === 'function' || typeof proto.appendLog === 'function';
+    if (!hasWriteLog) return 'No log write method found (writeLog, addLog, or appendLog)';
     return true;
   } catch {
     return 'Cannot load two-pane-renderer module';
@@ -106,15 +106,34 @@ check('D', 'TwoPaneRenderer renders separator line', () => {
 
 // -------------------------------------------------------------------
 // Rule E: Keyboard-Selectable Picker (Selection Lists)
+// Verifies:
+//   1. InteractivePicker module exists
+//   2. InteractivePicker is IMPORTED in repl-interface.ts (integration check)
+//   3. InteractivePicker is USED in handle*Interactive methods (usage check)
 // -------------------------------------------------------------------
-check('E', 'InteractivePicker module exists with keypress handling', () => {
+check('E', 'InteractivePicker module exists and is integrated into REPL', () => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require('../src/repl/interactive-picker');
-    if (mod.InteractivePicker) return true;
-    return 'InteractivePicker class not exported';
+    if (!mod.InteractivePicker) return 'InteractivePicker class not exported';
   } catch {
     return 'src/repl/interactive-picker module not found (Phase 0-B required)';
+  }
+
+  // Integration check: InteractivePicker must be IMPORTED in repl-interface.ts
+  try {
+    const fs = require('fs');
+    const replSrc = fs.readFileSync(require.resolve('../src/repl/repl-interface'), 'utf-8');
+    if (!replSrc.includes('InteractivePicker')) {
+      return 'InteractivePicker is NOT imported in repl-interface.ts (module exists but unused)';
+    }
+    // Usage check: at least one handle*Interactive must construct InteractivePicker
+    if (!replSrc.includes('new InteractivePicker')) {
+      return 'InteractivePicker is imported but never instantiated in repl-interface.ts';
+    }
+    return true;
+  } catch {
+    return 'Cannot read repl-interface.ts source for integration check';
   }
 });
 
