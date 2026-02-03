@@ -32,8 +32,11 @@
     "audit:dist-docs-only": "bash scripts/audit/dist-docs-only.sh",
     "gate:ui": "ts-node diagnostics/ui-invariants.check.ts",
     "gate:task": "ts-node diagnostics/task-state.check.ts",
+    "gate:web": "ts-node diagnostics/settings-ui.check.ts",
+    "gate:agent": "ts-node diagnostics/agent-launcher.check.ts",
     "gate:tier0": "npm run gate:ui && npm run gate:task",
-    "gate:all": "npm run gate:tier0"
+    "gate:all": "npm run gate:tier0 && npm run gate:web && npm run gate:agent && npm run gate:spec",
+    "gate:spec": "ts-node diagnostics/spec-coverage.check.ts"
   },
   "keywords": [
     "pm-orchestrator",

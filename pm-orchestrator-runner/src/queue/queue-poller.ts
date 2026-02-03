@@ -10,7 +10,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { QueueStore, QueueItem, QueueItemStatus } from './queue-store';
+import { IQueueStore, QueueItem, QueueItemStatus } from './queue-store';
 
 /**
  * Task executor function type
@@ -71,7 +71,7 @@ export interface QueuePollerEvents {
  * Polls the queue store and executes tasks
  */
 export class QueuePoller extends EventEmitter {
-  private readonly store: QueueStore;
+  private readonly store: IQueueStore;
   private readonly executor: TaskExecutor;
   private readonly pollIntervalMs: number;
   private readonly maxStaleTaskAgeMs: number;
@@ -87,7 +87,7 @@ export class QueuePoller extends EventEmitter {
   private errors: number = 0;
 
   constructor(
-    store: QueueStore,
+    store: IQueueStore,
     executor: TaskExecutor,
     config: QueuePollerConfig = {}
   ) {

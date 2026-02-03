@@ -17,7 +17,8 @@ import * as path from 'path';
 import { CLI, CLIError } from './cli-interface';
 import { REPLInterface, ProjectMode } from '../repl/repl-interface';
 import { WebServer } from '../web/server';
-import { QueueStore, QueuePoller, QueueItem, TaskExecutor } from '../queue';
+import { QueueStore, QueuePoller, QueueItem, TaskExecutor, IQueueStore } from '../queue';
+import { InMemoryQueueStore } from '../queue/in-memory-queue-store';
 import { AutoResolvingExecutor } from '../executor/auto-resolve-executor';
 import {
   validateNamespace,
@@ -297,6 +298,7 @@ interface WebArguments {
   port?: number;
   namespace?: string;
   background?: boolean;
+  noDynamodb?: boolean;
 }
 
 /**
@@ -331,6 +333,10 @@ function parseWebArgs(args: string[]): WebArguments {
     // Background mode (per spec/19_WEB_UI.md lines 361-398)
     else if (arg === '--background') {
       result.background = true;
+    }
+    // No DynamoDB mode - use in-memory queue store
+    else if (arg === '--no-dynamodb') {
+      result.noDynamodb = true;
     }
   }
 
@@ -457,10 +463,40 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   });
 
   const port = webArgs.port || namespaceConfig.port;
-  const queueStore = new QueueStore({
-    namespace: namespaceConfig.namespace,
-  });
-  await queueStore.ensureTable();
+
+  // Check for NO_DYNAMODB mode (env var or CLI flag)
+  const noDynamodb = webArgs.noDynamodb || process.env.PM_WEB_NO_DYNAMODB === '1';
+
+  // Create appropriate queue store based on mode
+  let queueStore: IQueueStore;
+
+  if (noDynamodb) {
+    console.log('[NO_DYNAMODB] Using in-memory queue store');
+    queueStore = new InMemoryQueueStore({
+      namespace: namespaceConfig.namespace,
+    });
+  } else {
+    // Try to create DynamoDB-based store with fallback to in-memory on connection error
+    try {
+      const dynamoStore = new QueueStore({
+        namespace: namespaceConfig.namespace,
+      });
+      await dynamoStore.ensureTable();
+      queueStore = dynamoStore;
+    } catch (error) {
+      // Check if it's a connection error (ECONNREFUSED)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('connect')) {
+        console.warn('[DynamoDB] Connection failed, falling back to in-memory queue store');
+        console.warn('[DynamoDB] To use DynamoDB, start DynamoDB Local: docker-compose up -d dynamodb');
+        queueStore = new InMemoryQueueStore({
+          namespace: namespaceConfig.namespace,
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
 
   // Create TaskExecutor and QueuePoller
   const taskExecutor = createTaskExecutor(projectPath);
@@ -487,17 +523,27 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     console.log(`[Runner] Recovered ${count} stale tasks`);
   });
 
+  // E2E isolation: override stateDir if PM_E2E_STATE_DIR is set
+  // This prevents E2E tests from polluting real user state
+  const effectiveStateDir = process.env.PM_E2E_STATE_DIR || namespaceConfig.stateDir;
+  const isE2eMode = !!process.env.PM_E2E_STATE_DIR;
+
   const server = new WebServer({
     port,
     queueStore,
     sessionId: generateWebSessionId(),
     namespace: namespaceConfig.namespace,
     projectRoot: projectPath,
+    stateDir: effectiveStateDir,
   });
 
   console.log(`Starting Web UI server on port ${port}...`);
   console.log(`Namespace: ${namespaceConfig.namespace}`);
-  console.log(`State directory: ${namespaceConfig.stateDir}`);
+  if (isE2eMode) {
+    console.log(`[E2E MODE] State directory: ${effectiveStateDir}`);
+  } else {
+    console.log(`State directory: ${effectiveStateDir}`);
+  }
   console.log('');
   console.log('Verification steps:');
   console.log(`  1. Health check:  curl http://localhost:${port}/api/health`);

@@ -18,8 +18,29 @@
 
 import express, { Express, Request, Response, NextFunction } from 'express';
 import path from 'path';
-import { QueueStore, QueueItemStatus } from '../queue';
+import fs from 'fs';
+import crypto from 'crypto';
+import { IQueueStore, QueueItemStatus } from '../queue';
 import { ConversationTracer } from '../trace/conversation-tracer';
+import { createSettingsRoutes } from './routes/settings';
+import { createDashboardRoutes } from './routes/dashboard';
+import { createInspectionRoutes } from './routes/inspection';
+
+/**
+ * Derive namespace from folder path (same logic as CLI)
+ */
+function deriveNamespace(folderPath: string): string {
+  const basename = path.basename(folderPath);
+  const hash = crypto.createHash('sha256').update(folderPath).digest('hex').substring(0, 4);
+  return `${basename}-${hash}`;
+}
+
+/**
+ * Get stateDir for a folder
+ */
+function getStateDir(folderPath: string): string {
+  return path.join(folderPath, '.claude', 'state');
+}
 
 /**
  * Web Server configuration
@@ -29,8 +50,8 @@ export interface WebServerConfig {
   port?: number;
   /** Host (default: localhost) */
   host?: string;
-  /** QueueStore instance */
-  queueStore: QueueStore;
+  /** QueueStore instance (can be DynamoDB or InMemory) */
+  queueStore: IQueueStore;
   /** Session ID for new tasks */
   sessionId: string;
   /** Current namespace (from queueStore) */
@@ -76,10 +97,23 @@ export function createApp(config: WebServerConfig): Express {
   // CORS headers for local development
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type');
     next();
   });
+
+  // ===================
+  // Settings Routes (API Key persistence)
+  // ===================
+  if (stateDir) {
+    app.use('/api/settings', createSettingsRoutes(stateDir));
+    // Dashboard routes (projects, activity, runs)
+    app.use("/api/dashboard", createDashboardRoutes(stateDir));
+    app.use("/api", createDashboardRoutes(stateDir)); // Also mount projects/activity/runs at /api
+    // Inspection packet routes
+    app.use("/api/inspection", createInspectionRoutes(stateDir));
+
+  }
 
   // ===================
   // REST API Routes (v2)
@@ -485,6 +519,14 @@ export function createApp(config: WebServerConfig): Express {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
   });
 
+  /**
+   * GET /settings
+   * Serve settings page
+   */
+  app.get('/settings', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
   // ===================
   // Health Check
   // ===================
@@ -516,6 +558,133 @@ export function createApp(config: WebServerConfig): Express {
   });
 
   // ===================
+  // Agent Launch API
+  // ===================
+
+  /**
+   * GET /api/agents
+   * List agents available in specified folder
+   * Query: ?folder=/path/to/project
+   * Returns: { folder, namespace, stateDir, agents[], effectiveCwd }
+   */
+  app.get('/api/agents', (req: Request, res: Response) => {
+    try {
+      const folder = req.query.folder as string;
+
+      if (!folder || typeof folder !== 'string') {
+        res.status(400).json({
+          error: 'INVALID_INPUT',
+          message: 'folder query parameter is required',
+        } as ErrorResponse);
+        return;
+      }
+
+      // Resolve to absolute path
+      const absoluteFolder = path.resolve(folder);
+
+      // Check if folder exists
+      if (!fs.existsSync(absoluteFolder)) {
+        res.status(404).json({
+          error: 'FOLDER_NOT_FOUND',
+          message: `Folder does not exist: ${absoluteFolder}`,
+        } as ErrorResponse);
+        return;
+      }
+
+      // Check if it's a directory
+      const stat = fs.statSync(absoluteFolder);
+      if (!stat.isDirectory()) {
+        res.status(400).json({
+          error: 'NOT_A_DIRECTORY',
+          message: `Path is not a directory: ${absoluteFolder}`,
+        } as ErrorResponse);
+        return;
+      }
+
+      // Derive namespace and stateDir
+      const folderNamespace = deriveNamespace(absoluteFolder);
+      const folderStateDir = getStateDir(absoluteFolder);
+
+      // Check for .claude/agents/ directory
+      const agentsDir = path.join(absoluteFolder, '.claude', 'agents');
+      const agents: { name: string; path: string }[] = [];
+
+      if (fs.existsSync(agentsDir) && fs.statSync(agentsDir).isDirectory()) {
+        const files = fs.readdirSync(agentsDir);
+        for (const file of files) {
+          if (file.endsWith('.md')) {
+            agents.push({
+              name: file.replace('.md', ''),
+              path: path.join(agentsDir, file),
+            });
+          }
+        }
+      }
+
+      res.json({
+        folder: absoluteFolder,
+        effectiveCwd: absoluteFolder,
+        namespace: folderNamespace,
+        stateDir: folderStateDir,
+        hasAgentsDir: fs.existsSync(agentsDir),
+        agents,
+        agentCount: agents.length,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * GET /agent
+   * Serve agent launcher page
+   */
+  app.get('/agent', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  /**
+   * GET /dashboard
+   * Serve dashboard page
+   */
+  app.get('/dashboard', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  /**
+   * GET /projects/:id
+   * Serve project detail page
+   */
+  app.get('/projects/:id', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  /**
+   * GET /activity
+   * Serve activity page
+   */
+  app.get('/activity', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  /**
+   * GET /runs/:id
+   * Serve run detail page
+   */
+  app.get('/runs/:id', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  /**
+   * GET /sessions/:id
+   * Serve session detail page
+   */
+  app.get('/sessions/:id', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  // ===================
   // Route List
   // ===================
 
@@ -536,7 +705,28 @@ export function createApp(config: WebServerConfig): Express {
       'PATCH /api/tasks/:task_id/status',
       'GET /api/health',
       'GET /api/namespace',
+      'GET /api/agents',
       'GET /api/routes',
+      // Dashboard routes
+      'GET /api/dashboard',
+      'GET /api/projects',
+      'POST /api/projects',
+      'GET /api/projects/:projectId',
+      'PATCH /api/projects/:projectId',
+      'POST /api/projects/:projectId/archive',
+      'POST /api/projects/:projectId/unarchive',
+      'GET /api/activity',
+      'GET /api/sessions',
+      'GET /api/sessions/:sessionId',
+      'GET /api/runs',
+      'GET /api/runs/:runId',
+      'GET /api/runs/:runId/logs',
+      // Inspection routes
+      'GET /api/inspection',
+      'POST /api/inspection/run/:runId',
+      'GET /api/inspection/:packetId',
+      'GET /api/inspection/:packetId/markdown',
+      'GET /api/inspection/:packetId/clipboard',
     ];
     res.json({ routes });
   });

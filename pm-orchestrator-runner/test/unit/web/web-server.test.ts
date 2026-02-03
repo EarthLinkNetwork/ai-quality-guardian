@@ -436,6 +436,10 @@ describe('Web Server', () => {
       const expectedWriteApis = [
         'POST /api/tasks',
         'POST /api/task-groups',
+        'POST /api/projects',
+        'POST /api/projects/:projectId/archive',
+        'POST /api/projects/:projectId/unarchive',
+        'POST /api/inspection/run/:runId',
       ];
 
       const writeApis = routes.filter((r: string) => r.startsWith('POST /api/'));

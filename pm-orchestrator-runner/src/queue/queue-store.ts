@@ -202,11 +202,48 @@ export interface NamespaceSummary {
 }
 
 /**
+ * Queue Store Interface
+ * Common interface for QueueStore and InMemoryQueueStore
+ */
+export interface IQueueStore {
+  getNamespace(): string;
+  getEndpoint(): string;
+  getTableName(): string;
+  tableExists(): Promise<boolean>;
+  createTable(): Promise<void>;
+  createRunnersTable(): Promise<void>;
+  runnersTableExists(): Promise<boolean>;
+  ensureTable(): Promise<void>;
+  deleteTable(): Promise<void>;
+  enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string): Promise<QueueItem>;
+  getItem(taskId: string, targetNamespace?: string): Promise<QueueItem | null>;
+  claim(): Promise<ClaimResult>;
+  updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string): Promise<void>;
+  updateStatusWithValidation(taskId: string, newStatus: QueueItemStatus): Promise<StatusUpdateResult>;
+  setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[]): Promise<StatusUpdateResult>;
+  resumeWithResponse(taskId: string, userResponse: string): Promise<StatusUpdateResult>;
+  getByStatus(status: QueueItemStatus): Promise<QueueItem[]>;
+  getByTaskGroup(taskGroupId: string, targetNamespace?: string): Promise<QueueItem[]>;
+  getAllItems(targetNamespace?: string): Promise<QueueItem[]>;
+  getAllTaskGroups(targetNamespace?: string): Promise<TaskGroupSummary[]>;
+  getAllNamespaces(): Promise<NamespaceSummary[]>;
+  deleteItem(taskId: string): Promise<void>;
+  recoverStaleTasks(maxAgeMs?: number): Promise<number>;
+  updateRunnerHeartbeat(runnerId: string, projectRoot: string): Promise<void>;
+  getRunner(runnerId: string): Promise<RunnerRecord | null>;
+  getAllRunners(targetNamespace?: string): Promise<RunnerRecord[]>;
+  getRunnersWithStatus(heartbeatTimeoutMs?: number, targetNamespace?: string): Promise<Array<RunnerRecord & { isAlive: boolean }>>;
+  markRunnerStopped(runnerId: string): Promise<void>;
+  deleteRunner(runnerId: string): Promise<void>;
+  destroy(): void;
+}
+
+/**
  * Queue Store (v2)
  * Manages task queue with DynamoDB Local
  * Single table design with namespace-based separation
  */
-export class QueueStore {
+export class QueueStore implements IQueueStore {
   private readonly client: DynamoDBClient;
   private readonly docClient: DynamoDBDocumentClient;
   private readonly namespace: string;

@@ -27,6 +27,7 @@ export {
   isValidStatusTransition,
   QUEUE_TABLE_NAME,
   RUNNERS_TABLE_NAME,
+  IQueueStore,
 } from './queue-store';
 
 export {
@@ -36,3 +37,8 @@ export {
   QueuePollerEvents,
   TaskExecutor,
 } from './queue-poller';
+
+export {
+  InMemoryQueueStore,
+  InMemoryQueueStoreConfig,
+} from './in-memory-queue-store';

@@ -536,8 +536,11 @@
         </div>
       </div>
       <nav id="main-nav">
+        <a href="/dashboard" data-nav="dashboard">Dashboard</a>
         <a href="/" data-nav="home">Task Groups</a>
-        <a href="/new" data-nav="new">+ New Command</a>
+        <a href="/activity" data-nav="activity">Activity</a>
+        <a href="/new" data-nav="new">+ New</a>
+        <a href="/agent" data-nav="agent">Agent</a>
         <a href="/settings" data-nav="settings">Settings</a>
       </nav>
     </div>
@@ -625,11 +628,21 @@
     function updateNav(path) {
       document.querySelectorAll('#main-nav a').forEach(link => {
         link.classList.remove('active');
-        if (path === '/' && link.dataset.nav === 'home') {
+        if (path === '/dashboard' && link.dataset.nav === 'dashboard') {
+          link.classList.add('active');
+        } else if (path === '/' && link.dataset.nav === 'home') {
+          link.classList.add('active');
+        } else if (path === '/activity' && link.dataset.nav === 'activity') {
           link.classList.add('active');
         } else if (path === '/new' && link.dataset.nav === 'new') {
           link.classList.add('active');
+        } else if (path === '/agent' && link.dataset.nav === 'agent') {
+          link.classList.add('active');
         } else if (path === '/settings' && link.dataset.nav === 'settings') {
+          link.classList.add('active');
+        } else if (path.startsWith('/projects/')) {
+          link.classList.add('active');
+        } else if (path.startsWith('/runs/')) {
           link.classList.add('active');
         }
       });
@@ -1547,6 +1560,554 @@
       }
     }
 
+    // ===================
+    // Agent Launcher
+    // ===================
+    let agentData = null;
+
+    async function renderAgentLauncher() {
+      app.innerHTML = `
+        <div class="page-header">
+          <h2>Agent Launcher</h2>
+        </div>
+        <div class="card" data-testid="agent-launcher-root">
+          <h3>Select Project Folder</h3>
+          <p class="hint" style="color: #6b7280; margin-bottom: 12px;">
+            Enter the path to a project folder to inspect its agent configuration.
+          </p>
+          <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+            <input type="text" id="folder-input" data-testid="folder-input"
+              placeholder="/path/to/project"
+              style="flex: 1; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-family: monospace; font-size: 0.9rem;">
+            <button class="btn btn-primary" onclick="inspectFolder()">Inspect</button>
+          </div>
+          <div id="agent-result" data-testid="agent-result"></div>
+        </div>
+        <style>
+          .agent-info-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-top: 16px; }
+          .agent-info-row { display: flex; margin-bottom: 8px; }
+          .agent-info-label { width: 140px; font-weight: 600; color: #374151; }
+          .agent-info-value { flex: 1; font-family: monospace; color: #1f2937; word-break: break-all; }
+          .agent-list { margin-top: 16px; }
+          .agent-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; }
+          .agent-item .agent-name { font-weight: 500; color: #1f2937; }
+          .agent-item .agent-path { font-size: 0.85rem; color: #6b7280; font-family: monospace; }
+          .no-agents { padding: 16px; background: #fef3c7; border-radius: 6px; color: #92400e; }
+          .agent-status { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: 500; }
+          .agent-status.found { background: #d1fae5; color: #065f46; }
+          .agent-status.not-found { background: #fef3c7; color: #92400e; }
+        </style>
+      `;
+    }
+
+    async function inspectFolder() {
+      const folderInput = document.getElementById('folder-input');
+      const resultDiv = document.getElementById('agent-result');
+      const folder = folderInput?.value?.trim();
+
+      if (!folder) {
+        resultDiv.innerHTML = '<p style="color: #dc2626;">Please enter a folder path.</p>';
+        return;
+      }
+
+      resultDiv.innerHTML = '<p>Inspecting folder...</p>';
+
+      try {
+        const response = await fetch(`/api/agents?folder=${encodeURIComponent(folder)}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          resultDiv.innerHTML = `<p style="color: #dc2626;">Error: ${data.message || 'Failed to inspect folder'}</p>`;
+          return;
+        }
+
+        // Store for later use
+        agentData = data;
+
+        // Save to JSON file for evidence (via console)
+        console.log('[AGENT-INSPECT]', JSON.stringify(data, null, 2));
+
+        const agentsHtml = data.agents.length > 0
+          ? data.agents.map(a => `
+              <div class="agent-item">
+                <span class="agent-name">${a.name}</span>
+                <span class="agent-path">${a.path}</span>
+              </div>
+            `).join('')
+          : '<div class="no-agents">No agents found in .claude/agents/ directory</div>';
+
+        resultDiv.innerHTML = `
+          <div class="agent-info-card" data-testid="agent-info-card">
+            <div class="agent-info-row">
+              <span class="agent-info-label">Selected Folder:</span>
+              <span class="agent-info-value" data-testid="selected-folder">${data.folder}</span>
+            </div>
+            <div class="agent-info-row">
+              <span class="agent-info-label">Effective CWD:</span>
+              <span class="agent-info-value" data-testid="effective-cwd">${data.effectiveCwd}</span>
+            </div>
+            <div class="agent-info-row">
+              <span class="agent-info-label">Namespace:</span>
+              <span class="agent-info-value" data-testid="namespace">${data.namespace}</span>
+            </div>
+            <div class="agent-info-row">
+              <span class="agent-info-label">State Directory:</span>
+              <span class="agent-info-value" data-testid="state-dir">${data.stateDir}</span>
+            </div>
+            <div class="agent-info-row">
+              <span class="agent-info-label">Agents Directory:</span>
+              <span class="agent-info-value">
+                <span class="agent-status ${data.hasAgentsDir ? 'found' : 'not-found'}" data-testid="agents-dir-status">
+                  ${data.hasAgentsDir ? 'Found' : 'Not Found'}
+                </span>
+              </span>
+            </div>
+            <div class="agent-info-row">
+              <span class="agent-info-label">Agent Count:</span>
+              <span class="agent-info-value" data-testid="agent-count">${data.agentCount}</span>
+            </div>
+            <div class="agent-list" data-testid="agent-list">
+              <h4 style="margin-bottom: 8px;">Agents:</h4>
+              ${agentsHtml}
+            </div>
+          </div>
+        `;
+      } catch (error) {
+        resultDiv.innerHTML = `<p style="color: #dc2626;">Error: ${error.message}</p>`;
+      }
+    }
+
+    // ===================
+    // Dashboard & Activity Pages
+    // ===================
+
+    // Render Dashboard
+    async function renderDashboard() {
+      app.innerHTML = '<div class="loading">Loading Dashboard</div>';
+
+      try {
+        const data = await fetch('/api/dashboard').then(r => r.json());
+        const projects = data.projects || [];
+        const recentActivity = data.recentActivity || [];
+        const stats = data.stats || {};
+
+        const projectCards = projects.length > 0
+          ? projects.map(p => `
+              <div class="list-item" onclick="navigate('/projects/${encodeURIComponent(p.projectId)}')">
+                <div class="list-item-main">
+                  <div class="list-item-title">
+                    ${p.favorite ? '<span style="color: #f59e0b;">&#9733;</span> ' : ''}
+                    ${escapeHtml(p.alias || p.projectPath)}
+                  </div>
+                  <div class="list-item-meta">
+                    <span class="badge badge-${p.status === 'running' ? 'running' : p.status === 'error' ? 'error' : 'queued'}">${p.status}</span>
+                    ${p.sessionCount} sessions | Updated: ${formatDate(p.updatedAt)}
+                  </div>
+                </div>
+                <span class="list-item-arrow">&#8250;</span>
+              </div>
+            `).join('')
+          : '<div class="empty-state"><p>No projects yet. Create a project to get started.</p></div>';
+
+        const activityItems = recentActivity.length > 0
+          ? recentActivity.slice(0, 5).map(e => `
+              <div class="log-entry ${e.type === 'error' ? 'error' : ''}">
+                <div class="log-time">${formatDate(e.timestamp)}</div>
+                <div class="log-type">${escapeHtml(e.type)}</div>
+                <div class="log-content">${escapeHtml(e.summary || '')}</div>
+              </div>
+            `).join('')
+          : '<p style="color: #6b7280;">No recent activity</p>';
+
+        app.innerHTML = `
+          <div class="page-header">
+            <h2>Dashboard</h2>
+            <button class="refresh-btn" onclick="renderDashboard()">Refresh</button>
+          </div>
+
+          <div class="detail-grid" style="margin-bottom: 20px;">
+            <div class="card" style="text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #2563eb;">${stats.projects || 0}</div>
+              <div style="color: #6b7280;">Projects</div>
+            </div>
+            <div class="card" style="text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #10b981;">${stats.sessions || 0}</div>
+              <div style="color: #6b7280;">Sessions</div>
+            </div>
+            <div class="card" style="text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #f59e0b;">${stats.runs || 0}</div>
+              <div style="color: #6b7280;">Runs</div>
+            </div>
+            <div class="card" style="text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #8b5cf6;">${stats.events || 0}</div>
+              <div style="color: #6b7280;">Events</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Projects</h3>
+            ${projectCards}
+            <div style="margin-top: 16px; text-align: center;">
+              <button class="btn btn-primary" onclick="showCreateProjectDialog()">+ New Project</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Recent Activity</h3>
+            ${activityItems}
+            ${recentActivity.length > 5 ? '<a href="/activity" onclick="event.preventDefault(); navigate(\'\'/activity\'\')" style="display: block; text-align: center; margin-top: 12px;">View All Activity</a>' : ''}
+          </div>
+        `;
+      } catch (error) {
+        app.innerHTML = `
+          <div class="card">
+            <div class="error-message">Error loading dashboard: ${escapeHtml(error.message)}</div>
+            <button class="btn btn-secondary" onclick="renderDashboard()">Retry</button>
+          </div>
+        `;
+      }
+    }
+
+    // Show create project dialog
+    function showCreateProjectDialog() {
+      const projectPath = prompt('Enter project path:');
+      if (!projectPath) return;
+
+      const alias = prompt('Enter project alias (optional):');
+
+      fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectPath, alias: alias || undefined }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) {
+            alert('Error: ' + data.message);
+          } else {
+            navigate('/projects/' + encodeURIComponent(data.projectId));
+          }
+        })
+        .catch(e => alert('Error: ' + e.message));
+    }
+
+    // Render Activity page
+    async function renderActivity() {
+      app.innerHTML = '<div class="loading">Loading Activity</div>';
+
+      try {
+        const data = await fetch('/api/activity?limit=50').then(r => r.json());
+        const events = data.events || [];
+
+        const eventItems = events.length > 0
+          ? events.map(e => `
+              <div class="log-entry ${e.importance === 'high' ? 'error' : ''}">
+                <div class="log-time">${formatFullDate(e.timestamp)}</div>
+                <div class="log-type">${escapeHtml(e.type)}</div>
+                <div class="log-content">${escapeHtml(e.summary || '')}</div>
+                ${e.projectAlias ? '<div style="font-size: 0.85rem; color: #6b7280;">Project: ' + escapeHtml(e.projectAlias) + '</div>' : ''}
+              </div>
+            `).join('')
+          : '<div class="empty-state"><p>No activity events yet.</p></div>';
+
+        app.innerHTML = `
+          <div class="page-header">
+            <h2>Activity</h2>
+            <button class="refresh-btn" onclick="renderActivity()">Refresh</button>
+          </div>
+
+          <div class="card">
+            <h3>Recent Events</h3>
+            ${eventItems}
+          </div>
+        `;
+      } catch (error) {
+        app.innerHTML = `
+          <div class="card">
+            <div class="error-message">Error: ${escapeHtml(error.message)}</div>
+            <button class="btn btn-secondary" onclick="renderActivity()">Retry</button>
+          </div>
+        `;
+      }
+    }
+
+    // Render Project Detail page
+    async function renderProjectDetail(projectId) {
+      app.innerHTML = '<div class="loading">Loading Project</div>';
+
+      try {
+        const data = await fetch('/api/projects/' + encodeURIComponent(projectId)).then(r => r.json());
+        if (data.error) throw new Error(data.message);
+
+        const project = data.project;
+        const sessions = data.sessions || [];
+
+        const backBtn = '<a href="/dashboard" class="back-btn" onclick="event.preventDefault(); navigate(\'/dashboard\')">Back to Dashboard</a>';
+
+        const sessionItems = sessions.length > 0
+          ? sessions.map(s => `
+              <div class="list-item" onclick="navigate('/sessions/${encodeURIComponent(s.sessionId)}')">
+                <div class="list-item-main">
+                  <div class="list-item-title">${escapeHtml(s.sessionId)}</div>
+                  <div class="list-item-meta">
+                    <span class="badge badge-${s.status === 'active' ? 'running' : 'complete'}">${s.status}</span>
+                    ${s.totalRuns} runs | Started: ${formatDate(s.startedAt)}
+                  </div>
+                </div>
+                <span class="list-item-arrow">&#8250;</span>
+              </div>
+            `).join('')
+          : '<div class="empty-state"><p>No sessions yet.</p></div>';
+
+        app.innerHTML = `
+          <div class="page-header">
+            <h2>${escapeHtml(project.alias || 'Project')}</h2>
+            <div class="action-bar">
+              ${backBtn}
+              <button class="refresh-btn" onclick="renderProjectDetail('${escapeHtml(projectId)}')">Refresh</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Project Details</h3>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <label>Project ID</label>
+                <value>${escapeHtml(project.projectId)}</value>
+              </div>
+              <div class="detail-item">
+                <label>Path</label>
+                <value>${escapeHtml(project.projectPath)}</value>
+              </div>
+              <div class="detail-item">
+                <label>Status</label>
+                <value><span class="badge badge-${project.status === 'running' ? 'running' : project.status === 'error' ? 'error' : 'queued'}">${project.status}</span></value>
+              </div>
+              <div class="detail-item">
+                <label>Last Activity</label>
+                <value>${formatFullDate(project.lastActivityAt)}</value>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Sessions (${sessions.length})</h3>
+            ${sessionItems}
+          </div>
+
+          <div class="action-bar" style="margin-top: 16px;">
+            ${!project.archived 
+              ? '<button class="btn btn-secondary" onclick="archiveProject(\'' + escapeHtml(projectId) + '\')">Archive Project</button>'
+              : '<button class="btn btn-primary" onclick="unarchiveProject(\'' + escapeHtml(projectId) + '\')">Unarchive Project</button>'
+            }
+          </div>
+        `;
+      } catch (error) {
+        app.innerHTML = `
+          <div class="card">
+            <div class="error-message">Error: ${escapeHtml(error.message)}</div>
+            <a href="/dashboard" class="btn btn-secondary" onclick="event.preventDefault(); navigate('/dashboard')">Back to Dashboard</a>
+          </div>
+        `;
+      }
+    }
+
+    // Archive project
+    async function archiveProject(projectId) {
+      if (!confirm('Archive this project?')) return;
+      try {
+        await fetch('/api/projects/' + encodeURIComponent(projectId) + '/archive', { method: 'POST' });
+        renderProjectDetail(projectId);
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    // Unarchive project
+    async function unarchiveProject(projectId) {
+      try {
+        await fetch('/api/projects/' + encodeURIComponent(projectId) + '/unarchive', { method: 'POST' });
+        renderProjectDetail(projectId);
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    // Render Session Detail page
+    async function renderSessionDetail(sessionId) {
+      app.innerHTML = '<div class="loading">Loading Session</div>';
+
+      try {
+        const data = await fetch('/api/sessions/' + encodeURIComponent(sessionId)).then(r => r.json());
+        if (data.error) throw new Error(data.message);
+
+        const session = data.session;
+        const runs = data.runs || [];
+
+        const backBtn = session.projectId 
+          ? '<a href="/projects/' + encodeURIComponent(session.projectId) + '" class="back-btn" onclick="event.preventDefault(); navigate(\'/projects/' + encodeURIComponent(session.projectId) + '\')">Back to Project</a>'
+          : '<a href="/dashboard" class="back-btn" onclick="event.preventDefault(); navigate(\'/dashboard\')">Back to Dashboard</a>';
+
+        const runItems = runs.length > 0
+          ? runs.map(r => `
+              <div class="list-item" onclick="navigate('/runs/${encodeURIComponent(r.runId)}')">
+                <div class="list-item-main">
+                  <div class="list-item-title">${escapeHtml(r.taskRunId)}</div>
+                  <div class="list-item-meta">
+                    <span class="badge badge-${r.status === 'COMPLETE' ? 'complete' : r.status === 'RUNNING' ? 'running' : r.status === 'ERROR' ? 'error' : 'queued'}">${r.status}</span>
+                    Started: ${formatDate(r.startedAt)}
+                  </div>
+                </div>
+                <span class="list-item-arrow">&#8250;</span>
+              </div>
+            `).join('')
+          : '<div class="empty-state"><p>No runs yet.</p></div>';
+
+        app.innerHTML = `
+          <div class="page-header">
+            <h2>Session</h2>
+            <div class="action-bar">
+              ${backBtn}
+              <button class="refresh-btn" onclick="renderSessionDetail('${escapeHtml(sessionId)}')">Refresh</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Session Details</h3>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <label>Session ID</label>
+                <value>${escapeHtml(session.sessionId)}</value>
+              </div>
+              <div class="detail-item">
+                <label>Status</label>
+                <value><span class="badge badge-${session.status === 'active' ? 'running' : 'complete'}">${session.status}</span></value>
+              </div>
+              <div class="detail-item">
+                <label>Started</label>
+                <value>${formatFullDate(session.startedAt)}</value>
+              </div>
+              <div class="detail-item">
+                <label>Total Runs</label>
+                <value>${session.totalRuns}</value>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Runs (${runs.length})</h3>
+            ${runItems}
+          </div>
+        `;
+      } catch (error) {
+        app.innerHTML = `
+          <div class="card">
+            <div class="error-message">Error: ${escapeHtml(error.message)}</div>
+            <a href="/dashboard" class="btn btn-secondary" onclick="event.preventDefault(); navigate('/dashboard')">Back to Dashboard</a>
+          </div>
+        `;
+      }
+    }
+
+    // Render Run Detail page
+    async function renderRunDetail(runId) {
+      app.innerHTML = '<div class="loading">Loading Run</div>';
+
+      try {
+        const data = await fetch('/api/runs/' + encodeURIComponent(runId)).then(r => r.json());
+        if (data.error) throw new Error(data.message);
+
+        const run = data.run;
+        const events = data.events || [];
+
+        const backBtn = run.sessionId 
+          ? '<a href="/sessions/' + encodeURIComponent(run.sessionId) + '" class="back-btn" onclick="event.preventDefault(); navigate(\'/sessions/' + encodeURIComponent(run.sessionId) + '\')">Back to Session</a>'
+          : '<a href="/dashboard" class="back-btn" onclick="event.preventDefault(); navigate(\'/dashboard\')">Back to Dashboard</a>';
+
+        const eventLog = events.length > 0
+          ? events.map(e => `
+              <div class="log-entry ${e.level === 'error' ? 'error' : ''}">
+                <div class="log-time">${formatFullDate(e.timestamp)}</div>
+                <div class="log-type">${escapeHtml(e.type)}</div>
+                <div class="log-content">${escapeHtml(e.message)}</div>
+              </div>
+            `).join('')
+          : '<p style="color: #6b7280;">No events recorded.</p>';
+
+        app.innerHTML = `
+          <div class="page-header">
+            <h2>Run Detail</h2>
+            <div class="action-bar">
+              ${backBtn}
+              <button class="refresh-btn" onclick="renderRunDetail('${escapeHtml(runId)}')">Refresh</button>
+              <button class="btn btn-secondary" onclick="generateInspectionPacket('${escapeHtml(runId)}')">Generate Inspection Packet</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Run Details</h3>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <label>Run ID</label>
+                <value>${escapeHtml(run.runId)}</value>
+              </div>
+              <div class="detail-item">
+                <label>Task Run ID</label>
+                <value>${escapeHtml(run.taskRunId)}</value>
+              </div>
+              <div class="detail-item">
+                <label>Status</label>
+                <value><span class="badge badge-${run.status === 'COMPLETE' ? 'complete' : run.status === 'RUNNING' ? 'running' : run.status === 'ERROR' ? 'error' : 'queued'}">${run.status}</span></value>
+              </div>
+              <div class="detail-item">
+                <label>Started</label>
+                <value>${formatFullDate(run.startedAt)}</value>
+              </div>
+              ${run.endedAt ? '<div class="detail-item"><label>Ended</label><value>' + formatFullDate(run.endedAt) + '</value></div>' : ''}
+              <div class="detail-item">
+                <label>Event Count</label>
+                <value>${run.eventCount}</value>
+              </div>
+            </div>
+          </div>
+
+          ${run.prompt ? '<div class="card"><h3>Prompt</h3><div class="prompt-box">' + escapeHtml(run.prompt) + '</div></div>' : ''}
+
+          <div class="card">
+            <h3>Events (${events.length})</h3>
+            ${eventLog}
+          </div>
+        `;
+      } catch (error) {
+        app.innerHTML = `
+          <div class="card">
+            <div class="error-message">Error: ${escapeHtml(error.message)}</div>
+            <a href="/dashboard" class="btn btn-secondary" onclick="event.preventDefault(); navigate('/dashboard')">Back to Dashboard</a>
+          </div>
+        `;
+      }
+    }
+
+    // Generate Inspection Packet
+    async function generateInspectionPacket(runId) {
+      try {
+        const response = await fetch('/api/inspection/run/' + encodeURIComponent(runId), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ generatedBy: 'user' }),
+        });
+        const packet = await response.json();
+        if (packet.error) throw new Error(packet.message);
+
+        // Open clipboard format in new window
+        const clipboardUrl = '/api/inspection/' + encodeURIComponent(packet.packetId) + '/clipboard';
+        alert('Inspection packet generated: ' + packet.packetId + '\n\nYou can copy it for ChatGPT from:\n' + clipboardUrl);
+      } catch (error) {
+        alert('Error generating packet: ' + error.message);
+      }
+    }
+
+    
     // Router
     function router() {
       const path = window.location.pathname;
@@ -1554,17 +2115,32 @@
       currentPath = path;
       updateNav(path);
 
-      if (path === '/' || path === '') {
+      if (path === '/dashboard') {
+        renderDashboard();
+      } else if (path === '/' || path === '') {
         renderTaskGroupList();
+      } else if (path === '/activity') {
+        renderActivity();
       } else if (path.startsWith('/task-groups/')) {
         const taskGroupId = decodeURIComponent(path.split('/task-groups/')[1]);
         renderTaskList(taskGroupId);
       } else if (path.startsWith('/tasks/')) {
         const taskId = decodeURIComponent(path.split('/tasks/')[1]);
         renderTaskDetail(taskId);
+      } else if (path.startsWith('/projects/')) {
+        const projectId = decodeURIComponent(path.split('/projects/')[1]);
+        renderProjectDetail(projectId);
+      } else if (path.startsWith('/runs/')) {
+        const runId = decodeURIComponent(path.split('/runs/')[1]);
+        renderRunDetail(runId);
+      } else if (path.startsWith('/sessions/')) {
+        const sessionId = decodeURIComponent(path.split('/sessions/')[1]);
+        renderSessionDetail(sessionId);
       } else if (path === '/new') {
         const group = search.get('group') || '';
         renderNewCommandForm(group);
+      } else if (path === '/agent') {
+        renderAgentLauncher();
       } else if (path === '/settings') {
         renderSettings();
       } else {
