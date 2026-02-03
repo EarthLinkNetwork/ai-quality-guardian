@@ -61,6 +61,60 @@
       background: rgba(34, 197, 94, 0.3);
     }
 
+    .namespace-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .namespace-selector select {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: white;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-family: monospace;
+      cursor: pointer;
+    }
+
+    .namespace-selector select:focus {
+      outline: none;
+      border-color: rgba(255, 255, 255, 0.5);
+    }
+
+    .namespace-selector select option {
+      background: #2563eb;
+      color: white;
+    }
+
+    .runner-status {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .runner-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .runner-dot.alive {
+      background: #22c55e;
+      box-shadow: 0 0 4px #22c55e;
+    }
+
+    .runner-dot.dead {
+      background: #ef4444;
+    }
+
+    .runner-count {
+      margin-left: 4px;
+    }
+
     nav {
       display: flex;
       gap: 16px;
@@ -472,10 +526,19 @@
   <header>
     <div class="header-content">
       <h1 onclick="navigate('/')">PM Orchestrator Runner</h1>
-      <span id="namespace-badge" class="namespace-badge" style="display: none;"></span>
+      <div class="namespace-selector" id="namespace-selector" style="display: none;">
+        <select id="namespace-select" onchange="onNamespaceChange(this.value)">
+          <!-- Populated by JavaScript -->
+        </select>
+        <div class="runner-status" id="runner-status">
+          <span class="runner-dot" id="runner-dot"></span>
+          <span id="runner-text">-</span>
+        </div>
+      </div>
       <nav id="main-nav">
         <a href="/" data-nav="home">Task Groups</a>
         <a href="/new" data-nav="new">+ New Command</a>
+        <a href="/settings" data-nav="settings">Settings</a>
       </nav>
     </div>
   </header>
@@ -490,9 +553,15 @@
     const app = document.getElementById('app');
     let currentPath = '/';
 
-    // API helper
+    // API helper with namespace support
     async function api(path, options = {}) {
-      const response = await fetch(`/api${path}`, {
+      // Add namespace query parameter if currentNamespace is set
+      let url = `/api${path}`;
+      if (typeof currentNamespace !== 'undefined' && currentNamespace) {
+        const separator = path.includes('?') ? '&' : '?';
+        url = `${url}${separator}namespace=${encodeURIComponent(currentNamespace)}`;
+      }
+      const response = await fetch(url, {
         headers: { 'Content-Type': 'application/json' },
         ...options,
       });
@@ -559,6 +628,8 @@
         if (path === '/' && link.dataset.nav === 'home') {
           link.classList.add('active');
         } else if (path === '/new' && link.dataset.nav === 'new') {
+          link.classList.add('active');
+        } else if (path === '/settings' && link.dataset.nav === 'settings') {
           link.classList.add('active');
         }
       });
@@ -957,6 +1028,525 @@
       }
     }
 
+    // Settings state
+    let settingsTab = 'global'; // 'global' or 'project'
+    let settingsData = {
+      apiKeys: { anthropic: null, openai: null },
+      globalSettings: { llm: {}, preferences: {}, maxTokens: 4096, temperature: 0.7 },
+      projectOverrides: {},
+      namespace: ''
+    };
+
+    // Render Settings page - dispatcher based on current tab
+    async function renderSettings() {
+      app.innerHTML = '<div class="loading">Loading Settings...</div>';
+
+      try {
+        // Fetch all settings data in parallel
+        const [apiKeyRes, projectRes, namespaceRes] = await Promise.all([
+          fetch('/api/settings/api-key/status'),
+          fetch('/api/settings/project'),
+          fetch('/api/namespace')
+        ]);
+
+        settingsData.apiKeys = await apiKeyRes.json();
+        const projectData = await projectRes.json();
+        const namespaceData = await namespaceRes.json();
+        settingsData.namespace = namespaceData.namespace;
+        settingsData.globalSettings = {
+          llm: projectData.llm || { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+          preferences: projectData.preferences || {},
+          maxTokens: 4096,
+          temperature: 0.7
+        };
+        // Project overrides: fields explicitly set for this project
+        settingsData.projectOverrides = projectData.overrides || {};
+
+        // Render based on current tab
+        if (settingsTab === 'global') {
+          renderSettingsGlobal();
+        } else {
+          renderSettingsProject();
+        }
+      } catch (error) {
+        app.innerHTML = `
+          <div class="card">
+            <h2>Error Loading Settings</h2>
+            <p>${escapeHtml(error.message)}</p>
+            <button class="btn btn-primary" onclick="renderSettings()" style="margin-top: 16px;">Retry</button>
+          </div>
+        `;
+      }
+    }
+
+    // Render GLOBAL settings tab
+    function renderSettingsGlobal() {
+      const { apiKeys, globalSettings, namespace } = settingsData;
+
+      const renderProviderStatus = (provider, status) => {
+        const configured = status?.configured === true;
+        const masked = status?.masked || '';
+        const statusClass = configured ? 'status-configured' : 'status-not-configured';
+        const statusText = configured ? 'Configured' : 'Not Configured';
+        const providerId = provider.toLowerCase();
+
+        return `
+          <div class="settings-provider" data-testid="settings-provider-${providerId}">
+            <div class="provider-header">
+              <span class="provider-name">${escapeHtml(provider)}</span>
+              <span class="provider-status ${statusClass}">${statusText}</span>
+            </div>
+            ${configured ? `<div class="provider-masked">Key: ${escapeHtml(masked)}</div>` : ''}
+            <div class="provider-actions">
+              <input type="password" id="apikey-${providerId}" placeholder="Enter API Key" class="settings-input" />
+              <button class="btn btn-sm" onclick="saveApiKey('${providerId}')">Save ${provider} Key</button>
+              ${configured ? `<button class="btn btn-sm btn-danger" onclick="deleteApiKey('${providerId}')">Delete</button>` : ''}
+            </div>
+          </div>
+        `;
+      };
+
+      app.innerHTML = `
+        <div data-testid="settings-root" data-scope="global" class="settings-page">
+          <div class="page-header">
+            <h2>Settings</h2>
+            <span class="project-indicator">Project: ${escapeHtml(namespace)}</span>
+            <button class="refresh-btn" onclick="renderSettings()">Refresh</button>
+          </div>
+
+          <!-- Tabs -->
+          <div data-testid="settings-tabs" class="settings-tabs">
+            <button data-testid="settings-tab-global" class="tab-btn ${settingsTab === 'global' ? 'active' : ''}" onclick="switchSettingsTab('global')">Global</button>
+            <button data-testid="settings-tab-project" class="tab-btn ${settingsTab === 'project' ? 'active' : ''}" onclick="switchSettingsTab('project')">Project</button>
+          </div>
+
+          <!-- Global: Environment Info -->
+          <div data-testid="settings-envinfo" class="card settings-section">
+            <h3>Environment Info</h3>
+            <div class="env-info-grid">
+              <div class="env-item">
+                <label>Namespace:</label>
+                <span>${escapeHtml(namespace)}</span>
+              </div>
+              <div class="env-item">
+                <label>Scope:</label>
+                <span>Global (applies to all projects)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Global: API Keys (ONLY in Global tab) -->
+          <div data-testid="settings-apikeys" class="card settings-section">
+            <h3>API Keys</h3>
+            <p class="settings-hint">API keys are stored globally and shared across all projects.</p>
+            <div class="settings-list">
+              ${renderProviderStatus('Anthropic', apiKeys.anthropic)}
+              ${renderProviderStatus('OpenAI', apiKeys.openai)}
+            </div>
+          </div>
+
+          <!-- Global: LLM Configuration -->
+          <div class="card settings-section">
+            <h3>Default LLM Configuration</h3>
+            <p class="settings-hint">These are the default values used when no project override is set.</p>
+            <div class="settings-form">
+              <div class="form-group">
+                <label for="settings-provider" data-testid="settings-provider-label">Provider</label>
+                <select id="settings-provider" data-testid="settings-provider" class="settings-select">
+                  <option value="anthropic" ${globalSettings.llm?.provider === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+                  <option value="openai" ${globalSettings.llm?.provider === 'openai' ? 'selected' : ''}>OpenAI</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="settings-model" data-testid="settings-model-label">Model</label>
+                <select id="settings-model" data-testid="settings-model" class="settings-select">
+                  <option value="claude-sonnet-4-20250514" ${globalSettings.llm?.model === 'claude-sonnet-4-20250514' ? 'selected' : ''}>Claude Sonnet 4</option>
+                  <option value="claude-3-5-sonnet-20241022" ${globalSettings.llm?.model === 'claude-3-5-sonnet-20241022' ? 'selected' : ''}>Claude 3.5 Sonnet</option>
+                  <option value="gpt-4o" ${globalSettings.llm?.model === 'gpt-4o' ? 'selected' : ''}>GPT-4o</option>
+                  <option value="gpt-4-turbo" ${globalSettings.llm?.model === 'gpt-4-turbo' ? 'selected' : ''}>GPT-4 Turbo</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Global: Generation Parameters -->
+          <div class="card settings-section">
+            <h3>Default Generation Parameters</h3>
+            <div class="settings-form">
+              <div class="form-group">
+                <label for="settings-max-tokens" data-testid="settings-max-tokens-label">Max Tokens</label>
+                <input type="number" id="settings-max-tokens" data-testid="settings-max-tokens" class="settings-input" value="${globalSettings.maxTokens}" min="1" max="128000" />
+              </div>
+              <div class="form-group">
+                <label for="settings-temperature" data-testid="settings-temperature-label">Temperature</label>
+                <input type="number" id="settings-temperature" data-testid="settings-temperature" class="settings-input" value="${globalSettings.temperature}" min="0" max="2" step="0.1" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Global: Save Buttons -->
+          <div class="settings-actions">
+            <button class="btn btn-primary" onclick="saveGlobalSettings()">Save Global Settings</button>
+            <button class="btn btn-secondary" onclick="resetSettings()">Reset to Defaults</button>
+          </div>
+        </div>
+        ${getSettingsStyles()}
+      `;
+    }
+
+    // Render PROJECT settings tab (overrides)
+    function renderSettingsProject() {
+      const { globalSettings, projectOverrides, namespace } = settingsData;
+
+      // Helper to render override status badge
+      const overrideBadge = (fieldName) => {
+        const isOverridden = projectOverrides && projectOverrides[fieldName] !== undefined;
+        if (isOverridden) {
+          return '<span class="override-badge overridden">Overridden</span>';
+        }
+        return '<span class="override-badge inherited">Inherited (Global)</span>';
+      };
+
+      // Get effective value (override or global default)
+      const getEffectiveValue = (fieldName, globalValue) => {
+        if (projectOverrides && projectOverrides[fieldName] !== undefined) {
+          return projectOverrides[fieldName];
+        }
+        return globalValue;
+      };
+
+      app.innerHTML = `
+        <div data-testid="settings-root" data-scope="project" class="settings-page">
+          <div class="page-header">
+            <h2>Settings</h2>
+            <span class="project-indicator">Project: ${escapeHtml(namespace)}</span>
+            <button class="refresh-btn" onclick="renderSettings()">Refresh</button>
+          </div>
+
+          <!-- Tabs -->
+          <div data-testid="settings-tabs" class="settings-tabs">
+            <button data-testid="settings-tab-global" class="tab-btn ${settingsTab === 'global' ? 'active' : ''}" onclick="switchSettingsTab('global')">Global</button>
+            <button data-testid="settings-tab-project" class="tab-btn ${settingsTab === 'project' ? 'active' : ''}" onclick="switchSettingsTab('project')">Project</button>
+          </div>
+
+          <!-- Project: Header with namespace -->
+          <div data-testid="settings-project-overrides" class="card settings-section project-overrides-card">
+            <h3>Project Overrides</h3>
+            <p class="settings-hint">Override global settings for this project only. Unchecked fields inherit from Global settings.</p>
+            <div class="project-namespace-info">
+              <strong>Namespace:</strong> <code>${escapeHtml(namespace)}</code>
+            </div>
+          </div>
+
+          <!-- Project: API Keys info (read-only, no edit) -->
+          <div class="card settings-section api-keys-info">
+            <h3>API Keys</h3>
+            <p class="settings-hint-readonly">API keys are managed in the Global tab. Projects use the globally configured keys.</p>
+            <div class="global-keys-indicator">Global keys are used for this project</div>
+          </div>
+
+          <!-- Project: LLM Override -->
+          <div class="card settings-section">
+            <h3>LLM Configuration Override</h3>
+            <div class="settings-form">
+              <div class="form-group override-group">
+                <div class="override-header">
+                  <input type="checkbox" id="override-provider" ${projectOverrides?.provider !== undefined ? 'checked' : ''} onchange="toggleOverride('provider')" />
+                  <label for="override-provider">Override Provider</label>
+                  ${overrideBadge('provider')}
+                </div>
+                <select id="project-provider" class="settings-select ${projectOverrides?.provider === undefined ? 'inherited' : ''}" ${projectOverrides?.provider === undefined ? 'disabled' : ''}>
+                  <option value="anthropic" ${getEffectiveValue('provider', globalSettings.llm?.provider) === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+                  <option value="openai" ${getEffectiveValue('provider', globalSettings.llm?.provider) === 'openai' ? 'selected' : ''}>OpenAI</option>
+                </select>
+              </div>
+              <div class="form-group override-group">
+                <div class="override-header">
+                  <input type="checkbox" id="override-model" ${projectOverrides?.model !== undefined ? 'checked' : ''} onchange="toggleOverride('model')" />
+                  <label for="override-model">Override Model</label>
+                  ${overrideBadge('model')}
+                </div>
+                <select id="project-model" class="settings-select ${projectOverrides?.model === undefined ? 'inherited' : ''}" ${projectOverrides?.model === undefined ? 'disabled' : ''}>
+                  <option value="claude-sonnet-4-20250514" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-sonnet-4-20250514' ? 'selected' : ''}>Claude Sonnet 4</option>
+                  <option value="claude-3-5-sonnet-20241022" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-3-5-sonnet-20241022' ? 'selected' : ''}>Claude 3.5 Sonnet</option>
+                  <option value="gpt-4o" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-4o' ? 'selected' : ''}>GPT-4o</option>
+                  <option value="gpt-4-turbo" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-4-turbo' ? 'selected' : ''}>GPT-4 Turbo</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Project: Generation Parameters Override -->
+          <div class="card settings-section">
+            <h3>Generation Parameters Override</h3>
+            <div class="settings-form">
+              <div class="form-group override-group">
+                <div class="override-header">
+                  <input type="checkbox" id="override-maxTokens" ${projectOverrides?.maxTokens !== undefined ? 'checked' : ''} onchange="toggleOverride('maxTokens')" />
+                  <label for="override-maxTokens">Override Max Tokens</label>
+                  ${overrideBadge('maxTokens')}
+                </div>
+                <input type="number" id="project-maxTokens" class="settings-input ${projectOverrides?.maxTokens === undefined ? 'inherited' : ''}" value="${getEffectiveValue('maxTokens', globalSettings.maxTokens)}" min="1" max="128000" ${projectOverrides?.maxTokens === undefined ? 'disabled' : ''} />
+              </div>
+              <div class="form-group override-group">
+                <div class="override-header">
+                  <input type="checkbox" id="override-temperature" ${projectOverrides?.temperature !== undefined ? 'checked' : ''} onchange="toggleOverride('temperature')" />
+                  <label for="override-temperature">Override Temperature</label>
+                  ${overrideBadge('temperature')}
+                </div>
+                <input type="number" id="project-temperature" class="settings-input ${projectOverrides?.temperature === undefined ? 'inherited' : ''}" value="${getEffectiveValue('temperature', globalSettings.temperature)}" min="0" max="2" step="0.1" ${projectOverrides?.temperature === undefined ? 'disabled' : ''} />
+              </div>
+            </div>
+          </div>
+
+          <!-- Project: Save Buttons -->
+          <div class="settings-actions">
+            <button class="btn btn-primary" onclick="saveProjectSettings()">Save Project Overrides</button>
+            <button class="btn btn-secondary" onclick="clearProjectOverrides()">Clear All Overrides</button>
+          </div>
+        </div>
+        ${getSettingsStyles()}
+      `;
+    }
+
+    // Settings styles (shared)
+    function getSettingsStyles() {
+      return `
+        <style>
+          .settings-page { max-width: 800px; }
+          .project-indicator { font-size: 0.9rem; color: #6b7280; margin-left: 16px; }
+          .settings-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+          .tab-btn { padding: 8px 16px; border: 1px solid #e5e7eb; background: #fff; border-radius: 6px; cursor: pointer; font-weight: 500; }
+          .tab-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+          .settings-section { margin-bottom: 16px; }
+          .settings-hint { font-size: 0.85rem; color: #6b7280; margin-bottom: 12px; }
+          .settings-hint-readonly { font-size: 0.85rem; color: #9ca3af; font-style: italic; margin-bottom: 12px; }
+          .env-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+          .env-item { display: flex; flex-direction: column; gap: 4px; }
+          .env-item label { font-size: 0.85rem; color: #6b7280; font-weight: 500; }
+          .env-item span { font-family: monospace; font-size: 0.9rem; word-break: break-all; }
+          .settings-form { display: flex; flex-direction: column; gap: 16px; }
+          .form-group { display: flex; flex-direction: column; gap: 6px; }
+          .form-group label { font-size: 0.9rem; font-weight: 500; }
+          .settings-input, .settings-select { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 0.95rem; }
+          .settings-select { background: #fff; }
+          .settings-input.inherited, .settings-select.inherited { background: #f3f4f6; color: #9ca3af; }
+          .checkbox-group { flex-direction: row; align-items: center; gap: 8px; }
+          .checkbox-group input { width: 18px; height: 18px; }
+          .settings-list { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
+          .settings-provider { padding: 16px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb; }
+          .provider-header { display: flex; justify-content: space-between; align-items: center; }
+          .provider-name { font-weight: 600; font-size: 1rem; }
+          .provider-status { padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 500; }
+          .status-configured { background: #dcfce7; color: #166534; }
+          .status-not-configured { background: #fee2e2; color: #991b1b; }
+          .provider-masked { margin-top: 8px; font-family: monospace; font-size: 0.85rem; color: #6b7280; }
+          .provider-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
+          .provider-actions input { flex: 1; min-width: 200px; }
+          .btn-sm { padding: 6px 12px; font-size: 0.85rem; }
+          .btn-danger { background: #ef4444; color: #fff; }
+          .btn-danger:hover { background: #dc2626; }
+          .settings-actions { display: flex; gap: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+          /* Project overrides specific */
+          .project-overrides-card { background: #fffbeb; border-left: 4px solid #f59e0b; }
+          .project-namespace-info { margin-top: 12px; padding: 8px 12px; background: #fef3c7; border-radius: 6px; font-size: 0.9rem; }
+          .project-namespace-info code { background: #fde68a; padding: 2px 6px; border-radius: 4px; }
+          .api-keys-info { background: #f3f4f6; }
+          .global-keys-indicator { padding: 12px; background: #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 0.9rem; text-align: center; }
+          .override-group { padding: 12px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb; }
+          .override-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+          .override-header input[type="checkbox"] { width: 18px; height: 18px; }
+          .override-badge { padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 500; margin-left: auto; }
+          .override-badge.inherited { background: #e5e7eb; color: #6b7280; }
+          .override-badge.overridden { background: #dbeafe; color: #1e40af; }
+        </style>
+      `;
+    }
+
+    // Toggle override checkbox
+    function toggleOverride(fieldName) {
+      const checkbox = document.getElementById(`override-${fieldName}`);
+      const input = document.getElementById(`project-${fieldName}`);
+      if (!checkbox || !input) return;
+
+      if (checkbox.checked) {
+        input.disabled = false;
+        input.classList.remove('inherited');
+      } else {
+        input.disabled = true;
+        input.classList.add('inherited');
+      }
+    }
+
+    // Switch settings tab
+    function switchSettingsTab(tab) {
+      settingsTab = tab;
+      // Re-render with already loaded data
+      if (tab === 'global') {
+        renderSettingsGlobal();
+      } else {
+        renderSettingsProject();
+      }
+    }
+
+    // Save API key
+    async function saveApiKey(provider) {
+      const input = document.getElementById(`apikey-${provider}`);
+      const apiKey = input?.value?.trim();
+      if (!apiKey) {
+        alert('Please enter an API key');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/settings/api-key', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider, api_key: apiKey })
+        });
+        const data = await response.json();
+        if (data.success) {
+          renderSettings();
+        } else {
+          alert(data.message || 'Failed to save API key');
+        }
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    }
+
+    // Delete API key
+    async function deleteApiKey(provider) {
+      if (!confirm(`Delete ${provider} API key?`)) return;
+
+      try {
+        const response = await fetch('/api/settings/api-key', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider })
+        });
+        const data = await response.json();
+        if (data.success) {
+          renderSettings();
+        } else {
+          alert(data.message || 'Failed to delete API key');
+        }
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    }
+
+    // Save Global settings (no projectId)
+    async function saveGlobalSettings() {
+      const provider = document.getElementById('settings-provider')?.value;
+      const model = document.getElementById('settings-model')?.value;
+      const maxTokens = parseInt(document.getElementById('settings-max-tokens')?.value) || 4096;
+      const temperature = parseFloat(document.getElementById('settings-temperature')?.value) || 0.7;
+
+      try {
+        // PUT /api/settings (no projectId = global)
+        const response = await fetch('/api/settings/project', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            llm: { provider, model },
+            preferences: { autoChunking: true, costWarningEnabled: true, costWarningThreshold: 0.5 }
+          })
+        });
+        const data = await response.json();
+        if (data.success) {
+          alert('Global settings saved successfully');
+          renderSettings();
+        } else {
+          alert(data.message || 'Failed to save settings');
+        }
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    }
+
+    // Save Project overrides (with projectId)
+    async function saveProjectSettings() {
+      // Collect only overridden values
+      const overrides = {};
+
+      if (document.getElementById('override-provider')?.checked) {
+        overrides.provider = document.getElementById('project-provider')?.value;
+      }
+      if (document.getElementById('override-model')?.checked) {
+        overrides.model = document.getElementById('project-model')?.value;
+      }
+      if (document.getElementById('override-maxTokens')?.checked) {
+        overrides.maxTokens = parseInt(document.getElementById('project-maxTokens')?.value);
+      }
+      if (document.getElementById('override-temperature')?.checked) {
+        overrides.temperature = parseFloat(document.getElementById('project-temperature')?.value);
+      }
+
+      try {
+        // PUT /api/settings/project?projectId=... (with projectId = project override)
+        const namespace = settingsData.namespace;
+        const response = await fetch(`/api/settings/project?projectId=${encodeURIComponent(namespace)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            overrides: overrides
+          })
+        });
+        const data = await response.json();
+        if (data.success) {
+          alert('Project overrides saved successfully');
+          renderSettings();
+        } else {
+          alert(data.message || 'Failed to save project overrides');
+        }
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    }
+
+    // Clear all project overrides
+    async function clearProjectOverrides() {
+      if (!confirm('Clear all project overrides? This project will inherit all settings from Global.')) return;
+
+      try {
+        const namespace = settingsData.namespace;
+        const response = await fetch(`/api/settings/project?projectId=${encodeURIComponent(namespace)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ overrides: {} })
+        });
+        const data = await response.json();
+        if (data.success) {
+          settingsData.projectOverrides = {};
+          renderSettings();
+        } else {
+          alert(data.message || 'Failed to clear overrides');
+        }
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    }
+
+    // Reset settings to defaults
+    async function resetSettings() {
+      if (!confirm('Reset all settings to defaults?')) return;
+
+      try {
+        await fetch('/api/settings/project', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            llm: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+            preferences: { autoChunking: true, costWarningEnabled: true, costWarningThreshold: 0.5 }
+          })
+        });
+        renderSettings();
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    }
+
     // Router
     function router() {
       const path = window.location.pathname;
@@ -975,6 +1565,8 @@
       } else if (path === '/new') {
         const group = search.get('group') || '';
         renderNewCommandForm(group);
+      } else if (path === '/settings') {
+        renderSettings();
       } else {
         app.innerHTML = `
           <div class="card">
@@ -1003,28 +1595,115 @@
       });
     });
 
-    // Load namespace info
-    async function loadNamespaceInfo() {
+    // Current namespace state
+    let currentNamespace = '';
+    let runnerRefreshInterval = null;
+
+    // Load namespaces and populate selector
+    async function loadNamespaces() {
       try {
-        const data = await api('/namespace');
-        const badge = document.getElementById('namespace-badge');
-        if (badge && data.namespace) {
-          badge.textContent = data.namespace;
-          badge.style.display = 'inline-block';
-          if (data.auto_derived) {
-            badge.classList.add('auto-derived');
-            badge.title = 'Auto-derived from project folder';
-          } else {
-            badge.title = 'Explicitly configured namespace';
-          }
+        // Don't pass namespace param to /namespaces - it returns all namespaces
+        const response = await fetch('/api/namespaces');
+        const data = await response.json();
+
+        const selector = document.getElementById('namespace-selector');
+        const select = document.getElementById('namespace-select');
+
+        if (!selector || !select) return;
+
+        // Set current namespace only if not already set by user selection
+        if (!currentNamespace) {
+          currentNamespace = data.current_namespace;
+        }
+        const namespaces = data.namespaces || [];
+
+        // Build options
+        let options = '';
+        if (namespaces.length === 0) {
+          // No namespaces from scan, just show current
+          options = `<option value="${escapeHtml(currentNamespace)}">${escapeHtml(currentNamespace)}</option>`;
+        } else {
+          options = namespaces.map(ns => {
+            const selected = ns.namespace === currentNamespace ? 'selected' : '';
+            const counts = `(${ns.queued_count}Q/${ns.running_count}R/${ns.task_count}T)`;
+            return `<option value="${escapeHtml(ns.namespace)}" ${selected}>${escapeHtml(ns.namespace)} ${counts}</option>`;
+          }).join('');
+        }
+
+        select.innerHTML = options;
+        selector.style.display = 'flex';
+
+        // Load runners for current namespace
+        loadRunnerStatus();
+      } catch (e) {
+        console.warn('Failed to load namespaces:', e);
+      }
+    }
+
+    // Handle namespace change
+    function onNamespaceChange(namespace) {
+      if (namespace === currentNamespace) return;
+
+      // Update current namespace and reload data
+      currentNamespace = namespace;
+
+      // Reload runner status for new namespace
+      loadRunnerStatus();
+
+      // Re-navigate to refresh current page data with new namespace
+      navigate(currentPath);
+    }
+
+    // Load runner status
+    async function loadRunnerStatus() {
+      try {
+        const data = await api('/runners');
+        const runners = data.runners || [];
+
+        const dot = document.getElementById('runner-dot');
+        const text = document.getElementById('runner-text');
+
+        if (!dot || !text) return;
+
+        const aliveCount = runners.filter(r => r.is_alive).length;
+        const totalCount = runners.length;
+
+        if (aliveCount > 0) {
+          dot.className = 'runner-dot alive';
+          text.textContent = aliveCount + ' runner' + (aliveCount > 1 ? 's' : '') + ' active';
+        } else if (totalCount > 0) {
+          dot.className = 'runner-dot dead';
+          text.textContent = 'No active runners';
+        } else {
+          dot.className = 'runner-dot dead';
+          text.textContent = 'No runners';
         }
       } catch (e) {
-        console.warn('Failed to load namespace info:', e);
+        console.warn('Failed to load runner status:', e);
+        const dot = document.getElementById('runner-dot');
+        const text = document.getElementById('runner-text');
+        if (dot) dot.className = 'runner-dot dead';
+        if (text) text.textContent = 'Error';
+      }
+    }
+
+    // Start periodic runner status refresh
+    function startRunnerRefresh() {
+      // Refresh every 30 seconds
+      runnerRefreshInterval = setInterval(loadRunnerStatus, 30000);
+    }
+
+    // Stop runner refresh
+    function stopRunnerRefresh() {
+      if (runnerRefreshInterval) {
+        clearInterval(runnerRefreshInterval);
+        runnerRefreshInterval = null;
       }
     }
 
     // Initial load
-    loadNamespaceInfo();
+    loadNamespaces();
+    startRunnerRefresh();
     router();
   </script>
 </body>
