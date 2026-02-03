@@ -1,0 +1,95 @@
+name: Relay Two-Web Live E2E
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: 'LLM Provider (anthropic or openai)'
+        required: false
+        default: 'anthropic'
+
+env:
+  NODE_VERSION: '20.x'
+
+jobs:
+  relay-live-e2e:
+    name: Relay Two-Web Live E2E Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Run Relay Two-Web Live E2E Test
+        env:
+          LLM_LIVE_E2E: '1'
+          LLM_PROVIDER: ${{ github.event.inputs.provider || 'anthropic' }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          echo "=== Relay Two-Web Live E2E Test ==="
+          echo "Provider: ${LLM_PROVIDER}"
+          echo "LLM_LIVE_E2E: ${LLM_LIVE_E2E}"
+          echo ""
+
+          # Run the test
+          npm run test:integration -- --grep "Relay Two-Web" --timeout 600000 2>&1 | tee .tmp/relay-live-e2e-output.log
+
+          # Check exit code
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          echo ""
+          echo "=== Test completed with exit code: ${EXIT_CODE} ==="
+
+          exit ${EXIT_CODE}
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-live-e2e-artifacts
+          path: |
+            .tmp/relay-live-e2e-two-web/artifacts/
+            .tmp/relay-live-e2e-two-web/test.log
+            .tmp/relay-live-e2e-output.log
+          retention-days: 30
+
+      - name: Display summary
+        if: always()
+        run: |
+          echo "=== Live E2E Summary ==="
+          if [ -f ".tmp/relay-live-e2e-two-web/artifacts/summary.json" ]; then
+            cat .tmp/relay-live-e2e-two-web/artifacts/summary.json
+          else
+            echo "Summary file not found (test may have been skipped or failed early)"
+          fi
+
+      - name: Check API key configured
+        if: failure()
+        run: |
+          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ] && [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+            echo "::error::No API key configured. Please add ANTHROPIC_API_KEY or OPENAI_API_KEY to repository secrets."
+            echo ""
+            echo "To configure secrets:"
+            echo "1. Go to repository Settings > Secrets and variables > Actions"
+            echo "2. Add ANTHROPIC_API_KEY with your Anthropic API key"
+            echo "   OR"
+            echo "   Add OPENAI_API_KEY with your OpenAI API key"
+          fi
