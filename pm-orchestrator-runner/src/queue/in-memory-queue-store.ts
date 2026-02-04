@@ -193,7 +193,8 @@ export class InMemoryQueueStore implements IQueueStore {
   async updateStatus(
     taskId: string,
     status: QueueItemStatus,
-    errorMessage?: string
+    errorMessage?: string,
+    output?: string
   ): Promise<void> {
     const key = this.getTaskKey(taskId);
     const item = this.tasks.get(key);
@@ -203,6 +204,9 @@ export class InMemoryQueueStore implements IQueueStore {
       item.updated_at = new Date().toISOString();
       if (errorMessage) {
         item.error_message = errorMessage;
+      }
+      if (output) {
+        item.output = output;
       }
     }
   }

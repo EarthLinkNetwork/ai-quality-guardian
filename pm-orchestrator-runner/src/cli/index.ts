@@ -365,7 +365,7 @@ function generateWebSessionId(): string {
  * Per user insight: "LLM Layer should answer clarification questions"
  */
 function createTaskExecutor(projectPath: string): TaskExecutor {
-  return async (item: QueueItem): Promise<{ status: 'COMPLETE' | 'ERROR'; errorMessage?: string }> => {
+  return async (item: QueueItem): Promise<{ status: 'COMPLETE' | 'ERROR'; errorMessage?: string; output?: string }> => {
     console.log(`[Runner] Executing task: ${item.task_id}`);
     console.log(`[Runner] Prompt: ${item.prompt.substring(0, 100)}${item.prompt.length > 100 ? '...' : ''}`);
 
@@ -394,12 +394,13 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         const isReadInfoOrReport = taskType === 'READ_INFO' || taskType === 'REPORT';
 
         if (result.status === 'COMPLETE') {
-          return { status: 'COMPLETE' };
+          // Return output for visibility in UI (AC-CHAT-001, AC-CHAT-002)
+          return { status: 'COMPLETE', output: result.output || undefined };
         } else if (result.status === 'INCOMPLETE') {
           if (isReadInfoOrReport && result.output && result.output.trim().length > 0) {
             // INCOMPLETE with output for READ_INFO/REPORT -> COMPLETE
             console.log(`[Runner] READ_INFO/REPORT INCOMPLETE with output -> COMPLETE`);
-            return { status: 'COMPLETE' };
+            return { status: 'COMPLETE', output: result.output };
           } else if (isReadInfoOrReport) {
             // INCOMPLETE without output for READ_INFO/REPORT -> AWAITING_RESPONSE
             // Signal this as a special status that the queue should handle
@@ -439,7 +440,8 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
       console.log(`[Runner] Task ${item.task_id} completed with status: ${result.status}`);
 
       if (result.status === 'COMPLETE') {
-        return { status: 'COMPLETE' };
+        // Return output for visibility in UI (AC-CHAT-001, AC-CHAT-002)
+        return { status: 'COMPLETE', output: result.output || undefined };
       } else if (result.status === 'ERROR') {
         return { status: 'ERROR', errorMessage: result.error || 'Task failed' };
       } else {

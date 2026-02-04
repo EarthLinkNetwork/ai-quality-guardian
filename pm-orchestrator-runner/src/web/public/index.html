@@ -1965,7 +1965,7 @@
               <div class="log-entry task-completed">
                 <div class="log-time">${formatFullDate(task.updated_at)}</div>
                 <div class="log-type">TASK COMPLETED</div>
-                <div class="log-content">Task completed successfully.</div>
+                <div class="log-content">${task.output ? escapeHtml(task.output) : 'Task completed successfully.'}</div>
               </div>
               ` : ''}
               ${task.status === 'ERROR' ? `
@@ -2035,6 +2035,24 @@
             <h3>Prompt</h3>
             <div class="prompt-box">${escapeHtml(task.prompt)}</div>
           </div>
+
+          ${task.output ? `
+          <div class="card">
+            <h3>Result</h3>
+            <div class="prompt-box" style="background-color: #f0fdf4; border-color: #22c55e;">${escapeHtml(task.output)}</div>
+          </div>
+          ` : ''}
+
+          ${task.status === 'AWAITING_RESPONSE' && task.clarification ? `
+          <div class="card" style="border-left: 4px solid #f59e0b;">
+            <h3>Clarification Needed</h3>
+            <div class="prompt-box" style="background-color: #fffbeb; border-color: #f59e0b;">
+              <strong>Question:</strong> ${escapeHtml(task.clarification.question || 'No question provided')}
+              ${task.clarification.options ? `<br><br><strong>Options:</strong><ul>${task.clarification.options.map(o => `<li>${escapeHtml(o)}</li>`).join('')}</ul>` : ''}
+              ${task.clarification.context ? `<br><strong>Context:</strong> ${escapeHtml(task.clarification.context)}` : ''}
+            </div>
+          </div>
+          ` : ''}
 
           ${errorSection}
           ${logEntries}

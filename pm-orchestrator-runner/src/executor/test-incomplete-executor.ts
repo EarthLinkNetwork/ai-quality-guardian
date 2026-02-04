@@ -24,6 +24,7 @@ export type TestExecutorMode =
   | 'incomplete_with_output'  // INCOMPLETE with output
   | 'no_evidence'             // NO_EVIDENCE status
   | 'complete'                // COMPLETE status
+  | 'static_output'           // COMPLETE with static output (for E2E testing output visibility)
   | 'error'                   // ERROR status
   | 'passthrough';            // Fall through to inner executor
 
@@ -41,6 +42,8 @@ export function getTestExecutorMode(): TestExecutorMode {
       return 'no_evidence';
     case 'complete':
       return 'complete';
+    case 'static_output':
+      return 'static_output';
     case 'error':
       return 'error';
     default:
@@ -120,6 +123,21 @@ export class TestIncompleteExecutor implements IExecutor {
             exists: true,
             size: 100,
           }],
+          unverified_files: [],
+        };
+
+      case 'static_output':
+        // This mode is specifically for E2E testing output visibility in UI
+        // The output should be visible in the Task Detail page
+        console.log('[TestIncompleteExecutor] Returning COMPLETE with static output for UI visibility test');
+        return {
+          executed: true,
+          output: 'E2E_TEST_OUTPUT: This is the task result that should be visible in the UI. If you can see this message, the output visibility fix is working correctly.',
+          files_modified: [],
+          duration_ms: Date.now() - startTime,
+          status: 'COMPLETE',
+          cwd: process.cwd(),
+          verified_files: [],
           unverified_files: [],
         };
 

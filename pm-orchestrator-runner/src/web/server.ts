@@ -255,6 +255,8 @@ export function createApp(config: WebServerConfig): Express {
           updated_at: t.updated_at,
           error_message: t.error_message,
           task_type: t.task_type,
+          output: t.output,  // Include output in list for UI visibility
+          has_output: !!t.output,  // Flag for quick check
         })),
       });
     } catch (error) {
@@ -292,6 +294,9 @@ export function createApp(config: WebServerConfig): Express {
         created_at: task.created_at,
         updated_at: task.updated_at,
         error_message: task.error_message,
+        output: task.output,  // Task output for READ_INFO/REPORT (AC-CHAT-002, AC-CHAT-003)
+        task_type: task.task_type,
+        clarification: task.clarification,  // Clarification details for AWAITING_RESPONSE (AC-CHAT-005)
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';

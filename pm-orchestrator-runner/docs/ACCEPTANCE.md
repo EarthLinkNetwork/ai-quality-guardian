@@ -507,6 +507,56 @@
 
 ---
 
+## Task Output Visibility Acceptance Criteria
+
+### AC-CHAT-001: READ_INFO/REPORT Tasks Have Output
+
+**Given** a READ_INFO or REPORT task is executed
+**When** the task completes successfully (status COMPLETE)
+**Then**:
+- Task MUST have a non-empty `output` field OR
+- Task MUST be in AWAITING_RESPONSE status with `clarification` field
+- Empty output with COMPLETE status is NOT acceptable
+
+### AC-CHAT-002: UI Displays Actual Output
+
+**Given** a task has completed with output
+**When** the task is displayed in the UI
+**Then**:
+- The actual `output` content MUST be displayed
+- The generic message "Task completed successfully." MUST NOT be shown when output exists
+- For AWAITING_RESPONSE, the clarification question MUST be displayed
+
+### AC-CHAT-003: API Returns Output Field
+
+**Given** a task exists in the queue
+**When** GET `/api/tasks/:task_id` or GET `/api/task-groups/:id/tasks` is called
+**Then**:
+- Response MUST include `output` field (string or undefined)
+- Response MUST include `task_type` field (READ_INFO, REPORT, IMPLEMENTATION)
+- Response MUST include `clarification` field for AWAITING_RESPONSE tasks
+- Response MUST include `has_output` boolean in task lists
+
+### AC-CHAT-004: E2E Test for Output Visibility
+
+**Given** the test executor is configured with `PM_TEST_EXECUTOR_MODE=static_output`
+**When** a task is submitted and completed
+**Then**:
+- The task output contains the test marker string
+- The output is visible via API
+- The test passes without manual verification
+
+### AC-CHAT-005: Clarification Flow Shows in UI
+
+**Given** a task transitions to AWAITING_RESPONSE
+**When** the clarification details are retrieved via API
+**Then**:
+- `clarification.question` MUST be returned
+- `clarification.options` MUST be returned if present
+- After user response and completion, clarification history MUST be preserved
+
+---
+
 ## Summary
 
 | AC Range | Feature Area |
@@ -520,3 +570,4 @@
 | AC-P1 to AC-P6 | Project Settings JavaScript Fix |
 | AC-K1 to AC-K3 | API Key Persistence |
 | AC-L1 to AC-L8 | Self-Running Loop |
+| AC-CHAT-001 to AC-CHAT-005 | Task Output Visibility |
