@@ -4127,3 +4127,540 @@ Tests:       96 skipped, 2452 passed, 2548 total
 - No regressions from Resume feature implementation
 - New Resume E2E tests included in passing count
 
+
+---
+
+# Dev Console MVP
+
+Implementation of Dev Console feature for selfhost-runner (runner-dev) projects.
+
+## DEVCONSOLE-1: Access Control
+
+**File**: `src/web/routes/devconsole.ts`
+**Description**: Dev Console routes are protected by projectType check
+
+### Evidence
+
+```typescript
+// Middleware guard for runner-dev projects only
+router.use("/projects/:projectId/dev", async (req, res, next) => {
+  const { projectId } = req.params;
+  const extendedProject = await getProjectExtendedSync(projectId);
+  
+  if (!extendedProject) {
+    res.status(404).json({ error: "NOT_FOUND", message: `Project ${projectId} not found` });
+    return;
+  }
+  
+  // Only allow for runner-dev projects
+  if (extendedProject.projectType !== "runner-dev") {
+    res.status(403).json({
+      error: "FORBIDDEN",
+      message: "Dev Console is only available for runner-dev projects",
+    });
+    return;
+  }
+  
+  (req as any).project = extendedProject;
+  next();
+});
+```
+
+### Test Evidence
+
+```
+E2E: Dev Console
+  DEVCONSOLE-1: Access Control
+    ✔ should allow Dev Console access for runner-dev projects
+    ✔ should deny Dev Console access for normal projects
+    ✔ should deny Dev Console access for non-existent projects
+```
+
+### Result
+- runner-dev projects: 200 OK
+- normal projects: 403 FORBIDDEN
+- non-existent projects: 404 NOT_FOUND
+
+---
+
+## DEVCONSOLE-2: FS Tree API
+
+**File**: `src/web/routes/devconsole.ts`
+**Description**: List directory contents with path traversal protection
+
+### Evidence
+
+```typescript
+// Path safety check
+function isPathSafe(basePath: string, targetPath: string): boolean {
+  const resolved = path.resolve(basePath, targetPath);
+  return resolved.startsWith(basePath);
+}
+
+// GET /projects/:projectId/dev/fs/tree
+router.get("/projects/:projectId/dev/fs/tree", async (req, res) => {
+  const project = (req as any).project;
+  const root = (req.query.root as string) || ".";
+  const safePath = resolveSafePath(project.projectPath, root);
+  
+  if (!safePath) {
+    res.status(400).json({ error: "INVALID_PATH", message: "Path traversal detected" });
+    return;
+  }
+  
+  const entries = await fs.readdir(safePath, { withFileTypes: true });
+  // ... return file entries
+});
+```
+
+### Test Evidence
+
+```
+DEVCONSOLE-2: FS Tree API
+  ✔ should list directory contents
+  ✔ should list subdirectory contents
+  ✔ should prevent path traversal outside project root
+```
+
+### Result
+- Directory listing works for valid paths
+- Path traversal (../) blocked with 400 INVALID_PATH
+
+---
+
+## DEVCONSOLE-3: FS Read API
+
+**File**: `src/web/routes/devconsole.ts`
+**Description**: Read file contents with path traversal protection
+
+### Evidence
+
+```typescript
+// GET /projects/:projectId/dev/fs/read
+router.get("/projects/:projectId/dev/fs/read", async (req, res) => {
+  const project = (req as any).project;
+  const filePath = req.query.path as string;
+  
+  if (!filePath) {
+    res.status(400).json({ error: "MISSING_PATH", message: "path query parameter required" });
+    return;
+  }
+  
+  const safePath = resolveSafePath(project.projectPath, filePath);
+  if (!safePath) {
+    res.status(400).json({ error: "INVALID_PATH", message: "Path traversal detected" });
+    return;
+  }
+  
+  const stat = await fs.stat(safePath);
+  if (stat.isDirectory()) {
+    res.status(400).json({ error: "IS_DIRECTORY", message: "Cannot read directory" });
+    return;
+  }
+  
+  const content = await fs.readFile(safePath, "utf-8");
+  res.json({ path: filePath, content, size: stat.size, mtime: stat.mtime.toISOString() });
+});
+```
+
+### Test Evidence
+
+```
+DEVCONSOLE-3: FS Read API
+  ✔ should read file contents
+  ✔ should read file in subdirectory
+  ✔ should prevent reading files outside project root
+  ✔ should return 404 for non-existent files
+```
+
+### Result
+- File reading works for valid paths
+- Path traversal blocked
+- Non-existent files return 404
+
+---
+
+## DEVCONSOLE-4: FS Search API
+
+**File**: `src/web/routes/devconsole.ts`
+**Description**: Search file contents using ripgrep with Node.js fallback
+
+### Evidence
+
+```typescript
+// POST /projects/:projectId/dev/fs/search
+router.post("/projects/:projectId/dev/fs/search", async (req, res) => {
+  const project = (req as any).project;
+  const { query } = req.body;
+  
+  if (!query || typeof query !== "string") {
+    res.status(400).json({ error: "MISSING_QUERY", message: "query field required" });
+    return;
+  }
+  
+  const results: SearchResult[] = [];
+  
+  // Try ripgrep first, fallback to Node.js
+  try {
+    await new Promise((resolve, reject) => {
+      const rg = spawn("rg", ["-n", "--json", query, "."], { cwd: project.projectPath });
+      // ... process results
+    });
+  } catch {
+    // Node.js fallback
+    await searchDirectory(project.projectPath, query, "", results);
+  }
+  
+  res.json(results);
+});
+```
+
+### Test Evidence
+
+```
+DEVCONSOLE-4: FS Search API
+  ✔ should search file contents
+  ✔ should return empty array for no matches
+  ✔ should require query parameter
+```
+
+### Result
+- Search finds matches in project files
+- Empty array returned for no matches
+- Query parameter validation works
+
+---
+
+## DEVCONSOLE-5: Patch Application
+
+**File**: `src/web/routes/devconsole.ts`
+**Description**: Apply unified diff patches using system patch command
+
+### Evidence
+
+```typescript
+// POST /projects/:projectId/dev/fs/applyPatch
+router.post("/projects/:projectId/dev/fs/applyPatch", async (req, res) => {
+  const project = (req as any).project;
+  const { patch } = req.body;
+  
+  if (!patch || typeof patch !== "string") {
+    res.status(400).json({ error: "MISSING_PATCH", message: "patch field required" });
+    return;
+  }
+  
+  // Validate patch format
+  if (!patch.includes("---") || !patch.includes("+++") || !patch.includes("@@")) {
+    res.status(400).json({
+      ok: false,
+      error: "Invalid patch format. Expected unified diff format.",
+    });
+    return;
+  }
+  
+  // Apply using system patch command
+  const patchProc = spawn("patch", ["-p1", "--no-backup-if-mismatch"], {
+    cwd: project.projectPath,
+  });
+  // ... handle result
+});
+```
+
+### Test Evidence
+
+```
+DEVCONSOLE-5: Patch Application
+  ✔ should apply valid unified diff patch
+  ✔ should reject patch with invalid format
+  ✔ should require patch parameter
+```
+
+### Result
+- Valid unified diff patches applied successfully
+- Invalid format rejected with clear error
+- Missing patch parameter returns 400
+
+---
+
+## DEVCONSOLE-6: Command Execution
+
+**File**: `src/web/routes/devconsole.ts`
+**Description**: Execute shell commands with persistent logging
+
+### Evidence
+
+```typescript
+// POST /projects/:projectId/dev/cmd/run
+router.post("/projects/:projectId/dev/cmd/run", async (req, res) => {
+  const project = (req as any).project;
+  const { command } = req.body;
+  
+  if (!command || typeof command !== "string") {
+    res.status(400).json({ error: "MISSING_COMMAND", message: "command field required" });
+    return;
+  }
+  
+  const runId = `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const logDir = getCmdLogDir(stateDir, project.namespace);
+  
+  const run: CmdRunInfo = {
+    runId,
+    command,
+    cwd: project.projectPath,
+    status: "running",
+    startedAt: new Date().toISOString(),
+  };
+  
+  saveCmdRun(logDir, run);
+  
+  // Spawn process and capture logs
+  const proc = spawn("bash", ["-c", command], { cwd: project.projectPath });
+  // ... handle stdout/stderr
+  
+  res.json({ runId });
+});
+```
+
+### Test Evidence
+
+```
+DEVCONSOLE-6: Command Execution
+  ✔ should execute command and return runId
+  ✔ should require command parameter
+```
+
+### Result
+- Commands executed asynchronously with runId returned
+- Missing command parameter returns 400
+- Logs captured for both stdout and stderr
+
+---
+
+## DEVCONSOLE-7: Command Log Retrieval
+
+**File**: `src/web/routes/devconsole.ts`
+**Description**: Retrieve command execution logs
+
+### Evidence
+
+```typescript
+// GET /projects/:projectId/dev/cmd/:runId/log
+router.get("/projects/:projectId/dev/cmd/:runId/log", async (req, res) => {
+  const project = (req as any).project;
+  const { runId } = req.params;
+  
+  const logDir = getCmdLogDir(stateDir, project.namespace);
+  const runFile = path.join(logDir, `${runId}.json`);
+  
+  if (!fsSync.existsSync(runFile)) {
+    res.status(404).json({ error: "NOT_FOUND", message: `Run ${runId} not found` });
+    return;
+  }
+  
+  const run = JSON.parse(fsSync.readFileSync(runFile, "utf-8")) as CmdRunInfo;
+  const logFile = path.join(logDir, `${runId}.log`);
+  const logs: CmdLogEntry[] = [];
+  
+  if (fsSync.existsSync(logFile)) {
+    const lines = fsSync.readFileSync(logFile, "utf-8").split("\n");
+    for (const line of lines) {
+      if (line.trim()) logs.push(JSON.parse(line));
+    }
+  }
+  
+  res.json({ ...run, logs });
+});
+```
+
+### Test Evidence
+
+```
+DEVCONSOLE-7: Command Log Retrieval
+  ✔ should retrieve command logs
+  ✔ should return 404 for non-existent runId
+```
+
+### Result
+- Logs retrieved with run info and log entries
+- Non-existent runId returns 404
+
+---
+
+## DEVCONSOLE-8: Command History Persistence
+
+**File**: `src/web/routes/devconsole.ts`
+**Description**: Command history persists across server restarts
+
+### Evidence
+
+```typescript
+// Logs stored in stateDir using JSONL format
+function getCmdLogDir(stateDir: string, namespace: string): string {
+  const dir = path.join(stateDir, "devconsole", namespace, "cmd-logs");
+  if (!fsSync.existsSync(dir)) {
+    fsSync.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+// GET /projects/:projectId/dev/cmd/list
+router.get("/projects/:projectId/dev/cmd/list", async (req, res) => {
+  const project = (req as any).project;
+  const logDir = getCmdLogDir(stateDir, project.namespace);
+  
+  const files = fsSync.readdirSync(logDir).filter(f => f.endsWith(".json"));
+  const runs: CmdRunInfo[] = [];
+  
+  for (const file of files) {
+    const data = JSON.parse(fsSync.readFileSync(path.join(logDir, file), "utf-8"));
+    runs.push(data);
+  }
+  
+  runs.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  res.json({ runs });
+});
+```
+
+### Test Evidence
+
+```
+DEVCONSOLE-8: Command History Persistence
+  ✔ should list recent command history
+  ✔ should persist logs after simulated server restart
+```
+
+### Result
+- Command history listed in reverse chronological order
+- Logs persist in stateDir/devconsole/{namespace}/cmd-logs/
+- New Express instance reads same logs from disk
+
+---
+
+## DEVCONSOLE-9: Routes Registration
+
+**File**: `src/web/server.ts`
+**Description**: Dev Console routes registered in server
+
+### Evidence
+
+```typescript
+// Import and use Dev Console routes
+import { createDevconsoleRoutes } from './routes/devconsole';
+app.use("/api", createDevconsoleRoutes(stateDir));
+
+// Routes list includes Dev Console endpoints
+const routes = [
+  // ... existing routes
+  'GET /api/projects/:projectId/dev/fs/tree',
+  'GET /api/projects/:projectId/dev/fs/read',
+  'POST /api/projects/:projectId/dev/fs/search',
+  'POST /api/projects/:projectId/dev/fs/applyPatch',
+  'POST /api/projects/:projectId/dev/cmd/run',
+  'GET /api/projects/:projectId/dev/cmd/:runId/log',
+  'GET /api/projects/:projectId/dev/cmd/list',
+];
+```
+
+### Test Evidence
+
+```
+DEVCONSOLE-9: Routes Registration
+  ✔ should list Dev Console routes in /api/routes
+```
+
+### Result
+- All 7 Dev Console routes registered
+- Routes visible in /api/routes endpoint
+
+---
+
+## DEVCONSOLE-10: Web UI Integration
+
+**File**: `src/web/public/index.html`
+**Description**: Dev Console UI visible only for runner-dev projects
+
+### Evidence
+
+```javascript
+// Only show Dev Console section for runner-dev projects
+${project.projectType === 'runner-dev' ? '<div id="dev-console-section"></div>' : ''}
+
+// Render Dev Console UI
+if (project.projectType === 'runner-dev') {
+  renderDevConsole(projectId);
+}
+
+// Dev Console functions
+async function renderDevConsole(projectId) { /* ... */ }
+async function devLoadTree(projectId, root) { /* ... */ }
+async function devReadFile(projectId, filePath) { /* ... */ }
+async function devSearch(projectId, query) { /* ... */ }
+async function devApplyPatch(projectId, patch) { /* ... */ }
+async function devRunCmd(projectId, command) { /* ... */ }
+async function devStartLogPolling(projectId, runId) { /* ... */ }
+async function devLoadCmdHistory(projectId) { /* ... */ }
+async function devViewLog(projectId, runId) { /* ... */ }
+```
+
+### Result
+- Dev Console section only rendered for runner-dev projects
+- File tree browsing with click-to-expand directories
+- File content viewer with syntax highlighting
+- Code search functionality
+- Patch application with error display
+- Command execution with live log polling
+- Command history persistence across page reload
+
+---
+
+## DEVCONSOLE-11: All Tests Pass
+
+**Command**: `npm test -- --grep "Dev Console"`
+**Description**: All 23 Dev Console E2E tests pass
+
+### Evidence
+
+```
+E2E: Dev Console
+  DEVCONSOLE-1: Access Control
+    ✔ should allow Dev Console access for runner-dev projects
+    ✔ should deny Dev Console access for normal projects
+    ✔ should deny Dev Console access for non-existent projects
+  DEVCONSOLE-2: FS Tree API
+    ✔ should list directory contents
+    ✔ should list subdirectory contents
+    ✔ should prevent path traversal outside project root
+  DEVCONSOLE-3: FS Read API
+    ✔ should read file contents
+    ✔ should read file in subdirectory
+    ✔ should prevent reading files outside project root
+    ✔ should return 404 for non-existent files
+  DEVCONSOLE-4: FS Search API
+    ✔ should search file contents
+    ✔ should return empty array for no matches
+    ✔ should require query parameter
+  DEVCONSOLE-5: Patch Application
+    ✔ should apply valid unified diff patch
+    ✔ should reject patch with invalid format
+    ✔ should require patch parameter
+  DEVCONSOLE-6: Command Execution
+    ✔ should execute command and return runId
+    ✔ should require command parameter
+  DEVCONSOLE-7: Command Log Retrieval
+    ✔ should retrieve command logs
+    ✔ should return 404 for non-existent runId
+  DEVCONSOLE-8: Command History Persistence
+    ✔ should list recent command history
+    ✔ should persist logs after simulated server restart
+  DEVCONSOLE-9: Routes Registration
+    ✔ should list Dev Console routes in /api/routes
+
+23 passing (3s)
+```
+
+### Result
+- All 23 E2E tests pass
+- Access control verified (runner-dev only)
+- FS operations verified (tree, read, search, patch)
+- Command execution verified (run, log, list, persistence)
+- Path traversal protection verified

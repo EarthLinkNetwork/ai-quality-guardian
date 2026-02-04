@@ -27,6 +27,7 @@ import { createDashboardRoutes } from './routes/dashboard';
 import { createInspectionRoutes } from './routes/inspection';
 import { createChatRoutes } from './routes/chat';
 import { createSelfhostRoutes } from './routes/selfhost';
+import { createDevconsoleRoutes } from './routes/devconsole';
 
 /**
  * Derive namespace from folder path (same logic as CLI)
@@ -118,6 +119,8 @@ export function createApp(config: WebServerConfig): Express {
     app.use("/api", createChatRoutes(stateDir));
     // Self-hosting routes (dev/prod promotion)
     app.use("/api", createSelfhostRoutes(stateDir));
+    // Dev Console routes (selfhost-runner only)
+    app.use("/api", createDevconsoleRoutes(stateDir));
 
   }
 
@@ -752,6 +755,14 @@ export function createApp(config: WebServerConfig): Express {
       'GET /api/projects/:projectId/selfhost/status',
       'POST /api/projects/:projectId/selfhost/apply',
       'GET /api/projects/:projectId/selfhost/resume/:applyId',
+      // Dev Console routes (selfhost-runner only)
+      'GET /api/projects/:projectId/dev/fs/tree',
+      'GET /api/projects/:projectId/dev/fs/read',
+      'POST /api/projects/:projectId/dev/fs/search',
+      'POST /api/projects/:projectId/dev/fs/applyPatch',
+      'POST /api/projects/:projectId/dev/cmd/run',
+      'GET /api/projects/:projectId/dev/cmd/:runId/log',
+      'GET /api/projects/:projectId/dev/cmd/list',
     ];
     res.json({ routes });
   });
