@@ -381,6 +381,7 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         id: item.task_id,
         prompt: item.prompt,
         workingDir: projectPath,
+        taskType: item.task_type, // Propagate task type for READ_INFO/REPORT handling
       });
 
       console.log(`[Runner] Task ${item.task_id} completed with status: ${result.status}`);

@@ -28,6 +28,7 @@ export {
   QUEUE_TABLE_NAME,
   RUNNERS_TABLE_NAME,
   IQueueStore,
+  TaskTypeValue,
 } from './queue-store';
 
 export {

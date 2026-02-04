@@ -108,9 +108,17 @@ export interface ClarificationRequest {
 }
 
 /**
- * Queue Item schema (v2.1)
+ * Task type for execution handling
+ * - READ_INFO: Information requests, no file changes expected
+ * - REPORT: Report/summary generation, no file changes expected
+ * - IMPLEMENTATION: File creation/modification tasks
+ */
+export type TaskTypeValue = 'READ_INFO' | 'IMPLEMENTATION' | 'REPORT';
+
+/**
+ * Queue Item schema (v2.2)
  * Per spec/20_QUEUE_STORE.md
- * Extended with clarification fields
+ * Extended with clarification fields and task_type
  */
 export interface QueueItem {
   namespace: string;       // Partition key
@@ -122,6 +130,8 @@ export interface QueueItem {
   created_at: string;
   updated_at: string;
   error_message?: string;
+  /** Task type for execution handling (READ_INFO/IMPLEMENTATION/REPORT) */
+  task_type?: TaskTypeValue;
   /** Clarification request when status is AWAITING_RESPONSE */
   clarification?: ClarificationRequest;
   /** Conversation history for context preservation */
@@ -215,7 +225,7 @@ export interface IQueueStore {
   runnersTableExists(): Promise<boolean>;
   ensureTable(): Promise<void>;
   deleteTable(): Promise<void>;
-  enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string): Promise<QueueItem>;
+  enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string, taskType?: TaskTypeValue): Promise<QueueItem>;
   getItem(taskId: string, targetNamespace?: string): Promise<QueueItem | null>;
   claim(): Promise<ClaimResult>;
   updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string): Promise<void>;
@@ -462,12 +472,18 @@ export class QueueStore implements IQueueStore {
   /**
    * Enqueue a new task
    * Creates item with status=QUEUED
+   * @param sessionId - Session identifier
+   * @param taskGroupId - Task group identifier
+   * @param prompt - Task prompt
+   * @param taskId - Optional task ID (auto-generated if not provided)
+   * @param taskType - Optional task type (READ_INFO/IMPLEMENTATION/REPORT)
    */
   async enqueue(
     sessionId: string,
     taskGroupId: string,
     prompt: string,
-    taskId?: string
+    taskId?: string,
+    taskType?: TaskTypeValue
   ): Promise<QueueItem> {
     const now = new Date().toISOString();
     const item: QueueItem = {
@@ -479,6 +495,7 @@ export class QueueStore implements IQueueStore {
       prompt,
       created_at: now,
       updated_at: now,
+      task_type: taskType,
     };
 
     await this.docClient.send(

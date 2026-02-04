@@ -7,6 +7,8 @@
  * - Message sending (new chat / respond)
  * - AWAITING_RESPONSE status detection
  * - bootstrapPrompt injection
+ * - Activity tracking for chat submissions
+ * - TaskGroup creation for execution pipeline
  */
 
 import { Router, Request, Response } from "express";
@@ -22,6 +24,8 @@ import {
   CreateConversationMessageInput,
 } from "../dal/types";
 import { v4 as uuidv4 } from "uuid";
+import { IQueueStore } from "../../queue/queue-store";
+import { detectTaskType } from "../../utils/task-type-detector";
 
 /**
  * Error response format
@@ -41,10 +45,27 @@ interface ChatResponse {
 }
 
 /**
- * Create chat routes
+ * Chat routes configuration
  */
-export function createChatRoutes(stateDir: string): Router {
+export interface ChatRoutesConfig {
+  stateDir: string;
+  queueStore?: IQueueStore;
+  sessionId?: string;
+}
+
+/**
+ * Create chat routes
+ * @param stateDirOrConfig - Either a stateDir string (legacy) or full config object
+ */
+export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): Router {
   const router = Router();
+
+  // Handle both legacy (string) and new (config object) signatures
+  const config: ChatRoutesConfig = typeof stateDirOrConfig === "string"
+    ? { stateDir: stateDirOrConfig }
+    : stateDirOrConfig;
+
+  const { stateDir, queueStore, sessionId } = config;
 
   // Ensure NoDynamoExtended is initialized
   if (!isNoDynamoExtendedInitialized()) {
@@ -112,16 +133,52 @@ export function createChatRoutes(stateDir: string): Router {
    * Body: { content: string }
    *
    * This creates a user message and triggers Plan creation + Dispatch
+   * Also records Activity and creates TaskGroup for execution pipeline
    */
   router.post(
     "/projects/:projectId/chat",
     async (req: Request, res: Response) => {
+      const dal = getNoDynamoExtended();
+      const projectId = req.params.projectId as string;
+      const orgId = "default"; // Default org for single-tenant mode
+      let activityId: string | undefined;
+      let taskGroupId: string | undefined;
+
       try {
-        const dal = getNoDynamoExtended();
-        const projectId = req.params.projectId as string;
         const { content } = req.body;
 
+        // Record chat_received Activity at handler start (always)
+        try {
+          const activity = await dal.createActivityEvent({
+            orgId,
+            type: "chat_received",
+            projectId,
+            sessionId: sessionId || "sess_" + projectId,
+            summary: "Chat message received: " + (content?.substring(0, 50) || "(empty)") + (content?.length > 50 ? "..." : ""),
+            importance: "normal",
+            details: {
+              contentLength: content?.length || 0,
+              timestamp: new Date().toISOString(),
+            },
+          });
+          activityId = activity.id;
+        } catch (actError) {
+          // Log but don't fail the request if Activity creation fails
+          console.error("[chat] Failed to create activity event:", actError);
+        }
+
         if (!content || typeof content !== "string" || content.trim() === "") {
+          // Record error Activity
+          await dal.createActivityEvent({
+            orgId,
+            type: "chat_error",
+            projectId,
+            sessionId: sessionId || "sess_" + projectId,
+            summary: "Chat validation failed: empty content",
+            importance: "high",
+            details: { error: "INVALID_INPUT", activityId },
+          }).catch(() => {}); // Best effort
+
           res.status(400).json({
             error: "INVALID_INPUT",
             message: "content is required and must be a non-empty string",
@@ -132,6 +189,17 @@ export function createChatRoutes(stateDir: string): Router {
         // Get project to check for bootstrapPrompt
         const project = await dal.getProjectIndex(projectId);
         if (!project) {
+          // Record error Activity
+          await dal.createActivityEvent({
+            orgId,
+            type: "chat_error",
+            projectId,
+            sessionId: sessionId || "sess_" + projectId,
+            summary: "Chat failed: project not found",
+            importance: "high",
+            details: { error: "NOT_FOUND", projectId, activityId },
+          }).catch(() => {}); // Best effort
+
           res.status(404).json({
             error: "NOT_FOUND",
             message: "Project not found: " + projectId,
@@ -159,11 +227,31 @@ export function createChatRoutes(stateDir: string): Router {
         const taskRunId = "task_" + uuidv4();
 
         await dal.createRun({
-          sessionId: "sess_" + projectId,
+          sessionId: sessionId || "sess_" + projectId,
           projectId,
           taskRunId,
           prompt: finalContent, // Include bootstrapPrompt in run
         });
+
+        // Create TaskGroup via queueStore if available (connects to execution pipeline)
+        if (queueStore) {
+          try {
+            taskGroupId = "tg_chat_" + uuidv4();
+            // Detect task type from prompt content for proper execution handling
+            // READ_INFO/REPORT tasks don't require file evidence
+            const taskType = detectTaskType(finalContent);
+            await queueStore.enqueue(
+              sessionId || "sess_" + projectId,
+              taskGroupId,
+              finalContent,
+              taskRunId,
+              taskType
+            );
+          } catch (queueError) {
+            // Log but don't fail the request if TaskGroup creation fails
+            console.error("[chat] Failed to create TaskGroup:", queueError);
+          }
+        }
 
         // Create assistant placeholder message
         const assistantMessage = await dal.createConversationMessage({
@@ -184,10 +272,35 @@ export function createChatRoutes(stateDir: string): Router {
           userMessage,
           assistantMessage,
           runId,
+          taskGroupId,
+          activityId,
           bootstrapInjected: !!bootstrapPrompt,
-        } as ChatResponse & { userMessage: ConversationMessage; assistantMessage: ConversationMessage; bootstrapInjected: boolean });
+        } as ChatResponse & {
+          userMessage: ConversationMessage;
+          assistantMessage: ConversationMessage;
+          taskGroupId?: string;
+          activityId?: string;
+          bootstrapInjected: boolean;
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
+
+        // Record error Activity
+        await dal.createActivityEvent({
+          orgId,
+          type: "chat_error",
+          projectId,
+          sessionId: sessionId || "sess_" + projectId,
+          summary: "Chat internal error: " + message.substring(0, 100),
+          importance: "high",
+          details: {
+            error: "INTERNAL_ERROR",
+            message,
+            activityId,
+            stack: error instanceof Error ? error.stack : undefined,
+          },
+        }).catch(() => {}); // Best effort
+
         res.status(500).json({ error: "INTERNAL_ERROR", message } as ErrorResponse);
       }
     }

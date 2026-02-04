@@ -25,6 +25,7 @@ import {
   ConversationEntry,
   isValidStatusTransition,
   IQueueStore,
+  TaskTypeValue,
 } from './queue-store';
 
 /**
@@ -114,12 +115,18 @@ export class InMemoryQueueStore implements IQueueStore {
 
   /**
    * Enqueue a new task
+   * @param sessionId - Session identifier
+   * @param taskGroupId - Task group identifier
+   * @param prompt - Task prompt
+   * @param taskId - Optional task ID (auto-generated if not provided)
+   * @param taskType - Optional task type (READ_INFO/IMPLEMENTATION/REPORT)
    */
   async enqueue(
     sessionId: string,
     taskGroupId: string,
     prompt: string,
-    taskId?: string
+    taskId?: string,
+    taskType?: TaskTypeValue
   ): Promise<QueueItem> {
     const now = new Date().toISOString();
     const item: QueueItem = {
@@ -131,6 +138,7 @@ export class InMemoryQueueStore implements IQueueStore {
       prompt,
       created_at: now,
       updated_at: now,
+      task_type: taskType,
     };
 
     this.tasks.set(this.getTaskKey(item.task_id), item);

@@ -4931,3 +4931,379 @@ Overall: ALL PASS
 - Commit blocked with 409 GATE_NOT_PASSED when gate not passed
 - Push blocked with 409 GATE_NOT_PASSED when gate not passed
 - All quality gates pass
+
+---
+
+## 2026-02-04: Chat Submission Activity/TaskGroup Integration Fix
+
+### Problem Statement
+
+**Issue**: Web Chat submission did NOT create any Task Groups or Activity records. The Chat send was disconnected from the execution pipeline (Plan creation → Dispatch → Run generation → recording).
+
+**Symptoms**:
+- Chat messages were being stored, Runs were created
+- BUT Activity page showed nothing for chat submissions
+- Task Groups remained empty after chat sends
+- Silent failures - no error visibility
+
+### Root Cause Analysis
+
+**Investigation** (Phase 1 - READ ONLY):
+
+1. **Frontend** (`src/web/public/index.html`):
+   - `sendChatMessage()` correctly POSTs to `/api/projects/${projectId}/chat`
+   - Payload: `{ content: content }`
+
+2. **Route Registration** (`src/web/server.ts`):
+   - Chat routes mounted at `/api`: `app.use("/api", createChatRoutes(stateDir))`
+   - BUT `queueStore` was not passed to `createChatRoutes`
+
+3. **Handler Implementation** (`src/web/routes/chat.ts`):
+   - POST `/api/projects/:projectId/chat` created:
+     - ✅ ConversationMessage (user + assistant)
+     - ✅ Run via `dal.createRun()`
+   - Missing:
+     - ❌ NO `dal.createActivityEvent()` call
+     - ❌ NO `queueStore.enqueue()` for TaskGroup
+     - ❌ NO error Activity recording
+
+### Fix Implementation (Phase 2 - Minimal)
+
+**Files Modified**:
+
+1. `src/web/dal/types.ts`:
+   - Added `chat_received` and `chat_error` to `ActivityEventType`
+
+2. `src/web/routes/chat.ts`:
+   - Added `IQueueStore` import
+   - Added `ChatRoutesConfig` interface for queueStore/sessionId
+   - Modified `createChatRoutes()` to accept config object (backward compatible)
+   - POST handler now:
+     - Records `chat_received` Activity at handler start
+     - Creates TaskGroup via `queueStore.enqueue()` when available
+     - Records `chat_error` Activity on validation/not-found/internal errors
+     - Returns `activityId` and `taskGroupId` in response
+
+3. `src/web/server.ts`:
+   - Updated `createChatRoutes()` call to pass `{ stateDir, queueStore, sessionId }`
+
+### Response Format (After Fix)
+
+```json
+{
+  "userMessage": { "messageId": "...", "role": "user", ... },
+  "assistantMessage": { "messageId": "...", "role": "assistant", "runId": "run_...", ... },
+  "runId": "run_abc123",
+  "taskGroupId": "tg_chat_xyz789",
+  "activityId": "act_def456",
+  "bootstrapInjected": false
+}
+```
+
+### Regression Tests (Phase 4)
+
+Added 6 E2E tests to `test/e2e/chat-mvp.e2e.test.ts`:
+
+```typescript
+describe('Activity and TaskGroup Integration (Regression)', () => {
+  it('should return activityId in chat response');
+  it('should return taskGroupId in chat response when queueStore available');
+  it('should create activity event visible in /api/activity');
+  it('should include runId and taskGroupId for execution pipeline tracing');
+  it('should record error as activity when chat fails validation');
+  it('should record error as activity when project not found');
+});
+```
+
+**Test Results**:
+```
+E2E: Chat MVP Feature
+  Activity and TaskGroup Integration (Regression)
+    ✔ should return activityId in chat response
+    ✔ should return taskGroupId in chat response when queueStore available
+    ✔ should create activity event visible in /api/activity
+    ✔ should include runId and taskGroupId for execution pipeline tracing
+    ✔ should record error as activity when chat fails validation
+    ✔ should record error as activity when project not found
+
+6 passing (59ms)
+```
+
+### Quality Gates (Final)
+
+```bash
+$ npm run gate:all
+
+> pm-orchestrator-runner@1.0.26 gate:all
+> npm run gate:tier0 && npm run gate:web && npm run gate:agent && npm run gate:spec
+
+=== UI Invariants Diagnostic Check ===
+Overall: ALL PASS
+
+=== Task State Diagnostic Check ===
+Overall: ALL PASS
+
+=== Settings UI Diagnostic Check (Playwright) ===
+Overall: ALL PASS
+
+=== Agent Launcher Diagnostic Check (Playwright) ===
+Overall: ALL PASS (13/13 checks)
+
+=== Spec Coverage Gate Diagnostic Check ===
+Overall: ALL PASS
+```
+
+### Guarantees After Fix
+
+1. **Activity Always Recorded**: Every chat submission creates a `chat_received` Activity event
+2. **TaskGroup Always Created**: When queueStore is available, a TaskGroup is enqueued
+3. **Errors Visible**: Validation failures, not-found errors, and internal errors all create `chat_error` Activity events
+4. **Pipeline Tracing**: Response includes `runId`, `taskGroupId`, `activityId` for full traceability
+5. **Backward Compatible**: `createChatRoutes(stateDir)` still works (legacy signature)
+6. **Regression Protected**: 6 E2E tests prevent future disconnection
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/web/dal/types.ts` | Added `chat_received`, `chat_error` to ActivityEventType |
+| `src/web/routes/chat.ts` | Activity/TaskGroup integration in POST handler |
+| `src/web/server.ts` | Pass queueStore/sessionId to createChatRoutes |
+| `test/e2e/chat-mvp.e2e.test.ts` | 6 regression tests |
+| `docs/EVIDENCE.md` | This documentation |
+
+---
+
+## Fix: READ_INFO Task Completion Without File Evidence
+
+**Date**: 2026-02-04
+**Issue**: READ_INFO / summary / question type Web Chat inputs resulted in `Task ended with status: NO_EVIDENCE` even when LLM provided a valid response
+**Root Cause**: `runner-core.ts` treated all NO_EVIDENCE status as ERROR regardless of taskType
+
+### Problem Analysis
+
+The executor (`claude-code-executor.ts`) correctly identifies READ_INFO/REPORT tasks and attempts to generate evidence files. However, even when the executor has valid output, if no files are created/modified, the status becomes NO_EVIDENCE.
+
+In `runner-core.ts` (lines 903-940), NO_EVIDENCE was always converted to ERROR:
+
+```typescript
+// BEFORE: All NO_EVIDENCE became ERROR
+if (executorResult.status === 'NO_EVIDENCE') {
+  this.markNoEvidence(`Task ${task.id} completed but no verified files exist on disk`);
+  result.status = TaskStatus.ERROR;  // Always ERROR - regardless of taskType!
+}
+```
+
+### Solution
+
+Modified `runner-core.ts` to check `task.taskType` before marking as ERROR:
+
+```typescript
+// AFTER: READ_INFO/REPORT with output completes successfully
+if (executorResult.status === 'NO_EVIDENCE') {
+  // READ_INFO and REPORT tasks don't require file evidence
+  // They succeed if there's output from the executor
+  if ((task.taskType === 'READ_INFO' || task.taskType === 'REPORT') && executorResult.output) {
+    result.status = TaskStatus.COMPLETED;  // Success with output
+    // Save executor output for visibility
+    this.lastExecutorOutput = executorResult.output;
+    return;  // Exit - completed successfully
+  }
+  
+  // For IMPLEMENTATION tasks: Fail-closed (original behavior)
+  this.markNoEvidence(...);
+  result.status = TaskStatus.ERROR;
+}
+```
+
+### Test Results
+
+```bash
+$ npm test -- --grep "READ_INFO"
+
+  Runner Core (04_COMPONENTS.md L196-240)
+    READ_INFO Task Type Handling
+      ✔ should complete READ_INFO task with output even when no file evidence
+      ✔ should return ERROR for IMPLEMENTATION task with no evidence
+      ✔ should complete REPORT task with output even when no file evidence
+
+  READ_INFO Task Completion
+    Evidence Generation for READ_INFO Tasks
+      ✔ should generate evidence file for READ_INFO task with no file changes
+      ✔ should NOT generate evidence file for IMPLEMENTATION task with no file changes
+      ✔ should handle REPORT task type same as READ_INFO
+    Evidence File Structure
+      ✔ should create proper markdown evidence file
+
+7 passing
+```
+
+### Task Type Behavior Summary
+
+| TaskType | File Evidence | Output | Status |
+|----------|--------------|--------|--------|
+| READ_INFO | No | Yes | COMPLETE |
+| READ_INFO | No | No | ERROR |
+| REPORT | No | Yes | COMPLETE |
+| REPORT | No | No | ERROR |
+| IMPLEMENTATION | No | Yes/No | ERROR/NO_EVIDENCE |
+| IMPLEMENTATION | Yes | Yes | COMPLETE |
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/core/runner-core.ts` | TaskType-aware NO_EVIDENCE handling |
+| `test/unit/core/runner-core.test.ts` | 3 tests for READ_INFO/REPORT/IMPLEMENTATION |
+| `docs/EVIDENCE.md` | This documentation |
+
+### Verification
+
+```bash
+$ npm run gate:all
+# ALL PASS
+```
+
+---
+
+## AC-WEB-CHAT-READ-INFO: Web Chat READ_INFO/REPORT Task Type Propagation Fix
+
+**Date:** 2026-02-04
+
+### Problem
+
+Web UI Chat submissions for READ_INFO/REPORT tasks were failing with NO_EVIDENCE error instead of completing with LLM response as evidence.
+
+### Root Cause
+
+The task type was not being propagated through the Web Chat → Queue → Runner flow:
+
+1. `chat.ts` called `queueStore.enqueue()` without `taskType`
+2. `QueueItem` interface lacked `task_type` field
+3. `createTaskExecutor` in `cli/index.ts` didn't pass `item.task_type` to executor
+4. ClaudeCodeExecutor's READ_INFO/REPORT handling at line 855 never triggered because `task.taskType` was undefined
+
+### Fix
+
+1. **Created shared task-type-detector utility**
+   - `src/utils/task-type-detector.ts`: Shared TaskType detection for REPL and Web
+   - Pattern matching for READ_INFO (questions), REPORT (summaries), IMPLEMENTATION (file changes)
+
+2. **Added task_type to QueueItem interface**
+   - `src/queue/queue-store.ts`: Added `TaskTypeValue` type and `task_type` field to `QueueItem`
+   - Updated `IQueueStore.enqueue()` signature
+
+3. **Updated InMemoryQueueStore**
+   - `src/queue/in-memory-queue-store.ts`: Store `task_type` in enqueued items
+
+4. **Updated chat.ts to detect and pass taskType**
+   - `src/web/routes/chat.ts`: Import `detectTaskType`, pass to `queueStore.enqueue()`
+
+5. **Updated createTaskExecutor to propagate taskType**
+   - `src/cli/index.ts`: Pass `item.task_type` to `executor.execute()`
+
+### Evidence
+
+#### 1. Build Success
+```bash
+$ npm run build
+> pm-orchestrator-runner@1.0.26 build
+> tsc
+(no errors)
+```
+
+#### 2. Unit Test: task-type-detector
+```bash
+$ npm test -- --grep "task-type-detector"
+  task-type-detector
+    detectTaskType
+      READ_INFO detection
+        ✔ should detect questions starting with "what"
+        ✔ should detect questions starting with "how"
+        ✔ should detect questions ending with question mark
+        ✔ should detect explain requests
+        ✔ should detect analyze requests
+        ✔ should detect show requests
+        ✔ should detect status requests
+        ✔ should detect Japanese read patterns
+      REPORT detection
+        ✔ should detect report keyword
+        ✔ should detect summary keyword
+        ✔ should detect summarize keyword
+        ✔ should detect overview keyword
+        ✔ should detect stats/statistics keyword
+      IMPLEMENTATION detection
+        ✔ should detect create requests
+        ✔ should detect add requests
+        ✔ should detect fix requests
+        ✔ should detect modify requests
+        ✔ should detect refactor requests
+        ✔ should detect file extension patterns
+        ✔ should detect Japanese implementation patterns
+      ambiguous cases
+        ✔ should prioritize REPORT over READ_INFO
+        ✔ should default to IMPLEMENTATION for ambiguous cases
+
+  22 passing
+```
+
+#### 3. gate:all
+```bash
+$ npm run gate:all
+> gate:tier0 - UI/Task state checks: ALL PASS
+> gate:web - Settings UI E2E: ALL PASS
+> gate:agent - Agent launcher E2E: ALL PASS
+> gate:spec - Spec coverage: ALL PASS
+```
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/utils/task-type-detector.ts` | NEW - Shared TaskType detection utility |
+| `src/queue/queue-store.ts` | Added `TaskTypeValue`, `task_type` to `QueueItem` |
+| `src/queue/in-memory-queue-store.ts` | Store `task_type` in enqueue() |
+| `src/queue/index.ts` | Export `TaskTypeValue` |
+| `src/web/routes/chat.ts` | Detect and pass taskType to enqueue() |
+| `src/cli/index.ts` | Pass `item.task_type` to executor.execute() |
+| `test/unit/utils/task-type-detector.test.ts` | NEW - Unit tests for TaskType detection |
+| `docs/EVIDENCE.md` | This documentation |
+
+### Task Type Flow (After Fix)
+
+```
+[Web UI Chat]
+     │
+     v
+chat.ts: detectTaskType(content) → taskType
+     │
+     v
+queueStore.enqueue(..., taskType)
+     │
+     v
+QueueItem { task_type: 'READ_INFO' | 'REPORT' | 'IMPLEMENTATION' }
+     │
+     v
+queue-poller: executor(item)
+     │
+     v
+createTaskExecutor: executor.execute({ taskType: item.task_type })
+     │
+     v
+AutoResolvingExecutor → ClaudeCodeExecutor
+     │
+     v
+ClaudeCodeExecutor line 855: if (task.taskType === 'READ_INFO' || ...)
+     │
+     v
+READ_INFO/REPORT: Generate evidence file → COMPLETE
+IMPLEMENTATION: Check file evidence → COMPLETE/NO_EVIDENCE
+```
+
+### Verification
+
+READ_INFO/REPORT tasks via Web Chat will now:
+1. Have taskType properly detected
+2. Pass through queue with task_type
+3. Reach runner-core with taskType
+4. Be handled correctly (LLM output → evidence file → COMPLETE)
