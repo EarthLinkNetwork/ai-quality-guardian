@@ -20,6 +20,8 @@ import { WebServer } from '../web/server';
 import { QueueStore, QueuePoller, QueueItem, TaskExecutor, IQueueStore } from '../queue';
 import { InMemoryQueueStore } from '../queue/in-memory-queue-store';
 import { AutoResolvingExecutor } from '../executor/auto-resolve-executor';
+import { getTestExecutorMode, TestIncompleteExecutor } from '../executor/test-incomplete-executor';
+import { DeterministicExecutor } from '../executor/deterministic-executor';
 import {
   validateNamespace,
   buildNamespaceConfig,
@@ -368,6 +370,55 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
     console.log(`[Runner] Prompt: ${item.prompt.substring(0, 100)}${item.prompt.length > 100 ? '...' : ''}`);
 
     try {
+      // Check for test executor mode (for E2E testing of INCOMPLETE handling)
+      const testMode = getTestExecutorMode();
+      if (testMode !== 'passthrough') {
+        console.log(`[Runner] Test executor mode: ${testMode}`);
+
+        // Create a test executor that returns controlled status
+        const stubExecutor = new DeterministicExecutor();
+        const testExecutor = new TestIncompleteExecutor(stubExecutor, testMode);
+
+        const result = await testExecutor.execute({
+          id: item.task_id,
+          prompt: item.prompt,
+          workingDir: projectPath,
+          taskType: item.task_type || 'READ_INFO', // Default to READ_INFO for chat messages
+        });
+
+        console.log(`[Runner] Test executor returned status: ${result.status}`);
+
+        // Handle test executor results
+        // For READ_INFO/REPORT tasks with INCOMPLETE + output, treat as COMPLETE
+        const taskType = item.task_type || 'READ_INFO';
+        const isReadInfoOrReport = taskType === 'READ_INFO' || taskType === 'REPORT';
+
+        if (result.status === 'COMPLETE') {
+          return { status: 'COMPLETE' };
+        } else if (result.status === 'INCOMPLETE') {
+          if (isReadInfoOrReport && result.output && result.output.trim().length > 0) {
+            // INCOMPLETE with output for READ_INFO/REPORT -> COMPLETE
+            console.log(`[Runner] READ_INFO/REPORT INCOMPLETE with output -> COMPLETE`);
+            return { status: 'COMPLETE' };
+          } else if (isReadInfoOrReport) {
+            // INCOMPLETE without output for READ_INFO/REPORT -> AWAITING_RESPONSE
+            // Signal this as a special status that the queue should handle
+            console.log(`[Runner] READ_INFO/REPORT INCOMPLETE without output -> needs clarification`);
+            return {
+              status: 'ERROR',
+              errorMessage: 'AWAITING_CLARIFICATION:' + generateClarificationMessage(item.prompt)
+            };
+          } else {
+            // IMPLEMENTATION INCOMPLETE -> ERROR
+            return { status: 'ERROR', errorMessage: 'Task incomplete: no evidence of completion' };
+          }
+        } else if (result.status === 'ERROR') {
+          return { status: 'ERROR', errorMessage: result.error || 'Task failed' };
+        } else {
+          return { status: 'ERROR', errorMessage: `Task ended with status: ${result.status}` };
+        }
+      }
+
       // Use AutoResolvingExecutor to automatically resolve clarification requests
       // When Claude Code asks "where should I save the file?", LLM decides automatically
       const executor = new AutoResolvingExecutor({
@@ -401,6 +452,24 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
       return { status: 'ERROR', errorMessage };
     }
   };
+}
+
+/**
+ * Generate clarification message for INCOMPLETE READ_INFO tasks
+ */
+function generateClarificationMessage(prompt: string): string {
+  const isSummaryRequest = /(?:要約|まとめ|サマリ|summary|summarize|overview)/i.test(prompt);
+  const isStatusRequest = /(?:状態|状況|ステータス|status|state|current)/i.test(prompt);
+  const isAnalysisRequest = /(?:分析|解析|analyze|analysis|check|調べ|確認)/i.test(prompt);
+
+  if (isSummaryRequest) {
+    return '要約する対象を具体的に教えてください。例: 「このプロジェクトのREADMEを要約してください」';
+  } else if (isStatusRequest) {
+    return '確認したい状態の対象を教えてください。例: 「gitの状態を確認してください」「テストの状態を確認してください」';
+  } else if (isAnalysisRequest) {
+    return '分析対象を具体的に指定してください。例: 「src/index.tsのコードを分析してください」';
+  }
+  return 'リクエストをより具体的にしてください。何を確認または分析すべきか教えてください。';
 }
 
 /**

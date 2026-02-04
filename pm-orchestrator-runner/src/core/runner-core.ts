@@ -44,6 +44,7 @@ import { ClaudeCodeExecutor, ExecutorResult, IExecutor, ExecutorConfig } from '.
 import { DeterministicExecutor, isDeterministicMode } from '../executor/deterministic-executor';
 import { RecoveryExecutor, isRecoveryMode, assertRecoveryModeAllowed } from '../executor/recovery-executor';
 import { AutoResolvingExecutor, UserResponseHandler } from '../executor/auto-resolve-executor';
+import { wrapWithTestExecutor, getTestExecutorMode } from '../executor/test-incomplete-executor';
 import { ClarificationReason } from '../mediation/llm-mediation-layer';
 import { PromptAssembler, TaskGroupPreludeInput } from '../prompt/prompt-assembler';
 import { TaskGroupContext } from '../models/task-group';
@@ -158,7 +159,8 @@ interface ExecutionConfig {
  * Executor mode for visibility
  * Per redesign: Users need to see which executor is being used
  */
-type ExecutorMode = 'claude-code' | 'api' | 'stub' | 'recovery-stub' | 'deterministic' | 'none';
+type ExecutorMode = 'claude-code' | 'api' | 'stub' | 'recovery-stub' | 'deterministic' | 'none'
+  | 'test-incomplete' | 'test-incomplete_with_output' | 'test-no_evidence' | 'test-complete' | 'test-error';
 
 interface ExecutionResult {
   session_id: string;
@@ -478,6 +480,14 @@ export class RunnerCore extends EventEmitter {
           verbose: getVerboseExecutor(),
         });
         this.currentExecutorMode = 'claude-code';
+      }
+
+      // Wrap with test executor if PM_TEST_EXECUTOR_MODE is set
+      // This allows regression testing of INCOMPLETE status handling
+      const testMode = getTestExecutorMode();
+      if (testMode !== 'passthrough' && this.claudeCodeExecutor) {
+        this.claudeCodeExecutor = wrapWithTestExecutor(this.claudeCodeExecutor);
+        this.currentExecutorMode = `test-${testMode}`;
       }
     }
 
@@ -985,6 +995,131 @@ export class RunnerCore extends EventEmitter {
             return; // Exit early without throwing
           }
 
+          // Handle INCOMPLETE status - critical for READ_INFO/REPORT tasks
+          // INCOMPLETE means executor ran but didn't produce file evidence
+          // For READ_INFO/REPORT: output alone is sufficient, or generate clarification if no output
+          if (executorResult.status === 'INCOMPLETE') {
+            if (task.taskType === 'READ_INFO' || task.taskType === 'REPORT') {
+              if (executorResult.output && executorResult.output.trim().length > 0) {
+                // READ_INFO/REPORT with output → COMPLETED (output is the deliverable)
+                executionLog.push(`[${new Date().toISOString()}] READ_INFO/REPORT INCOMPLETE with output → treating as COMPLETED`);
+
+                result.status = TaskStatus.COMPLETED;
+                result.completed_at = new Date().toISOString();
+                result.evidence = {
+                  task_id: task.id,
+                  completed: true,
+                  started_at: startedAt,
+                  completed_at: result.completed_at,
+                  response_output: executorResult.output,
+                  task_type: task.taskType,
+                  execution_log: executionLog,
+                };
+
+                if (taskLog && this.taskLogManager && this.session) {
+                  await this.taskLogManager.completeTaskWithSession(
+                    taskLog.task_id,
+                    this.session.session_id,
+                    'COMPLETE',
+                    filesCreated,
+                    undefined,
+                    undefined,
+                    executorBlockingInfo.executor_blocked !== undefined ? {
+                      executorBlocked: executorBlockingInfo.executor_blocked,
+                      blockedReason: executorBlockingInfo.blocked_reason,
+                      timeoutMs: executorBlockingInfo.timeout_ms,
+                      terminatedBy: executorBlockingInfo.terminated_by,
+                    } : undefined
+                  );
+                }
+                this.taskResults.push(result);
+                this.emit('task_completed', { task_id: task.id, status: result.status });
+                this.lastExecutorOutput = executorResult.output;
+                this.lastFilesModified = executorResult.files_modified || [];
+                this.lastExecutionDurationMs = executorResult.duration_ms || 0;
+                return;
+              } else {
+                // READ_INFO/REPORT INCOMPLETE without output → AWAITING_RESPONSE with clarification
+                executionLog.push(`[${new Date().toISOString()}] READ_INFO/REPORT INCOMPLETE without output → AWAITING_RESPONSE`);
+
+                // Generate clarification message based on task type
+                const clarificationMessage = this.generateClarificationForIncomplete(task);
+
+                result.status = TaskStatus.INCOMPLETE;
+                result.clarification_needed = true;
+                result.clarification_reason = 'SCOPE_UNCLEAR' as ClarificationReason;
+                result.original_prompt = task.naturalLanguageTask;
+
+                // Store clarification message in evidence for API access
+                result.evidence = {
+                  task_id: task.id,
+                  completed: false,
+                  started_at: startedAt,
+                  clarification_message: clarificationMessage,
+                  task_type: task.taskType,
+                  execution_log: executionLog,
+                };
+
+                if (taskLog && this.taskLogManager && this.session) {
+                  await this.taskLogManager.completeTaskWithSession(
+                    taskLog.task_id,
+                    this.session.session_id,
+                    'INCOMPLETE',
+                    filesCreated,
+                    undefined,
+                    `clarification_required:SCOPE_UNCLEAR`,
+                    executorBlockingInfo.executor_blocked !== undefined ? {
+                      executorBlocked: executorBlockingInfo.executor_blocked,
+                      blockedReason: executorBlockingInfo.blocked_reason,
+                      timeoutMs: executorBlockingInfo.timeout_ms,
+                      terminatedBy: executorBlockingInfo.terminated_by,
+                    } : undefined
+                  );
+                }
+                this.taskResults.push(result);
+                this.emit('task_incomplete', {
+                  task_id: task.id,
+                  status: result.status,
+                  clarification_message: clarificationMessage,
+                  clarification_needed: true,
+                });
+                return;
+              }
+            }
+            // For IMPLEMENTATION tasks: INCOMPLETE is still an error (evidence required)
+            executionLog.push(`[${new Date().toISOString()}] IMPLEMENTATION INCOMPLETE → ERROR (evidence required)`);
+            result.status = TaskStatus.ERROR;
+            result.completed_at = new Date().toISOString();
+            result.error = new Error(`Task ${task.id} INCOMPLETE: no evidence produced`);
+            result.evidence = {
+              task_id: task.id,
+              completed: false,
+              started_at: startedAt,
+              completed_at: result.completed_at,
+              error_message: 'INCOMPLETE status: no evidence of work',
+              execution_log: executionLog,
+            };
+            if (taskLog && this.taskLogManager && this.session) {
+              await this.taskLogManager.completeTaskWithSession(
+                taskLog.task_id,
+                this.session.session_id,
+                'ERROR',
+                filesCreated,
+                undefined,
+                'INCOMPLETE status: no evidence of work',
+                executorBlockingInfo.executor_blocked !== undefined ? {
+                  executorBlocked: executorBlockingInfo.executor_blocked,
+                  blockedReason: executorBlockingInfo.blocked_reason,
+                  timeoutMs: executorBlockingInfo.timeout_ms,
+                  terminatedBy: executorBlockingInfo.terminated_by,
+                } : undefined
+              );
+            }
+            this.taskResults.push(result);
+            this.emit('task_completed', { task_id: task.id, status: result.status });
+            return;
+          }
+
           // COMPLETE status means verified_files has at least one file with exists=true
           // files_modified is informational only and does NOT participate in completion judgment
 
@@ -1282,6 +1417,37 @@ export class RunnerCore extends EventEmitter {
     }
 
     return false;
+  }
+
+  /**
+   * Generate clarification message for READ_INFO/REPORT tasks that returned INCOMPLETE without output.
+   * This ensures the task transitions to AWAITING_RESPONSE instead of ERROR.
+   *
+   * @param task - The task that returned INCOMPLETE
+   * @returns A clarification message to show to the user
+   */
+  private generateClarificationForIncomplete(task: Task): string {
+    const prompt = task.naturalLanguageTask || task.description || '';
+
+    // Detect common patterns to provide contextual clarification
+    const isSummaryRequest = /(?:要約|まとめ|サマリ|summary|summarize|overview)/i.test(prompt);
+    const isStatusRequest = /(?:状態|状況|ステータス|status|state|current)/i.test(prompt);
+    const isAnalysisRequest = /(?:分析|解析|analyze|analysis|check|調べ|確認)/i.test(prompt);
+
+    if (isSummaryRequest) {
+      return '要約対象の範囲を指定してください。例: プロジェクト全体 / 最新の変更 / 特定のファイル / 最近のログ';
+    }
+
+    if (isStatusRequest) {
+      return '状態確認の対象を指定してください。例: プロジェクト構成 / ビルド状態 / テスト結果 / Git履歴';
+    }
+
+    if (isAnalysisRequest) {
+      return '分析対象を指定してください。例: コード品質 / パフォーマンス / 依存関係 / セキュリティ';
+    }
+
+    // Generic clarification
+    return '対象範囲が不明確です。具体的に何について知りたいか指定してください。例: Dashboard / Settings / Chat / 最新Run / プロジェクト構造';
   }
 
   /**

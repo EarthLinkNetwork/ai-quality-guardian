@@ -5399,3 +5399,115 @@ This E2E test ensures the Chat → TaskType → Queue → API → Runner flow wo
 3. API returns task_type in /api/task-groups/:id/tasks response
 4. Runner uses task_type to determine evidence requirements
 
+
+---
+
+## E2E-READ-INFO-INCOMPLETE: READ_INFO INCOMPLETE → AWAITING_RESPONSE E2E Test
+
+**Date**: 2026-02-05
+
+### Bug Overview
+
+Critical regression where READ_INFO tasks returning INCOMPLETE status incorrectly fail with ERROR:
+
+**Problem:**
+- User sends: "現在の状態を要約してください。"
+- Executor returns: INCOMPLETE (no output)
+- WRONG: Task ends with status ERROR
+- RIGHT: Task transitions to AWAITING_RESPONSE with clarification message
+
+### Root Cause Analysis
+
+1. **task-type-detector.ts** - Japanese patterns like "要約" weren't recognized as REPORT type
+2. **cli/index.ts** - Test executor wasn't integrated with web server's task executor
+3. **queue-poller.ts** - No handling for AWAITING_CLARIFICATION prefix protocol
+
+### Implementation Changes
+
+1. **src/utils/task-type-detector.ts**
+   - Added Japanese patterns for REPORT detection: `/(要約|まとめ|サマリ|レポート|概要)/i`
+
+2. **src/cli/index.ts**
+   - Added TestIncompleteExecutor integration via PM_TEST_EXECUTOR_MODE
+   - INCOMPLETE + output → COMPLETE (output is the deliverable)
+   - INCOMPLETE without output → ERROR with AWAITING_CLARIFICATION: prefix
+   - Added generateClarificationMessage() for contextual Japanese/English messages
+
+3. **src/queue/queue-poller.ts**
+   - Added AWAITING_CLARIFICATION prefix detection
+   - Calls setAwaitingResponse() to transition task to AWAITING_RESPONSE status
+
+4. **diagnostics/read-info-incomplete.check.ts** (NEW)
+   - E2E test for READ_INFO INCOMPLETE handling
+   - T1: Server starts with PM_TEST_EXECUTOR_MODE=incomplete
+   - T2: Chat request succeeds
+   - T3-A: Task status is NOT ERROR
+   - T3-B: Task status is AWAITING_RESPONSE
+   - T3-C: Task type is READ_INFO or REPORT
+   - BONUS: INCOMPLETE with output → NOT ERROR
+
+5. **package.json**
+   - Added `"gate:incomplete": "ts-node diagnostics/read-info-incomplete.check.ts"`
+   - Updated `"gate:all"` to include gate:incomplete
+
+### Evidence: gate:incomplete Output
+
+```
+=== READ_INFO INCOMPLETE → AWAITING_RESPONSE E2E Check ===
+
+[PASS] T1-A: Server started with test executor mode
+[PASS] T2-A: Chat request succeeds (HTTP level)
+[PASS] T3-A: Task status is NOT ERROR
+[PASS] T3-B: Task status is AWAITING_RESPONSE (clarification needed)
+[PASS] T3-C: Task type is READ_INFO or REPORT
+[PASS] BONUS: INCOMPLETE with output → NOT ERROR
+
+Overall: ALL PASS
+```
+
+### Evidence: gate:all Output
+
+```
+> npm run gate:tier0 && npm run gate:web && npm run gate:agent && npm run gate:spec && npm run gate:incomplete
+
+gate:ui         → ALL PASS (6 checks)
+gate:task       → ALL PASS (7 checks)
+gate:web        → ALL PASS (26 checks)
+gate:agent      → ALL PASS (13 checks)
+gate:spec       → ALL PASS (5 checks)
+gate:incomplete → ALL PASS (6 checks)
+```
+
+### Evidence: Task Status Verification
+
+From E2E test log:
+```json
+// Before fix: Task incorrectly ended as ERROR
+{"task_id":"xxx","status":"ERROR","error":"Task incomplete: no evidence of completion"}
+
+// After fix: Task transitions to AWAITING_RESPONSE
+{"task_id":"xxx","status":"AWAITING_RESPONSE","clarification_needed":true}
+```
+
+### Evidence: Task Type Detection (Japanese)
+
+```json
+// "要約してください" now correctly detected as REPORT (not IMPLEMENTATION)
+{"prompt":"現在の状態を要約してください。","task_type":"REPORT"}
+```
+
+### INCOMPLETE Handling Matrix
+
+| TaskType | INCOMPLETE + Output | INCOMPLETE - Output |
+|----------|-------------------|---------------------|
+| READ_INFO | COMPLETE | AWAITING_RESPONSE |
+| REPORT | COMPLETE | AWAITING_RESPONSE |
+| IMPLEMENTATION | ERROR | ERROR |
+
+### Verification
+
+This E2E test ensures the READ_INFO/REPORT INCOMPLETE flow works correctly:
+1. Japanese prompts (要約, まとめ, etc.) are detected as REPORT type
+2. INCOMPLETE without output triggers AWAITING_RESPONSE (not ERROR)
+3. INCOMPLETE with output completes successfully (output IS the deliverable)
+4. IMPLEMENTATION tasks still fail on INCOMPLETE (evidence required)

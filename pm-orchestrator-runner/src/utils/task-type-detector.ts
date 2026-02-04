@@ -23,6 +23,7 @@ export function detectTaskType(input: string): TaskType {
   const reportPatterns = [
     /\b(report|summary|summarize|overview|breakdown|stats|statistics)\b/i,
     /\b(generate|create|make|produce)\s+(a\s+)?(report|summary)/i,
+    /(要約|まとめ|サマリ|レポート|概要)/i,  // Japanese patterns for reports
   ];
 
   // Check for REPORT patterns first
