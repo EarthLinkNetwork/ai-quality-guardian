@@ -147,17 +147,19 @@ export function createDashboardRoutes(stateDir: string): Router {
 
   /**
    * PATCH /api/projects/:projectId
-   * Update project (favorite, tags, alias)
+   * Update project (favorite, tags, alias, bootstrapPrompt, projectType)
    */
   router.patch('/projects/:projectId', async (req: Request, res: Response) => {
     try {
       const dal = getNoDynamo();
-      const { favorite, alias, tags } = req.body;
+      const { favorite, alias, tags, bootstrapPrompt, projectType } = req.body;
 
       const project = await dal.updateProjectIndex(req.params.projectId as string, {
         favorite,
         alias,
         tags,
+        bootstrapPrompt,
+        projectType,
       });
 
       if (!project) {

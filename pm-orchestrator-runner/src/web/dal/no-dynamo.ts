@@ -38,6 +38,16 @@ import {
   TaskState,
   LogLevel,
   TaskEventType,
+  ConversationMessage,
+  CreateConversationMessageInput,
+  UpdateConversationMessageInput,
+  ConversationMessageStatus,
+  ProjectType,
+  Plan,
+  PlanStatus,
+  PlanTask,
+  CreatePlanInput,
+  UpdatePlanInput,
 } from "./types";
 
 /**
@@ -170,6 +180,7 @@ export class NoDynamoDAL {
   private readonly runsDir: string;
   private readonly eventsDir: string;
   private readonly packetsDir: string;
+  private readonly plansDir: string;
   private readonly orgId: string;
 
   constructor(config: NoDynamoConfig) {
@@ -180,6 +191,7 @@ export class NoDynamoDAL {
     this.runsDir = path.join(this.stateDir, "runs");
     this.eventsDir = path.join(this.stateDir, "events");
     this.packetsDir = path.join(this.stateDir, "inspection-packets");
+    this.plansDir = path.join(this.stateDir, "plans");
 
     this.ensureDirectories();
   }
@@ -194,6 +206,7 @@ export class NoDynamoDAL {
       this.runsDir,
       this.eventsDir,
       this.packetsDir,
+      this.plansDir,
     ];
     for (const dir of dirs) {
       if (!fs.existsSync(dir)) {
@@ -956,6 +969,115 @@ export class NoDynamoDAL {
     return lines.join("\n");
   }
 
+  // ==================== Plans ====================
+
+  /**
+   * Create a new plan
+   */
+  async createPlan(input: CreatePlanInput): Promise<Plan> {
+    const planId = "plan_" + uuidv4();
+    const now = nowISO();
+
+    const tasks: PlanTask[] = input.tasks.map((t, index) => ({
+      taskId: "task_" + uuidv4(),
+      description: t.description,
+      priority: t.priority ?? index,
+      dependencies: t.dependencies ?? [],
+      status: "CREATED" as TaskState,
+    }));
+
+    const plan: Plan = {
+      PK: "ORG#" + input.orgId,
+      SK: "PLAN#" + planId,
+      planId,
+      projectId: input.projectId,
+      orgId: input.orgId,
+      runId: input.runId,
+      packetId: input.packetId,
+      status: "DRAFT",
+      tasks,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const filePath = path.join(this.plansDir, planId + ".json");
+    await fs.promises.writeFile(filePath, JSON.stringify(plan, null, 2));
+
+    return plan;
+  }
+
+  /**
+   * Get plan by ID
+   */
+  async getPlan(planId: string): Promise<Plan | null> {
+    const filePath = path.join(this.plansDir, planId + ".json");
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    return JSON.parse(content) as Plan;
+  }
+
+  /**
+   * Update plan
+   */
+  async updatePlan(
+    planId: string,
+    updates: UpdatePlanInput
+  ): Promise<Plan | null> {
+    const plan = await this.getPlan(planId);
+    if (!plan) {
+      return null;
+    }
+
+    const updated: Plan = {
+      ...plan,
+      ...updates,
+      updatedAt: nowISO(),
+    };
+
+    const filePath = path.join(this.plansDir, planId + ".json");
+    await fs.promises.writeFile(filePath, JSON.stringify(updated, null, 2));
+
+    return updated;
+  }
+
+  /**
+   * List plans, optionally filtered by project
+   */
+  async listPlans(projectId?: string): Promise<Plan[]> {
+    if (!fs.existsSync(this.plansDir)) {
+      return [];
+    }
+
+    const files = fs.readdirSync(this.plansDir).filter((f) => f.endsWith(".json"));
+    const plans: Plan[] = [];
+
+    for (const file of files) {
+      const content = await fs.promises.readFile(
+        path.join(this.plansDir, file),
+        "utf-8"
+      );
+      const plan = JSON.parse(content) as Plan;
+      if (!projectId || plan.projectId === projectId) {
+        plans.push(plan);
+      }
+    }
+
+    // Sort by createdAt descending
+    plans.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    return plans;
+  }
+
+  /**
+   * Get the latest plan for a project
+   */
+  async getLatestPlanForProject(projectId: string): Promise<Plan | null> {
+    const plans = await this.listPlans(projectId);
+    return plans.length > 0 ? plans[0] : null;
+  }
+
   // ==================== Utility ====================
 
   /**
@@ -968,6 +1090,7 @@ export class NoDynamoDAL {
       this.runsDir,
       this.eventsDir,
       this.packetsDir,
+      this.plansDir,
     ];
 
     for (const dir of dirs) {
@@ -989,6 +1112,7 @@ export class NoDynamoDAL {
     runs: number;
     events: number;
     packets: number;
+    plans: number;
   }> {
     const projectCount = fs.existsSync(this.projectsDir)
       ? fs.readdirSync(this.projectsDir).filter((f) => f.endsWith(".json")).length
@@ -1013,12 +1137,17 @@ export class NoDynamoDAL {
       ? fs.readdirSync(this.packetsDir).filter((f) => f.endsWith(".json")).length
       : 0;
 
+    const planCount = fs.existsSync(this.plansDir)
+      ? fs.readdirSync(this.plansDir).filter((f) => f.endsWith(".json")).length
+      : 0;
+
     return {
       projects: projectCount,
       sessions: sessionCount,
       runs: runCount,
       events: eventCount,
       packets: packetCount,
+      plans: planCount,
     };
   }
 }
@@ -1060,4 +1189,224 @@ export function isNoDynamoInitialized(): boolean {
  */
 export function resetNoDynamo(): void {
   globalNoDynamo = null;
+}
+
+// ==================== Conversation Messages ====================
+// Added as extension to NoDynamoDAL for MVP Chat Feature
+
+/**
+ * Extended NoDynamo DAL with conversation support
+ */
+export class NoDynamoDALWithConversations extends NoDynamoDAL {
+  private readonly conversationsDir: string;
+
+  constructor(config: NoDynamoConfig) {
+    super(config);
+    this.conversationsDir = path.join(config.stateDir, "conversations");
+    if (!fs.existsSync(this.conversationsDir)) {
+      fs.mkdirSync(this.conversationsDir, { recursive: true });
+    }
+  }
+
+  /**
+   * Create a new conversation message
+   */
+  async createConversationMessage(
+    input: CreateConversationMessageInput
+  ): Promise<ConversationMessage> {
+    const messageId = "msg_" + uuidv4();
+    const now = nowISO();
+
+    const message: ConversationMessage = {
+      messageId,
+      projectId: input.projectId,
+      runId: input.runId,
+      role: input.role,
+      content: input.content,
+      status: input.status || "pending",
+      timestamp: now,
+      metadata: input.metadata,
+    };
+
+    // Append to project conversation file (JSONL format)
+    const filePath = path.join(
+      this.conversationsDir,
+      input.projectId + ".jsonl"
+    );
+    await fs.promises.appendFile(filePath, JSON.stringify(message) + "\n");
+
+    return message;
+  }
+
+  /**
+   * List conversation messages for a project
+   */
+  async listConversationMessages(
+    projectId: string,
+    limit?: number
+  ): Promise<ConversationMessage[]> {
+    const filePath = path.join(this.conversationsDir, projectId + ".jsonl");
+
+    if (!fs.existsSync(filePath)) {
+      return [];
+    }
+
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    const lines = content.trim().split("\n").filter((l) => l.length > 0);
+
+    let messages: ConversationMessage[] = [];
+    for (const line of lines) {
+      try {
+        messages.push(JSON.parse(line) as ConversationMessage);
+      } catch {
+        // Skip malformed lines
+      }
+    }
+
+    // Sort by timestamp ascending (oldest first)
+    messages.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+    // Apply limit if specified
+    if (limit && limit > 0) {
+      messages = messages.slice(-limit);
+    }
+
+    return messages;
+  }
+
+  /**
+   * Get conversation message by ID
+   */
+  async getConversationMessage(
+    projectId: string,
+    messageId: string
+  ): Promise<ConversationMessage | null> {
+    const messages = await this.listConversationMessages(projectId);
+    return messages.find((m) => m.messageId === messageId) || null;
+  }
+
+  /**
+   * Update conversation message
+   * Note: This rewrites the entire file (not efficient for large files)
+   */
+  async updateConversationMessage(
+    projectId: string,
+    messageId: string,
+    updates: UpdateConversationMessageInput
+  ): Promise<ConversationMessage | null> {
+    const filePath = path.join(this.conversationsDir, projectId + ".jsonl");
+
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    const lines = content.trim().split("\n").filter((l) => l.length > 0);
+
+    let found = false;
+    let updatedMessage: ConversationMessage | null = null;
+
+    const newLines: string[] = [];
+    for (const line of lines) {
+      try {
+        const msg = JSON.parse(line) as ConversationMessage;
+        if (msg.messageId === messageId) {
+          found = true;
+          updatedMessage = {
+            ...msg,
+            ...updates,
+            metadata: updates.metadata
+              ? { ...msg.metadata, ...updates.metadata }
+              : msg.metadata,
+          };
+          newLines.push(JSON.stringify(updatedMessage));
+        } else {
+          newLines.push(line);
+        }
+      } catch {
+        newLines.push(line);
+      }
+    }
+
+    if (!found) {
+      return null;
+    }
+
+    await fs.promises.writeFile(filePath, newLines.join("\n") + "\n");
+    return updatedMessage;
+  }
+
+  /**
+   * Get latest AWAITING_RESPONSE message for a project
+   */
+  async getAwaitingResponseMessage(
+    projectId: string
+  ): Promise<ConversationMessage | null> {
+    const messages = await this.listConversationMessages(projectId);
+    // Find the latest awaiting_response message
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].status === "awaiting_response") {
+        return messages[i];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Clear conversation history for a project
+   */
+  async clearConversationHistory(projectId: string): Promise<void> {
+    const filePath = path.join(this.conversationsDir, projectId + ".jsonl");
+    if (fs.existsSync(filePath)) {
+      await fs.promises.unlink(filePath);
+    }
+  }
+}
+
+
+/**
+ * Global extended NoDynamo DAL instance
+ */
+let globalNoDynamoExtended: NoDynamoDALWithConversations | null = null;
+
+/**
+ * Initialize global extended NoDynamo DAL
+ */
+export function initNoDynamoExtended(
+  stateDir: string,
+  orgId?: string
+): NoDynamoDALWithConversations {
+  if (!globalNoDynamoExtended) {
+    globalNoDynamoExtended = new NoDynamoDALWithConversations({
+      stateDir,
+      orgId,
+    });
+  }
+  return globalNoDynamoExtended;
+}
+
+/**
+ * Get global extended NoDynamo DAL
+ */
+export function getNoDynamoExtended(): NoDynamoDALWithConversations {
+  if (!globalNoDynamoExtended) {
+    throw new Error(
+      "NoDynamoExtended not initialized. Call initNoDynamoExtended() first."
+    );
+  }
+  return globalNoDynamoExtended;
+}
+
+/**
+ * Check if extended NoDynamo is initialized
+ */
+export function isNoDynamoExtendedInitialized(): boolean {
+  return globalNoDynamoExtended !== null;
+}
+
+/**
+ * Reset global extended NoDynamo (for testing)
+ */
+export function resetNoDynamoExtended(): void {
+  globalNoDynamoExtended = null;
 }

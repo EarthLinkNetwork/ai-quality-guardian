@@ -25,6 +25,7 @@ import { ConversationTracer } from '../trace/conversation-tracer';
 import { createSettingsRoutes } from './routes/settings';
 import { createDashboardRoutes } from './routes/dashboard';
 import { createInspectionRoutes } from './routes/inspection';
+import { createChatRoutes } from './routes/chat';
 
 /**
  * Derive namespace from folder path (same logic as CLI)
@@ -112,6 +113,8 @@ export function createApp(config: WebServerConfig): Express {
     app.use("/api", createDashboardRoutes(stateDir)); // Also mount projects/activity/runs at /api
     // Inspection packet routes
     app.use("/api/inspection", createInspectionRoutes(stateDir));
+    // Chat routes (conversation management)
+    app.use("/api", createChatRoutes(stateDir));
 
   }
 
@@ -661,6 +664,14 @@ export function createApp(config: WebServerConfig): Express {
   });
 
   /**
+   * GET /chat/:projectId
+   * Serve chat page for a project
+   */
+  app.get('/chat/:projectId', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  /**
    * GET /activity
    * Serve activity page
    */
@@ -727,6 +738,13 @@ export function createApp(config: WebServerConfig): Express {
       'GET /api/inspection/:packetId',
       'GET /api/inspection/:packetId/markdown',
       'GET /api/inspection/:packetId/clipboard',
+      // Chat routes
+      'GET /api/projects/:projectId/conversation',
+      'GET /api/projects/:projectId/conversation/status',
+      'POST /api/projects/:projectId/chat',
+      'POST /api/projects/:projectId/respond',
+      'DELETE /api/projects/:projectId/conversation',
+      'PATCH /api/projects/:projectId/conversation/:messageId',
     ];
     res.json({ routes });
   });

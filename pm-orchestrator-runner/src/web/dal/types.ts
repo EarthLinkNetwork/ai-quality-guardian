@@ -536,6 +536,8 @@ export interface UpdateProjectIndexInput {
     running: number;
     awaiting: number;
   };
+  bootstrapPrompt?: string;
+  projectType?: ProjectType;
 }
 
 export interface ListProjectIndexOptions {
@@ -547,3 +549,164 @@ export interface ListProjectIndexOptions {
   limit?: number;
   cursor?: string;
 }
+
+// ==========================================
+// Chat / Conversation Types (MVP Chat Feature)
+// ==========================================
+
+/**
+ * Conversation message role
+ */
+export type ConversationRole = 'user' | 'assistant' | 'system';
+
+/**
+ * Conversation message status
+ */
+export type ConversationMessageStatus = 
+  | 'pending'           // User message queued
+  | 'processing'        // Run is executing
+  | 'complete'          // Run completed successfully
+  | 'error'             // Run failed
+  | 'awaiting_response' // Run needs user input
+  | 'responded';        // User responded to awaiting
+
+/**
+ * Conversation message entity
+ */
+export interface ConversationMessage {
+  messageId: string;            // msg_<uuid>
+  projectId: string;
+  runId?: string;               // Associated run (for assistant messages)
+  role: ConversationRole;
+  content: string;
+  status: ConversationMessageStatus;
+  timestamp: string;            // ISO string
+  metadata?: {
+    planId?: string;
+    taskCount?: number;
+    gateResult?: boolean;
+    error?: string;
+    clarificationQuestion?: string;  // Question that needs response
+  };
+}
+
+/**
+ * Create conversation message input
+ */
+export interface CreateConversationMessageInput {
+  projectId: string;
+  role: ConversationRole;
+  content: string;
+  runId?: string;
+  status?: ConversationMessageStatus;
+  metadata?: ConversationMessage['metadata'];
+}
+
+/**
+ * Update conversation message input
+ */
+export interface UpdateConversationMessageInput {
+  status?: ConversationMessageStatus;
+  content?: string;
+  runId?: string;
+  metadata?: Partial<ConversationMessage['metadata']>;
+}
+
+/**
+ * Project type for dev/prod separation
+ */
+export type ProjectType = 'normal' | 'runner-dev';
+
+/**
+ * Extended ProjectIndex with bootstrapPrompt and projectType
+ */
+export interface ProjectIndexExtended extends ProjectIndex {
+  bootstrapPrompt?: string;
+  projectType?: ProjectType;
+}
+
+// ==========================================
+// Plan Types (Self-Running Loop)
+// ==========================================
+
+/**
+ * Plan status
+ */
+export type PlanStatus =
+  | "DRAFT"           // Plan created, not dispatched
+  | "DISPATCHING"     // Runs being created
+  | "RUNNING"         // Runs executing
+  | "VERIFYING"       // Running gate:all
+  | "VERIFIED"        // gate:all passed
+  | "FAILED"          // gate:all failed or runs failed
+  | "CANCELLED";      // User cancelled
+
+/**
+ * Plan task
+ */
+export interface PlanTask {
+  taskId: string;
+  description: string;
+  priority: number;
+  dependencies: string[];      // taskIds this depends on
+  runId?: string;              // Associated Run when dispatched
+  status: TaskState;
+}
+
+/**
+ * Plan entity
+ */
+export interface Plan {
+  PK: string;                  // ORG#<orgId>
+  SK: string;                  // PLAN#<planId>
+  planId: string;              // plan_<uuid>
+  projectId: string;
+  orgId: string;
+  runId?: string;              // Source run for inspection
+  packetId?: string;           // Inspection packet used
+  status: PlanStatus;
+  tasks: PlanTask[];
+  verifyRunId?: string;        // Run executing gate:all
+  gateResult?: {
+    passed: boolean;
+    checks: Array<{
+      name: string;
+      passed: boolean;
+      message: string;
+    }>;
+  };
+  createdAt: string;
+  updatedAt: string;
+  executedAt?: string;
+  completedAt?: string;
+  verifiedAt?: string;
+}
+
+/**
+ * Create plan input
+ */
+export interface CreatePlanInput {
+  orgId: string;
+  projectId: string;
+  runId?: string;
+  packetId?: string;
+  tasks: Array<{
+    description: string;
+    priority?: number;
+    dependencies?: string[];
+  }>;
+}
+
+/**
+ * Update plan input
+ */
+export interface UpdatePlanInput {
+  status?: PlanStatus;
+  tasks?: PlanTask[];
+  verifyRunId?: string;
+  gateResult?: Plan["gateResult"];
+  executedAt?: string;
+  completedAt?: string;
+  verifiedAt?: string;
+}
+

@@ -520,6 +520,212 @@
         grid-template-columns: 1fr;
       }
     }
+
+    /* Chat UI Styles */
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 200px);
+      min-height: 400px;
+    }
+
+    .chat-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      background: #fff;
+    }
+
+    .chat-message {
+      display: flex;
+      margin-bottom: 16px;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .chat-message.user {
+      justify-content: flex-end;
+    }
+
+    .chat-message.assistant {
+      justify-content: flex-start;
+    }
+
+    .chat-message.system {
+      justify-content: center;
+    }
+
+    .chat-bubble {
+      max-width: 70%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      line-height: 1.5;
+      word-wrap: break-word;
+    }
+
+    .chat-message.user .chat-bubble {
+      background: #2563eb;
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+
+    .chat-message.assistant .chat-bubble {
+      background: #f3f4f6;
+      color: #374151;
+      border-bottom-left-radius: 4px;
+    }
+
+    .chat-message.system .chat-bubble {
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 0.9rem;
+      padding: 8px 16px;
+    }
+
+    .chat-bubble-meta {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-top: 4px;
+    }
+
+    .chat-message.user .chat-bubble-meta {
+      text-align: right;
+      color: rgba(255,255,255,0.7);
+    }
+
+    .chat-input-container {
+      padding: 16px;
+      border-top: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+
+    .chat-input-wrapper {
+      display: flex;
+      gap: 12px;
+    }
+
+    .chat-input {
+      flex: 1;
+      padding: 12px 16px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 1rem;
+      resize: none;
+      min-height: 44px;
+      max-height: 150px;
+    }
+
+    .chat-input:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .chat-input.respond-mode {
+      border-color: #f59e0b;
+      background: #fffbeb;
+    }
+
+    .chat-send-btn {
+      padding: 12px 24px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .chat-send-btn:hover {
+      background: #1d4ed8;
+    }
+
+    .chat-send-btn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    .chat-send-btn.respond-mode {
+      background: #f59e0b;
+    }
+
+    .chat-send-btn.respond-mode:hover {
+      background: #d97706;
+    }
+
+    .chat-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      color: #6b7280;
+    }
+
+    .chat-status.awaiting {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .chat-status .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid #e5e7eb;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .project-type-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .project-type-badge.runner-dev {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .project-type-badge.normal {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .settings-panel {
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .settings-panel h4 {
+      margin-bottom: 12px;
+      color: #374151;
+    }
+
   </style>
 </head>
 <body>
@@ -1865,6 +2071,8 @@
             <div class="action-bar">
               ${backBtn}
               <button class="refresh-btn" onclick="renderProjectDetail('${escapeHtml(projectId)}')">Refresh</button>
+              <button class="btn btn-primary" onclick="navigate('/chat/' + encodeURIComponent('${escapeHtml(projectId)}'))">Open Chat</button>
+              <button class="btn btn-secondary" onclick="openProjectSettings('${escapeHtml(projectId)}')">Settings</button>
             </div>
           </div>
 
@@ -1882,6 +2090,10 @@
               <div class="detail-item">
                 <label>Status</label>
                 <value><span class="badge badge-${project.status === 'running' ? 'running' : project.status === 'error' ? 'error' : 'queued'}">${project.status}</span></value>
+              </div>
+              <div class="detail-item">
+                <label>Type</label>
+                <value><span class="project-type-badge ${project.projectType === 'runner-dev' ? 'runner-dev' : 'normal'}">${project.projectType === 'runner-dev' ? 'Runner Dev' : 'Normal'}</span></value>
               </div>
               <div class="detail-item">
                 <label>Last Activity</label>
@@ -1932,6 +2144,236 @@
         alert('Error: ' + e.message);
       }
     }
+
+
+    // Render Chat page
+    async function renderChat(projectId) {
+      app.innerHTML = '<div class="loading">Loading Chat</div>';
+
+      try {
+        // Fetch project and conversation in parallel
+        const [projectRes, conversationRes] = await Promise.all([
+          fetch('/api/projects/' + encodeURIComponent(projectId)).then(r => r.json()),
+          fetch('/api/projects/' + encodeURIComponent(projectId) + '/conversation').then(r => r.json())
+        ]);
+
+        if (projectRes.error) throw new Error(projectRes.message);
+
+        const project = projectRes.project;
+        const messages = conversationRes.messages || [];
+        const awaitingResponse = conversationRes.awaitingResponse;
+        const awaitingMessage = conversationRes.awaitingMessage;
+
+        const backBtn = '<a href="/projects/' + encodeURIComponent(projectId) + '" class="back-btn" onclick="event.preventDefault(); navigate(\'/projects/' + encodeURIComponent(projectId) + '\')">Back to Project</a>';
+
+        // Build message list
+        const messageItems = messages.length > 0
+          ? messages.map(function(m) {
+              var roleClass = m.role;
+              var statusBadge = '';
+              if (m.status === 'processing') {
+                statusBadge = '<span class="badge badge-running">Processing</span>';
+              } else if (m.status === 'awaiting_response') {
+                statusBadge = '<span class="badge badge-needs_response">Awaiting Response</span>';
+              } else if (m.status === 'error') {
+                statusBadge = '<span class="badge badge-error">Error</span>';
+              }
+              var meta = '<div class="chat-bubble-meta">' + formatDate(m.timestamp) + ' ' + statusBadge + '</div>';
+              return '<div class="chat-message ' + roleClass + '">' +
+                '<div class="chat-bubble">' + escapeHtml(m.content) + meta + '</div>' +
+              '</div>';
+            }).join('')
+          : '<div class="empty-state" style="padding: 40px; text-align: center;"><p>No messages yet. Start a conversation!</p></div>';
+
+        // Determine input mode
+        var inputPlaceholder = awaitingResponse 
+          ? 'Type your response...' 
+          : 'Type a message to start a new task...';
+        var sendBtnClass = awaitingResponse ? 'chat-send-btn respond-mode' : 'chat-send-btn';
+        var sendBtnText = awaitingResponse ? 'Respond' : 'Send';
+        var inputClass = awaitingResponse ? 'chat-input respond-mode' : 'chat-input';
+
+        // Status bar for awaiting response
+        var statusBar = '';
+        if (awaitingResponse && awaitingMessage) {
+          var question = awaitingMessage.metadata && awaitingMessage.metadata.clarificationQuestion 
+            ? awaitingMessage.metadata.clarificationQuestion 
+            : 'The assistant is waiting for your response.';
+          statusBar = '<div class="chat-status awaiting">' +
+            '<strong>Awaiting Response:</strong> ' + escapeHtml(question) +
+          '</div>';
+        }
+
+        app.innerHTML = 
+          '<div class="page-header">' +
+            '<h2>Chat: ' + escapeHtml(project.alias || project.projectPath) + '</h2>' +
+            '<div class="action-bar">' +
+              backBtn +
+              '<button class="refresh-btn" onclick="renderChat(\'' + escapeHtml(projectId) + '\')">Refresh</button>' +
+              '<button class="btn btn-secondary" onclick="openProjectSettings(\'' + escapeHtml(projectId) + '\')">Settings</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="card chat-container">' +
+            '<div class="chat-messages" id="chat-messages">' + messageItems + '</div>' +
+            statusBar +
+            '<div class="chat-input-container">' +
+              '<div class="chat-input-wrapper">' +
+                '<textarea class="' + inputClass + '" id="chat-input" placeholder="' + inputPlaceholder + '" rows="1" onkeydown="handleChatKeydown(event, \'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')"></textarea>' +
+                '<button class="' + sendBtnClass + '" id="chat-send-btn" onclick="sendChatMessage(\'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')">' + sendBtnText + '</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+
+        // Scroll to bottom
+        var chatMessages = document.getElementById('chat-messages');
+        if (chatMessages) {
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Focus input
+        var chatInput = document.getElementById('chat-input');
+        if (chatInput) chatInput.focus();
+
+      } catch (error) {
+        app.innerHTML = 
+          '<div class="card">' +
+            '<div class="error-message">Error: ' + escapeHtml(error.message) + '</div>' +
+            '<a href="/dashboard" class="btn btn-secondary" onclick="event.preventDefault(); navigate(\'/dashboard\')">Back to Dashboard</a>' +
+          '</div>';
+      }
+    }
+
+    // Handle chat input keydown (Enter to send)
+    function handleChatKeydown(event, projectId, isRespond) {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendChatMessage(projectId, isRespond);
+      }
+    }
+
+    // Send chat message
+    async function sendChatMessage(projectId, isRespond) {
+      var input = document.getElementById('chat-input');
+      var sendBtn = document.getElementById('chat-send-btn');
+      var content = input.value.trim();
+
+      if (!content) return;
+
+      // Disable input while sending
+      input.disabled = true;
+      sendBtn.disabled = true;
+      sendBtn.textContent = 'Sending...';
+
+      try {
+        var endpoint = isRespond 
+          ? '/api/projects/' + encodeURIComponent(projectId) + '/respond'
+          : '/api/projects/' + encodeURIComponent(projectId) + '/chat';
+
+        var response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: content })
+        });
+
+        var data = await response.json();
+        if (data.error) throw new Error(data.message);
+
+        // Refresh chat
+        renderChat(projectId);
+
+      } catch (error) {
+        alert('Error: ' + error.message);
+        input.disabled = false;
+        sendBtn.disabled = false;
+        sendBtn.textContent = isRespond ? 'Respond' : 'Send';
+      }
+    }
+
+    // Open project settings modal
+    async function openProjectSettings(projectId) {
+      try {
+        var res = await fetch('/api/projects/' + encodeURIComponent(projectId)).then(function(r) { return r.json(); });
+        if (res.error) throw new Error(res.message);
+
+        var project = res.project;
+        var bootstrapPrompt = project.bootstrapPrompt || '';
+        var projectType = project.projectType || 'normal';
+
+        // Create modal
+        var modal = document.createElement('div');
+        modal.id = 'settings-modal';
+        modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;';
+        modal.innerHTML = 
+          '<div style="background: white; padding: 24px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;">' +
+            '<h3 style="margin-bottom: 16px;">Project Settings</h3>' +
+            '<div class="form-group">' +
+              '<label>Project Type</label>' +
+              '<select id="project-type-select">' +
+                '<option value="normal"' + (projectType === 'normal' ? ' selected' : '') + '>Normal</option>' +
+                '<option value="runner-dev"' + (projectType === 'runner-dev' ? ' selected' : '') + '>Runner Dev (Self-modification)</option>' +
+              '</select>' +
+            '</div>' +
+            '<div class="form-group">' +
+              '<label>Bootstrap Prompt (injected at the start of every task)</label>' +
+              '<textarea id="bootstrap-prompt-input" rows="6" style="font-family: monospace;">' + escapeHtml(bootstrapPrompt) + '</textarea>' +
+            '</div>' +
+            '<div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">' +
+              '<button class="btn btn-secondary" onclick="closeSettingsModal()">Cancel</button>' +
+              '<button class="btn btn-primary" onclick="saveChatProjectSettings(\'' + escapeHtml(projectId) + '\')">Save</button>' +
+            '</div>' +
+          '</div>';
+
+        document.body.appendChild(modal);
+
+        // Close on backdrop click
+        modal.addEventListener('click', function(e) {
+          if (e.target === modal) closeSettingsModal();
+        });
+
+      } catch (error) {
+        alert('Error loading settings: ' + error.message);
+      }
+    }
+
+    // Close settings modal
+    function closeSettingsModal() {
+      var modal = document.getElementById('settings-modal');
+      if (modal) modal.remove();
+    }
+
+    // Save project settings (Chat MVP settings modal)
+    async function saveChatProjectSettings(projectId) {
+      var projectType = document.getElementById('project-type-select').value;
+      var bootstrapPrompt = document.getElementById('bootstrap-prompt-input').value;
+
+      try {
+        var response = await fetch('/api/projects/' + encodeURIComponent(projectId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            projectType: projectType,
+            bootstrapPrompt: bootstrapPrompt 
+          })
+        });
+
+        var data = await response.json();
+        if (data.error) throw new Error(data.message);
+
+        closeSettingsModal();
+        
+        // Refresh current page
+        var path = window.location.pathname;
+        if (path.startsWith('/chat/')) {
+          renderChat(projectId);
+        } else {
+          renderProjectDetail(projectId);
+        }
+
+      } catch (error) {
+        alert('Error saving settings: ' + error.message);
+      }
+    }
+
 
     // Render Session Detail page
     async function renderSessionDetail(sessionId) {
@@ -2141,6 +2583,9 @@
         renderNewCommandForm(group);
       } else if (path === '/agent') {
         renderAgentLauncher();
+      } else if (path.startsWith('/chat/')) {
+        const projectId = decodeURIComponent(path.split('/chat/')[1]);
+        renderChat(projectId);
       } else if (path === '/settings') {
         renderSettings();
       } else {
