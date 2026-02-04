@@ -5307,3 +5307,95 @@ READ_INFO/REPORT tasks via Web Chat will now:
 2. Pass through queue with task_type
 3. Reach runner-core with taskType
 4. Be handled correctly (LLM output → evidence file → COMPLETE)
+
+---
+
+## E2E-CHAT-TASKTYPE: Chat TaskType Propagation E2E Test
+
+**Date**: 2026-02-04
+
+### Feature Overview
+
+Added E2E regression test to verify Chat READ_INFO/REPORT tasks do not fail with NO_EVIDENCE error. This ensures task_type is correctly:
+1. Detected from user prompt via task-type-detector
+2. Passed to queue via enqueue() call
+3. Returned in API response via /api/task-groups/:id/tasks
+4. Used by executor to determine evidence requirements
+
+### Implementation Changes
+
+1. **diagnostics/chat-tasktype.check.ts** (NEW)
+   - E2E test for Chat TaskType propagation
+   - Tests 5 scenarios: READ_INFO, REPORT, IMPLEMENTATION, Japanese patterns, question mark detection
+   - All 8 checks verify both chat request success and task_type propagation
+
+2. **src/utils/dist-freshness.ts** (NEW)
+   - Utility for checking if dist is fresh (newer than src)
+   - Auto-rebuilds if src is newer
+   - Ensures web server runs with up-to-date code
+
+3. **package.json**
+   - Added `"gate:chat": "ts-node diagnostics/chat-tasktype.check.ts"`
+
+### Evidence: gate:chat Output
+
+```
+=== Chat TaskType E2E Diagnostic Check ===
+
+[PASS] CHAT-1: READ_INFO chat request succeeds
+[PASS] CHAT-2: READ_INFO task_type is propagated to queue
+[PASS] CHAT-3: REPORT chat request succeeds
+[PASS] CHAT-4: REPORT task_type is propagated to queue
+[PASS] CHAT-5: IMPLEMENTATION chat request succeeds
+[PASS] CHAT-6: IMPLEMENTATION task_type is propagated to queue
+[PASS] CHAT-7: Japanese READ_INFO is detected correctly
+[PASS] CHAT-8: Question mark prompts are detected as READ_INFO
+
+Overall: ALL PASS
+```
+
+### Evidence: Task Type Detection in API Response
+
+From E2E test log:
+```json
+// READ_INFO detection
+{"task_type":"READ_INFO","prompt":"What is the architecture of this project?"}
+
+// REPORT detection  
+{"task_type":"REPORT","prompt":"Generate a summary report of the test coverage"}
+
+// IMPLEMENTATION detection
+{"task_type":"IMPLEMENTATION","prompt":"Create a new user authentication service"}
+
+// Japanese READ_INFO detection
+{"task_type":"READ_INFO","prompt":"確認してください: このプロジェクトの構造"}
+```
+
+### Evidence: gate:all Output
+
+```
+> npm run gate:tier0 && npm run gate:web && npm run gate:agent && npm run gate:spec
+
+gate:ui     → ALL PASS (6 checks)
+gate:task   → ALL PASS (7 checks)
+gate:web    → ALL PASS (26 checks)
+gate:agent  → ALL PASS (13 checks)
+gate:spec   → ALL PASS (5 checks)
+```
+
+### Evidence: Unit Tests
+
+```
+npm test
+  2514 passing (3m)
+  96 pending
+```
+
+### Verification
+
+This E2E test ensures the Chat → TaskType → Queue → API → Runner flow works correctly:
+1. Chat API detects task_type from prompt content
+2. Queue stores task_type via enqueue() call
+3. API returns task_type in /api/task-groups/:id/tasks response
+4. Runner uses task_type to determine evidence requirements
+

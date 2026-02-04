@@ -36,7 +36,8 @@
     "gate:agent": "ts-node diagnostics/agent-launcher.check.ts",
     "gate:tier0": "npm run gate:ui && npm run gate:task",
     "gate:all": "npm run gate:tier0 && npm run gate:web && npm run gate:agent && npm run gate:spec",
-    "gate:spec": "ts-node diagnostics/spec-coverage.check.ts"
+    "gate:spec": "ts-node diagnostics/spec-coverage.check.ts",
+    "gate:chat": "ts-node diagnostics/chat-tasktype.check.ts"
   },
   "keywords": [
     "pm-orchestrator",

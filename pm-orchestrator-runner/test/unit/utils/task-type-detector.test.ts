@@ -3,112 +3,112 @@
  * Verifies proper detection of READ_INFO, REPORT, and IMPLEMENTATION task types
  */
 
-import { expect } from 'chai';
-import { detectTaskType, TaskType } from '../../../src/utils/task-type-detector';
+import { strict as assert } from 'assert';
+import { detectTaskType } from '../../../src/utils/task-type-detector';
 
 describe('task-type-detector', () => {
   describe('detectTaskType', () => {
     describe('READ_INFO detection', () => {
       it('should detect questions starting with "what"', () => {
-        expect(detectTaskType('what is the architecture of this project?')).to.equal('READ_INFO');
+        assert.strictEqual(detectTaskType('what is the architecture of this project?'), 'READ_INFO');
       });
 
       it('should detect questions starting with "how"', () => {
-        expect(detectTaskType('how does the authentication work?')).to.equal('READ_INFO');
+        assert.strictEqual(detectTaskType('how does the authentication work?'), 'READ_INFO');
       });
 
       it('should detect questions ending with question mark', () => {
         // Note: "file" word triggers IMPLEMENTATION pattern, so use a question without it
-        expect(detectTaskType('is this approach correct?')).to.equal('READ_INFO');
+        assert.strictEqual(detectTaskType('is this approach correct?'), 'READ_INFO');
       });
 
       it('should detect explain requests', () => {
-        expect(detectTaskType('explain the login flow')).to.equal('READ_INFO');
+        assert.strictEqual(detectTaskType('explain the login flow'), 'READ_INFO');
       });
 
       it('should detect analyze requests', () => {
-        expect(detectTaskType('analyze the database schema')).to.equal('READ_INFO');
+        assert.strictEqual(detectTaskType('analyze the database schema'), 'READ_INFO');
       });
 
       it('should detect show requests', () => {
         // Note: "file" word triggers IMPLEMENTATION pattern, so use different example
-        expect(detectTaskType('show me the current settings')).to.equal('READ_INFO');
+        assert.strictEqual(detectTaskType('show me the current settings'), 'READ_INFO');
       });
 
       it('should detect status requests', () => {
-        expect(detectTaskType('check the status of deployments')).to.equal('READ_INFO');
+        assert.strictEqual(detectTaskType('check the status of deployments'), 'READ_INFO');
       });
 
       it('should detect Japanese read patterns', () => {
         // Japanese patterns require starting with the pattern: 確認, 教えて, etc.
-        expect(detectTaskType('確認してください')).to.equal('READ_INFO');
-        expect(detectTaskType('教えてください')).to.equal('READ_INFO');
+        assert.strictEqual(detectTaskType('確認してください'), 'READ_INFO');
+        assert.strictEqual(detectTaskType('教えてください'), 'READ_INFO');
       });
     });
 
     describe('REPORT detection', () => {
       it('should detect report keyword', () => {
-        expect(detectTaskType('generate a report of test coverage')).to.equal('REPORT');
+        assert.strictEqual(detectTaskType('generate a report of test coverage'), 'REPORT');
       });
 
       it('should detect summary keyword', () => {
-        expect(detectTaskType('create a summary of changes')).to.equal('REPORT');
+        assert.strictEqual(detectTaskType('create a summary of changes'), 'REPORT');
       });
 
       it('should detect summarize keyword', () => {
-        expect(detectTaskType('summarize the pull request')).to.equal('REPORT');
+        assert.strictEqual(detectTaskType('summarize the pull request'), 'REPORT');
       });
 
       it('should detect overview keyword', () => {
-        expect(detectTaskType('give me an overview of the codebase')).to.equal('REPORT');
+        assert.strictEqual(detectTaskType('give me an overview of the codebase'), 'REPORT');
       });
 
       it('should detect stats/statistics keyword', () => {
-        expect(detectTaskType('show project stats')).to.equal('REPORT');
-        expect(detectTaskType('get code statistics')).to.equal('REPORT');
+        assert.strictEqual(detectTaskType('show project stats'), 'REPORT');
+        assert.strictEqual(detectTaskType('get code statistics'), 'REPORT');
       });
     });
 
     describe('IMPLEMENTATION detection', () => {
       it('should detect create requests', () => {
-        expect(detectTaskType('create a new user service')).to.equal('IMPLEMENTATION');
+        assert.strictEqual(detectTaskType('create a new user service'), 'IMPLEMENTATION');
       });
 
       it('should detect add requests', () => {
-        expect(detectTaskType('add a logout button')).to.equal('IMPLEMENTATION');
+        assert.strictEqual(detectTaskType('add a logout button'), 'IMPLEMENTATION');
       });
 
       it('should detect fix requests', () => {
-        expect(detectTaskType('fix the authentication bug')).to.equal('IMPLEMENTATION');
+        assert.strictEqual(detectTaskType('fix the authentication bug'), 'IMPLEMENTATION');
       });
 
       it('should detect modify requests', () => {
-        expect(detectTaskType('modify the database connection')).to.equal('IMPLEMENTATION');
+        assert.strictEqual(detectTaskType('modify the database connection'), 'IMPLEMENTATION');
       });
 
       it('should detect refactor requests', () => {
-        expect(detectTaskType('refactor the user module')).to.equal('IMPLEMENTATION');
+        assert.strictEqual(detectTaskType('refactor the user module'), 'IMPLEMENTATION');
       });
 
       it('should detect file extension patterns', () => {
-        expect(detectTaskType('update app.ts')).to.equal('IMPLEMENTATION');
-        expect(detectTaskType('create config.json')).to.equal('IMPLEMENTATION');
+        assert.strictEqual(detectTaskType('update app.ts'), 'IMPLEMENTATION');
+        assert.strictEqual(detectTaskType('create config.json'), 'IMPLEMENTATION');
       });
 
       it('should detect Japanese implementation patterns', () => {
-        expect(detectTaskType('新しい機能を追加')).to.equal('IMPLEMENTATION');
-        expect(detectTaskType('バグを修正して')).to.equal('IMPLEMENTATION');
+        assert.strictEqual(detectTaskType('新しい機能を追加'), 'IMPLEMENTATION');
+        assert.strictEqual(detectTaskType('バグを修正して'), 'IMPLEMENTATION');
       });
     });
 
     describe('ambiguous cases', () => {
       it('should prioritize REPORT over READ_INFO for report-related questions', () => {
-        expect(detectTaskType('what is the summary of changes?')).to.equal('REPORT');
+        assert.strictEqual(detectTaskType('what is the summary of changes?'), 'REPORT');
       });
 
       it('should default to IMPLEMENTATION for ambiguous cases', () => {
         // Ambiguous cases default to IMPLEMENTATION (fail-closed for safety)
-        expect(detectTaskType('handle the user data')).to.equal('IMPLEMENTATION');
+        assert.strictEqual(detectTaskType('handle the user data'), 'IMPLEMENTATION');
       });
     });
   });
