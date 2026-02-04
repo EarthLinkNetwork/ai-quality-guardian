@@ -18,7 +18,7 @@ import { IQueueStore, QueueItem, QueueItemStatus } from './queue-store';
  */
 export type TaskExecutor = (
   item: QueueItem
-) => Promise<{ status: 'COMPLETE' | 'ERROR'; errorMessage?: string }>;
+) => Promise<{ status: 'COMPLETE' | 'ERROR'; errorMessage?: string; output?: string }>;
 
 /**
  * Poller configuration
@@ -246,7 +246,8 @@ export class QueuePoller extends EventEmitter {
       await this.store.updateStatus(
         item.task_id,
         result.status,
-        result.errorMessage
+        result.errorMessage,
+        result.output
       );
 
       if (result.status === 'COMPLETE') {

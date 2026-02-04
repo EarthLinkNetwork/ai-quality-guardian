@@ -136,6 +136,8 @@ export interface QueueItem {
   clarification?: ClarificationRequest;
   /** Conversation history for context preservation */
   conversation_history?: ConversationEntry[];
+  /** Task output/response for READ_INFO/REPORT tasks */
+  output?: string;
 }
 
 /**
@@ -228,7 +230,7 @@ export interface IQueueStore {
   enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string, taskType?: TaskTypeValue): Promise<QueueItem>;
   getItem(taskId: string, targetNamespace?: string): Promise<QueueItem | null>;
   claim(): Promise<ClaimResult>;
-  updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string): Promise<void>;
+  updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string, output?: string): Promise<void>;
   updateStatusWithValidation(taskId: string, newStatus: QueueItemStatus): Promise<StatusUpdateResult>;
   setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[]): Promise<StatusUpdateResult>;
   resumeWithResponse(taskId: string, userResponse: string): Promise<StatusUpdateResult>;
@@ -594,27 +596,39 @@ export class QueueStore implements IQueueStore {
     }
   }
 
+
   /**
    * Update task status
    */
   async updateStatus(
     taskId: string,
     status: QueueItemStatus,
-    errorMessage?: string
+    errorMessage?: string,
+    output?: string
   ): Promise<void> {
     const now = new Date().toISOString();
 
-    const updateExpression = errorMessage
-      ? 'SET #status = :status, updated_at = :now, error_message = :error'
-      : 'SET #status = :status, updated_at = :now';
-
+    let updateExpression = 'SET #status = :status, updated_at = :now';
     const expressionAttributeValues: Record<string, string> = {
       ':status': status,
       ':now': now,
     };
 
     if (errorMessage) {
+      updateExpression += ', error_message = :error';
       expressionAttributeValues[':error'] = errorMessage;
+    }
+
+    if (output) {
+      updateExpression += ', #output = :output';
+      expressionAttributeValues[':output'] = output;
+    }
+
+    const expressionAttributeNames: Record<string, string> = {
+      '#status': 'status',
+    };
+    if (output) {
+      expressionAttributeNames['#output'] = 'output';
     }
 
     await this.docClient.send(
@@ -625,9 +639,7 @@ export class QueueStore implements IQueueStore {
           task_id: taskId 
         },
         UpdateExpression: updateExpression,
-        ExpressionAttributeNames: {
-          '#status': 'status',
-        },
+        ExpressionAttributeNames: expressionAttributeNames,
         ExpressionAttributeValues: expressionAttributeValues,
       })
     );
