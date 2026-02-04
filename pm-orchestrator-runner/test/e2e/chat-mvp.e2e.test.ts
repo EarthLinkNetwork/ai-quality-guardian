@@ -372,6 +372,140 @@ describe('E2E: Chat MVP Feature', () => {
     });
   });
 
+  describe('Activity and TaskGroup Integration (Regression)', () => {
+    /**
+     * These tests verify the fix for:
+     * "Web Chat submission does NOT create any Task Groups or Activity records"
+     *
+     * The fix ensures:
+     * 1. Activity is always recorded when chat is received
+     * 2. TaskGroup is created via queueStore when available
+     * 3. Errors are recorded as Activity
+     */
+
+    let projectId: string;
+
+    beforeEach(async () => {
+      // Create a test project
+      const projectRes = await request(app)
+        .post('/api/projects')
+        .send({
+          projectPath: '/test/activity-regression-' + Date.now(),
+          alias: 'Activity Regression Test',
+          tags: ['e2e', 'regression'],
+        })
+        .expect(201);
+
+      projectId = projectRes.body.projectId;
+    });
+
+    it('should return activityId in chat response', async () => {
+      const chatRes = await request(app)
+        .post('/api/projects/' + projectId + '/chat')
+        .send({ content: 'Test message for activity tracking' })
+        .expect(201);
+
+      // Verify activityId is returned
+      assert.ok(chatRes.body.activityId, 'Should have activityId in response');
+      assert.ok(chatRes.body.activityId.startsWith('act_'), 'activityId should start with act_');
+    });
+
+    it('should return taskGroupId in chat response when queueStore available', async () => {
+      const chatRes = await request(app)
+        .post('/api/projects/' + projectId + '/chat')
+        .send({ content: 'Test message for TaskGroup creation' })
+        .expect(201);
+
+      // Verify taskGroupId is returned (only when queueStore is provided)
+      // The mock queueStore always returns successfully
+      assert.ok(chatRes.body.taskGroupId, 'Should have taskGroupId in response');
+      assert.ok(chatRes.body.taskGroupId.startsWith('tg_chat_'), 'taskGroupId should start with tg_chat_');
+    });
+
+    it('should create activity event visible in /api/activity', async () => {
+      // Send a chat message
+      const chatRes = await request(app)
+        .post('/api/projects/' + projectId + '/chat')
+        .send({ content: 'Activity visibility test' })
+        .expect(201);
+
+      // Get activity events
+      const activityRes = await request(app)
+        .get('/api/activity')
+        .expect(200);
+
+      // Verify activity exists
+      assert.ok(Array.isArray(activityRes.body.events), 'Should have events array');
+
+      // Find the chat_received activity
+      const chatActivity = activityRes.body.events.find(
+        (e: any) => e.type === 'chat_received' && e.projectId === projectId
+      );
+
+      assert.ok(chatActivity, 'Should find chat_received activity for this project');
+      assert.ok(chatActivity.summary.includes('Chat message received'), 'Summary should describe chat receipt');
+    });
+
+    it('should include runId and taskGroupId for execution pipeline tracing', async () => {
+      const chatRes = await request(app)
+        .post('/api/projects/' + projectId + '/chat')
+        .send({ content: 'Pipeline tracing test' })
+        .expect(201);
+
+      // All pipeline identifiers should be present
+      assert.ok(chatRes.body.runId, 'Should have runId for execution tracking');
+      assert.ok(chatRes.body.runId.startsWith('run_'), 'runId format check');
+      assert.ok(chatRes.body.activityId, 'Should have activityId for audit tracking');
+      assert.ok(chatRes.body.taskGroupId, 'Should have taskGroupId for queue tracking');
+
+      // Verify the user and assistant messages have the runId
+      assert.ok(chatRes.body.userMessage, 'Should have userMessage');
+      assert.ok(chatRes.body.assistantMessage, 'Should have assistantMessage');
+      assert.ok(chatRes.body.assistantMessage.runId, 'assistantMessage should have runId');
+    });
+
+    it('should record error as activity when chat fails validation', async () => {
+      // Send empty content (should fail validation)
+      await request(app)
+        .post('/api/projects/' + projectId + '/chat')
+        .send({ content: '' })
+        .expect(400);
+
+      // Get activity events
+      const activityRes = await request(app)
+        .get('/api/activity')
+        .expect(200);
+
+      // Find the chat_error activity
+      const errorActivity = activityRes.body.events.find(
+        (e: any) => e.type === 'chat_error' && e.projectId === projectId
+      );
+
+      assert.ok(errorActivity, 'Should find chat_error activity for validation failure');
+      assert.ok(errorActivity.summary.includes('validation failed'), 'Summary should describe validation failure');
+    });
+
+    it('should record error as activity when project not found', async () => {
+      // Send to non-existent project
+      await request(app)
+        .post('/api/projects/non-existent-project-id/chat')
+        .send({ content: 'Test' })
+        .expect(404);
+
+      // Get activity events
+      const activityRes = await request(app)
+        .get('/api/activity')
+        .expect(200);
+
+      // Find the chat_error activity for not found
+      const errorActivity = activityRes.body.events.find(
+        (e: any) => e.type === 'chat_error' && e.details?.error === 'NOT_FOUND'
+      );
+
+      assert.ok(errorActivity, 'Should find chat_error activity for project not found');
+    });
+  });
+
   describe('Multiple Projects Scenario', () => {
     it('should handle 2 projects with different settings', async function() {
       this.timeout(15000);

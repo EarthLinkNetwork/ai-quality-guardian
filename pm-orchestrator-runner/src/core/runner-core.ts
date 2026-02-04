@@ -901,7 +901,53 @@ export class RunnerCore extends EventEmitter {
           // Property 8: Completion is based on verified_files, NOT files_modified
           // The executor's status is determined by verified_files (Property 8 compliant)
           if (executorResult.status === 'NO_EVIDENCE') {
-            // Fail-closed: No verified files exist on disk
+            // READ_INFO and REPORT tasks don't require file evidence
+            // They succeed if there's output from the executor
+            if ((task.taskType === 'READ_INFO' || task.taskType === 'REPORT') && executorResult.output) {
+              executionLog.push(`[${new Date().toISOString()}] READ_INFO/REPORT task completed with response output (no file evidence required)`);
+
+              // Mark as COMPLETED - the output itself is the deliverable
+              result.status = TaskStatus.COMPLETED;
+              result.completed_at = new Date().toISOString();
+              result.evidence = {
+                task_id: task.id,
+                completed: true,
+                started_at: startedAt,
+                completed_at: result.completed_at,
+                response_output: executorResult.output,
+                task_type: task.taskType,
+                execution_log: executionLog,
+              };
+
+              // Complete TaskLog for READ_INFO/REPORT success
+              if (taskLog && this.taskLogManager && this.session) {
+                await this.taskLogManager.completeTaskWithSession(
+                  taskLog.task_id,
+                  this.session.session_id,
+                  'COMPLETE',
+                  filesCreated,
+                  undefined,
+                  undefined,
+                  executorBlockingInfo.executor_blocked !== undefined ? {
+                    executorBlocked: executorBlockingInfo.executor_blocked,
+                    blockedReason: executorBlockingInfo.blocked_reason,
+                    timeoutMs: executorBlockingInfo.timeout_ms,
+                    terminatedBy: executorBlockingInfo.terminated_by,
+                  } : undefined
+                );
+              }
+              this.taskResults.push(result);
+              this.emit('task_completed', { task_id: task.id, status: result.status });
+
+              // Save executor output for visibility
+              this.lastExecutorOutput = executorResult.output;
+              this.lastFilesModified = executorResult.files_modified || [];
+              this.lastExecutionDurationMs = executorResult.duration_ms || 0;
+
+              return; // Exit - READ_INFO/REPORT completed successfully
+            }
+
+            // For IMPLEMENTATION tasks or tasks with no output: Fail-closed
             executionLog.push(`[${new Date().toISOString()}] FAIL-CLOSED: No evidence of work (verified_files empty or all exists=false)`);
             this.markNoEvidence(`Task ${task.id} completed but no verified files exist on disk`);
             // Don't throw - handle gracefully by marking as error and continuing

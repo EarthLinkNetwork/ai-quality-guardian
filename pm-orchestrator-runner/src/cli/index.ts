@@ -31,6 +31,7 @@ import {
   WebStopCommand,
   WebStopExitCode,
 } from '../web/background';
+import { ensureDistFresh, checkPublicFilesCopied } from '../utils/dist-freshness';
 
 /**
  * Help text
@@ -454,6 +455,37 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   }
 
   const projectPath = process.cwd();
+
+  // Ensure dist is fresh before starting server (auto-rebuild if needed)
+  // This guarantees src changes are reflected without manual user intervention
+  const packageJsonPath = path.join(projectPath, 'package.json');
+  const isRunningFromPackage = require.main?.filename?.includes('dist/cli/index.js');
+
+  if (isRunningFromPackage) {
+    // We're running from dist, check freshness
+    const projectRoot = path.resolve(projectPath);
+    const freshnessResult = ensureDistFresh(projectRoot, { silent: false, copyPublic: true });
+
+    if (!freshnessResult.fresh && freshnessResult.error) {
+      console.error('[Web] Failed to ensure dist freshness:', freshnessResult.error);
+      process.exit(1);
+    }
+
+    if (freshnessResult.rebuilt) {
+      console.log('[Web] dist rebuilt successfully, continuing with fresh build');
+    }
+
+    // Ensure public files are copied
+    if (!checkPublicFilesCopied(projectRoot)) {
+      console.log('[Web] Public files not found, copying...');
+      const { execSync } = require('child_process');
+      try {
+        execSync('cp -r src/web/public dist/web/', { cwd: projectRoot, stdio: 'pipe' });
+      } catch (e) {
+        console.warn('[Web] Warning: Could not copy public files:', e);
+      }
+    }
+  }
 
   // Build namespace configuration
   const namespaceConfig = buildNamespaceConfig({

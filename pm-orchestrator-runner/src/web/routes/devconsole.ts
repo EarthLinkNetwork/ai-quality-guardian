@@ -73,6 +73,7 @@ interface CmdRunInfo {
   exitCode?: number;
   startedAt: string;
   endedAt?: string;
+  sessionId?: string; // Optional: link to session for Session Log Tree
 }
 
 /**
@@ -667,7 +668,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
         try {
           const project = (req as any).project as { projectId: string };
           const projectRoot = (req as any).projectRoot as string;
-          const { command, cwd } = req.body as { command?: string; cwd?: string };
+          const { command, cwd, sessionId } = req.body as { command?: string; cwd?: string; sessionId?: string };
 
           if (!command) {
             res.status(400).json({
@@ -700,6 +701,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
             cwd: path.relative(projectRoot, workingDir) || ".",
             status: "running",
             startedAt: new Date().toISOString(),
+            sessionId: sessionId || undefined, // Link to session for Session Log Tree
           };
 
           saveCmdRun(logDir, runInfo);

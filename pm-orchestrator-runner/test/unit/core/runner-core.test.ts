@@ -742,4 +742,160 @@ limits:
       testRunner.shutdown();
     });
   });
+
+  describe('READ_INFO Task Type Handling', () => {
+    let projectDir: string;
+
+    beforeEach(() => {
+      projectDir = path.join(tempDir, 'test-project');
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(path.join(projectDir, 'pm-orchestrator.yaml'), 'tasks: []');
+    });
+
+    it('should complete READ_INFO task with output even when no file evidence', async function() {
+      this.timeout(10000);
+
+      const readInfoOutput = 'Here is the summary of the project status: everything is working correctly.';
+
+      // Create mock executor that returns NO_EVIDENCE but has output
+      const mockExecutor = {
+        async isClaudeCodeAvailable() { return true; },
+        async checkAuthStatus() { return { available: true, loggedIn: true }; },
+        async execute() {
+          return {
+            executed: true,
+            output: readInfoOutput,
+            error: undefined,
+            files_modified: [],
+            duration_ms: 500,
+            status: 'NO_EVIDENCE' as const,
+            cwd: projectDir,
+            verified_files: [],
+            unverified_files: [],
+          };
+        },
+      };
+
+      const testRunner = new RunnerCore({
+        evidenceDir: tempDir,
+        useClaudeCode: true,
+        executor: mockExecutor,
+      });
+
+      await testRunner.initialize(projectDir);
+
+      const tasks = [{
+        id: 'read-task',
+        description: 'What is the project status?',
+        naturalLanguageTask: 'What is the project status?',
+        taskType: 'READ_INFO' as const,
+      }];
+
+      // READ_INFO with output should NOT throw and should complete successfully
+      const result = await testRunner.execute({ tasks });
+
+      assert.equal(result.overall_status, OverallStatus.COMPLETE, 'READ_INFO task with output should be COMPLETE');
+      assert.ok(result.executor_output_summary, 'Should have executor output summary');
+      assert.ok(result.executor_output_summary?.includes('summary') || result.executor_output_summary?.includes('status'),
+        'Output summary should contain response text');
+
+      testRunner.shutdown();
+    });
+
+    it('should return ERROR for IMPLEMENTATION task with no evidence', async function() {
+      this.timeout(10000);
+
+      // Create mock executor that returns NO_EVIDENCE with no output
+      const mockExecutor = {
+        async isClaudeCodeAvailable() { return true; },
+        async checkAuthStatus() { return { available: true, loggedIn: true }; },
+        async execute() {
+          return {
+            executed: true,
+            output: 'Started implementation...',
+            error: undefined,
+            files_modified: [],
+            duration_ms: 500,
+            status: 'NO_EVIDENCE' as const,
+            cwd: projectDir,
+            verified_files: [],
+            unverified_files: [],
+          };
+        },
+      };
+
+      const testRunner = new RunnerCore({
+        evidenceDir: tempDir,
+        useClaudeCode: true,
+        executor: mockExecutor,
+      });
+
+      await testRunner.initialize(projectDir);
+
+      const tasks = [{
+        id: 'impl-task',
+        description: 'Create a new file',
+        naturalLanguageTask: 'Create a new file',
+        taskType: 'IMPLEMENTATION' as const,
+      }];
+
+      // IMPLEMENTATION with no evidence should NOT be COMPLETE (unlike READ_INFO)
+      const result = await testRunner.execute({ tasks });
+
+      assert.ok(
+        result.overall_status !== OverallStatus.COMPLETE,
+        `IMPLEMENTATION task with no evidence should NOT be COMPLETE, got: ${result.overall_status}`
+      );
+
+      testRunner.shutdown();
+    });
+
+    it('should complete REPORT task with output even when no file evidence', async function() {
+      this.timeout(10000);
+
+      const reportOutput = 'Report: All tests passed. Coverage: 95%. No issues found.';
+
+      // Create mock executor that returns NO_EVIDENCE but has output
+      const mockExecutor = {
+        async isClaudeCodeAvailable() { return true; },
+        async checkAuthStatus() { return { available: true, loggedIn: true }; },
+        async execute() {
+          return {
+            executed: true,
+            output: reportOutput,
+            error: undefined,
+            files_modified: [],
+            duration_ms: 300,
+            status: 'NO_EVIDENCE' as const,
+            cwd: projectDir,
+            verified_files: [],
+            unverified_files: [],
+          };
+        },
+      };
+
+      const testRunner = new RunnerCore({
+        evidenceDir: tempDir,
+        useClaudeCode: true,
+        executor: mockExecutor,
+      });
+
+      await testRunner.initialize(projectDir);
+
+      const tasks = [{
+        id: 'report-task',
+        description: 'Generate test report',
+        naturalLanguageTask: 'Generate test report',
+        taskType: 'REPORT' as const,
+      }];
+
+      // REPORT with output should complete successfully
+      const result = await testRunner.execute({ tasks });
+
+      assert.equal(result.overall_status, OverallStatus.COMPLETE, 'REPORT task with output should be COMPLETE');
+      assert.ok(result.executor_output_summary, 'Should have executor output summary');
+
+      testRunner.shutdown();
+    });
+  });
 });

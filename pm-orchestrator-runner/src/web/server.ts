@@ -28,6 +28,7 @@ import { createInspectionRoutes } from './routes/inspection';
 import { createChatRoutes } from './routes/chat';
 import { createSelfhostRoutes } from './routes/selfhost';
 import { createDevconsoleRoutes } from './routes/devconsole';
+import { createSessionLogsRoutes } from './routes/session-logs';
 
 /**
  * Derive namespace from folder path (same logic as CLI)
@@ -115,12 +116,14 @@ export function createApp(config: WebServerConfig): Express {
     app.use("/api", createDashboardRoutes(stateDir)); // Also mount projects/activity/runs at /api
     // Inspection packet routes
     app.use("/api/inspection", createInspectionRoutes(stateDir));
-    // Chat routes (conversation management)
-    app.use("/api", createChatRoutes(stateDir));
+    // Chat routes (conversation management with execution pipeline integration)
+    app.use("/api", createChatRoutes({ stateDir, queueStore, sessionId }));
     // Self-hosting routes (dev/prod promotion)
     app.use("/api", createSelfhostRoutes(stateDir));
     // Dev Console routes (selfhost-runner only)
     app.use("/api", createDevconsoleRoutes(stateDir));
+    // Session Logs routes (selfhost-runner only, Session Log Tree feature)
+    app.use("/api", createSessionLogsRoutes(stateDir));
 
   }
 
@@ -251,6 +254,7 @@ export function createApp(config: WebServerConfig): Express {
           created_at: t.created_at,
           updated_at: t.updated_at,
           error_message: t.error_message,
+          task_type: t.task_type,
         })),
       });
     } catch (error) {
@@ -770,6 +774,14 @@ export function createApp(config: WebServerConfig): Express {
       'GET /api/projects/:projectId/dev/git/gateStatus',
       'POST /api/projects/:projectId/dev/git/commit',
       'POST /api/projects/:projectId/dev/git/push',
+      // Session Logs routes (Session Log Tree)
+      'GET /api/projects/:projectId/session-logs/tree',
+      'GET /api/projects/:projectId/session-logs/runs',
+      'GET /api/projects/:projectId/session-logs/run/:runId',
+      'POST /api/projects/:projectId/session-logs/sessions',
+      'PATCH /api/projects/:projectId/session-logs/sessions/:sessionId',
+      'GET /api/projects/:projectId/session-logs/sessions',
+      'GET /api/projects/:projectId/session-logs/summary',
     ];
     res.json({ routes });
   });

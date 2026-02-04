@@ -363,6 +363,8 @@ export type ActivityEventType =
   | "task_failed"
   | "task_awaiting"
   | "session_started"
+  | "chat_received"
+  | "chat_error"
   | "session_ended"
   | "error";
 
