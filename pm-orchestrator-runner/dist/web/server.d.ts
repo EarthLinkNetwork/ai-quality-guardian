@@ -16,7 +16,7 @@
  * Submit = queue insert only.
  */
 import { Express } from 'express';
-import { QueueStore } from '../queue';
+import { IQueueStore } from '../queue';
 /**
  * Web Server configuration
  */
@@ -25,8 +25,8 @@ export interface WebServerConfig {
     port?: number;
     /** Host (default: localhost) */
     host?: string;
-    /** QueueStore instance */
-    queueStore: QueueStore;
+    /** QueueStore instance (can be DynamoDB or InMemory) */
+    queueStore: IQueueStore;
     /** Session ID for new tasks */
     sessionId: string;
     /** Current namespace (from queueStore) */

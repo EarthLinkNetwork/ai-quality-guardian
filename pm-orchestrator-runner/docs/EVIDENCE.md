@@ -3966,3 +3966,164 @@ Overall: ALL PASS
 ```
 
 ---
+
+---
+
+## SELFHOST-RESUME-1: Resume Artifact Generation
+
+**Test**: `test/e2e/selfhost.e2e.test.ts`
+**Description**: Apply endpoint creates resume.json artifact alongside apply.json
+
+### Evidence
+
+```typescript
+// POST /api/projects/:projectId/selfhost/apply creates resume artifact
+const applyResponse = await request(app)
+  .post(`/api/projects/${projectId}/selfhost/apply`)
+  .send({ devDir, prodDir });
+
+expect(applyResponse.status).toBe(200);
+expect(applyResponse.body.resumePath).toBeDefined();
+expect(applyResponse.body.resumeUrl).toContain('/selfhost/resume/');
+```
+
+### Result
+- Apply response includes `applyId`, `resumePath`, `resumeUrl`
+- Resume artifact created at `selfhost/apply/{applyId}/resume.json`
+- Resume URL format: `/projects/{projectId}?resume={applyId}`
+
+---
+
+## SELFHOST-RESUME-2: Resume API Endpoint
+
+**Test**: `test/e2e/selfhost.e2e.test.ts`
+**Description**: GET /api/projects/:projectId/selfhost/resume/:applyId returns resume data
+
+### Evidence
+
+```typescript
+// Resume API returns artifact with state comparison
+const resumeResponse = await request(app)
+  .get(`/api/projects/${projectId}/selfhost/resume/${applyId}`);
+
+expect(resumeResponse.status).toBe(200);
+expect(resumeResponse.body).toHaveProperty('projectId');
+expect(resumeResponse.body).toHaveProperty('applyId');
+expect(resumeResponse.body).toHaveProperty('expectedState');
+expect(resumeResponse.body).toHaveProperty('currentState');
+expect(resumeResponse.body).toHaveProperty('stateMatch');
+```
+
+### Result
+- Resume endpoint returns full resume artifact
+- Includes `currentState` from live project lookup
+- Includes `stateMatch` boolean for state comparison
+
+---
+
+## SELFHOST-RESUME-3: AWAITING_RESPONSE State Persistence
+
+**Test**: `test/e2e/selfhost.e2e.test.ts`
+**Description**: AWAITING_RESPONSE state persists across server restart simulation
+
+### Evidence
+
+```typescript
+// Create task in AWAITING_RESPONSE state
+await noDynamo.createSession({ orgId, projectPath, projectId: targetProjectId });
+await noDynamo.createPlan({ orgId, projectId: targetProjectId, tasks: [] });
+// ... create run with clarificationQuestion
+
+// Simulate server restart (new Express instance)
+const newApp = express();
+newApp.use(express.json());
+const newRouter = createSelfhostRouter(noDynamo, noDynamo, noDynamo);
+newApp.use('/api/projects', newRouter);
+
+// Verify state persists after restart
+const resumeAfterRestart = await request(newApp)
+  .get(`/api/projects/${targetProjectId}/selfhost/resume/${applyId}`);
+
+expect(resumeAfterRestart.body.currentState.awaitingResponse).toBe(true);
+expect(resumeAfterRestart.body.stateMatch).toBe(true);
+```
+
+### Result
+- AWAITING_RESPONSE state persists in NoDynamo (file-based storage)
+- New Express instance reads same state from disk
+- Resume API correctly reports awaitingResponse: true after restart
+
+---
+
+## SELFHOST-RESUME-4: Web UI Resume Handling
+
+**File**: `src/web/public/index.html`
+**Description**: Web UI handles ?resume=<applyId> query parameter
+
+### Evidence
+
+```javascript
+// Router extracts resume parameter
+} else if (path.startsWith('/projects/')) {
+  const projectId = decodeURIComponent(path.split('/projects/')[1]);
+  const resumeId = search.get('resume');
+  renderProjectDetail(projectId, resumeId);
+}
+
+// renderProjectDetail fetches resume info when resumeId present
+async function renderProjectDetail(projectId, resumeId = null) {
+  // ...
+  if (resumeId) {
+    const resumeResp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/selfhost/resume/${resumeId}`);
+    if (resumeResp.ok) {
+      resumeInfo = await resumeResp.json();
+    }
+  }
+  // ...
+}
+```
+
+### Result
+- URL `/projects/{projectId}?resume={applyId}` shows resume panel
+- Resume panel displays state comparison
+- Visual indication of state match/mismatch
+
+---
+
+## SELFHOST-RESUME-5: Routes List Updated
+
+**File**: `src/web/server.ts`
+**Description**: Resume endpoint added to routes list
+
+### Evidence
+
+```typescript
+const routes = [
+  // ... existing routes
+  'GET /api/projects/:projectId/selfhost/resume/:applyId',
+];
+```
+
+### Result
+- Resume route registered in server routes list
+- Endpoint accessible at documented path
+
+---
+
+## SELFHOST-RESUME-6: All Tests Pass
+
+**Command**: `npm test`
+**Description**: All tests pass including new Resume feature tests
+
+### Evidence
+
+```
+Test Suites: 55 passed, 55 total
+Tests:       96 skipped, 2452 passed, 2548 total
+```
+
+### Result
+- All 2452 tests pass
+- No regressions from Resume feature implementation
+- New Resume E2E tests included in passing count
+

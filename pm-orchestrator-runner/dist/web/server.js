@@ -24,7 +24,28 @@ exports.WebServer = void 0;
 exports.createApp = createApp;
 const express_1 = __importDefault(require("express"));
 const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
+const crypto_1 = __importDefault(require("crypto"));
 const conversation_tracer_1 = require("../trace/conversation-tracer");
+const settings_1 = require("./routes/settings");
+const dashboard_1 = require("./routes/dashboard");
+const inspection_1 = require("./routes/inspection");
+const chat_1 = require("./routes/chat");
+const selfhost_1 = require("./routes/selfhost");
+/**
+ * Derive namespace from folder path (same logic as CLI)
+ */
+function deriveNamespace(folderPath) {
+    const basename = path_1.default.basename(folderPath);
+    const hash = crypto_1.default.createHash('sha256').update(folderPath).digest('hex').substring(0, 4);
+    return `${basename}-${hash}`;
+}
+/**
+ * Get stateDir for a folder
+ */
+function getStateDir(folderPath) {
+    return path_1.default.join(folderPath, '.claude', 'state');
+}
 /**
  * Create configured Express app
  */
@@ -39,10 +60,25 @@ function createApp(config) {
     // CORS headers for local development
     app.use((_req, res, next) => {
         res.header('Access-Control-Allow-Origin', '*');
-        res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
         res.header('Access-Control-Allow-Headers', 'Content-Type');
         next();
     });
+    // ===================
+    // Settings Routes (API Key persistence)
+    // ===================
+    if (stateDir) {
+        app.use('/api/settings', (0, settings_1.createSettingsRoutes)(stateDir));
+        // Dashboard routes (projects, activity, runs)
+        app.use("/api/dashboard", (0, dashboard_1.createDashboardRoutes)(stateDir));
+        app.use("/api", (0, dashboard_1.createDashboardRoutes)(stateDir)); // Also mount projects/activity/runs at /api
+        // Inspection packet routes
+        app.use("/api/inspection", (0, inspection_1.createInspectionRoutes)(stateDir));
+        // Chat routes (conversation management)
+        app.use("/api", (0, chat_1.createChatRoutes)(stateDir));
+        // Self-hosting routes (dev/prod promotion)
+        app.use("/api", (0, selfhost_1.createSelfhostRoutes)(stateDir));
+    }
     // ===================
     // REST API Routes (v2)
     // ===================
@@ -415,6 +451,13 @@ function createApp(config) {
     app.get('/new', (_req, res) => {
         res.sendFile(path_1.default.join(__dirname, 'public', 'index.html'));
     });
+    /**
+     * GET /settings
+     * Serve settings page
+     */
+    app.get('/settings', (_req, res) => {
+        res.sendFile(path_1.default.join(__dirname, 'public', 'index.html'));
+    });
     // ===================
     // Health Check
     // ===================
@@ -443,6 +486,125 @@ function createApp(config) {
         });
     });
     // ===================
+    // Agent Launch API
+    // ===================
+    /**
+     * GET /api/agents
+     * List agents available in specified folder
+     * Query: ?folder=/path/to/project
+     * Returns: { folder, namespace, stateDir, agents[], effectiveCwd }
+     */
+    app.get('/api/agents', (req, res) => {
+        try {
+            const folder = req.query.folder;
+            if (!folder || typeof folder !== 'string') {
+                res.status(400).json({
+                    error: 'INVALID_INPUT',
+                    message: 'folder query parameter is required',
+                });
+                return;
+            }
+            // Resolve to absolute path
+            const absoluteFolder = path_1.default.resolve(folder);
+            // Check if folder exists
+            if (!fs_1.default.existsSync(absoluteFolder)) {
+                res.status(404).json({
+                    error: 'FOLDER_NOT_FOUND',
+                    message: `Folder does not exist: ${absoluteFolder}`,
+                });
+                return;
+            }
+            // Check if it's a directory
+            const stat = fs_1.default.statSync(absoluteFolder);
+            if (!stat.isDirectory()) {
+                res.status(400).json({
+                    error: 'NOT_A_DIRECTORY',
+                    message: `Path is not a directory: ${absoluteFolder}`,
+                });
+                return;
+            }
+            // Derive namespace and stateDir
+            const folderNamespace = deriveNamespace(absoluteFolder);
+            const folderStateDir = getStateDir(absoluteFolder);
+            // Check for .claude/agents/ directory
+            const agentsDir = path_1.default.join(absoluteFolder, '.claude', 'agents');
+            const agents = [];
+            if (fs_1.default.existsSync(agentsDir) && fs_1.default.statSync(agentsDir).isDirectory()) {
+                const files = fs_1.default.readdirSync(agentsDir);
+                for (const file of files) {
+                    if (file.endsWith('.md')) {
+                        agents.push({
+                            name: file.replace('.md', ''),
+                            path: path_1.default.join(agentsDir, file),
+                        });
+                    }
+                }
+            }
+            res.json({
+                folder: absoluteFolder,
+                effectiveCwd: absoluteFolder,
+                namespace: folderNamespace,
+                stateDir: folderStateDir,
+                hasAgentsDir: fs_1.default.existsSync(agentsDir),
+                agents,
+                agentCount: agents.length,
+            });
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            res.status(500).json({ error: 'INTERNAL_ERROR', message });
+        }
+    });
+    /**
+     * GET /agent
+     * Serve agent launcher page
+     */
+    app.get('/agent', (_req, res) => {
+        res.sendFile(path_1.default.join(__dirname, 'public', 'index.html'));
+    });
+    /**
+     * GET /dashboard
+     * Serve dashboard page
+     */
+    app.get('/dashboard', (_req, res) => {
+        res.sendFile(path_1.default.join(__dirname, 'public', 'index.html'));
+    });
+    /**
+     * GET /projects/:id
+     * Serve project detail page
+     */
+    app.get('/projects/:id', (_req, res) => {
+        res.sendFile(path_1.default.join(__dirname, 'public', 'index.html'));
+    });
+    /**
+     * GET /chat/:projectId
+     * Serve chat page for a project
+     */
+    app.get('/chat/:projectId', (_req, res) => {
+        res.sendFile(path_1.default.join(__dirname, 'public', 'index.html'));
+    });
+    /**
+     * GET /activity
+     * Serve activity page
+     */
+    app.get('/activity', (_req, res) => {
+        res.sendFile(path_1.default.join(__dirname, 'public', 'index.html'));
+    });
+    /**
+     * GET /runs/:id
+     * Serve run detail page
+     */
+    app.get('/runs/:id', (_req, res) => {
+        res.sendFile(path_1.default.join(__dirname, 'public', 'index.html'));
+    });
+    /**
+     * GET /sessions/:id
+     * Serve session detail page
+     */
+    app.get('/sessions/:id', (_req, res) => {
+        res.sendFile(path_1.default.join(__dirname, 'public', 'index.html'));
+    });
+    // ===================
     // Route List
     // ===================
     /**
@@ -462,7 +624,39 @@ function createApp(config) {
             'PATCH /api/tasks/:task_id/status',
             'GET /api/health',
             'GET /api/namespace',
+            'GET /api/agents',
             'GET /api/routes',
+            // Dashboard routes
+            'GET /api/dashboard',
+            'GET /api/projects',
+            'POST /api/projects',
+            'GET /api/projects/:projectId',
+            'PATCH /api/projects/:projectId',
+            'POST /api/projects/:projectId/archive',
+            'POST /api/projects/:projectId/unarchive',
+            'GET /api/activity',
+            'GET /api/sessions',
+            'GET /api/sessions/:sessionId',
+            'GET /api/runs',
+            'GET /api/runs/:runId',
+            'GET /api/runs/:runId/logs',
+            // Inspection routes
+            'GET /api/inspection',
+            'POST /api/inspection/run/:runId',
+            'GET /api/inspection/:packetId',
+            'GET /api/inspection/:packetId/markdown',
+            'GET /api/inspection/:packetId/clipboard',
+            // Chat routes
+            'GET /api/projects/:projectId/conversation',
+            'GET /api/projects/:projectId/conversation/status',
+            'POST /api/projects/:projectId/chat',
+            'POST /api/projects/:projectId/respond',
+            'DELETE /api/projects/:projectId/conversation',
+            'PATCH /api/projects/:projectId/conversation/:messageId',
+            // Self-hosting routes
+            'GET /api/projects/:projectId/selfhost/status',
+            'POST /api/projects/:projectId/selfhost/apply',
+            'GET /api/projects/:projectId/selfhost/resume/:applyId',
         ];
         res.json({ routes });
     });

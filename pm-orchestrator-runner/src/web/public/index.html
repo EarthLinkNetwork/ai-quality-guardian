@@ -843,6 +843,79 @@
       background: #9ca3af;
       cursor: not-allowed;
     }
+
+    /* Resume Info Panel */
+    .resume-panel {
+      background: #f0f9ff;
+      border: 2px solid #3b82f6;
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .resume-panel h4 {
+      color: #1e40af;
+      margin-bottom: 12px;
+    }
+
+    .resume-panel.match {
+      background: #f0fdf4;
+      border-color: #22c55e;
+    }
+
+    .resume-panel.match h4 {
+      color: #065f46;
+    }
+
+    .resume-panel.mismatch {
+      background: #fef2f2;
+      border-color: #ef4444;
+    }
+
+    .resume-panel.mismatch h4 {
+      color: #991b1b;
+    }
+
+    .resume-details {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .resume-detail-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .resume-detail-item label {
+      font-size: 0.8rem;
+      color: #6b7280;
+      font-weight: 500;
+    }
+
+    .resume-detail-item value {
+      font-size: 0.9rem;
+      color: #1f2937;
+    }
+
+    .resume-state-message {
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+
+    .resume-state-message.match {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .resume-state-message.mismatch {
+      background: #fee2e2;
+      color: #991b1b;
+    }
   </style>
 </head>
 <body>
@@ -2155,7 +2228,7 @@
     }
 
     // Render Project Detail page
-    async function renderProjectDetail(projectId) {
+    async function renderProjectDetail(projectId, resumeId) {
       app.innerHTML = '<div class="loading">Loading Project</div>';
 
       try {
@@ -2164,6 +2237,19 @@
 
         const project = data.project;
         const sessions = data.sessions || [];
+
+        // Fetch resume info if resumeId is provided
+        var resumeInfo = null;
+        if (resumeId) {
+          try {
+            var resumeRes = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/selfhost/resume/' + encodeURIComponent(resumeId));
+            if (resumeRes.ok) {
+              resumeInfo = await resumeRes.json();
+            }
+          } catch (e) {
+            console.warn('Failed to load resume info:', e);
+          }
+        }
 
         const backBtn = '<a href="/dashboard" class="back-btn" onclick="event.preventDefault(); navigate(\'/dashboard\')">Back to Dashboard</a>';
 
@@ -2232,11 +2318,18 @@
           </div>
 
           ${project.projectType === 'runner-dev' ? '<div id="selfhost-section"></div>' : ''}
+
+          ${resumeInfo ? '<div id="resume-info-section"></div>' : ''}
         `;
 
         // Load self-hosting status for runner-dev projects
         if (project.projectType === 'runner-dev') {
           loadSelfhostStatus(projectId);
+        }
+
+        // Display resume info if available
+        if (resumeInfo) {
+          renderResumeInfo(resumeInfo);
         }
       } catch (error) {
         app.innerHTML = `
@@ -2366,11 +2459,51 @@
           return;
         }
 
-        alert('Apply artifacts created!\\n\\nArtifact directory: ' + data.artifactDir + '\\n\\nApply plan saved to: ' + data.applyPlanPath);
+        var resumeInfo = data.resumeUrl ? '\\n\\nResume URL: ' + window.location.origin + data.resumeUrl + '\\n\\nApply ID: ' + data.applyId : '';
+        alert('Apply artifacts created!' + resumeInfo + '\\n\\nArtifact directory: ' + data.artifactDir + '\\n\\nApply plan saved to: ' + data.applyPlanPath);
         loadSelfhostStatus(projectId);
       } catch (e) {
         alert('Error: ' + e.message);
       }
+    }
+
+    // Render resume info panel
+    function renderResumeInfo(info) {
+      var section = document.getElementById('resume-info-section');
+      if (!section) return;
+
+      var expectedState = info.expectedState || {};
+      var currentState = info.currentState || {};
+      var stateMatch = info.stateMatch || {};
+
+      var awaitingMatch = stateMatch.awaitingResponseMatch ? 'match' : 'mismatch';
+      var awaitingIcon = stateMatch.awaitingResponseMatch ? '&#10004;' : '&#10060;';
+
+      section.innerHTML =
+        '<div class="card resume-panel ' + awaitingMatch + '">' +
+          '<h4>&#128260; Resume from Apply: ' + escapeHtml(info.applyId) + '</h4>' +
+          '<div class="resume-details">' +
+            '<div class="resume-detail-item">' +
+              '<label>Created At</label>' +
+              '<value>' + formatFullDate(info.createdAt) + '</value>' +
+            '</div>' +
+            '<div class="resume-detail-item">' +
+              '<label>Expected AWAITING_RESPONSE</label>' +
+              '<value>' + (expectedState.awaitingResponse ? 'Yes' : 'No') + '</value>' +
+            '</div>' +
+            '<div class="resume-detail-item">' +
+              '<label>Current AWAITING_RESPONSE</label>' +
+              '<value>' + (currentState.awaitingResponse ? 'Yes' : 'No') + ' ' + awaitingIcon + '</value>' +
+            '</div>' +
+            (expectedState.latestRunId ? '<div class="resume-detail-item"><label>Expected Run ID</label><value>' + escapeHtml(expectedState.latestRunId) + '</value></div>' : '') +
+            (currentState.latestRunId ? '<div class="resume-detail-item"><label>Current Run ID</label><value>' + escapeHtml(currentState.latestRunId) + '</value></div>' : '') +
+          '</div>' +
+          '<div class="resume-state-message ' + awaitingMatch + '">' +
+            (stateMatch.awaitingResponseMatch
+              ? '&#10004; AWAITING_RESPONSE state preserved across restart'
+              : '&#9888; AWAITING_RESPONSE state changed after restart') +
+          '</div>' +
+        '</div>';
     }
 
     // Render Chat page
@@ -2798,7 +2931,8 @@
         renderTaskDetail(taskId);
       } else if (path.startsWith('/projects/')) {
         const projectId = decodeURIComponent(path.split('/projects/')[1]);
-        renderProjectDetail(projectId);
+        const resumeId = search.get('resume');
+        renderProjectDetail(projectId, resumeId);
       } else if (path.startsWith('/runs/')) {
         const runId = decodeURIComponent(path.split('/runs/')[1]);
         renderRunDetail(runId);

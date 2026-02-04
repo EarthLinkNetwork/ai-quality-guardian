@@ -348,4 +348,333 @@ It contains multiple lines and sections to ensure proper detection by the selfho
       assert.strictEqual(res.body.error, 'NOT_FOUND');
     });
   });
+
+  describe('SELFHOST-RESUME-1: Apply creates resume.json artifact', () => {
+    let runnerDevProjectId: string;
+
+    beforeEach(async () => {
+      // Create a runner-dev project
+      const projectRes = await request(app)
+        .post('/api/projects')
+        .send({
+          projectPath: '/test/runner-dev-resume-' + Date.now(),
+          alias: 'Runner Dev Resume Test',
+          tags: ['e2e', 'selfhost', 'resume'],
+          projectType: 'runner-dev',
+        })
+        .expect(201);
+
+      runnerDevProjectId = projectRes.body.projectId;
+
+      // Setup devDir to pass all preconditions
+      const tmpDir = path.join(devDir, '.tmp');
+      fs.mkdirSync(tmpDir, { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'gate-all.log'), 'Overall: ALL PASS\n[PASS] lint\n[PASS] test\n[PASS] build');
+
+      const docsDir = path.join(devDir, 'docs');
+      fs.mkdirSync(docsDir, { recursive: true });
+      const evidenceContent = `# Evidence
+
+## Resume Test Evidence File
+
+This is the evidence file with more than 100 bytes of content for testing resume artifact creation.
+It contains multiple lines and sections to ensure proper detection by the selfhost status API.
+
+## Resume Verification
+- Item 1: Resume verified
+- Item 2: Resume verified
+- Item 3: Resume verified
+`;
+      fs.writeFileSync(path.join(docsDir, 'EVIDENCE.md'), evidenceContent);
+
+      // Initialize git repo
+      try {
+        const { execSync } = require('child_process');
+        execSync('git init', { cwd: devDir, stdio: 'pipe' });
+        execSync('git config user.email "test@test.com"', { cwd: devDir, stdio: 'pipe' });
+        execSync('git config user.name "Test"', { cwd: devDir, stdio: 'pipe' });
+        fs.writeFileSync(path.join(devDir, 'README.md'), '# Resume Test');
+        execSync('git add .', { cwd: devDir, stdio: 'pipe' });
+        execSync('git commit -m "init resume test"', { cwd: devDir, stdio: 'pipe' });
+      } catch {
+        // Git setup may fail
+      }
+    });
+
+    afterEach(() => {
+      try {
+        fs.rmSync(path.join(devDir, '.tmp'), { recursive: true, force: true });
+        fs.rmSync(path.join(devDir, 'docs'), { recursive: true, force: true });
+        fs.rmSync(path.join(devDir, '.git'), { recursive: true, force: true });
+        fs.rmSync(path.join(devDir, 'README.md'), { force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    });
+
+    it('should create resume.json with correct structure', async () => {
+      // Apply to create artifacts
+      const applyRes = await request(app)
+        .post(`/api/projects/${runnerDevProjectId}/selfhost/apply`)
+        .expect(200);
+
+      assert.ok(applyRes.body.resumePath, 'resumePath should be returned');
+      assert.ok(applyRes.body.applyId, 'applyId should be returned');
+      assert.ok(applyRes.body.resumeUrl, 'resumeUrl should be returned');
+
+      // Verify resume.json was created
+      assert.ok(fs.existsSync(applyRes.body.resumePath), 'resume.json should exist');
+
+      // Verify resume.json content
+      const resumeContent = JSON.parse(fs.readFileSync(applyRes.body.resumePath, 'utf-8'));
+      assert.strictEqual(resumeContent.projectId, runnerDevProjectId);
+      assert.strictEqual(resumeContent.applyId, applyRes.body.applyId);
+      assert.ok(resumeContent.createdAt);
+      assert.ok(resumeContent.resumeUrl);
+      assert.ok(resumeContent.expectedState);
+      assert.strictEqual(typeof resumeContent.expectedState.awaitingResponse, 'boolean');
+    });
+
+    it('should include applyId and resumeUrl in apply response', async () => {
+      const applyRes = await request(app)
+        .post(`/api/projects/${runnerDevProjectId}/selfhost/apply`)
+        .expect(200);
+
+      assert.ok(applyRes.body.applyId);
+      assert.ok(applyRes.body.applyId.startsWith('apply-'));
+      assert.ok(applyRes.body.resumeUrl);
+      assert.ok(applyRes.body.resumeUrl.includes(runnerDevProjectId));
+      assert.ok(applyRes.body.resumeUrl.includes('resume='));
+    });
+  });
+
+  describe('SELFHOST-RESUME-2: Resume API endpoint', () => {
+    let runnerDevProjectId: string;
+    let applyId: string;
+
+    beforeEach(async () => {
+      // Create a runner-dev project
+      const projectRes = await request(app)
+        .post('/api/projects')
+        .send({
+          projectPath: '/test/runner-dev-resume-api-' + Date.now(),
+          alias: 'Runner Dev Resume API Test',
+          tags: ['e2e', 'selfhost', 'resume'],
+          projectType: 'runner-dev',
+        })
+        .expect(201);
+
+      runnerDevProjectId = projectRes.body.projectId;
+
+      // Setup devDir
+      const tmpDir = path.join(devDir, '.tmp');
+      fs.mkdirSync(tmpDir, { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'gate-all.log'), 'Overall: ALL PASS\n[PASS] lint\n[PASS] test\n[PASS] build');
+
+      const docsDir = path.join(devDir, 'docs');
+      fs.mkdirSync(docsDir, { recursive: true });
+      const evidenceContent = `# Evidence
+
+## Resume API Test Evidence File
+
+This is the evidence file with more than 100 bytes of content for testing the resume API endpoint.
+Contains multiple sections for proper detection.
+
+## API Test Verification
+- Item 1: API verified
+- Item 2: API verified
+`;
+      fs.writeFileSync(path.join(docsDir, 'EVIDENCE.md'), evidenceContent);
+
+      // Initialize git repo
+      try {
+        const { execSync } = require('child_process');
+        execSync('git init', { cwd: devDir, stdio: 'pipe' });
+        execSync('git config user.email "test@test.com"', { cwd: devDir, stdio: 'pipe' });
+        execSync('git config user.name "Test"', { cwd: devDir, stdio: 'pipe' });
+        fs.writeFileSync(path.join(devDir, 'README.md'), '# Resume API Test');
+        execSync('git add .', { cwd: devDir, stdio: 'pipe' });
+        execSync('git commit -m "init resume api test"', { cwd: devDir, stdio: 'pipe' });
+      } catch {
+        // Git setup may fail
+      }
+
+      // Create apply artifacts
+      const applyRes = await request(app)
+        .post(`/api/projects/${runnerDevProjectId}/selfhost/apply`)
+        .expect(200);
+
+      applyId = applyRes.body.applyId;
+    });
+
+    afterEach(() => {
+      try {
+        fs.rmSync(path.join(devDir, '.tmp'), { recursive: true, force: true });
+        fs.rmSync(path.join(devDir, 'docs'), { recursive: true, force: true });
+        fs.rmSync(path.join(devDir, '.git'), { recursive: true, force: true });
+        fs.rmSync(path.join(devDir, 'README.md'), { force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    });
+
+    it('should return resume artifact via GET endpoint', async () => {
+      const res = await request(app)
+        .get(`/api/projects/${runnerDevProjectId}/selfhost/resume/${applyId}`)
+        .expect(200);
+
+      assert.strictEqual(res.body.projectId, runnerDevProjectId);
+      assert.strictEqual(res.body.applyId, applyId);
+      assert.ok(res.body.createdAt);
+      assert.ok(res.body.resumeUrl);
+      assert.ok(res.body.expectedState);
+      assert.ok(res.body.currentState);
+      assert.ok(res.body.stateMatch);
+      assert.strictEqual(typeof res.body.stateMatch.awaitingResponseMatch, 'boolean');
+    });
+
+    it('should return 404 for non-existent applyId', async () => {
+      const res = await request(app)
+        .get(`/api/projects/${runnerDevProjectId}/selfhost/resume/apply-non-existent`)
+        .expect(404);
+
+      assert.strictEqual(res.body.error, 'APPLY_NOT_FOUND');
+    });
+
+    it('should return 404 for non-existent project', async () => {
+      const res = await request(app)
+        .get(`/api/projects/non-existent-project/selfhost/resume/${applyId}`)
+        .expect(404);
+
+      assert.strictEqual(res.body.error, 'NOT_FOUND');
+    });
+  });
+
+  describe('SELFHOST-RESUME-3: AWAITING_RESPONSE state persistence', () => {
+    let runnerDevProjectId: string;
+
+    beforeEach(async () => {
+      // Create a runner-dev project
+      const projectRes = await request(app)
+        .post('/api/projects')
+        .send({
+          projectPath: '/test/runner-dev-awaiting-' + Date.now(),
+          alias: 'Runner Dev Awaiting Test',
+          tags: ['e2e', 'selfhost', 'awaiting'],
+          projectType: 'runner-dev',
+        })
+        .expect(201);
+
+      runnerDevProjectId = projectRes.body.projectId;
+
+      // Setup devDir
+      const tmpDir = path.join(devDir, '.tmp');
+      fs.mkdirSync(tmpDir, { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'gate-all.log'), 'Overall: ALL PASS\n[PASS] lint\n[PASS] test\n[PASS] build');
+
+      const docsDir = path.join(devDir, 'docs');
+      fs.mkdirSync(docsDir, { recursive: true });
+      const evidenceContent = `# Evidence
+
+## AWAITING_RESPONSE Test Evidence File
+
+This is the evidence file for testing AWAITING_RESPONSE state persistence across server restarts.
+Contains multiple sections for proper detection.
+
+## State Persistence Verification
+- Item 1: State persisted
+- Item 2: State persisted
+`;
+      fs.writeFileSync(path.join(docsDir, 'EVIDENCE.md'), evidenceContent);
+
+      // Initialize git repo
+      try {
+        const { execSync } = require('child_process');
+        execSync('git init', { cwd: devDir, stdio: 'pipe' });
+        execSync('git config user.email "test@test.com"', { cwd: devDir, stdio: 'pipe' });
+        execSync('git config user.name "Test"', { cwd: devDir, stdio: 'pipe' });
+        fs.writeFileSync(path.join(devDir, 'README.md'), '# Awaiting Test');
+        execSync('git add .', { cwd: devDir, stdio: 'pipe' });
+        execSync('git commit -m "init awaiting test"', { cwd: devDir, stdio: 'pipe' });
+      } catch {
+        // Git setup may fail
+      }
+    });
+
+    afterEach(() => {
+      try {
+        fs.rmSync(path.join(devDir, '.tmp'), { recursive: true, force: true });
+        fs.rmSync(path.join(devDir, 'docs'), { recursive: true, force: true });
+        fs.rmSync(path.join(devDir, '.git'), { recursive: true, force: true });
+        fs.rmSync(path.join(devDir, 'README.md'), { force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    });
+
+    it('should record awaitingResponse state in resume artifact', async () => {
+      // Apply to create resume artifact (no AWAITING_RESPONSE tasks in test)
+      const applyRes = await request(app)
+        .post(`/api/projects/${runnerDevProjectId}/selfhost/apply`)
+        .expect(200);
+
+      // Verify resume artifact has expectedState with awaitingResponse
+      const resumeContent = JSON.parse(fs.readFileSync(applyRes.body.resumePath, 'utf-8'));
+      assert.strictEqual(typeof resumeContent.expectedState.awaitingResponse, 'boolean');
+      // In test environment with no sessions, awaitingResponse should be false
+      assert.strictEqual(resumeContent.expectedState.awaitingResponse, false);
+    });
+
+    it('should compare current and expected state in resume endpoint', async () => {
+      // Apply to create resume artifact
+      const applyRes = await request(app)
+        .post(`/api/projects/${runnerDevProjectId}/selfhost/apply`)
+        .expect(200);
+
+      // Get resume info via API
+      const resumeRes = await request(app)
+        .get(`/api/projects/${runnerDevProjectId}/selfhost/resume/${applyRes.body.applyId}`)
+        .expect(200);
+
+      // Should have both expectedState and currentState
+      assert.ok(resumeRes.body.expectedState, 'should have expectedState');
+      assert.ok(resumeRes.body.currentState, 'should have currentState');
+      assert.ok(resumeRes.body.stateMatch, 'should have stateMatch');
+
+      // In test environment, both should be false (no AWAITING_RESPONSE)
+      assert.strictEqual(resumeRes.body.expectedState.awaitingResponse, false);
+      assert.strictEqual(resumeRes.body.currentState.awaitingResponse, false);
+      assert.strictEqual(resumeRes.body.stateMatch.awaitingResponseMatch, true);
+    });
+
+    it('should prove state survives simulated restart by recreating app', async () => {
+      // Apply to create resume artifact
+      const applyRes = await request(app)
+        .post(`/api/projects/${runnerDevProjectId}/selfhost/apply`)
+        .expect(200);
+
+      const applyId = applyRes.body.applyId;
+
+      // Simulate server restart by creating a new app instance
+      const newApp = createApp({
+        queueStore: mockQueueStore as any,
+        sessionId: testSessionId + '-restarted',
+        namespace: testNamespace,
+        projectRoot: tempDir,
+        stateDir: stateDir,
+      });
+
+      // Resume artifact should still be accessible after "restart"
+      const resumeRes = await request(newApp)
+        .get(`/api/projects/${runnerDevProjectId}/selfhost/resume/${applyId}`)
+        .expect(200);
+
+      // Verify the artifact was persisted and is still valid
+      assert.strictEqual(resumeRes.body.projectId, runnerDevProjectId);
+      assert.strictEqual(resumeRes.body.applyId, applyId);
+      assert.ok(resumeRes.body.expectedState, 'expectedState should survive restart');
+      assert.ok(resumeRes.body.currentState, 'currentState should be recalculated');
+      assert.ok(resumeRes.body.stateMatch, 'stateMatch should be calculated');
+    });
+  });
 });

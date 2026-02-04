@@ -520,6 +520,402 @@
         grid-template-columns: 1fr;
       }
     }
+
+    /* Chat UI Styles */
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 200px);
+      min-height: 400px;
+    }
+
+    .chat-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      background: #fff;
+    }
+
+    .chat-message {
+      display: flex;
+      margin-bottom: 16px;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .chat-message.user {
+      justify-content: flex-end;
+    }
+
+    .chat-message.assistant {
+      justify-content: flex-start;
+    }
+
+    .chat-message.system {
+      justify-content: center;
+    }
+
+    .chat-bubble {
+      max-width: 70%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      line-height: 1.5;
+      word-wrap: break-word;
+    }
+
+    .chat-message.user .chat-bubble {
+      background: #2563eb;
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+
+    .chat-message.assistant .chat-bubble {
+      background: #f3f4f6;
+      color: #374151;
+      border-bottom-left-radius: 4px;
+    }
+
+    .chat-message.system .chat-bubble {
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 0.9rem;
+      padding: 8px 16px;
+    }
+
+    .chat-bubble-meta {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-top: 4px;
+    }
+
+    .chat-message.user .chat-bubble-meta {
+      text-align: right;
+      color: rgba(255,255,255,0.7);
+    }
+
+    .chat-input-container {
+      padding: 16px;
+      border-top: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+
+    .chat-input-wrapper {
+      display: flex;
+      gap: 12px;
+    }
+
+    .chat-input {
+      flex: 1;
+      padding: 12px 16px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 1rem;
+      resize: none;
+      min-height: 44px;
+      max-height: 150px;
+    }
+
+    .chat-input:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .chat-input.respond-mode {
+      border-color: #f59e0b;
+      background: #fffbeb;
+    }
+
+    .chat-send-btn {
+      padding: 12px 24px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .chat-send-btn:hover {
+      background: #1d4ed8;
+    }
+
+    .chat-send-btn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    .chat-send-btn.respond-mode {
+      background: #f59e0b;
+    }
+
+    .chat-send-btn.respond-mode:hover {
+      background: #d97706;
+    }
+
+    .chat-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      color: #6b7280;
+    }
+
+    .chat-status.awaiting {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .chat-status .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid #e5e7eb;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .project-type-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .project-type-badge.runner-dev {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .project-type-badge.normal {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .settings-panel {
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .settings-panel h4 {
+      margin-bottom: 12px;
+      color: #374151;
+    }
+
+
+    /* Self-Hosting UI Styles */
+    .selfhost-panel {
+      background: #fefce8;
+      border: 2px solid #fbbf24;
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .selfhost-panel h4 {
+      color: #92400e;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .selfhost-panel.ready {
+      background: #f0fdf4;
+      border-color: #22c55e;
+    }
+
+    .selfhost-panel.ready h4 {
+      color: #065f46;
+    }
+
+    .selfhost-panel.blocked {
+      background: #fef2f2;
+      border-color: #ef4444;
+    }
+
+    .selfhost-panel.blocked h4 {
+      color: #991b1b;
+    }
+
+    .selfhost-checks {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .selfhost-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+    }
+
+    .selfhost-check .check-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+
+    .selfhost-check .check-icon.pass {
+      background: #22c55e;
+      color: white;
+    }
+
+    .selfhost-check .check-icon.fail {
+      background: #ef4444;
+      color: white;
+    }
+
+    .selfhost-apply-plan {
+      background: #1f2937;
+      color: #e5e7eb;
+      border-radius: 6px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      margin-bottom: 16px;
+    }
+
+    .selfhost-apply-plan ol {
+      margin: 0;
+      padding-left: 24px;
+    }
+
+    .selfhost-apply-plan li {
+      margin-bottom: 4px;
+    }
+
+    .selfhost-block-reason {
+      background: #fef2f2;
+      color: #991b1b;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+    }
+
+    .selfhost-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn-apply {
+      background: #f59e0b;
+      color: white;
+    }
+
+    .btn-apply:hover {
+      background: #d97706;
+    }
+
+    .btn-apply:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    /* Resume Info Panel */
+    .resume-panel {
+      background: #f0f9ff;
+      border: 2px solid #3b82f6;
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .resume-panel h4 {
+      color: #1e40af;
+      margin-bottom: 12px;
+    }
+
+    .resume-panel.match {
+      background: #f0fdf4;
+      border-color: #22c55e;
+    }
+
+    .resume-panel.match h4 {
+      color: #065f46;
+    }
+
+    .resume-panel.mismatch {
+      background: #fef2f2;
+      border-color: #ef4444;
+    }
+
+    .resume-panel.mismatch h4 {
+      color: #991b1b;
+    }
+
+    .resume-details {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .resume-detail-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .resume-detail-item label {
+      font-size: 0.8rem;
+      color: #6b7280;
+      font-weight: 500;
+    }
+
+    .resume-detail-item value {
+      font-size: 0.9rem;
+      color: #1f2937;
+    }
+
+    .resume-state-message {
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+
+    .resume-state-message.match {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .resume-state-message.mismatch {
+      background: #fee2e2;
+      color: #991b1b;
+    }
   </style>
 </head>
 <body>
@@ -536,8 +932,11 @@
         </div>
       </div>
       <nav id="main-nav">
+        <a href="/dashboard" data-nav="dashboard">Dashboard</a>
         <a href="/" data-nav="home">Task Groups</a>
-        <a href="/new" data-nav="new">+ New Command</a>
+        <a href="/activity" data-nav="activity">Activity</a>
+        <a href="/new" data-nav="new">+ New</a>
+        <a href="/agent" data-nav="agent">Agent</a>
         <a href="/settings" data-nav="settings">Settings</a>
       </nav>
     </div>
@@ -625,11 +1024,21 @@
     function updateNav(path) {
       document.querySelectorAll('#main-nav a').forEach(link => {
         link.classList.remove('active');
-        if (path === '/' && link.dataset.nav === 'home') {
+        if (path === '/dashboard' && link.dataset.nav === 'dashboard') {
+          link.classList.add('active');
+        } else if (path === '/' && link.dataset.nav === 'home') {
+          link.classList.add('active');
+        } else if (path === '/activity' && link.dataset.nav === 'activity') {
           link.classList.add('active');
         } else if (path === '/new' && link.dataset.nav === 'new') {
           link.classList.add('active');
+        } else if (path === '/agent' && link.dataset.nav === 'agent') {
+          link.classList.add('active');
         } else if (path === '/settings' && link.dataset.nav === 'settings') {
+          link.classList.add('active');
+        } else if (path.startsWith('/projects/')) {
+          link.classList.add('active');
+        } else if (path.startsWith('/runs/')) {
           link.classList.add('active');
         }
       });
@@ -1547,6 +1956,960 @@
       }
     }
 
+    // ===================
+    // Agent Launcher
+    // ===================
+    let agentData = null;
+
+    async function renderAgentLauncher() {
+      app.innerHTML = `
+        <div class="page-header">
+          <h2>Agent Launcher</h2>
+        </div>
+        <div class="card" data-testid="agent-launcher-root">
+          <h3>Select Project Folder</h3>
+          <p class="hint" style="color: #6b7280; margin-bottom: 12px;">
+            Enter the path to a project folder to inspect its agent configuration.
+          </p>
+          <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+            <input type="text" id="folder-input" data-testid="folder-input"
+              placeholder="/path/to/project"
+              style="flex: 1; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-family: monospace; font-size: 0.9rem;">
+            <button class="btn btn-primary" onclick="inspectFolder()">Inspect</button>
+          </div>
+          <div id="agent-result" data-testid="agent-result"></div>
+        </div>
+        <style>
+          .agent-info-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-top: 16px; }
+          .agent-info-row { display: flex; margin-bottom: 8px; }
+          .agent-info-label { width: 140px; font-weight: 600; color: #374151; }
+          .agent-info-value { flex: 1; font-family: monospace; color: #1f2937; word-break: break-all; }
+          .agent-list { margin-top: 16px; }
+          .agent-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; }
+          .agent-item .agent-name { font-weight: 500; color: #1f2937; }
+          .agent-item .agent-path { font-size: 0.85rem; color: #6b7280; font-family: monospace; }
+          .no-agents { padding: 16px; background: #fef3c7; border-radius: 6px; color: #92400e; }
+          .agent-status { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: 500; }
+          .agent-status.found { background: #d1fae5; color: #065f46; }
+          .agent-status.not-found { background: #fef3c7; color: #92400e; }
+        </style>
+      `;
+    }
+
+    async function inspectFolder() {
+      const folderInput = document.getElementById('folder-input');
+      const resultDiv = document.getElementById('agent-result');
+      const folder = folderInput?.value?.trim();
+
+      if (!folder) {
+        resultDiv.innerHTML = '<p style="color: #dc2626;">Please enter a folder path.</p>';
+        return;
+      }
+
+      resultDiv.innerHTML = '<p>Inspecting folder...</p>';
+
+      try {
+        const response = await fetch(`/api/agents?folder=${encodeURIComponent(folder)}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          resultDiv.innerHTML = `<p style="color: #dc2626;">Error: ${data.message || 'Failed to inspect folder'}</p>`;
+          return;
+        }
+
+        // Store for later use
+        agentData = data;
+
+        // Save to JSON file for evidence (via console)
+        console.log('[AGENT-INSPECT]', JSON.stringify(data, null, 2));
+
+        const agentsHtml = data.agents.length > 0
+          ? data.agents.map(a => `
+              <div class="agent-item">
+                <span class="agent-name">${a.name}</span>
+                <span class="agent-path">${a.path}</span>
+              </div>
+            `).join('')
+          : '<div class="no-agents">No agents found in .claude/agents/ directory</div>';
+
+        resultDiv.innerHTML = `
+          <div class="agent-info-card" data-testid="agent-info-card">
+            <div class="agent-info-row">
+              <span class="agent-info-label">Selected Folder:</span>
+              <span class="agent-info-value" data-testid="selected-folder">${data.folder}</span>
+            </div>
+            <div class="agent-info-row">
+              <span class="agent-info-label">Effective CWD:</span>
+              <span class="agent-info-value" data-testid="effective-cwd">${data.effectiveCwd}</span>
+            </div>
+            <div class="agent-info-row">
+              <span class="agent-info-label">Namespace:</span>
+              <span class="agent-info-value" data-testid="namespace">${data.namespace}</span>
+            </div>
+            <div class="agent-info-row">
+              <span class="agent-info-label">State Directory:</span>
+              <span class="agent-info-value" data-testid="state-dir">${data.stateDir}</span>
+            </div>
+            <div class="agent-info-row">
+              <span class="agent-info-label">Agents Directory:</span>
+              <span class="agent-info-value">
+                <span class="agent-status ${data.hasAgentsDir ? 'found' : 'not-found'}" data-testid="agents-dir-status">
+                  ${data.hasAgentsDir ? 'Found' : 'Not Found'}
+                </span>
+              </span>
+            </div>
+            <div class="agent-info-row">
+              <span class="agent-info-label">Agent Count:</span>
+              <span class="agent-info-value" data-testid="agent-count">${data.agentCount}</span>
+            </div>
+            <div class="agent-list" data-testid="agent-list">
+              <h4 style="margin-bottom: 8px;">Agents:</h4>
+              ${agentsHtml}
+            </div>
+          </div>
+        `;
+      } catch (error) {
+        resultDiv.innerHTML = `<p style="color: #dc2626;">Error: ${error.message}</p>`;
+      }
+    }
+
+    // ===================
+    // Dashboard & Activity Pages
+    // ===================
+
+    // Render Dashboard
+    async function renderDashboard() {
+      app.innerHTML = '<div class="loading">Loading Dashboard</div>';
+
+      try {
+        const data = await fetch('/api/dashboard').then(r => r.json());
+        const projects = data.projects || [];
+        const recentActivity = data.recentActivity || [];
+        const stats = data.stats || {};
+
+        const projectCards = projects.length > 0
+          ? projects.map(p => `
+              <div class="list-item" onclick="navigate('/projects/${encodeURIComponent(p.projectId)}')">
+                <div class="list-item-main">
+                  <div class="list-item-title">
+                    ${p.favorite ? '<span style="color: #f59e0b;">&#9733;</span> ' : ''}
+                    ${escapeHtml(p.alias || p.projectPath)}
+                  </div>
+                  <div class="list-item-meta">
+                    <span class="badge badge-${p.status === 'running' ? 'running' : p.status === 'error' ? 'error' : 'queued'}">${p.status}</span>
+                    ${p.sessionCount} sessions | Updated: ${formatDate(p.updatedAt)}
+                  </div>
+                </div>
+                <span class="list-item-arrow">&#8250;</span>
+              </div>
+            `).join('')
+          : '<div class="empty-state"><p>No projects yet. Create a project to get started.</p></div>';
+
+        const activityItems = recentActivity.length > 0
+          ? recentActivity.slice(0, 5).map(e => `
+              <div class="log-entry ${e.type === 'error' ? 'error' : ''}">
+                <div class="log-time">${formatDate(e.timestamp)}</div>
+                <div class="log-type">${escapeHtml(e.type)}</div>
+                <div class="log-content">${escapeHtml(e.summary || '')}</div>
+              </div>
+            `).join('')
+          : '<p style="color: #6b7280;">No recent activity</p>';
+
+        app.innerHTML = `
+          <div class="page-header">
+            <h2>Dashboard</h2>
+            <button class="refresh-btn" onclick="renderDashboard()">Refresh</button>
+          </div>
+
+          <div class="detail-grid" style="margin-bottom: 20px;">
+            <div class="card" style="text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #2563eb;">${stats.projects || 0}</div>
+              <div style="color: #6b7280;">Projects</div>
+            </div>
+            <div class="card" style="text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #10b981;">${stats.sessions || 0}</div>
+              <div style="color: #6b7280;">Sessions</div>
+            </div>
+            <div class="card" style="text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #f59e0b;">${stats.runs || 0}</div>
+              <div style="color: #6b7280;">Runs</div>
+            </div>
+            <div class="card" style="text-align: center;">
+              <div style="font-size: 2rem; font-weight: bold; color: #8b5cf6;">${stats.events || 0}</div>
+              <div style="color: #6b7280;">Events</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Projects</h3>
+            ${projectCards}
+            <div style="margin-top: 16px; text-align: center;">
+              <button class="btn btn-primary" onclick="showCreateProjectDialog()">+ New Project</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Recent Activity</h3>
+            ${activityItems}
+            ${recentActivity.length > 5 ? '<a href="/activity" onclick="event.preventDefault(); navigate(\'\'/activity\'\')" style="display: block; text-align: center; margin-top: 12px;">View All Activity</a>' : ''}
+          </div>
+        `;
+      } catch (error) {
+        app.innerHTML = `
+          <div class="card">
+            <div class="error-message">Error loading dashboard: ${escapeHtml(error.message)}</div>
+            <button class="btn btn-secondary" onclick="renderDashboard()">Retry</button>
+          </div>
+        `;
+      }
+    }
+
+    // Show create project dialog
+    function showCreateProjectDialog() {
+      const projectPath = prompt('Enter project path:');
+      if (!projectPath) return;
+
+      const alias = prompt('Enter project alias (optional):');
+
+      fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectPath, alias: alias || undefined }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) {
+            alert('Error: ' + data.message);
+          } else {
+            navigate('/projects/' + encodeURIComponent(data.projectId));
+          }
+        })
+        .catch(e => alert('Error: ' + e.message));
+    }
+
+    // Render Activity page
+    async function renderActivity() {
+      app.innerHTML = '<div class="loading">Loading Activity</div>';
+
+      try {
+        const data = await fetch('/api/activity?limit=50').then(r => r.json());
+        const events = data.events || [];
+
+        const eventItems = events.length > 0
+          ? events.map(e => `
+              <div class="log-entry ${e.importance === 'high' ? 'error' : ''}">
+                <div class="log-time">${formatFullDate(e.timestamp)}</div>
+                <div class="log-type">${escapeHtml(e.type)}</div>
+                <div class="log-content">${escapeHtml(e.summary || '')}</div>
+                ${e.projectAlias ? '<div style="font-size: 0.85rem; color: #6b7280;">Project: ' + escapeHtml(e.projectAlias) + '</div>' : ''}
+              </div>
+            `).join('')
+          : '<div class="empty-state"><p>No activity events yet.</p></div>';
+
+        app.innerHTML = `
+          <div class="page-header">
+            <h2>Activity</h2>
+            <button class="refresh-btn" onclick="renderActivity()">Refresh</button>
+          </div>
+
+          <div class="card">
+            <h3>Recent Events</h3>
+            ${eventItems}
+          </div>
+        `;
+      } catch (error) {
+        app.innerHTML = `
+          <div class="card">
+            <div class="error-message">Error: ${escapeHtml(error.message)}</div>
+            <button class="btn btn-secondary" onclick="renderActivity()">Retry</button>
+          </div>
+        `;
+      }
+    }
+
+    // Render Project Detail page
+    async function renderProjectDetail(projectId, resumeId) {
+      app.innerHTML = '<div class="loading">Loading Project</div>';
+
+      try {
+        const data = await fetch('/api/projects/' + encodeURIComponent(projectId)).then(r => r.json());
+        if (data.error) throw new Error(data.message);
+
+        const project = data.project;
+        const sessions = data.sessions || [];
+
+        // Fetch resume info if resumeId is provided
+        var resumeInfo = null;
+        if (resumeId) {
+          try {
+            var resumeRes = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/selfhost/resume/' + encodeURIComponent(resumeId));
+            if (resumeRes.ok) {
+              resumeInfo = await resumeRes.json();
+            }
+          } catch (e) {
+            console.warn('Failed to load resume info:', e);
+          }
+        }
+
+        const backBtn = '<a href="/dashboard" class="back-btn" onclick="event.preventDefault(); navigate(\'/dashboard\')">Back to Dashboard</a>';
+
+        const sessionItems = sessions.length > 0
+          ? sessions.map(s => `
+              <div class="list-item" onclick="navigate('/sessions/${encodeURIComponent(s.sessionId)}')">
+                <div class="list-item-main">
+                  <div class="list-item-title">${escapeHtml(s.sessionId)}</div>
+                  <div class="list-item-meta">
+                    <span class="badge badge-${s.status === 'active' ? 'running' : 'complete'}">${s.status}</span>
+                    ${s.totalRuns} runs | Started: ${formatDate(s.startedAt)}
+                  </div>
+                </div>
+                <span class="list-item-arrow">&#8250;</span>
+              </div>
+            `).join('')
+          : '<div class="empty-state"><p>No sessions yet.</p></div>';
+
+        app.innerHTML = `
+          <div class="page-header">
+            <h2>${escapeHtml(project.alias || 'Project')}</h2>
+            <div class="action-bar">
+              ${backBtn}
+              <button class="refresh-btn" onclick="renderProjectDetail('${escapeHtml(projectId)}')">Refresh</button>
+              <button class="btn btn-primary" onclick="navigate('/chat/' + encodeURIComponent('${escapeHtml(projectId)}'))">Open Chat</button>
+              <button class="btn btn-secondary" onclick="openProjectSettings('${escapeHtml(projectId)}')">Settings</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Project Details</h3>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <label>Project ID</label>
+                <value>${escapeHtml(project.projectId)}</value>
+              </div>
+              <div class="detail-item">
+                <label>Path</label>
+                <value>${escapeHtml(project.projectPath)}</value>
+              </div>
+              <div class="detail-item">
+                <label>Status</label>
+                <value><span class="badge badge-${project.status === 'running' ? 'running' : project.status === 'error' ? 'error' : 'queued'}">${project.status}</span></value>
+              </div>
+              <div class="detail-item">
+                <label>Type</label>
+                <value><span class="project-type-badge ${project.projectType === 'runner-dev' ? 'runner-dev' : 'normal'}">${project.projectType === 'runner-dev' ? 'Runner Dev' : 'Normal'}</span></value>
+              </div>
+              <div class="detail-item">
+                <label>Last Activity</label>
+                <value>${formatFullDate(project.lastActivityAt)}</value>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Sessions (${sessions.length})</h3>
+            ${sessionItems}
+          </div>
+
+          <div class="action-bar" style="margin-top: 16px;">
+            ${!project.archived
+              ? '<button class="btn btn-secondary" onclick="archiveProject(\'' + escapeHtml(projectId) + '\')">Archive Project</button>'
+              : '<button class="btn btn-primary" onclick="unarchiveProject(\'' + escapeHtml(projectId) + '\')">Unarchive Project</button>'
+            }
+          </div>
+
+          ${project.projectType === 'runner-dev' ? '<div id="selfhost-section"></div>' : ''}
+
+          ${resumeInfo ? '<div id="resume-info-section"></div>' : ''}
+        `;
+
+        // Load self-hosting status for runner-dev projects
+        if (project.projectType === 'runner-dev') {
+          loadSelfhostStatus(projectId);
+        }
+
+        // Display resume info if available
+        if (resumeInfo) {
+          renderResumeInfo(resumeInfo);
+        }
+      } catch (error) {
+        app.innerHTML = `
+          <div class="card">
+            <div class="error-message">Error: ${escapeHtml(error.message)}</div>
+            <a href="/dashboard" class="btn btn-secondary" onclick="event.preventDefault(); navigate('/dashboard')">Back to Dashboard</a>
+          </div>
+        `;
+      }
+    }
+
+    // Archive project
+    async function archiveProject(projectId) {
+      if (!confirm('Archive this project?')) return;
+      try {
+        await fetch('/api/projects/' + encodeURIComponent(projectId) + '/archive', { method: 'POST' });
+        renderProjectDetail(projectId);
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    // Unarchive project
+    async function unarchiveProject(projectId) {
+      try {
+        await fetch('/api/projects/' + encodeURIComponent(projectId) + '/unarchive', { method: 'POST' });
+        renderProjectDetail(projectId);
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    // Load self-hosting status
+    async function loadSelfhostStatus(projectId) {
+      var section = document.getElementById('selfhost-section');
+      if (!section) return;
+
+      section.innerHTML = '<div class="card"><div class="loading">Loading Self-Hosting Status...</div></div>';
+
+      try {
+        var res = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/selfhost/status');
+        var data = await res.json();
+
+        if (data.error) {
+          section.innerHTML = '<div class="card"><div class="error-message">Error: ' + escapeHtml(data.message) + '</div></div>';
+          return;
+        }
+
+        var panelClass = data.canApply ? 'ready' : 'blocked';
+        var checkIcon = function(passed) {
+          return passed
+            ? '<span class="check-icon pass">&#10003;</span>'
+            : '<span class="check-icon fail">&#10007;</span>';
+        };
+
+        var checksHtml =
+          '<div class="selfhost-checks">' +
+            '<div class="selfhost-check">' + checkIcon(data.checks.devDirExists) + '<span>Dev directory exists</span></div>' +
+            '<div class="selfhost-check">' + checkIcon(data.checks.gateAllPass) + '<span>gate:all passed</span></div>' +
+            '<div class="selfhost-check">' + checkIcon(data.checks.evidencePresent) + '<span>EVIDENCE.md present</span></div>' +
+          '</div>';
+
+        var artifactsHtml = '';
+        if (data.artifacts.gateLogPath || data.artifacts.evidencePath) {
+          artifactsHtml = '<div style="margin-bottom: 16px; font-size: 0.85rem; color: #6b7280;">' +
+            (data.artifacts.gateLogPath ? '<div>Gate log: ' + escapeHtml(data.artifacts.gateLogPath) + '</div>' : '') +
+            (data.artifacts.evidencePath ? '<div>Evidence: ' + escapeHtml(data.artifacts.evidencePath) + '</div>' : '') +
+          '</div>';
+        }
+
+        var applyPlanHtml = '';
+        if (data.applyPlan && data.applyPlan.length > 0) {
+          applyPlanHtml = '<div class="selfhost-apply-plan">' +
+            '<strong>Apply Plan:</strong>' +
+            '<ol style="margin: 8px 0 0 20px; padding: 0;">' +
+            data.applyPlan.map(function(step) {
+              return '<li style="margin: 4px 0;">' + escapeHtml(step) + '</li>';
+            }).join('') +
+            '</ol>' +
+          '</div>';
+        }
+
+        var blockReasonHtml = data.blockReason
+          ? '<div style="margin-top: 12px; padding: 8px 12px; background: #fef2f2; border-radius: 4px; color: #991b1b; font-size: 0.9rem;">' +
+              '<strong>Blocked:</strong> ' + escapeHtml(data.blockReason) +
+            '</div>'
+          : '';
+
+        var applyButton = data.canApply
+          ? '<button class="btn btn-primary" onclick="applySelfhost(\'' + escapeHtml(projectId) + '\')" style="margin-top: 16px;">Create Apply Artifacts</button>'
+          : '';
+
+        var devHeadHtml = data.devHead
+          ? '<div style="font-size: 0.85rem; color: #6b7280; margin-bottom: 8px;">Dev HEAD: <code>' + escapeHtml(data.devHead) + '</code></div>'
+          : '';
+
+        section.innerHTML =
+          '<div class="card selfhost-panel ' + panelClass + '">' +
+            '<h4>' + (data.canApply ? '&#9989;' : '&#9888;') + ' Self-Hosting / Apply</h4>' +
+            devHeadHtml +
+            checksHtml +
+            artifactsHtml +
+            applyPlanHtml +
+            blockReasonHtml +
+            applyButton +
+          '</div>';
+
+      } catch (e) {
+        section.innerHTML = '<div class="card"><div class="error-message">Error loading self-hosting status: ' + escapeHtml(e.message) + '</div></div>';
+      }
+    }
+
+    // Apply self-hosting (create artifacts)
+    async function applySelfhost(projectId) {
+      if (!confirm('Create apply artifacts for self-hosting promotion?\\n\\nThis will NOT execute git commands - it only creates the apply plan files.')) return;
+
+      try {
+        var res = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/selfhost/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        var data = await res.json();
+
+        if (data.error) {
+          alert('Apply failed: ' + data.message);
+          loadSelfhostStatus(projectId);
+          return;
+        }
+
+        var resumeInfo = data.resumeUrl ? '\\n\\nResume URL: ' + window.location.origin + data.resumeUrl + '\\n\\nApply ID: ' + data.applyId : '';
+        alert('Apply artifacts created!' + resumeInfo + '\\n\\nArtifact directory: ' + data.artifactDir + '\\n\\nApply plan saved to: ' + data.applyPlanPath);
+        loadSelfhostStatus(projectId);
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    // Render resume info panel
+    function renderResumeInfo(info) {
+      var section = document.getElementById('resume-info-section');
+      if (!section) return;
+
+      var expectedState = info.expectedState || {};
+      var currentState = info.currentState || {};
+      var stateMatch = info.stateMatch || {};
+
+      var awaitingMatch = stateMatch.awaitingResponseMatch ? 'match' : 'mismatch';
+      var awaitingIcon = stateMatch.awaitingResponseMatch ? '&#10004;' : '&#10060;';
+
+      section.innerHTML =
+        '<div class="card resume-panel ' + awaitingMatch + '">' +
+          '<h4>&#128260; Resume from Apply: ' + escapeHtml(info.applyId) + '</h4>' +
+          '<div class="resume-details">' +
+            '<div class="resume-detail-item">' +
+              '<label>Created At</label>' +
+              '<value>' + formatFullDate(info.createdAt) + '</value>' +
+            '</div>' +
+            '<div class="resume-detail-item">' +
+              '<label>Expected AWAITING_RESPONSE</label>' +
+              '<value>' + (expectedState.awaitingResponse ? 'Yes' : 'No') + '</value>' +
+            '</div>' +
+            '<div class="resume-detail-item">' +
+              '<label>Current AWAITING_RESPONSE</label>' +
+              '<value>' + (currentState.awaitingResponse ? 'Yes' : 'No') + ' ' + awaitingIcon + '</value>' +
+            '</div>' +
+            (expectedState.latestRunId ? '<div class="resume-detail-item"><label>Expected Run ID</label><value>' + escapeHtml(expectedState.latestRunId) + '</value></div>' : '') +
+            (currentState.latestRunId ? '<div class="resume-detail-item"><label>Current Run ID</label><value>' + escapeHtml(currentState.latestRunId) + '</value></div>' : '') +
+          '</div>' +
+          '<div class="resume-state-message ' + awaitingMatch + '">' +
+            (stateMatch.awaitingResponseMatch
+              ? '&#10004; AWAITING_RESPONSE state preserved across restart'
+              : '&#9888; AWAITING_RESPONSE state changed after restart') +
+          '</div>' +
+        '</div>';
+    }
+
+    // Render Chat page
+    async function renderChat(projectId) {
+      app.innerHTML = '<div class="loading">Loading Chat</div>';
+
+      try {
+        // Fetch project and conversation in parallel
+        const [projectRes, conversationRes] = await Promise.all([
+          fetch('/api/projects/' + encodeURIComponent(projectId)).then(r => r.json()),
+          fetch('/api/projects/' + encodeURIComponent(projectId) + '/conversation').then(r => r.json())
+        ]);
+
+        if (projectRes.error) throw new Error(projectRes.message);
+
+        const project = projectRes.project;
+        const messages = conversationRes.messages || [];
+        const awaitingResponse = conversationRes.awaitingResponse;
+        const awaitingMessage = conversationRes.awaitingMessage;
+
+        const backBtn = '<a href="/projects/' + encodeURIComponent(projectId) + '" class="back-btn" onclick="event.preventDefault(); navigate(\'/projects/' + encodeURIComponent(projectId) + '\')">Back to Project</a>';
+
+        // Build message list
+        const messageItems = messages.length > 0
+          ? messages.map(function(m) {
+              var roleClass = m.role;
+              var statusBadge = '';
+              if (m.status === 'processing') {
+                statusBadge = '<span class="badge badge-running">Processing</span>';
+              } else if (m.status === 'awaiting_response') {
+                statusBadge = '<span class="badge badge-needs_response">Awaiting Response</span>';
+              } else if (m.status === 'error') {
+                statusBadge = '<span class="badge badge-error">Error</span>';
+              }
+              var meta = '<div class="chat-bubble-meta">' + formatDate(m.timestamp) + ' ' + statusBadge + '</div>';
+              return '<div class="chat-message ' + roleClass + '">' +
+                '<div class="chat-bubble">' + escapeHtml(m.content) + meta + '</div>' +
+              '</div>';
+            }).join('')
+          : '<div class="empty-state" style="padding: 40px; text-align: center;"><p>No messages yet. Start a conversation!</p></div>';
+
+        // Determine input mode
+        var inputPlaceholder = awaitingResponse 
+          ? 'Type your response...' 
+          : 'Type a message to start a new task...';
+        var sendBtnClass = awaitingResponse ? 'chat-send-btn respond-mode' : 'chat-send-btn';
+        var sendBtnText = awaitingResponse ? 'Respond' : 'Send';
+        var inputClass = awaitingResponse ? 'chat-input respond-mode' : 'chat-input';
+
+        // Status bar for awaiting response
+        var statusBar = '';
+        if (awaitingResponse && awaitingMessage) {
+          var question = awaitingMessage.metadata && awaitingMessage.metadata.clarificationQuestion 
+            ? awaitingMessage.metadata.clarificationQuestion 
+            : 'The assistant is waiting for your response.';
+          statusBar = '<div class="chat-status awaiting">' +
+            '<strong>Awaiting Response:</strong> ' + escapeHtml(question) +
+          '</div>';
+        }
+
+        app.innerHTML = 
+          '<div class="page-header">' +
+            '<h2>Chat: ' + escapeHtml(project.alias || project.projectPath) + '</h2>' +
+            '<div class="action-bar">' +
+              backBtn +
+              '<button class="refresh-btn" onclick="renderChat(\'' + escapeHtml(projectId) + '\')">Refresh</button>' +
+              '<button class="btn btn-secondary" onclick="openProjectSettings(\'' + escapeHtml(projectId) + '\')">Settings</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="card chat-container">' +
+            '<div class="chat-messages" id="chat-messages">' + messageItems + '</div>' +
+            statusBar +
+            '<div class="chat-input-container">' +
+              '<div class="chat-input-wrapper">' +
+                '<textarea class="' + inputClass + '" id="chat-input" placeholder="' + inputPlaceholder + '" rows="1" onkeydown="handleChatKeydown(event, \'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')"></textarea>' +
+                '<button class="' + sendBtnClass + '" id="chat-send-btn" onclick="sendChatMessage(\'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')">' + sendBtnText + '</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+
+        // Scroll to bottom
+        var chatMessages = document.getElementById('chat-messages');
+        if (chatMessages) {
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Focus input
+        var chatInput = document.getElementById('chat-input');
+        if (chatInput) chatInput.focus();
+
+      } catch (error) {
+        app.innerHTML = 
+          '<div class="card">' +
+            '<div class="error-message">Error: ' + escapeHtml(error.message) + '</div>' +
+            '<a href="/dashboard" class="btn btn-secondary" onclick="event.preventDefault(); navigate(\'/dashboard\')">Back to Dashboard</a>' +
+          '</div>';
+      }
+    }
+
+    // Handle chat input keydown (Enter to send)
+    function handleChatKeydown(event, projectId, isRespond) {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendChatMessage(projectId, isRespond);
+      }
+    }
+
+    // Send chat message
+    async function sendChatMessage(projectId, isRespond) {
+      var input = document.getElementById('chat-input');
+      var sendBtn = document.getElementById('chat-send-btn');
+      var content = input.value.trim();
+
+      if (!content) return;
+
+      // Disable input while sending
+      input.disabled = true;
+      sendBtn.disabled = true;
+      sendBtn.textContent = 'Sending...';
+
+      try {
+        var endpoint = isRespond 
+          ? '/api/projects/' + encodeURIComponent(projectId) + '/respond'
+          : '/api/projects/' + encodeURIComponent(projectId) + '/chat';
+
+        var response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: content })
+        });
+
+        var data = await response.json();
+        if (data.error) throw new Error(data.message);
+
+        // Refresh chat
+        renderChat(projectId);
+
+      } catch (error) {
+        alert('Error: ' + error.message);
+        input.disabled = false;
+        sendBtn.disabled = false;
+        sendBtn.textContent = isRespond ? 'Respond' : 'Send';
+      }
+    }
+
+    // Open project settings modal
+    async function openProjectSettings(projectId) {
+      try {
+        var res = await fetch('/api/projects/' + encodeURIComponent(projectId)).then(function(r) { return r.json(); });
+        if (res.error) throw new Error(res.message);
+
+        var project = res.project;
+        var bootstrapPrompt = project.bootstrapPrompt || '';
+        var projectType = project.projectType || 'normal';
+
+        // Create modal
+        var modal = document.createElement('div');
+        modal.id = 'settings-modal';
+        modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;';
+        modal.innerHTML = 
+          '<div style="background: white; padding: 24px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;">' +
+            '<h3 style="margin-bottom: 16px;">Project Settings</h3>' +
+            '<div class="form-group">' +
+              '<label>Project Type</label>' +
+              '<select id="project-type-select">' +
+                '<option value="normal"' + (projectType === 'normal' ? ' selected' : '') + '>Normal</option>' +
+                '<option value="runner-dev"' + (projectType === 'runner-dev' ? ' selected' : '') + '>Runner Dev (Self-modification)</option>' +
+              '</select>' +
+            '</div>' +
+            '<div class="form-group">' +
+              '<label>Bootstrap Prompt (injected at the start of every task)</label>' +
+              '<textarea id="bootstrap-prompt-input" rows="6" style="font-family: monospace;">' + escapeHtml(bootstrapPrompt) + '</textarea>' +
+            '</div>' +
+            '<div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">' +
+              '<button class="btn btn-secondary" onclick="closeSettingsModal()">Cancel</button>' +
+              '<button class="btn btn-primary" onclick="saveChatProjectSettings(\'' + escapeHtml(projectId) + '\')">Save</button>' +
+            '</div>' +
+          '</div>';
+
+        document.body.appendChild(modal);
+
+        // Close on backdrop click
+        modal.addEventListener('click', function(e) {
+          if (e.target === modal) closeSettingsModal();
+        });
+
+      } catch (error) {
+        alert('Error loading settings: ' + error.message);
+      }
+    }
+
+    // Close settings modal
+    function closeSettingsModal() {
+      var modal = document.getElementById('settings-modal');
+      if (modal) modal.remove();
+    }
+
+    // Save project settings (Chat MVP settings modal)
+    async function saveChatProjectSettings(projectId) {
+      var projectType = document.getElementById('project-type-select').value;
+      var bootstrapPrompt = document.getElementById('bootstrap-prompt-input').value;
+
+      try {
+        var response = await fetch('/api/projects/' + encodeURIComponent(projectId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            projectType: projectType,
+            bootstrapPrompt: bootstrapPrompt 
+          })
+        });
+
+        var data = await response.json();
+        if (data.error) throw new Error(data.message);
+
+        closeSettingsModal();
+        
+        // Refresh current page
+        var path = window.location.pathname;
+        if (path.startsWith('/chat/')) {
+          renderChat(projectId);
+        } else {
+          renderProjectDetail(projectId);
+        }
+
+      } catch (error) {
+        alert('Error saving settings: ' + error.message);
+      }
+    }
+
+
+    // Render Session Detail page
+    async function renderSessionDetail(sessionId) {
+      app.innerHTML = '<div class="loading">Loading Session</div>';
+
+      try {
+        const data = await fetch('/api/sessions/' + encodeURIComponent(sessionId)).then(r => r.json());
+        if (data.error) throw new Error(data.message);
+
+        const session = data.session;
+        const runs = data.runs || [];
+
+        const backBtn = session.projectId 
+          ? '<a href="/projects/' + encodeURIComponent(session.projectId) + '" class="back-btn" onclick="event.preventDefault(); navigate(\'/projects/' + encodeURIComponent(session.projectId) + '\')">Back to Project</a>'
+          : '<a href="/dashboard" class="back-btn" onclick="event.preventDefault(); navigate(\'/dashboard\')">Back to Dashboard</a>';
+
+        const runItems = runs.length > 0
+          ? runs.map(r => `
+              <div class="list-item" onclick="navigate('/runs/${encodeURIComponent(r.runId)}')">
+                <div class="list-item-main">
+                  <div class="list-item-title">${escapeHtml(r.taskRunId)}</div>
+                  <div class="list-item-meta">
+                    <span class="badge badge-${r.status === 'COMPLETE' ? 'complete' : r.status === 'RUNNING' ? 'running' : r.status === 'ERROR' ? 'error' : 'queued'}">${r.status}</span>
+                    Started: ${formatDate(r.startedAt)}
+                  </div>
+                </div>
+                <span class="list-item-arrow">&#8250;</span>
+              </div>
+            `).join('')
+          : '<div class="empty-state"><p>No runs yet.</p></div>';
+
+        app.innerHTML = `
+          <div class="page-header">
+            <h2>Session</h2>
+            <div class="action-bar">
+              ${backBtn}
+              <button class="refresh-btn" onclick="renderSessionDetail('${escapeHtml(sessionId)}')">Refresh</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Session Details</h3>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <label>Session ID</label>
+                <value>${escapeHtml(session.sessionId)}</value>
+              </div>
+              <div class="detail-item">
+                <label>Status</label>
+                <value><span class="badge badge-${session.status === 'active' ? 'running' : 'complete'}">${session.status}</span></value>
+              </div>
+              <div class="detail-item">
+                <label>Started</label>
+                <value>${formatFullDate(session.startedAt)}</value>
+              </div>
+              <div class="detail-item">
+                <label>Total Runs</label>
+                <value>${session.totalRuns}</value>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Runs (${runs.length})</h3>
+            ${runItems}
+          </div>
+        `;
+      } catch (error) {
+        app.innerHTML = `
+          <div class="card">
+            <div class="error-message">Error: ${escapeHtml(error.message)}</div>
+            <a href="/dashboard" class="btn btn-secondary" onclick="event.preventDefault(); navigate('/dashboard')">Back to Dashboard</a>
+          </div>
+        `;
+      }
+    }
+
+    // Render Run Detail page
+    async function renderRunDetail(runId) {
+      app.innerHTML = '<div class="loading">Loading Run</div>';
+
+      try {
+        const data = await fetch('/api/runs/' + encodeURIComponent(runId)).then(r => r.json());
+        if (data.error) throw new Error(data.message);
+
+        const run = data.run;
+        const events = data.events || [];
+
+        const backBtn = run.sessionId 
+          ? '<a href="/sessions/' + encodeURIComponent(run.sessionId) + '" class="back-btn" onclick="event.preventDefault(); navigate(\'/sessions/' + encodeURIComponent(run.sessionId) + '\')">Back to Session</a>'
+          : '<a href="/dashboard" class="back-btn" onclick="event.preventDefault(); navigate(\'/dashboard\')">Back to Dashboard</a>';
+
+        const eventLog = events.length > 0
+          ? events.map(e => `
+              <div class="log-entry ${e.level === 'error' ? 'error' : ''}">
+                <div class="log-time">${formatFullDate(e.timestamp)}</div>
+                <div class="log-type">${escapeHtml(e.type)}</div>
+                <div class="log-content">${escapeHtml(e.message)}</div>
+              </div>
+            `).join('')
+          : '<p style="color: #6b7280;">No events recorded.</p>';
+
+        app.innerHTML = `
+          <div class="page-header">
+            <h2>Run Detail</h2>
+            <div class="action-bar">
+              ${backBtn}
+              <button class="refresh-btn" onclick="renderRunDetail('${escapeHtml(runId)}')">Refresh</button>
+              <button class="btn btn-secondary" onclick="generateInspectionPacket('${escapeHtml(runId)}')">Generate Inspection Packet</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Run Details</h3>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <label>Run ID</label>
+                <value>${escapeHtml(run.runId)}</value>
+              </div>
+              <div class="detail-item">
+                <label>Task Run ID</label>
+                <value>${escapeHtml(run.taskRunId)}</value>
+              </div>
+              <div class="detail-item">
+                <label>Status</label>
+                <value><span class="badge badge-${run.status === 'COMPLETE' ? 'complete' : run.status === 'RUNNING' ? 'running' : run.status === 'ERROR' ? 'error' : 'queued'}">${run.status}</span></value>
+              </div>
+              <div class="detail-item">
+                <label>Started</label>
+                <value>${formatFullDate(run.startedAt)}</value>
+              </div>
+              ${run.endedAt ? '<div class="detail-item"><label>Ended</label><value>' + formatFullDate(run.endedAt) + '</value></div>' : ''}
+              <div class="detail-item">
+                <label>Event Count</label>
+                <value>${run.eventCount}</value>
+              </div>
+            </div>
+          </div>
+
+          ${run.prompt ? '<div class="card"><h3>Prompt</h3><div class="prompt-box">' + escapeHtml(run.prompt) + '</div></div>' : ''}
+
+          <div class="card">
+            <h3>Events (${events.length})</h3>
+            ${eventLog}
+          </div>
+        `;
+      } catch (error) {
+        app.innerHTML = `
+          <div class="card">
+            <div class="error-message">Error: ${escapeHtml(error.message)}</div>
+            <a href="/dashboard" class="btn btn-secondary" onclick="event.preventDefault(); navigate('/dashboard')">Back to Dashboard</a>
+          </div>
+        `;
+      }
+    }
+
+    // Generate Inspection Packet
+    async function generateInspectionPacket(runId) {
+      try {
+        const response = await fetch('/api/inspection/run/' + encodeURIComponent(runId), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ generatedBy: 'user' }),
+        });
+        const packet = await response.json();
+        if (packet.error) throw new Error(packet.message);
+
+        // Open clipboard format in new window
+        const clipboardUrl = '/api/inspection/' + encodeURIComponent(packet.packetId) + '/clipboard';
+        alert('Inspection packet generated: ' + packet.packetId + '\n\nYou can copy it for ChatGPT from:\n' + clipboardUrl);
+      } catch (error) {
+        alert('Error generating packet: ' + error.message);
+      }
+    }
+
+    
     // Router
     function router() {
       const path = window.location.pathname;
@@ -1554,17 +2917,36 @@
       currentPath = path;
       updateNav(path);
 
-      if (path === '/' || path === '') {
+      if (path === '/dashboard') {
+        renderDashboard();
+      } else if (path === '/' || path === '') {
         renderTaskGroupList();
+      } else if (path === '/activity') {
+        renderActivity();
       } else if (path.startsWith('/task-groups/')) {
         const taskGroupId = decodeURIComponent(path.split('/task-groups/')[1]);
         renderTaskList(taskGroupId);
       } else if (path.startsWith('/tasks/')) {
         const taskId = decodeURIComponent(path.split('/tasks/')[1]);
         renderTaskDetail(taskId);
+      } else if (path.startsWith('/projects/')) {
+        const projectId = decodeURIComponent(path.split('/projects/')[1]);
+        const resumeId = search.get('resume');
+        renderProjectDetail(projectId, resumeId);
+      } else if (path.startsWith('/runs/')) {
+        const runId = decodeURIComponent(path.split('/runs/')[1]);
+        renderRunDetail(runId);
+      } else if (path.startsWith('/sessions/')) {
+        const sessionId = decodeURIComponent(path.split('/sessions/')[1]);
+        renderSessionDetail(sessionId);
       } else if (path === '/new') {
         const group = search.get('group') || '';
         renderNewCommandForm(group);
+      } else if (path === '/agent') {
+        renderAgentLauncher();
+      } else if (path.startsWith('/chat/')) {
+        const projectId = decodeURIComponent(path.split('/chat/')[1]);
+        renderChat(projectId);
       } else if (path === '/settings') {
         renderSettings();
       } else {

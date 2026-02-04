@@ -751,6 +751,7 @@ export function createApp(config: WebServerConfig): Express {
       // Self-hosting routes
       'GET /api/projects/:projectId/selfhost/status',
       'POST /api/projects/:projectId/selfhost/apply',
+      'GET /api/projects/:projectId/selfhost/resume/:applyId',
     ];
     res.json({ routes });
   });
