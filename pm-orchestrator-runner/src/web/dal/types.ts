@@ -519,6 +519,7 @@ export interface CreateProjectIndexInput {
   projectPath: string;
   alias?: string;
   tags?: string[];
+  projectType?: 'normal' | 'runner-dev';
 }
 
 export interface UpdateProjectIndexInput {

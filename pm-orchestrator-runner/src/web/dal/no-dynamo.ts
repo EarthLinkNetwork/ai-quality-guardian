@@ -248,7 +248,12 @@ export class NoDynamoDAL {
       },
       createdAt: now,
       updatedAt: now,
-    };
+    } as ProjectIndex & { projectType?: string };
+
+    // Add projectType if provided
+    if (input.projectType) {
+      (project as any).projectType = input.projectType;
+    }
 
     const filePath = path.join(this.projectsDir, projectId + ".json");
     await fs.promises.writeFile(filePath, JSON.stringify(project, null, 2));

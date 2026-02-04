@@ -726,6 +726,123 @@
       color: #374151;
     }
 
+
+    /* Self-Hosting UI Styles */
+    .selfhost-panel {
+      background: #fefce8;
+      border: 2px solid #fbbf24;
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .selfhost-panel h4 {
+      color: #92400e;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .selfhost-panel.ready {
+      background: #f0fdf4;
+      border-color: #22c55e;
+    }
+
+    .selfhost-panel.ready h4 {
+      color: #065f46;
+    }
+
+    .selfhost-panel.blocked {
+      background: #fef2f2;
+      border-color: #ef4444;
+    }
+
+    .selfhost-panel.blocked h4 {
+      color: #991b1b;
+    }
+
+    .selfhost-checks {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .selfhost-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+    }
+
+    .selfhost-check .check-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+
+    .selfhost-check .check-icon.pass {
+      background: #22c55e;
+      color: white;
+    }
+
+    .selfhost-check .check-icon.fail {
+      background: #ef4444;
+      color: white;
+    }
+
+    .selfhost-apply-plan {
+      background: #1f2937;
+      color: #e5e7eb;
+      border-radius: 6px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      margin-bottom: 16px;
+    }
+
+    .selfhost-apply-plan ol {
+      margin: 0;
+      padding-left: 24px;
+    }
+
+    .selfhost-apply-plan li {
+      margin-bottom: 4px;
+    }
+
+    .selfhost-block-reason {
+      background: #fef2f2;
+      color: #991b1b;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+    }
+
+    .selfhost-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn-apply {
+      background: #f59e0b;
+      color: white;
+    }
+
+    .btn-apply:hover {
+      background: #d97706;
+    }
+
+    .btn-apply:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -2108,12 +2225,19 @@
           </div>
 
           <div class="action-bar" style="margin-top: 16px;">
-            ${!project.archived 
+            ${!project.archived
               ? '<button class="btn btn-secondary" onclick="archiveProject(\'' + escapeHtml(projectId) + '\')">Archive Project</button>'
               : '<button class="btn btn-primary" onclick="unarchiveProject(\'' + escapeHtml(projectId) + '\')">Unarchive Project</button>'
             }
           </div>
+
+          ${project.projectType === 'runner-dev' ? '<div id="selfhost-section"></div>' : ''}
         `;
+
+        // Load self-hosting status for runner-dev projects
+        if (project.projectType === 'runner-dev') {
+          loadSelfhostStatus(projectId);
+        }
       } catch (error) {
         app.innerHTML = `
           <div class="card">
@@ -2145,6 +2269,109 @@
       }
     }
 
+    // Load self-hosting status
+    async function loadSelfhostStatus(projectId) {
+      var section = document.getElementById('selfhost-section');
+      if (!section) return;
+
+      section.innerHTML = '<div class="card"><div class="loading">Loading Self-Hosting Status...</div></div>';
+
+      try {
+        var res = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/selfhost/status');
+        var data = await res.json();
+
+        if (data.error) {
+          section.innerHTML = '<div class="card"><div class="error-message">Error: ' + escapeHtml(data.message) + '</div></div>';
+          return;
+        }
+
+        var panelClass = data.canApply ? 'ready' : 'blocked';
+        var checkIcon = function(passed) {
+          return passed
+            ? '<span class="check-icon pass">&#10003;</span>'
+            : '<span class="check-icon fail">&#10007;</span>';
+        };
+
+        var checksHtml =
+          '<div class="selfhost-checks">' +
+            '<div class="selfhost-check">' + checkIcon(data.checks.devDirExists) + '<span>Dev directory exists</span></div>' +
+            '<div class="selfhost-check">' + checkIcon(data.checks.gateAllPass) + '<span>gate:all passed</span></div>' +
+            '<div class="selfhost-check">' + checkIcon(data.checks.evidencePresent) + '<span>EVIDENCE.md present</span></div>' +
+          '</div>';
+
+        var artifactsHtml = '';
+        if (data.artifacts.gateLogPath || data.artifacts.evidencePath) {
+          artifactsHtml = '<div style="margin-bottom: 16px; font-size: 0.85rem; color: #6b7280;">' +
+            (data.artifacts.gateLogPath ? '<div>Gate log: ' + escapeHtml(data.artifacts.gateLogPath) + '</div>' : '') +
+            (data.artifacts.evidencePath ? '<div>Evidence: ' + escapeHtml(data.artifacts.evidencePath) + '</div>' : '') +
+          '</div>';
+        }
+
+        var applyPlanHtml = '';
+        if (data.applyPlan && data.applyPlan.length > 0) {
+          applyPlanHtml = '<div class="selfhost-apply-plan">' +
+            '<strong>Apply Plan:</strong>' +
+            '<ol style="margin: 8px 0 0 20px; padding: 0;">' +
+            data.applyPlan.map(function(step) {
+              return '<li style="margin: 4px 0;">' + escapeHtml(step) + '</li>';
+            }).join('') +
+            '</ol>' +
+          '</div>';
+        }
+
+        var blockReasonHtml = data.blockReason
+          ? '<div style="margin-top: 12px; padding: 8px 12px; background: #fef2f2; border-radius: 4px; color: #991b1b; font-size: 0.9rem;">' +
+              '<strong>Blocked:</strong> ' + escapeHtml(data.blockReason) +
+            '</div>'
+          : '';
+
+        var applyButton = data.canApply
+          ? '<button class="btn btn-primary" onclick="applySelfhost(\'' + escapeHtml(projectId) + '\')" style="margin-top: 16px;">Create Apply Artifacts</button>'
+          : '';
+
+        var devHeadHtml = data.devHead
+          ? '<div style="font-size: 0.85rem; color: #6b7280; margin-bottom: 8px;">Dev HEAD: <code>' + escapeHtml(data.devHead) + '</code></div>'
+          : '';
+
+        section.innerHTML =
+          '<div class="card selfhost-panel ' + panelClass + '">' +
+            '<h4>' + (data.canApply ? '&#9989;' : '&#9888;') + ' Self-Hosting / Apply</h4>' +
+            devHeadHtml +
+            checksHtml +
+            artifactsHtml +
+            applyPlanHtml +
+            blockReasonHtml +
+            applyButton +
+          '</div>';
+
+      } catch (e) {
+        section.innerHTML = '<div class="card"><div class="error-message">Error loading self-hosting status: ' + escapeHtml(e.message) + '</div></div>';
+      }
+    }
+
+    // Apply self-hosting (create artifacts)
+    async function applySelfhost(projectId) {
+      if (!confirm('Create apply artifacts for self-hosting promotion?\\n\\nThis will NOT execute git commands - it only creates the apply plan files.')) return;
+
+      try {
+        var res = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/selfhost/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        var data = await res.json();
+
+        if (data.error) {
+          alert('Apply failed: ' + data.message);
+          loadSelfhostStatus(projectId);
+          return;
+        }
+
+        alert('Apply artifacts created!\\n\\nArtifact directory: ' + data.artifactDir + '\\n\\nApply plan saved to: ' + data.applyPlanPath);
+        loadSelfhostStatus(projectId);
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
 
     // Render Chat page
     async function renderChat(projectId) {

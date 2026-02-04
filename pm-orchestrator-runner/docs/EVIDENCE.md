@@ -3810,3 +3810,159 @@ export interface Plan {
 
 ---
 
+## Self-Hosting Apply Protocol (2026-02-04)
+
+### SELFHOST-1: Status API Implementation
+
+**Evidence: src/web/routes/selfhost.ts exists with GET/POST endpoints**
+
+```bash
+$ head -60 src/web/routes/selfhost.ts
+/**
+ * Self-Hosting Routes - Dev/Prod promotion protocol
+ *
+ * Provides:
+ * - Status check for runner-dev projects
+ * - Apply plan generation and validation
+ * - Artifact persistence for audit trail
+ */
+
+import { Router, Request, Response } from "express";
+import * as fs from "fs";
+import * as path from "path";
+import { execSync } from "child_process";
+...
+
+$ grep -n "router\.\(get\|post\)" src/web/routes/selfhost.ts
+165:  router.get(
+277:  router.post(
+```
+
+### SELFHOST-2: Status Response Structure
+
+**Evidence: SelfhostStatus interface definition**
+
+```typescript
+interface SelfhostStatus {
+  isRunnerDev: boolean;
+  prodDir: string;
+  devDir: string | null;
+  devHead: string | null;
+  checks: {
+    devDirExists: boolean;
+    gateAllPass: boolean;
+    evidencePresent: boolean;
+  };
+  artifacts: {
+    gateLogPath: string | null;
+    evidencePath: string | null;
+  };
+  applyPlan: string[];
+  canApply: boolean;
+  blockReason: string | null;
+}
+```
+
+### SELFHOST-3: Apply API Precondition Validation
+
+**Evidence: Apply endpoint returns 409 when preconditions fail**
+
+```bash
+$ grep -A 20 "router.post" src/web/routes/selfhost.ts | head -40
+  router.post(
+    "/projects/:projectId/selfhost/apply",
+    async (req: Request, res: Response) => {
+      ...
+      // Check if this is a runner-dev project
+      if (!isRunnerDev) {
+        res.status(409).json({
+          error: "NOT_RUNNER_DEV",
+          message: "Project is not marked as runner-dev",
+        } as ErrorResponse);
+        return;
+      }
+      ...
+      if (!gateCheck.passed) {
+        res.status(409).json({
+          error: "GATE_NOT_PASSED",
+          message: "gate:all has not passed",
+          ...
+```
+
+### SELFHOST-4: E2E Test Coverage
+
+**Evidence: test/e2e/selfhost.e2e.test.ts exists with test results**
+
+```bash
+$ npm test -- --grep "Self-Hosting" 2>&1 | tail -20
+
+  E2E: Self-Hosting Apply Protocol
+    SELFHOST-1: Status API for runner-dev projects
+      ✔ should return selfhost status for runner-dev project
+      ✔ should detect dev directory exists when PM_RUNNER_DEV_DIR is set
+      ✔ should report blockReason when gate:all not passed
+    SELFHOST-2: Status API for normal projects
+      ✔ should return minimal status for non-runner-dev project
+    SELFHOST-3: Apply API precondition validation
+      ✔ should return 409 when gate:all has not passed
+      ✔ should return 409 for non-runner-dev project
+    SELFHOST-4: Apply API with all preconditions met
+      ✔ should create apply artifacts when all preconditions are met
+    SELFHOST-5: 404 for non-existent project
+      ✔ should return 404 for status of non-existent project
+      ✔ should return 404 for apply of non-existent project
+
+  9 passing
+```
+
+### SELFHOST-5: UI Integration
+
+**Evidence: Self-Hosting section in index.html for runner-dev projects**
+
+```javascript
+// Added to renderProjectDetail function
+${project.projectType === 'runner-dev' ? '<div id="selfhost-section"></div>' : ''}
+
+// Load self-hosting status for runner-dev projects
+if (project.projectType === 'runner-dev') {
+  loadSelfhostStatus(projectId);
+}
+```
+
+### SELFHOST-6: Routes Registration
+
+**Evidence: Selfhost routes registered in server.ts**
+
+```bash
+$ grep -n "selfhost" src/web/server.ts
+44:import { createSelfhostRoutes } from './routes/selfhost';
+155:  // Self-hosting routes (dev/prod promotion)
+156:  app.use("/api", createSelfhostRoutes(stateDir));
+752:      'GET /api/projects/:projectId/selfhost/status',
+753:      'POST /api/projects/:projectId/selfhost/apply',
+```
+
+### SELFHOST-7: gate:all Pass
+
+**Evidence: Full gate:all output**
+
+```
+$ npm run gate:all 2>&1 | tail -30
+
+=== UI Invariants Diagnostic Check ===
+Overall: ALL PASS
+
+=== Task State Diagnostic Check ===
+Overall: ALL PASS
+
+=== Settings UI Diagnostic Check (Playwright) ===
+Overall: ALL PASS
+
+=== Agent Launcher Diagnostic Check (Playwright) ===
+Overall: ALL PASS (13/13 checks)
+
+=== Spec Coverage Gate Diagnostic Check ===
+Overall: ALL PASS
+```
+
+---

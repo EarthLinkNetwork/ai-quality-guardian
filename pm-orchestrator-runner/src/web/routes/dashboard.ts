@@ -91,7 +91,7 @@ export function createDashboardRoutes(stateDir: string): Router {
   router.post('/projects', async (req: Request, res: Response) => {
     try {
       const dal = getNoDynamo();
-      const { projectPath, alias, tags } = req.body;
+      const { projectPath, alias, tags, projectType } = req.body;
 
       if (!projectPath || typeof projectPath !== 'string') {
         res.status(400).json({
@@ -106,6 +106,7 @@ export function createDashboardRoutes(stateDir: string): Router {
         projectPath,
         alias,
         tags,
+        projectType: projectType || 'normal',
       });
 
       res.status(201).json(project);
