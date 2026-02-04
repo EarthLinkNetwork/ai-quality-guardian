@@ -1140,6 +1140,141 @@
       font-family: monospace;
       font-size: 0.75rem;
     }
+
+    /* Git Operations */
+    .dev-git-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .dev-git-section h4 {
+      margin: 0 0 12px 0;
+      font-size: 0.9rem;
+      color: #374151;
+    }
+
+    .dev-git-status {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      padding: 12px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.8rem;
+      margin-bottom: 12px;
+    }
+
+    .dev-git-status .git-branch {
+      color: #059669;
+      font-weight: 600;
+    }
+
+    .dev-git-status .git-clean {
+      color: #6b7280;
+    }
+
+    .dev-git-status .git-modified {
+      color: #d97706;
+    }
+
+    .dev-git-status .git-staged {
+      color: #059669;
+    }
+
+    .dev-git-status .git-untracked {
+      color: #dc2626;
+    }
+
+    .dev-git-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .dev-git-diff {
+      background: #1f2937;
+      color: #e5e7eb;
+      border-radius: 4px;
+      padding: 12px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.75rem;
+      line-height: 1.4;
+      max-height: 300px;
+      overflow: auto;
+      white-space: pre-wrap;
+      margin-bottom: 12px;
+    }
+
+    .dev-git-diff .diff-add {
+      color: #a3e635;
+    }
+
+    .dev-git-diff .diff-del {
+      color: #f87171;
+    }
+
+    .dev-git-diff .diff-header {
+      color: #60a5fa;
+    }
+
+    .dev-git-commit-section {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .dev-git-gate-status {
+      width: 100%;
+      font-size: 0.8rem;
+      margin-bottom: 4px;
+    }
+
+    .dev-git-gate-status.gate-pass {
+      color: #059669;
+    }
+
+    .dev-git-gate-status.gate-fail {
+      color: #dc2626;
+    }
+
+    #dev-git-commit-msg {
+      flex: 1;
+      min-width: 200px;
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+
+    #dev-git-commit-btn,
+    #dev-git-push-btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    #dev-git-commit-btn {
+      background: #059669;
+      color: white;
+    }
+
+    #dev-git-commit-btn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    #dev-git-push-btn {
+      background: #2563eb;
+      color: white;
+    }
+
+    #dev-git-push-btn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -3371,12 +3506,32 @@
               <div id="dev-cmd-log" class="dev-cmd-log">Ready. Enter a command above.</div>
               <div id="dev-cmd-history" class="dev-cmd-history" style="display:none;"></div>
             </div>
+            <div class="dev-git-section">
+              <h4>Git Operations</h4>
+              <div id="dev-git-status" class="dev-git-status">Loading git status...</div>
+              <div class="dev-git-actions">
+                <button class="btn btn-secondary" onclick="devGitRefresh()">Refresh</button>
+                <button class="btn btn-secondary" onclick="devGitShowDiff()">Show Diff</button>
+                <button class="btn btn-secondary" onclick="devGitShowDiff(true)">Show Staged</button>
+              </div>
+              <div id="dev-git-diff" class="dev-git-diff" style="display:none;"></div>
+              <div class="dev-git-commit-section">
+                <div id="dev-git-gate-status" class="dev-git-gate-status"></div>
+                <input type="text" id="dev-git-commit-msg" class="dev-cmd-input" placeholder="Commit message..." onkeydown="if(event.key==='Enter')devGitCommit()">
+                <div class="dev-git-actions" style="margin-top: 8px;">
+                  <button class="btn btn-primary" onclick="devGitCommit()" id="dev-git-commit-btn" disabled>Commit</button>
+                  <button class="btn btn-warning" onclick="devGitPush()" id="dev-git-push-btn" disabled>Push</button>
+                </div>
+                <div id="dev-git-result" class="dev-git-result"></div>
+              </div>
+            </div>
           </div>
         </div>
       `;
 
       devLoadTree('.');
       devLoadCmdHistory();
+      devGitRefresh();
     }
 
     async function devLoadTree(dirPath) {
@@ -3671,6 +3826,202 @@
         logEl.scrollTop = logEl.scrollHeight;
       } catch (err) {
         logEl.innerHTML = '<span class="stderr">Error: ' + escapeHtml(err.message) + '</span>\n';
+      }
+    }
+
+    // =========================================================================
+    // Git Functions
+    // =========================================================================
+
+    async function devGitRefresh() {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var statusEl = document.getElementById('dev-git-status');
+      var gateStatusEl = document.getElementById('dev-git-gate-status');
+      var commitBtn = document.getElementById('dev-git-commit-btn');
+      var pushBtn = document.getElementById('dev-git-push-btn');
+
+      if (statusEl) statusEl.innerHTML = '<span class="loading">Loading git status...</span>';
+
+      try {
+        // Fetch git status
+        var statusResp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/git/status');
+        var status = await statusResp.json();
+
+        if (status.error) {
+          if (statusEl) statusEl.innerHTML = '<span class="error-message">Error: ' + escapeHtml(status.message) + '</span>';
+          return;
+        }
+
+        // Build status display
+        var html = '<div class="git-branch">Branch: <strong>' + escapeHtml(status.branch) + '</strong>';
+        if (status.ahead > 0) html += ' <span class="git-ahead">+' + status.ahead + ' ahead</span>';
+        if (status.behind > 0) html += ' <span class="git-behind">-' + status.behind + ' behind</span>';
+        html += '</div>';
+
+        if (status.staged.length > 0) {
+          html += '<div class="git-staged"><strong>Staged (' + status.staged.length + '):</strong><ul>';
+          for (var f of status.staged.slice(0, 10)) {
+            html += '<li>' + escapeHtml(f) + '</li>';
+          }
+          if (status.staged.length > 10) html += '<li>... and ' + (status.staged.length - 10) + ' more</li>';
+          html += '</ul></div>';
+        }
+
+        if (status.unstaged.length > 0) {
+          html += '<div class="git-unstaged"><strong>Unstaged (' + status.unstaged.length + '):</strong><ul>';
+          for (var f of status.unstaged.slice(0, 10)) {
+            html += '<li>' + escapeHtml(f) + '</li>';
+          }
+          if (status.unstaged.length > 10) html += '<li>... and ' + (status.unstaged.length - 10) + ' more</li>';
+          html += '</ul></div>';
+        }
+
+        if (status.untracked.length > 0) {
+          html += '<div class="git-untracked"><strong>Untracked (' + status.untracked.length + '):</strong><ul>';
+          for (var f of status.untracked.slice(0, 5)) {
+            html += '<li>' + escapeHtml(f) + '</li>';
+          }
+          if (status.untracked.length > 5) html += '<li>... and ' + (status.untracked.length - 5) + ' more</li>';
+          html += '</ul></div>';
+        }
+
+        if (status.staged.length === 0 && status.unstaged.length === 0 && status.untracked.length === 0) {
+          html += '<div class="git-clean">Working tree clean</div>';
+        }
+
+        if (statusEl) statusEl.innerHTML = html;
+
+        // Fetch gate status
+        var gateResp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/git/gateStatus');
+        var gateData = await gateResp.json();
+
+        if (gateData.hasPass) {
+          if (gateStatusEl) {
+            gateStatusEl.innerHTML = '<span class="gate-pass">gate:all PASS found (run: ' + escapeHtml(gateData.gatePass.runId) + ')</span>';
+          }
+          // Enable commit button if there are staged changes
+          if (commitBtn && status.staged.length > 0) {
+            commitBtn.disabled = false;
+          }
+          // Enable push button if ahead of remote
+          if (pushBtn && status.ahead > 0) {
+            pushBtn.disabled = false;
+          }
+        } else {
+          if (gateStatusEl) {
+            gateStatusEl.innerHTML = '<span class="gate-fail">No gate:all PASS found. Run "npm run gate:all" first.</span>';
+          }
+          if (commitBtn) commitBtn.disabled = true;
+          if (pushBtn) pushBtn.disabled = true;
+        }
+
+      } catch (err) {
+        if (statusEl) statusEl.innerHTML = '<span class="error-message">Error: ' + escapeHtml(err.message) + '</span>';
+      }
+    }
+
+    async function devGitShowDiff(staged) {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var diffEl = document.getElementById('dev-git-diff');
+      if (!diffEl) return;
+
+      diffEl.style.display = 'block';
+      diffEl.innerHTML = '<span class="loading">Loading diff...</span>';
+
+      try {
+        var url = '/api/projects/' + encodeURIComponent(projectId) + '/dev/git/diff';
+        if (staged) url += '?staged=true';
+
+        var resp = await fetch(url);
+        var data = await resp.json();
+
+        if (data.error) {
+          diffEl.innerHTML = '<span class="error-message">Error: ' + escapeHtml(data.message) + '</span>';
+          return;
+        }
+
+        if (!data.diff || data.diff.trim() === '') {
+          diffEl.innerHTML = '<span class="system">No ' + (staged ? 'staged ' : '') + 'changes</span>';
+        } else {
+          diffEl.innerHTML = '<pre>' + escapeHtml(data.diff) + '</pre>';
+        }
+      } catch (err) {
+        diffEl.innerHTML = '<span class="error-message">Error: ' + escapeHtml(err.message) + '</span>';
+      }
+    }
+
+    async function devGitCommit() {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var msgInput = document.getElementById('dev-git-commit-msg');
+      var resultEl = document.getElementById('dev-git-result');
+      if (!msgInput || !resultEl) return;
+
+      var message = msgInput.value.trim();
+      if (!message) {
+        resultEl.innerHTML = '<span class="error-message">Please enter a commit message</span>';
+        return;
+      }
+
+      resultEl.innerHTML = '<span class="loading">Committing...</span>';
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/git/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: message })
+        });
+        var data = await resp.json();
+
+        if (data.error) {
+          resultEl.innerHTML = '<span class="error-message">' + escapeHtml(data.error) + ': ' + escapeHtml(data.message) + '</span>';
+          if (data.reason) {
+            resultEl.innerHTML += '<br><span class="system">Reason: ' + escapeHtml(data.reason) + '</span>';
+          }
+          return;
+        }
+
+        resultEl.innerHTML = '<span class="success">Commit created: ' + escapeHtml(data.commitHash) + '</span>';
+        msgInput.value = '';
+        devGitRefresh();
+      } catch (err) {
+        resultEl.innerHTML = '<span class="error-message">Error: ' + escapeHtml(err.message) + '</span>';
+      }
+    }
+
+    async function devGitPush() {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var resultEl = document.getElementById('dev-git-result');
+      if (!resultEl) return;
+
+      resultEl.innerHTML = '<span class="loading">Pushing...</span>';
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/git/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        var data = await resp.json();
+
+        if (data.error) {
+          resultEl.innerHTML = '<span class="error-message">' + escapeHtml(data.error) + ': ' + escapeHtml(data.message) + '</span>';
+          if (data.reason) {
+            resultEl.innerHTML += '<br><span class="system">Reason: ' + escapeHtml(data.reason) + '</span>';
+          }
+          return;
+        }
+
+        resultEl.innerHTML = '<span class="success">Pushed ' + data.pushed + ' commit(s) successfully!</span>';
+        devGitRefresh();
+      } catch (err) {
+        resultEl.innerHTML = '<span class="error-message">Error: ' + escapeHtml(err.message) + '</span>';
       }
     }
 

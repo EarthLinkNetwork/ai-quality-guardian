@@ -410,6 +410,126 @@ describe('E2E: Dev Console', () => {
       assert.ok(routes.includes('POST /api/projects/:projectId/dev/cmd/run'), 'Should include cmd run route');
       assert.ok(routes.includes('GET /api/projects/:projectId/dev/cmd/:runId/log'), 'Should include cmd log route');
       assert.ok(routes.includes('GET /api/projects/:projectId/dev/cmd/list'), 'Should include cmd list route');
+      // Git routes
+      assert.ok(routes.includes('GET /api/projects/:projectId/dev/git/status'), 'Should include git status route');
+      assert.ok(routes.includes('GET /api/projects/:projectId/dev/git/diff'), 'Should include git diff route');
+      assert.ok(routes.includes('GET /api/projects/:projectId/dev/git/log'), 'Should include git log route');
+      assert.ok(routes.includes('GET /api/projects/:projectId/dev/git/gateStatus'), 'Should include git gateStatus route');
+      assert.ok(routes.includes('POST /api/projects/:projectId/dev/git/commit'), 'Should include git commit route');
+      assert.ok(routes.includes('POST /api/projects/:projectId/dev/git/push'), 'Should include git push route');
+    });
+  });
+
+  describe('DEVGIT-1: Git Status API', () => {
+    it('should return git status for runner-dev project', async () => {
+      const res = await request(app)
+        .get(`/api/projects/${runnerDevProjectId}/dev/git/status`)
+        .expect(200);
+
+      assert.ok(res.body.branch !== undefined, 'Should have branch');
+      assert.ok(Array.isArray(res.body.staged), 'Should have staged array');
+      assert.ok(Array.isArray(res.body.unstaged), 'Should have unstaged array');
+      assert.ok(Array.isArray(res.body.untracked), 'Should have untracked array');
+    });
+
+    it('should deny git status for normal projects', async () => {
+      const res = await request(app)
+        .get(`/api/projects/${normalProjectId}/dev/git/status`)
+        .expect(403);
+
+      assert.strictEqual(res.body.error, 'FORBIDDEN');
+    });
+  });
+
+  describe('DEVGIT-2: Git Diff API', () => {
+    it('should return git diff for runner-dev project', async () => {
+      const res = await request(app)
+        .get(`/api/projects/${runnerDevProjectId}/dev/git/diff`)
+        .expect(200);
+
+      assert.ok(res.body.diff !== undefined, 'Should have diff');
+    });
+  });
+
+  describe('DEVGIT-3: Git Log API', () => {
+    it('should return git log for runner-dev project', async () => {
+      const res = await request(app)
+        .get(`/api/projects/${runnerDevProjectId}/dev/git/log`)
+        .expect(200);
+
+      assert.ok(Array.isArray(res.body.entries), 'Should have entries array');
+    });
+  });
+
+  describe('DEVGIT-4: Gate Status API', () => {
+    it('should return gate status showing no gate pass initially', async () => {
+      const res = await request(app)
+        .get(`/api/projects/${runnerDevProjectId}/dev/git/gateStatus`)
+        .expect(200);
+
+      assert.strictEqual(res.body.hasPass, false, 'Should not have gate pass initially');
+      assert.strictEqual(res.body.gatePass, null, 'gatePass should be null');
+    });
+  });
+
+  describe('DEVGIT-5: Commit Rejection Without Gate Pass', () => {
+    it('should reject commit when gate:all has not passed', async () => {
+      const res = await request(app)
+        .post(`/api/projects/${runnerDevProjectId}/dev/git/commit`)
+        .send({ message: 'Test commit' })
+        .expect(409);
+
+      assert.strictEqual(res.body.error, 'GATE_NOT_PASSED');
+      assert.ok(res.body.message.includes('gate:all'), 'Should mention gate:all');
+    });
+
+    it('should reject push when gate:all has not passed', async () => {
+      const res = await request(app)
+        .post(`/api/projects/${runnerDevProjectId}/dev/git/push`)
+        .send({})
+        .expect(409);
+
+      // Push also requires gate:all pass
+      assert.strictEqual(res.body.error, 'GATE_NOT_PASSED');
+    });
+  });
+
+  describe('DEVGIT-6: Commit After Gate Pass', () => {
+    let gateRunId: string;
+
+    before(async () => {
+      // Simulate gate:all pass by running a command that succeeds
+      // We'll run a simple command and manually create a log entry that looks like gate:all
+      const cmdRes = await request(app)
+        .post(`/api/projects/${runnerDevProjectId}/dev/cmd/run`)
+        .send({ command: 'echo gate:all' })
+        .expect(200);
+
+      gateRunId = cmdRes.body.runId;
+
+      // Wait for command to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Manually update the log file to make it look like gate:all
+      const namespace = runnerDevProjectId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const projectLogDir = path.join(stateDir, 'devconsole', namespace, 'cmd-logs');
+      const logFilePath = path.join(projectLogDir, `${gateRunId}.json`);
+
+      if (fs.existsSync(logFilePath)) {
+        const logData = JSON.parse(fs.readFileSync(logFilePath, 'utf8'));
+        logData.command = 'npm run gate:all';
+        fs.writeFileSync(logFilePath, JSON.stringify(logData, null, 2));
+      }
+    });
+
+    it('should show gate pass after gate:all succeeds', async () => {
+      const res = await request(app)
+        .get(`/api/projects/${runnerDevProjectId}/dev/git/gateStatus`)
+        .expect(200);
+
+      assert.strictEqual(res.body.hasPass, true, 'Should have gate pass');
+      assert.ok(res.body.gatePass, 'Should have gatePass');
+      assert.ok(res.body.gatePass.command.includes('gate:all'), 'Command should include gate:all');
     });
   });
 });

@@ -763,6 +763,13 @@ export function createApp(config: WebServerConfig): Express {
       'POST /api/projects/:projectId/dev/cmd/run',
       'GET /api/projects/:projectId/dev/cmd/:runId/log',
       'GET /api/projects/:projectId/dev/cmd/list',
+      // Git API
+      'GET /api/projects/:projectId/dev/git/status',
+      'GET /api/projects/:projectId/dev/git/diff',
+      'GET /api/projects/:projectId/dev/git/log',
+      'GET /api/projects/:projectId/dev/git/gateStatus',
+      'POST /api/projects/:projectId/dev/git/commit',
+      'POST /api/projects/:projectId/dev/git/push',
     ];
     res.json({ routes });
   });

@@ -2,9 +2,9 @@
  * Dev Console Routes - Self-hosted Runner Development Console
  *
  * Provides file system browsing, code search, patch application,
- * and command execution with persistent logging.
+ * command execution with persistent logging, and git operations.
  *
- * SECURITY: Only available for projectType === "selfhost-runner"
+ * SECURITY: Only available for projectType === "runner-dev"
  */
 
 import { Router, Request, Response } from "express";
@@ -99,8 +99,45 @@ interface ErrorResponse {
   message: string;
 }
 
+/**
+ * Git status response
+ */
+interface GitStatusResponse {
+  branch: string;
+  staged: string[];
+  unstaged: string[];
+  untracked: string[];
+  ahead: number;
+  behind: number;
+}
+
+/**
+ * Git log entry
+ */
+interface GitLogEntry {
+  hash: string;
+  shortHash: string;
+  author: string;
+  date: string;
+  message: string;
+}
+
+/**
+ * Gate:all pass info
+ */
+interface GatePassInfo {
+  runId: string;
+  command: string;
+  exitCode: number;
+  startedAt: string;
+  endedAt: string;
+}
+
 // In-memory running processes
 const runningProcesses = new Map<string, ReturnType<typeof spawn>>();
+
+// Track last commit hash for push validation
+const lastCommitByProject = new Map<string, { hash: string; gatePassRunId: string }>();
 
 /**
  * Validate path is within project root (sandbox)
@@ -115,11 +152,9 @@ function isPathSafe(basePath: string, targetPath: string): boolean {
  * Resolve safe path within project root
  */
 function resolveSafePath(basePath: string, relPath: string): string | null {
-  // Normalize and resolve
   const resolved = path.resolve(basePath, relPath);
   const normalizedBase = path.resolve(basePath);
 
-  // Check if within base
   if (!resolved.startsWith(normalizedBase + path.sep) && resolved !== normalizedBase) {
     return null;
   }
@@ -142,10 +177,9 @@ function getCmdLogDir(stateDir: string, namespace: string): string {
  * Save command run info
  */
 function saveCmdRun(logDir: string, run: CmdRunInfo): void {
-  const runPath = path.join(logDir, `${run.runId}.json`);
+  const runPath = path.join(logDir, run.runId + ".json");
   fs.writeFileSync(runPath, JSON.stringify(run, null, 2));
 
-  // Update index
   const indexPath = path.join(logDir, "index.json");
   let index: string[] = [];
   if (fs.existsSync(indexPath)) {
@@ -165,7 +199,7 @@ function saveCmdRun(logDir: string, run: CmdRunInfo): void {
  * Append log entry
  */
 function appendCmdLog(logDir: string, runId: string, entry: CmdLogEntry): void {
-  const logPath = path.join(logDir, `${runId}.log.jsonl`);
+  const logPath = path.join(logDir, runId + ".log.jsonl");
   fs.appendFileSync(logPath, JSON.stringify(entry) + "\n");
 }
 
@@ -173,7 +207,7 @@ function appendCmdLog(logDir: string, runId: string, entry: CmdLogEntry): void {
  * Load command run with logs
  */
 function loadCmdRun(logDir: string, runId: string): CmdRunWithLogs | null {
-  const runPath = path.join(logDir, `${runId}.json`);
+  const runPath = path.join(logDir, runId + ".json");
   if (!fs.existsSync(runPath)) {
     return null;
   }
@@ -181,7 +215,7 @@ function loadCmdRun(logDir: string, runId: string): CmdRunWithLogs | null {
   const run: CmdRunInfo = JSON.parse(fs.readFileSync(runPath, "utf-8"));
   const logs: CmdLogEntry[] = [];
 
-  const logPath = path.join(logDir, `${runId}.log.jsonl`);
+  const logPath = path.join(logDir, runId + ".log.jsonl");
   if (fs.existsSync(logPath)) {
     const lines = fs.readFileSync(logPath, "utf-8").split("\n").filter(Boolean);
     for (const line of lines) {
@@ -212,12 +246,11 @@ function listCmdRuns(logDir: string, limit = 20): CmdRunInfo[] {
     return [];
   }
 
-  // Get last N runs
   const recentIds = index.slice(-limit).reverse();
   const runs: CmdRunInfo[] = [];
 
   for (const runId of recentIds) {
-    const runPath = path.join(logDir, `${runId}.json`);
+    const runPath = path.join(logDir, runId + ".json");
     if (fs.existsSync(runPath)) {
       try {
         runs.push(JSON.parse(fs.readFileSync(runPath, "utf-8")));
@@ -231,18 +264,42 @@ function listCmdRuns(logDir: string, limit = 20): CmdRunInfo[] {
 }
 
 /**
+ * Find the latest gate:all PASS (exitCode === 0) from command logs
+ * Source of truth for commit/push authorization
+ */
+function findLatestGateAllPass(logDir: string): GatePassInfo | null {
+  const runs = listCmdRuns(logDir, 50);
+
+  for (const run of runs) {
+    const isGateAll = run.command.includes("gate:all");
+    const isPassed = run.exitCode === 0 && run.status === "completed";
+
+    if (isGateAll && isPassed && run.endedAt && run.exitCode !== undefined) {
+      return {
+        runId: run.runId,
+        command: run.command,
+        exitCode: run.exitCode,
+        startedAt: run.startedAt,
+        endedAt: run.endedAt,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Create Dev Console routes
  */
 export function createDevconsoleRoutes(stateDir: string): Router {
   const router = Router();
 
-  // Ensure NoDynamoExtended is initialized
   if (!isNoDynamoExtendedInitialized()) {
     initNoDynamoExtended(stateDir);
   }
 
   /**
-   * Middleware: Verify project is selfhost-runner type
+   * Middleware: Verify project is runner-dev type
    */
   async function verifySelfhostRunner(
     req: Request,
@@ -271,7 +328,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
         return;
       }
 
-      // Attach project info to request
       (req as any).project = project;
       (req as any).projectRoot = project.projectPath;
       next();
@@ -285,10 +341,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
   // FS API
   // =========================================================================
 
-  /**
-   * GET /api/projects/:projectId/dev/fs/tree
-   * List directory contents
-   */
   router.get(
     "/projects/:projectId/dev/fs/tree",
     async (req: Request, res: Response) => {
@@ -327,7 +379,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
           const items = fs.readdirSync(targetPath);
 
           for (const name of items) {
-            // Skip hidden files and node_modules
             if (name.startsWith(".") || name === "node_modules") {
               continue;
             }
@@ -349,7 +400,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
             }
           }
 
-          // Sort: directories first, then alphabetically
           entries.sort((a, b) => {
             if (a.type !== b.type) {
               return a.type === "directory" ? -1 : 1;
@@ -369,10 +419,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     }
   );
 
-  /**
-   * GET /api/projects/:projectId/dev/fs/read
-   * Read file contents
-   */
   router.get(
     "/projects/:projectId/dev/fs/read",
     async (req: Request, res: Response) => {
@@ -415,7 +461,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
             return;
           }
 
-          // Limit file size (10MB)
           if (stat.size > 10 * 1024 * 1024) {
             res.status(413).json({
               error: "FILE_TOO_LARGE",
@@ -437,10 +482,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     }
   );
 
-  /**
-   * POST /api/projects/:projectId/dev/fs/search
-   * Search files using ripgrep or fallback
-   */
   router.post(
     "/projects/:projectId/dev/fs/search",
     async (req: Request, res: Response) => {
@@ -473,10 +514,9 @@ export function createDevconsoleRoutes(stateDir: string): Router {
 
           const results: SearchResult[] = [];
 
-          // Try ripgrep first
           try {
             const rgOutput = execSync(
-              `rg --line-number --no-heading --color=never --max-count=100 -- ${JSON.stringify(query)}`,
+              "rg --line-number --no-heading --color=never --max-count=100 -- " + JSON.stringify(query),
               {
                 cwd: searchRoot,
                 encoding: "utf-8",
@@ -497,12 +537,9 @@ export function createDevconsoleRoutes(stateDir: string): Router {
               }
             }
           } catch (rgError: any) {
-            // ripgrep returns non-zero if no matches, check if it's installed
             if (rgError.status === 1 && rgError.stdout === "") {
-              // No matches, return empty
+              // No matches
             } else if (rgError.code === "ENOENT" || rgError.message?.includes("not found")) {
-              // ripgrep not installed, use fallback
-              // Simple recursive search (limited)
               function searchDir(dir: string, depth = 0): void {
                 if (depth > 5 || results.length >= 100) return;
 
@@ -547,10 +584,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     }
   );
 
-  /**
-   * POST /api/projects/:projectId/dev/fs/applyPatch
-   * Apply unified diff patch
-   */
   router.post(
     "/projects/:projectId/dev/fs/applyPatch",
     async (req: Request, res: Response) => {
@@ -567,42 +600,37 @@ export function createDevconsoleRoutes(stateDir: string): Router {
             return;
           }
 
-          // Parse patch to extract file paths
           const filePathPattern = /^(?:---|\+\+\+)\s+([ab]\/)?(.+?)(?:\t|$)/gm;
           const filePaths = new Set<string>();
           let match;
 
           while ((match = filePathPattern.exec(patch)) !== null) {
             const filePath = match[2];
-            // Skip /dev/null (new or deleted files)
             if (filePath !== "/dev/null") {
               filePaths.add(filePath);
             }
           }
 
-          // Validate all paths are within project root
           for (const filePath of filePaths) {
             const resolved = resolveSafePath(projectRoot, filePath);
             if (!resolved) {
               res.status(400).json({
                 ok: false,
-                error: `Path escapes project root: ${filePath}`,
+                error: "Path escapes project root: " + filePath,
               } as PatchResponse);
               return;
             }
           }
 
-          // Apply patch using system patch command
           try {
-            execSync(`patch -p1 --dry-run`, {
+            execSync("patch -p1 --dry-run", {
               input: patch,
               cwd: projectRoot,
               encoding: "utf-8",
               timeout: 30000,
             });
 
-            // Dry run succeeded, apply for real
-            execSync(`patch -p1`, {
+            execSync("patch -p1", {
               input: patch,
               cwd: projectRoot,
               encoding: "utf-8",
@@ -617,7 +645,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
             const errorMsg = patchError.stderr || patchError.stdout || patchError.message;
             res.status(400).json({
               ok: false,
-              error: `Patch failed: ${errorMsg}`,
+              error: "Patch failed: " + errorMsg,
             } as PatchResponse);
           }
         } catch (error) {
@@ -632,10 +660,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
   // CMD API
   // =========================================================================
 
-  /**
-   * POST /api/projects/:projectId/dev/cmd/run
-   * Execute a command with persistent logging
-   */
   router.post(
     "/projects/:projectId/dev/cmd/run",
     async (req: Request, res: Response) => {
@@ -653,7 +677,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
             return;
           }
 
-          // Validate cwd if provided
           let workingDir = projectRoot;
           if (cwd) {
             const resolved = resolveSafePath(projectRoot, cwd);
@@ -667,12 +690,10 @@ export function createDevconsoleRoutes(stateDir: string): Router {
             workingDir = resolved;
           }
 
-          // Generate run ID
-          const runId = `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const runId = "cmd-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
           const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const logDir = getCmdLogDir(stateDir, namespace);
 
-          // Create run info
           const runInfo: CmdRunInfo = {
             runId,
             command,
@@ -683,14 +704,12 @@ export function createDevconsoleRoutes(stateDir: string): Router {
 
           saveCmdRun(logDir, runInfo);
 
-          // Log start
           appendCmdLog(logDir, runId, {
             timestamp: new Date().toISOString(),
             stream: "system",
-            text: `$ ${command}`,
+            text: "$ " + command,
           });
 
-          // Spawn process
           const spawnOptions: SpawnOptions = {
             cwd: workingDir,
             shell: true,
@@ -700,7 +719,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
           const child = spawn(command, [], spawnOptions);
           runningProcesses.set(runId, child);
 
-          // Capture stdout
           child.stdout?.on("data", (data: Buffer) => {
             appendCmdLog(logDir, runId, {
               timestamp: new Date().toISOString(),
@@ -709,7 +727,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
             });
           });
 
-          // Capture stderr
           child.stderr?.on("data", (data: Buffer) => {
             appendCmdLog(logDir, runId, {
               timestamp: new Date().toISOString(),
@@ -718,7 +735,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
             });
           });
 
-          // Handle completion
           child.on("close", (code) => {
             runningProcesses.delete(runId);
 
@@ -734,11 +750,10 @@ export function createDevconsoleRoutes(stateDir: string): Router {
             appendCmdLog(logDir, runId, {
               timestamp: endedAt,
               stream: "system",
-              text: `Process exited with code ${code}`,
+              text: "Process exited with code " + code,
             });
           });
 
-          // Handle error
           child.on("error", (err) => {
             runningProcesses.delete(runId);
 
@@ -754,11 +769,10 @@ export function createDevconsoleRoutes(stateDir: string): Router {
             appendCmdLog(logDir, runId, {
               timestamp: endedAt,
               stream: "system",
-              text: `Error: ${err.message}`,
+              text: "Error: " + err.message,
             });
           });
 
-          // Return immediately with runId
           res.json({ runId });
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unknown error";
@@ -768,10 +782,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     }
   );
 
-  /**
-   * GET /api/projects/:projectId/dev/cmd/:runId/log
-   * Get logs for a command run
-   */
   router.get(
     "/projects/:projectId/dev/cmd/:runId/log",
     async (req: Request, res: Response) => {
@@ -801,10 +811,6 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     }
   );
 
-  /**
-   * GET /api/projects/:projectId/dev/cmd/list
-   * List recent command runs
-   */
   router.get(
     "/projects/:projectId/dev/cmd/list",
     async (req: Request, res: Response) => {
@@ -818,6 +824,353 @@ export function createDevconsoleRoutes(stateDir: string): Router {
 
           const runs = listCmdRuns(logDir, limit);
           res.json({ runs });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown error";
+          res.status(500).json({ error: "INTERNAL_ERROR", message } as ErrorResponse);
+        }
+      });
+    }
+  );
+
+  // =========================================================================
+  // GIT API
+  // =========================================================================
+
+  router.get(
+    "/projects/:projectId/dev/git/status",
+    async (req: Request, res: Response) => {
+      await verifySelfhostRunner(req, res, () => {
+        try {
+          const projectRoot = (req as any).projectRoot as string;
+
+          let branch = "unknown";
+          try {
+            branch = execSync("git rev-parse --abbrev-ref HEAD", {
+              cwd: projectRoot,
+              encoding: "utf-8",
+            }).trim();
+          } catch {
+            // Ignore
+          }
+
+          const staged: string[] = [];
+          try {
+            const stagedOutput = execSync("git diff --cached --name-only", {
+              cwd: projectRoot,
+              encoding: "utf-8",
+            });
+            staged.push(...stagedOutput.split("\n").filter(Boolean));
+          } catch {
+            // Ignore
+          }
+
+          const unstaged: string[] = [];
+          try {
+            const unstagedOutput = execSync("git diff --name-only", {
+              cwd: projectRoot,
+              encoding: "utf-8",
+            });
+            unstaged.push(...unstagedOutput.split("\n").filter(Boolean));
+          } catch {
+            // Ignore
+          }
+
+          const untracked: string[] = [];
+          try {
+            const untrackedOutput = execSync("git ls-files --others --exclude-standard", {
+              cwd: projectRoot,
+              encoding: "utf-8",
+            });
+            untracked.push(...untrackedOutput.split("\n").filter(Boolean));
+          } catch {
+            // Ignore
+          }
+
+          let ahead = 0;
+          let behind = 0;
+          try {
+            const aheadBehind = execSync("git rev-list --left-right --count HEAD...@{upstream}", {
+              cwd: projectRoot,
+              encoding: "utf-8",
+            }).trim();
+            const parts = aheadBehind.split(/\s+/);
+            ahead = parseInt(parts[0]) || 0;
+            behind = parseInt(parts[1]) || 0;
+          } catch {
+            // No upstream or error
+          }
+
+          res.json({
+            branch,
+            staged,
+            unstaged,
+            untracked,
+            ahead,
+            behind,
+          } as GitStatusResponse);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown error";
+          res.status(500).json({ error: "INTERNAL_ERROR", message } as ErrorResponse);
+        }
+      });
+    }
+  );
+
+  router.get(
+    "/projects/:projectId/dev/git/diff",
+    async (req: Request, res: Response) => {
+      await verifySelfhostRunner(req, res, () => {
+        try {
+          const projectRoot = (req as any).projectRoot as string;
+          const staged = req.query.staged === "true";
+
+          let diff = "";
+          try {
+            const diffCmd = staged ? "git diff --cached" : "git diff";
+            diff = execSync(diffCmd, {
+              cwd: projectRoot,
+              encoding: "utf-8",
+              maxBuffer: 10 * 1024 * 1024,
+            });
+          } catch {
+            // Return empty diff
+          }
+
+          res.json({ diff, staged });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown error";
+          res.status(500).json({ error: "INTERNAL_ERROR", message } as ErrorResponse);
+        }
+      });
+    }
+  );
+
+  router.get(
+    "/projects/:projectId/dev/git/log",
+    async (req: Request, res: Response) => {
+      await verifySelfhostRunner(req, res, () => {
+        try {
+          const projectRoot = (req as any).projectRoot as string;
+          const limit = parseInt(req.query.limit as string) || 10;
+
+          const entries: GitLogEntry[] = [];
+          try {
+            const logOutput = execSync(
+              "git log --format=\"%H|%h|%an|%aI|%s\" -n " + limit,
+              {
+                cwd: projectRoot,
+                encoding: "utf-8",
+              }
+            );
+
+            const lines = logOutput.split("\n").filter(Boolean);
+            for (const line of lines) {
+              const parts = line.split("|");
+              if (parts.length >= 5) {
+                entries.push({
+                  hash: parts[0],
+                  shortHash: parts[1],
+                  author: parts[2],
+                  date: parts[3],
+                  message: parts.slice(4).join("|"),
+                });
+              }
+            }
+          } catch {
+            // Ignore errors
+          }
+
+          res.json({ entries });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown error";
+          res.status(500).json({ error: "INTERNAL_ERROR", message } as ErrorResponse);
+        }
+      });
+    }
+  );
+
+  router.get(
+    "/projects/:projectId/dev/git/gateStatus",
+    async (req: Request, res: Response) => {
+      await verifySelfhostRunner(req, res, () => {
+        try {
+          const project = (req as any).project as { projectId: string };
+          const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
+          const logDir = getCmdLogDir(stateDir, namespace);
+
+          const gatePass = findLatestGateAllPass(logDir);
+
+          if (gatePass) {
+            res.json({
+              hasPass: true,
+              gatePass,
+            });
+          } else {
+            res.json({
+              hasPass: false,
+              gatePass: null,
+            });
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown error";
+          res.status(500).json({ error: "INTERNAL_ERROR", message } as ErrorResponse);
+        }
+      });
+    }
+  );
+
+  router.post(
+    "/projects/:projectId/dev/git/commit",
+    async (req: Request, res: Response) => {
+      await verifySelfhostRunner(req, res, () => {
+        try {
+          const project = (req as any).project as { projectId: string };
+          const projectRoot = (req as any).projectRoot as string;
+          const { message: commitMessage } = req.body as { message?: string };
+
+          if (!commitMessage || typeof commitMessage !== "string" || commitMessage.trim() === "") {
+            res.status(400).json({
+              error: "MISSING_MESSAGE",
+              message: "Request body must include non-empty 'message'",
+            } as ErrorResponse);
+            return;
+          }
+
+          const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
+          const logDir = getCmdLogDir(stateDir, namespace);
+          const gatePass = findLatestGateAllPass(logDir);
+
+          if (!gatePass) {
+            res.status(409).json({
+              error: "GATE_NOT_PASSED",
+              message: "Cannot commit: No gate:all PASS found. Run 'npm run gate:all' first.",
+              reason: "Latest gate:all PASS not found in command history",
+            });
+            return;
+          }
+
+          let stagedCount = 0;
+          try {
+            const stagedOutput = execSync("git diff --cached --name-only", {
+              cwd: projectRoot,
+              encoding: "utf-8",
+            });
+            stagedCount = stagedOutput.split("\n").filter(Boolean).length;
+          } catch {
+            // Ignore
+          }
+
+          if (stagedCount === 0) {
+            res.status(400).json({
+              error: "NOTHING_STAGED",
+              message: "No staged changes to commit. Use 'git add' first.",
+            } as ErrorResponse);
+            return;
+          }
+
+          let commitHash = "";
+          try {
+            execSync("git commit -m " + JSON.stringify(commitMessage.trim()), {
+              cwd: projectRoot,
+              encoding: "utf-8",
+            });
+
+            commitHash = execSync("git rev-parse HEAD", {
+              cwd: projectRoot,
+              encoding: "utf-8",
+            }).trim();
+          } catch (commitError: any) {
+            const errorMsg = commitError.stderr || commitError.stdout || commitError.message;
+            res.status(500).json({
+              error: "COMMIT_FAILED",
+              message: "Git commit failed: " + errorMsg,
+            } as ErrorResponse);
+            return;
+          }
+
+          lastCommitByProject.set(project.projectId, {
+            hash: commitHash,
+            gatePassRunId: gatePass.runId,
+          });
+
+          res.json({
+            ok: true,
+            commitHash,
+            gatePassUsed: gatePass.runId,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown error";
+          res.status(500).json({ error: "INTERNAL_ERROR", message } as ErrorResponse);
+        }
+      });
+    }
+  );
+
+  router.post(
+    "/projects/:projectId/dev/git/push",
+    async (req: Request, res: Response) => {
+      await verifySelfhostRunner(req, res, () => {
+        try {
+          const project = (req as any).project as { projectId: string };
+          const projectRoot = (req as any).projectRoot as string;
+
+          const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
+          const logDir = getCmdLogDir(stateDir, namespace);
+          const gatePass = findLatestGateAllPass(logDir);
+
+          if (!gatePass) {
+            res.status(409).json({
+              error: "GATE_NOT_PASSED",
+              message: "Cannot push: No gate:all PASS found.",
+              reason: "Latest gate:all PASS not found in command history",
+            });
+            return;
+          }
+
+          let ahead = 0;
+          try {
+            const aheadBehind = execSync("git rev-list --left-right --count HEAD...@{upstream}", {
+              cwd: projectRoot,
+              encoding: "utf-8",
+            }).trim();
+            const parts = aheadBehind.split(/\s+/);
+            ahead = parseInt(parts[0]) || 0;
+          } catch {
+            res.status(400).json({
+              error: "NO_UPSTREAM",
+              message: "No upstream branch configured. Use 'git push -u origin <branch>' first.",
+            } as ErrorResponse);
+            return;
+          }
+
+          if (ahead === 0) {
+            res.status(400).json({
+              error: "NOTHING_TO_PUSH",
+              message: "No commits to push. Local and remote are in sync.",
+            } as ErrorResponse);
+            return;
+          }
+
+          try {
+            execSync("git push", {
+              cwd: projectRoot,
+              encoding: "utf-8",
+              timeout: 60000,
+            });
+          } catch (pushError: any) {
+            const errorMsg = pushError.stderr || pushError.stdout || pushError.message;
+            res.status(500).json({
+              error: "PUSH_FAILED",
+              message: "Git push failed: " + errorMsg,
+            } as ErrorResponse);
+            return;
+          }
+
+          res.json({
+            ok: true,
+            pushed: ahead,
+            gatePassUsed: gatePass.runId,
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unknown error";
           res.status(500).json({ error: "INTERNAL_ERROR", message } as ErrorResponse);
