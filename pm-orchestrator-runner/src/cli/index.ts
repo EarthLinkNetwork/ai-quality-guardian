@@ -34,6 +34,8 @@ import {
   WebStopExitCode,
 } from '../web/background';
 import { ensureDistFresh, checkPublicFilesCopied } from '../utils/dist-freshness';
+import { runSelftest, SELFTEST_CASES } from '../selftest/selftest-runner';
+import { hasUnansweredQuestions } from '../utils/question-detector';
 
 /**
  * Help text
@@ -485,6 +487,16 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         const hasOutput = cleanOutput && cleanOutput.trim().length > 0;
 
         if (result.status === 'COMPLETE') {
+          // Per COMPLETION_JUDGMENT.md: Check for unanswered questions in output
+          // Questions in output -> AWAITING_RESPONSE (not COMPLETE)
+          if (isReadInfoOrReport && hasOutput && hasUnansweredQuestions(cleanOutput)) {
+            console.log(`[Runner] READ_INFO/REPORT COMPLETE but has questions -> AWAITING_RESPONSE`);
+            return {
+              status: 'ERROR',
+              errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
+              output: cleanOutput,
+            };
+          }
           // Return output for visibility in UI (AC-CHAT-001, AC-CHAT-002)
           return { status: 'COMPLETE', output: cleanOutput || undefined };
         } else if (result.status === 'ERROR') {
@@ -492,6 +504,15 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         } else if (isReadInfoOrReport) {
           // READ_INFO/REPORT: INCOMPLETE / NO_EVIDENCE / BLOCKED -> unified handling
           if (hasOutput) {
+            // Per COMPLETION_JUDGMENT.md: Check for questions before marking COMPLETE
+            if (hasUnansweredQuestions(cleanOutput)) {
+              console.log(`[Runner] READ_INFO/REPORT ${result.status} with questions -> AWAITING_RESPONSE`);
+              return {
+                status: 'ERROR',
+                errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
+                output: cleanOutput,
+              };
+            }
             console.log(`[Runner] READ_INFO/REPORT ${result.status} with output -> COMPLETE`);
             return { status: 'COMPLETE', output: cleanOutput };
           } else {
@@ -536,6 +557,16 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
       const hasOutput = cleanOutput && cleanOutput.trim().length > 0;
 
       if (result.status === 'COMPLETE') {
+        // Per COMPLETION_JUDGMENT.md: Check for unanswered questions in output
+        // Questions in output -> AWAITING_RESPONSE (not COMPLETE)
+        if (isReadInfoOrReport && hasOutput && hasUnansweredQuestions(cleanOutput)) {
+          console.log(`[Runner] READ_INFO/REPORT COMPLETE but has questions -> AWAITING_RESPONSE`);
+          return {
+            status: 'ERROR',
+            errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
+            output: cleanOutput,
+          };
+        }
         // Return output for visibility in UI (AC-CHAT-001, AC-CHAT-002)
         return { status: 'COMPLETE', output: cleanOutput || undefined };
       } else if (result.status === 'ERROR') {
@@ -544,7 +575,16 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         // READ_INFO/REPORT: output is the deliverable, not file evidence
         // INCOMPLETE / NO_EVIDENCE / BLOCKED all route here
         if (hasOutput) {
-          // Output exists -> task succeeded (COMPLETE)
+          // Per COMPLETION_JUDGMENT.md: Check for questions before marking COMPLETE
+          if (hasUnansweredQuestions(cleanOutput)) {
+            console.log(`[Runner] READ_INFO/REPORT ${result.status} with questions -> AWAITING_RESPONSE`);
+            return {
+              status: 'ERROR',
+              errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
+              output: cleanOutput,
+            };
+          }
+          // Output exists, no questions -> task succeeded (COMPLETE)
           console.log(`[Runner] READ_INFO/REPORT ${result.status} with output -> COMPLETE`);
           return { status: 'COMPLETE', output: cleanOutput };
         } else {
@@ -779,6 +819,25 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   // Start both web server and poller
   await server.start();
   await poller.start();
+
+  // Self-test mode: PM_AUTO_SELFTEST=true
+  if (process.env.PM_AUTO_SELFTEST === 'true') {
+    console.log('[selftest] PM_AUTO_SELFTEST=true detected. Running self-test mode...');
+    const sessionId = `selftest-${Date.now()}`;
+    const { report, exitCode } = await runSelftest(
+      queueStore,
+      sessionId,
+      projectPath,
+    );
+
+    // Graceful shutdown after selftest
+    await poller.stop();
+    await server.stop();
+
+    console.log(`[selftest] Self-test complete. Exiting with code ${exitCode}.`);
+    process.exit(exitCode);
+    return; // unreachable but satisfies type checker
+  }
 
   console.log('[Runner] Web server and queue poller are running');
   console.log('[Runner] Press Ctrl+C to stop');

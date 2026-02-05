@@ -417,9 +417,10 @@ describe('E2E: Chat MVP Feature', () => {
         .expect(201);
 
       // Verify taskGroupId is returned (only when queueStore is provided)
-      // The mock queueStore always returns successfully
+      // Per SESSION_MODEL.md: 1 Session = 1 TaskGroup (1:1 mapping)
+      // taskGroupId should equal sessionId to prevent TaskGroup proliferation
       assert.ok(chatRes.body.taskGroupId, 'Should have taskGroupId in response');
-      assert.ok(chatRes.body.taskGroupId.startsWith('tg_chat_'), 'taskGroupId should start with tg_chat_');
+      assert.equal(chatRes.body.taskGroupId, testSessionId, 'taskGroupId should equal sessionId (1:1 mapping per SESSION_MODEL.md)');
     });
 
     it('should create activity event visible in /api/activity', async () => {

@@ -34,6 +34,7 @@ const chat_1 = require("./routes/chat");
 const selfhost_1 = require("./routes/selfhost");
 const devconsole_1 = require("./routes/devconsole");
 const session_logs_1 = require("./routes/session-logs");
+const task_type_detector_1 = require("../utils/task-type-detector");
 /**
  * Derive namespace from folder path (same logic as CLI)
  */
@@ -172,7 +173,8 @@ function createApp(config) {
                 });
                 return;
             }
-            const item = await queueStore.enqueue(sessionId, task_group_id.trim(), prompt.trim());
+            const taskType = (0, task_type_detector_1.detectTaskType)(prompt.trim());
+            const item = await queueStore.enqueue(sessionId, task_group_id.trim(), prompt.trim(), undefined, taskType);
             res.status(201).json({
                 task_id: item.task_id,
                 task_group_id: item.task_group_id,
@@ -365,7 +367,8 @@ function createApp(config) {
                 });
                 return;
             }
-            const item = await queueStore.enqueue(sessionId, task_group_id.trim(), prompt.trim());
+            const taskType = (0, task_type_detector_1.detectTaskType)(prompt.trim());
+            const item = await queueStore.enqueue(sessionId, task_group_id.trim(), prompt.trim(), undefined, taskType);
             res.status(201).json({
                 task_id: item.task_id,
                 task_group_id: item.task_group_id,
@@ -423,6 +426,68 @@ function createApp(config) {
             res.json({
                 success: true,
                 task_id: result.task_id,
+                old_status: result.old_status,
+                new_status: result.new_status,
+            });
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            res.status(500).json({ error: 'INTERNAL_ERROR', message });
+        }
+    });
+    /**
+     * POST /api/tasks/:task_id/reply
+     * Reply to an AWAITING_RESPONSE task with free-form text
+     * Per spec REPLY_PROTOCOL.md
+     * Body: { reply: string }
+     *
+     * Flow:
+     * 1. Task in AWAITING_RESPONSE status
+     * 2. User submits reply
+     * 3. Server stores reply in task.user_reply
+     * 4. Server changes status to QUEUED (for executor to pick up)
+     */
+    app.post('/api/tasks/:task_id/reply', async (req, res) => {
+        try {
+            const task_id = req.params.task_id;
+            const { reply } = req.body;
+            // Validate reply content
+            if (!reply || typeof reply !== 'string' || reply.trim() === '') {
+                res.status(400).json({
+                    error: 'INVALID_INPUT',
+                    message: 'reply is required and must be a non-empty string',
+                });
+                return;
+            }
+            // Get current task
+            const task = await queueStore.getItem(task_id);
+            if (!task) {
+                res.status(404).json({
+                    error: 'NOT_FOUND',
+                    message: 'Task not found: ' + task_id,
+                });
+                return;
+            }
+            // Verify task is in AWAITING_RESPONSE status
+            if (task.status !== 'AWAITING_RESPONSE') {
+                res.status(409).json({
+                    error: 'INVALID_STATUS',
+                    message: 'Task is not awaiting response. Current status: ' + task.status,
+                });
+                return;
+            }
+            // Resume task with user reply (changes to RUNNING -> will be picked up by executor)
+            const result = await queueStore.resumeWithResponse(task_id, reply.trim());
+            if (!result.success) {
+                res.status(400).json({
+                    error: result.error || 'RESUME_FAILED',
+                    message: result.message || 'Failed to resume task with reply',
+                });
+                return;
+            }
+            res.json({
+                success: true,
+                task_id: task_id,
                 old_status: result.old_status,
                 new_status: result.new_status,
             });
@@ -634,6 +699,7 @@ function createApp(config) {
             'GET /api/tasks/:task_id/trace',
             'POST /api/tasks',
             'PATCH /api/tasks/:task_id/status',
+            'POST /api/tasks/:task_id/reply',
             'GET /api/health',
             'GET /api/namespace',
             'GET /api/agents',

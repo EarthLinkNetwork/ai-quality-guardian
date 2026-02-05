@@ -528,3 +528,90 @@ Lint:         0 new errors (24 pre-existing errors in other files)
 - `src/cli/index.ts` (modified - createTaskExecutor restructured)
 - `test/e2e/no-evidence-read-info-complete.e2e.test.ts` (new - 8 test cases)
 - `docs/REPORTS/2026-02-06_incomplete-error-rootcause.md` (new - root cause analysis)
+
+---
+
+# Self-Test Mode (PM_AUTO_SELFTEST)
+
+## Implementation Date
+2026-02-06
+
+## Feature Overview
+Self-test mode enables zero-human-interaction validation. When `PM_AUTO_SELFTEST=true` is set, the runner automatically:
+1. Injects 5 READ_INFO test tasks into the queue
+2. Waits for all tasks to reach terminal status
+3. Judges each result (COMPLETE + non-empty output = PASS)
+4. Writes a JSON report to `reports/selftest-YYYYMMDD-HHMM.json`
+5. Exits with code 0 (all pass) or 1 (any fail)
+
+## Architecture
+
+### Selftest Module: `src/selftest/selftest-runner.ts`
+
+**Constants:**
+- `SELFTEST_CASES`: 5 test cases (summary, unverified_stop, contradiction_detect, evidence_restriction, normal_question)
+- `SELFTEST_TASK_GROUP`: `tg_selftest_auto`
+- `SELFTEST_TASK_TYPE`: `READ_INFO`
+
+**Functions:**
+- `injectSelftestTasks(queueStore, sessionId)`: Enqueues all 5 cases
+- `waitForSelftestCompletion(queueStore, taskIds, timeoutMs, pollIntervalMs)`: Polls until all tasks are terminal
+- `judgeResult(item, caseName)`: COMPLETE + non-empty output = ok:true
+- `buildSelftestReport(items, cases)`: Builds structured JSON report
+- `writeSelftestReport(report, baseDir)`: Writes to `reports/` directory
+- `runSelftest(queueStore, sessionId, baseDir, timeoutMs?)`: Orchestrates full flow
+
+### CLI Integration: `src/cli/index.ts`
+
+After `server.start()` and `poller.start()`, checks `PM_AUTO_SELFTEST=true`:
+- Runs `runSelftest()` with the live queueStore
+- Stops poller and server after completion
+- Exits with the selftest exit code
+
+## Judgment Logic
+
+| Status | Output | Result |
+|--------|--------|--------|
+| COMPLETE | Non-empty | PASS |
+| COMPLETE | Empty/whitespace | FAIL (output is empty) |
+| COMPLETE | undefined | FAIL (output is empty) |
+| ERROR | Any | FAIL (status=ERROR) |
+| AWAITING_RESPONSE | Any | FAIL |
+| QUEUED/RUNNING | Any | FAIL (not completed) |
+
+## Report Format
+```json
+{
+  "run_id": "selftest-YYYYMMDD-HHMM",
+  "timestamp": "ISO 8601",
+  "total": 5,
+  "success": 5,
+  "fail": 0,
+  "results": [
+    {
+      "task_id": "uuid",
+      "name": "summary",
+      "status": "COMPLETE",
+      "ok": true,
+      "reason": "COMPLETE with output",
+      "output_length": 123
+    }
+  ]
+}
+```
+
+## Gate Results
+```
+TypeScript:   PASS (0 errors)
+Build:        SUCCESS
+Unit tests:   28/28 PASS (selftest-runner.test.ts)
+E2E tests:    13/13 PASS (selftest-mode.e2e.test.ts)
+Full suite:   2672/2672 PASS (96 pending)
+```
+
+## Files Changed
+- `src/selftest/selftest-runner.ts` (new - selftest module)
+- `src/cli/index.ts` (modified - PM_AUTO_SELFTEST integration)
+- `test/unit/selftest/selftest-runner.test.ts` (new - 28 unit tests)
+- `test/e2e/selftest-mode.e2e.test.ts` (new - 13 E2E tests)
+- `docs/EVIDENCE.md` (updated - this section)

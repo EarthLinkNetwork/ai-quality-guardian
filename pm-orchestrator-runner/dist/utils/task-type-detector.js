@@ -7,6 +7,10 @@
  * - READ_INFO: Information requests, questions, analysis (no file changes)
  * - REPORT: Generating reports, summaries (no file changes)
  * - IMPLEMENTATION: Creating/modifying files, fixing bugs
+ *
+ * Design principle: Japanese inputs that don't clearly indicate file
+ * creation/modification should default to READ_INFO (not IMPLEMENTATION)
+ * to prevent INCOMPLETE -> ERROR misclassification in the executor pipeline.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.detectTaskType = detectTaskType;
@@ -38,22 +42,34 @@ function detectTaskType(input) {
         /(status|info|information|details)/i,
         /^read /i,
         /^(show|display|print|output)/i,
-        /^(確認|教えて|見せて|説明|調べ|チェック)/i, // Japanese patterns
+        /^(確認|教えて|見せて|説明|調べ|チェック)/i, // Japanese patterns (start-anchored)
+        // Japanese patterns (anywhere in input) - analysis/verification/inspection
+        /(確認|教えて|見せて|説明して|調べて|チェックして)/,
+        /(検知|検証|検査|診断|テスト|分析|解析|評価|監査|点検|確かめ)/,
+        /(動作確認|整合性|ヘルスチェック|品質チェック)/,
     ];
     // IMPLEMENTATION patterns - file creation/modification
+    // Note: English word boundaries (\b) work for English but not for Japanese.
+    // Japanese IMPLEMENTATION detection uses start-anchored patterns for action verbs.
     const implementationPatterns = [
-        /(create|add|write|implement|build|make|generate|update|modify|change|fix|refactor|delete|remove)/i,
+        /\b(create|add|write|implement|build|make|generate|update|modify|change|fix|refactor|delete|remove)\b/i,
         /\.(ts|js|tsx|jsx|py|go|rs|java|md|json|yaml|yml|toml|css|scss|html)$/i,
-        /(file|code|function|class|component|module|test)/i,
-        /^(追加|作成|実装|修正|変更|削除)/i, // Japanese patterns
+        /\b(file|code|function|class|component|module)\b/i,
+        // Japanese: only match when the action verb is at the start (clear intent to modify)
+        /^(追加|作成|実装|修正|変更|削除|リファクタリング)/,
+        // Japanese: action verb + して/する patterns (clear modification intent)
+        /(追加して|作成して|実装して|修正して|変更して|削除して|書いて|書き換えて)/,
+        /(を追加|を作成|を実装|を修正|を変更|を削除|を書いて|を書き換え)/,
+        // Explicit "create/write test" in Japanese (テストを書いて, テストを追加)
+        /(テストを(書|追加|作成|実装))/,
     ];
     // Check for READ_INFO patterns
     for (const pattern of readInfoPatterns) {
-        if (pattern.test(lowerInput)) {
+        if (pattern.test(input)) {
             // But check if it also matches implementation patterns
             let hasImplementation = false;
             for (const implPattern of implementationPatterns) {
-                if (implPattern.test(lowerInput)) {
+                if (implPattern.test(input)) {
                     hasImplementation = true;
                     break;
                 }
@@ -63,7 +79,19 @@ function detectTaskType(input) {
             }
         }
     }
-    // Default to IMPLEMENTATION for ambiguous cases (fail-closed for safety)
-    return 'IMPLEMENTATION';
+    // Check IMPLEMENTATION patterns explicitly
+    for (const implPattern of implementationPatterns) {
+        if (implPattern.test(input)) {
+            return 'IMPLEMENTATION';
+        }
+    }
+    // Default: for inputs that match no patterns (including ambiguous Japanese),
+    // default to READ_INFO. This is safer because:
+    // - READ_INFO INCOMPLETE -> AWAITING_RESPONSE (user can clarify)
+    // - IMPLEMENTATION INCOMPLETE -> ERROR (loses task output)
+    // English inputs are well-covered by the patterns above.
+    // Japanese inputs without clear modification verbs are more likely
+    // to be information requests or analysis tasks.
+    return 'READ_INFO';
 }
 //# sourceMappingURL=task-type-detector.js.map

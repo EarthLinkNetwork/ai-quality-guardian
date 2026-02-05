@@ -171,13 +171,18 @@ function createChatRoutes(stateDirOrConfig) {
                 prompt: finalContent, // Include bootstrapPrompt in run
             });
             // Create TaskGroup via queueStore if available (connects to execution pipeline)
+            // Per spec SESSION_MODEL.md: 1 Session = 1 TaskGroup (1:1 mapping)
+            // session_id and task_group_id should be the same to prevent TaskGroup proliferation
             if (queueStore) {
                 try {
-                    taskGroupId = "tg_chat_" + (0, uuid_1.v4)();
+                    // Use sessionId as taskGroupId (1:1 mapping per spec)
+                    const effectiveSessionId = sessionId || "sess_" + projectId;
+                    taskGroupId = effectiveSessionId; // 1 Session = 1 TaskGroup
                     // Detect task type from prompt content for proper execution handling
                     // READ_INFO/REPORT tasks don't require file evidence
                     const taskType = (0, task_type_detector_1.detectTaskType)(finalContent);
-                    await queueStore.enqueue(sessionId || "sess_" + projectId, taskGroupId, finalContent, taskRunId, taskType);
+                    await queueStore.enqueue(effectiveSessionId, taskGroupId, // Same as sessionId per SESSION_MODEL.md spec
+                    finalContent, taskRunId, taskType);
                 }
                 catch (queueError) {
                     // Log but don't fail the request if TaskGroup creation fails
