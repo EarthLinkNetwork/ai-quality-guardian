@@ -446,3 +446,40 @@ e2e:       PASS (9 new tests)
 - `test/unit/core/completion-protocol.test.ts` (new, ~320 lines)
 - `test/e2e/completion-protocol.e2e.test.ts` (new, ~200 lines)
 - `docs/EVIDENCE.md` (updated, added Completion Protocol section)
+
+---
+
+# Web UI INCOMPLETE -> ERROR Runtime Bug Fix
+
+## Fix Date
+2026-02-06
+
+## Problem
+Web UI で日本語プロンプト「矛盾検知テスト」がERROR(Task ended with status: INCOMPLETE)になる。INCOMPLETE->AWAITING_RESPONSE修正はコード上存在するが、task_type が IMPLEMENTATION に誤分類されていたため、READ_INFO 用の AWAITING_RESPONSE パスに到達しなかった。
+
+## Root Cause
+1. `detectTaskType()` が日本語入力をほぼ全て IMPLEMENTATION にフォールスルーしていた（日本語パターンが先頭一致のみ、デフォルトが IMPLEMENTATION）
+2. `POST /api/tasks` と `POST /api/task-groups` が `detectTaskType` を呼ばず task_type を enqueue に渡していなかった
+
+## Fix
+1. `src/utils/task-type-detector.ts`: 日本語の検査/分析系キーワードを READ_INFO パターンに追加、デフォルトを READ_INFO に変更
+2. `src/web/server.ts`: 全 Web API エンドポイントで `detectTaskType` を呼んで task_type を伝搬
+
+## Evidence
+
+```
+TypeScript:   PASS (0 errors)
+Unit tests:   29/29 PASS (task-type-detector)
+E2E tests:    23/23 PASS (web-task-type-propagation)
+Full suite:   2623/2623 PASS (96 pending)
+Lint:         0 new errors
+Build:        SUCCESS
+dist verify:  detectTaskType("矛盾検知テスト") = "READ_INFO"
+```
+
+## Files Changed
+- `src/utils/task-type-detector.ts` (modified)
+- `src/web/server.ts` (modified)
+- `test/unit/utils/task-type-detector.test.ts` (modified)
+- `test/e2e/web-task-type-propagation.e2e.test.ts` (new)
+- `docs/REPORT_web_incomplete_runtime.md` (new)

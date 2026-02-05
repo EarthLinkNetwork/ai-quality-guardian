@@ -29,6 +29,7 @@ import { createChatRoutes } from './routes/chat';
 import { createSelfhostRoutes } from './routes/selfhost';
 import { createDevconsoleRoutes } from './routes/devconsole';
 import { createSessionLogsRoutes } from './routes/session-logs';
+import { detectTaskType } from '../utils/task-type-detector';
 
 /**
  * Derive namespace from folder path (same logic as CLI)
@@ -218,7 +219,8 @@ export function createApp(config: WebServerConfig): Express {
         return;
       }
 
-      const item = await queueStore.enqueue(sessionId, task_group_id.trim(), prompt.trim());
+      const taskType = detectTaskType(prompt.trim());
+      const item = await queueStore.enqueue(sessionId, task_group_id.trim(), prompt.trim(), undefined, taskType);
 
       res.status(201).json({
         task_id: item.task_id,
@@ -429,7 +431,8 @@ export function createApp(config: WebServerConfig): Express {
         return;
       }
 
-      const item = await queueStore.enqueue(sessionId, task_group_id.trim(), prompt.trim());
+      const taskType = detectTaskType(prompt.trim());
+      const item = await queueStore.enqueue(sessionId, task_group_id.trim(), prompt.trim(), undefined, taskType);
 
       res.status(201).json({
         task_id: item.task_id,
