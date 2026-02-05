@@ -9,6 +9,7 @@
  *   PM_TEST_EXECUTOR_MODE=incomplete_with_output → Returns INCOMPLETE with output
  *   PM_TEST_EXECUTOR_MODE=no_evidence → Returns NO_EVIDENCE
  *   PM_TEST_EXECUTOR_MODE=complete → Returns COMPLETE
+ *   PM_TEST_EXECUTOR_MODE=context_echo → Echo the prompt (for TaskContext E2E testing)
  *   (default) → Falls through to inner executor
  *
  * This enables gate:all to catch READ_INFO INCOMPLETE → ERROR regressions.
@@ -25,6 +26,7 @@ export type TestExecutorMode =
   | 'no_evidence'             // NO_EVIDENCE status
   | 'complete'                // COMPLETE status
   | 'static_output'           // COMPLETE with static output (for E2E testing output visibility)
+  | 'context_echo'            // Echo the received prompt (for TaskContext injection E2E testing)
   | 'error'                   // ERROR status
   | 'passthrough';            // Fall through to inner executor
 
@@ -44,6 +46,8 @@ export function getTestExecutorMode(): TestExecutorMode {
       return 'complete';
     case 'static_output':
       return 'static_output';
+    case 'context_echo':
+      return 'context_echo';
     case 'error':
       return 'error';
     default:
@@ -133,6 +137,21 @@ export class TestIncompleteExecutor implements IExecutor {
         return {
           executed: true,
           output: 'E2E_TEST_OUTPUT: This is the task result that should be visible in the UI. If you can see this message, the output visibility fix is working correctly.',
+          files_modified: [],
+          duration_ms: Date.now() - startTime,
+          status: 'COMPLETE',
+          cwd: process.cwd(),
+          verified_files: [],
+          unverified_files: [],
+        };
+
+      case 'context_echo':
+        // This mode echoes the received prompt back as output
+        // Used for E2E testing of TaskContext injection
+        console.log('[TestIncompleteExecutor] Returning COMPLETE with prompt echo (context_echo mode)');
+        return {
+          executed: true,
+          output: task.prompt,  // Echo the entire prompt including injected TaskContext
           files_modified: [],
           duration_ms: Date.now() - startTime,
           status: 'COMPLETE',

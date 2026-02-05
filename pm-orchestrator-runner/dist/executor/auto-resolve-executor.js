@@ -130,6 +130,16 @@ class AutoResolvingExecutor {
                 console.log('[AutoResolvingExecutor] Task completed successfully');
                 return result;
             }
+            // READ_INFO/REPORT tasks: output itself is the deliverable, not file evidence
+            // If we have output, treat as COMPLETE regardless of file evidence status
+            if ((task.taskType === 'READ_INFO' || task.taskType === 'REPORT') &&
+                result.output && result.output.trim().length > 0) {
+                console.log(`[AutoResolvingExecutor] ${task.taskType} task completed with output (file evidence not required)`);
+                return {
+                    ...result,
+                    status: 'COMPLETE',
+                };
+            }
             // Check if clarification is needed
             const clarification = this.detectClarification(result.output, result.error);
             if (!clarification || clarification.type === 'unknown') {

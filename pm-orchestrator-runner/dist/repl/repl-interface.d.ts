@@ -241,6 +241,7 @@ export declare class REPLInterface extends EventEmitter {
     private pendingCommandSuggestion;
     private taskNumberMap;
     private pendingSelectionMode;
+    private pickerActive;
     constructor(config?: REPLConfig);
     /**
      * Get project mode - per spec 10_REPL_UX.md
@@ -447,12 +448,14 @@ export declare class REPLInterface extends EventEmitter {
     private handleLogs;
     /**
      * Handle /logs ui - interactive log selection
-     * Shows numbered list and enters selection mode
+     * TTY: keyboard-navigable picker (Tier-0 Rule E)
+     * Non-TTY: numbered list with pendingSelectionMode fallback
      */
     private handleLogsInteractive;
     /**
      * Handle /tasks ui - interactive task selection
-     * Shows numbered list and enters selection mode
+     * TTY: keyboard-navigable picker (Tier-0 Rule E)
+     * Non-TTY: numbered list with pendingSelectionMode fallback
      */
     private handleTasksInteractive;
     /**
@@ -685,10 +688,14 @@ export declare class REPLInterface extends EventEmitter {
     private handleInspect;
     /**
      * Handle /inspect ui - interactive event browser
+     * TTY: keyboard-navigable picker (Tier-0 Rule E)
+     * Non-TTY: numbered list with pendingSelectionMode fallback
      */
     private handleInspectInteractive;
     /**
      * Handle /inspect diagnostic ui - interactive diagnostic picker
+     * TTY: keyboard-navigable picker (Tier-0 Rule E)
+     * Non-TTY: numbered list with pendingSelectionMode fallback
      */
     private handleDiagnosticInteractive;
     /**

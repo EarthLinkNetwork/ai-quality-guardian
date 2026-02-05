@@ -5,4 +5,5 @@
  */
 export { createSettingsRoutes } from "./settings";
 export { createSelfhostRoutes } from "./selfhost";
+export { createDevconsoleRoutes } from "./devconsole";
 //# sourceMappingURL=index.d.ts.map

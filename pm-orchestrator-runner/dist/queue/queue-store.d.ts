@@ -70,9 +70,16 @@ export interface ClarificationRequest {
     resolution_reasoning?: string;
 }
 /**
- * Queue Item schema (v2.1)
+ * Task type for execution handling
+ * - READ_INFO: Information requests, no file changes expected
+ * - REPORT: Report/summary generation, no file changes expected
+ * - IMPLEMENTATION: File creation/modification tasks
+ */
+export type TaskTypeValue = 'READ_INFO' | 'IMPLEMENTATION' | 'REPORT';
+/**
+ * Queue Item schema (v2.2)
  * Per spec/20_QUEUE_STORE.md
- * Extended with clarification fields
+ * Extended with clarification fields and task_type
  */
 export interface QueueItem {
     namespace: string;
@@ -84,10 +91,14 @@ export interface QueueItem {
     created_at: string;
     updated_at: string;
     error_message?: string;
+    /** Task type for execution handling (READ_INFO/IMPLEMENTATION/REPORT) */
+    task_type?: TaskTypeValue;
     /** Clarification request when status is AWAITING_RESPONSE */
     clarification?: ClarificationRequest;
     /** Conversation history for context preservation */
     conversation_history?: ConversationEntry[];
+    /** Task output/response for READ_INFO/REPORT tasks */
+    output?: string;
 }
 /**
  * Runner status for heartbeat tracking
@@ -156,11 +167,49 @@ export interface NamespaceSummary {
     active_runner_count: number;
 }
 /**
+ * Queue Store Interface
+ * Common interface for QueueStore and InMemoryQueueStore
+ */
+export interface IQueueStore {
+    getNamespace(): string;
+    getEndpoint(): string;
+    getTableName(): string;
+    tableExists(): Promise<boolean>;
+    createTable(): Promise<void>;
+    createRunnersTable(): Promise<void>;
+    runnersTableExists(): Promise<boolean>;
+    ensureTable(): Promise<void>;
+    deleteTable(): Promise<void>;
+    enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string, taskType?: TaskTypeValue): Promise<QueueItem>;
+    getItem(taskId: string, targetNamespace?: string): Promise<QueueItem | null>;
+    claim(): Promise<ClaimResult>;
+    updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string, output?: string): Promise<void>;
+    updateStatusWithValidation(taskId: string, newStatus: QueueItemStatus): Promise<StatusUpdateResult>;
+    setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[]): Promise<StatusUpdateResult>;
+    resumeWithResponse(taskId: string, userResponse: string): Promise<StatusUpdateResult>;
+    getByStatus(status: QueueItemStatus): Promise<QueueItem[]>;
+    getByTaskGroup(taskGroupId: string, targetNamespace?: string): Promise<QueueItem[]>;
+    getAllItems(targetNamespace?: string): Promise<QueueItem[]>;
+    getAllTaskGroups(targetNamespace?: string): Promise<TaskGroupSummary[]>;
+    getAllNamespaces(): Promise<NamespaceSummary[]>;
+    deleteItem(taskId: string): Promise<void>;
+    recoverStaleTasks(maxAgeMs?: number): Promise<number>;
+    updateRunnerHeartbeat(runnerId: string, projectRoot: string): Promise<void>;
+    getRunner(runnerId: string): Promise<RunnerRecord | null>;
+    getAllRunners(targetNamespace?: string): Promise<RunnerRecord[]>;
+    getRunnersWithStatus(heartbeatTimeoutMs?: number, targetNamespace?: string): Promise<Array<RunnerRecord & {
+        isAlive: boolean;
+    }>>;
+    markRunnerStopped(runnerId: string): Promise<void>;
+    deleteRunner(runnerId: string): Promise<void>;
+    destroy(): void;
+}
+/**
  * Queue Store (v2)
  * Manages task queue with DynamoDB Local
  * Single table design with namespace-based separation
  */
-export declare class QueueStore {
+export declare class QueueStore implements IQueueStore {
     private readonly client;
     private readonly docClient;
     private readonly namespace;
@@ -211,8 +260,13 @@ export declare class QueueStore {
     /**
      * Enqueue a new task
      * Creates item with status=QUEUED
+     * @param sessionId - Session identifier
+     * @param taskGroupId - Task group identifier
+     * @param prompt - Task prompt
+     * @param taskId - Optional task ID (auto-generated if not provided)
+     * @param taskType - Optional task type (READ_INFO/IMPLEMENTATION/REPORT)
      */
-    enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string): Promise<QueueItem>;
+    enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string, taskType?: TaskTypeValue): Promise<QueueItem>;
     /**
      * Get item by task_id (v2: uses composite key)
      */
@@ -224,7 +278,7 @@ export declare class QueueStore {
     /**
      * Update task status
      */
-    updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string): Promise<void>;
+    updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string, output?: string): Promise<void>;
     /**
      * Update task status with validation
      */

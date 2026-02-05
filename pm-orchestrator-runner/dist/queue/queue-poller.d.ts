@@ -9,7 +9,7 @@
  * - Fail-closed error handling
  */
 import { EventEmitter } from 'events';
-import { QueueStore, QueueItem } from './queue-store';
+import { IQueueStore, QueueItem } from './queue-store';
 /**
  * Task executor function type
  * Returns status and optional error message
@@ -17,6 +17,7 @@ import { QueueStore, QueueItem } from './queue-store';
 export type TaskExecutor = (item: QueueItem) => Promise<{
     status: 'COMPLETE' | 'ERROR';
     errorMessage?: string;
+    output?: string;
 }>;
 /**
  * Poller configuration
@@ -81,7 +82,7 @@ export declare class QueuePoller extends EventEmitter {
     private lastPollAt;
     private tasksProcessed;
     private errors;
-    constructor(store: QueueStore, executor: TaskExecutor, config?: QueuePollerConfig);
+    constructor(store: IQueueStore, executor: TaskExecutor, config?: QueuePollerConfig);
     /**
      * Generate a unique runner ID
      */

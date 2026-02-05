@@ -916,6 +916,751 @@
       background: #fee2e2;
       color: #991b1b;
     }
+
+    /* Dev Console Styles */
+    .dev-console {
+      margin-top: 16px;
+    }
+
+    .dev-console-layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      grid-template-rows: 1fr auto;
+      gap: 16px;
+      min-height: 500px;
+    }
+
+    .dev-file-tree {
+      grid-row: 1 / 3;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      overflow: auto;
+      max-height: 600px;
+    }
+
+    .dev-file-tree-header {
+      padding: 12px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #fff;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    .dev-file-tree-header input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+
+    .dev-file-list {
+      padding: 8px;
+    }
+
+    .dev-file-item {
+      padding: 6px 8px;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dev-file-item:hover {
+      background: #e5e7eb;
+    }
+
+    .dev-file-item.directory {
+      font-weight: 500;
+    }
+
+    .dev-file-item.directory::before {
+      content: "📁";
+    }
+
+    .dev-file-item.file::before {
+      content: "📄";
+    }
+
+    .dev-file-item.parent::before {
+      content: "⬆️";
+    }
+
+    .dev-content-area {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .dev-file-view {
+      background: #1f2937;
+      color: #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+      flex: 1;
+      min-height: 200px;
+    }
+
+    .dev-file-view-header {
+      padding: 8px 12px;
+      background: #374151;
+      font-size: 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .dev-file-view-content {
+      padding: 12px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      overflow: auto;
+      max-height: 300px;
+      white-space: pre;
+    }
+
+    .dev-patch-section {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .dev-patch-section h4 {
+      margin: 0 0 8px 0;
+      font-size: 0.9rem;
+    }
+
+    .dev-patch-textarea {
+      width: 100%;
+      height: 100px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.8rem;
+      padding: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      resize: vertical;
+    }
+
+    .dev-cmd-section {
+      grid-column: 1 / 3;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .dev-cmd-input-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .dev-cmd-input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.85rem;
+    }
+
+    .dev-cmd-log {
+      background: #1f2937;
+      color: #e5e7eb;
+      border-radius: 4px;
+      padding: 12px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      max-height: 200px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+
+    .dev-cmd-log .stdout { color: #a3e635; }
+    .dev-cmd-log .stderr { color: #f87171; }
+    .dev-cmd-log .system { color: #60a5fa; }
+
+    .dev-cmd-history {
+      margin-top: 12px;
+    }
+
+    .dev-cmd-history-item {
+      padding: 6px 8px;
+      background: #f3f4f6;
+      border-radius: 4px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .dev-cmd-history-item:hover {
+      background: #e5e7eb;
+    }
+
+    .dev-search-results {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      max-height: 200px;
+      overflow: auto;
+      margin-top: 8px;
+    }
+
+    .dev-search-result {
+      padding: 6px 8px;
+      border-bottom: 1px solid #f3f4f6;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+
+    .dev-search-result:hover {
+      background: #f9fafb;
+    }
+
+    .dev-search-result .path {
+      color: #2563eb;
+      font-weight: 500;
+    }
+
+    .dev-search-result .line {
+      color: #6b7280;
+    }
+
+    .dev-search-result .text {
+      color: #1f2937;
+      font-family: monospace;
+      font-size: 0.75rem;
+    }
+
+    /* Git Operations */
+    .dev-git-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .dev-git-section h4 {
+      margin: 0 0 12px 0;
+      font-size: 0.9rem;
+      color: #374151;
+    }
+
+    .dev-git-status {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      padding: 12px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.8rem;
+      margin-bottom: 12px;
+    }
+
+    .dev-git-status .git-branch {
+      color: #059669;
+      font-weight: 600;
+    }
+
+    .dev-git-status .git-clean {
+      color: #6b7280;
+    }
+
+    .dev-git-status .git-modified {
+      color: #d97706;
+    }
+
+    .dev-git-status .git-staged {
+      color: #059669;
+    }
+
+    .dev-git-status .git-untracked {
+      color: #dc2626;
+    }
+
+    .dev-git-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .dev-git-diff {
+      background: #1f2937;
+      color: #e5e7eb;
+      border-radius: 4px;
+      padding: 12px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.75rem;
+      line-height: 1.4;
+      max-height: 300px;
+      overflow: auto;
+      white-space: pre-wrap;
+      margin-bottom: 12px;
+    }
+
+    .dev-git-diff .diff-add {
+      color: #a3e635;
+    }
+
+    .dev-git-diff .diff-del {
+      color: #f87171;
+    }
+
+    .dev-git-diff .diff-header {
+      color: #60a5fa;
+    }
+
+    .dev-git-commit-section {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .dev-git-gate-status {
+      width: 100%;
+      font-size: 0.8rem;
+      margin-bottom: 4px;
+    }
+
+    .dev-git-gate-status.gate-pass {
+      color: #059669;
+    }
+
+    .dev-git-gate-status.gate-fail {
+      color: #dc2626;
+    }
+
+    #dev-git-commit-msg {
+      flex: 1;
+      min-width: 200px;
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+
+    #dev-git-commit-btn,
+    #dev-git-push-btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    #dev-git-commit-btn {
+      background: #059669;
+      color: white;
+    }
+
+    #dev-git-commit-btn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    #dev-git-push-btn {
+      background: #2563eb;
+      color: white;
+    }
+
+    #dev-git-push-btn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    /* Session Log Tree Styles */
+    .session-log-tree {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .session-log-tree-header {
+      padding: 12px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-radius: 8px 8px 0 0;
+    }
+
+    .session-log-tree-header h4 {
+      margin: 0;
+      font-size: 0.9rem;
+      color: #374151;
+    }
+
+    .session-log-tree-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .session-log-tree-content {
+      padding: 8px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .session-tree-node {
+      padding: 4px 8px;
+      margin: 2px 0;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .session-tree-node:hover {
+      background: #e5e7eb;
+    }
+
+    .session-tree-node.expanded {
+      background: #f3f4f6;
+    }
+
+    .session-tree-node.selected {
+      background: #dbeafe;
+      border: 1px solid #3b82f6;
+    }
+
+    .session-tree-node .node-icon {
+      flex-shrink: 0;
+      width: 16px;
+      text-align: center;
+    }
+
+    .session-tree-node .node-label {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .session-tree-node .node-status {
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    .session-tree-node .node-status.active {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+
+    .session-tree-node .node-status.completed {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .session-tree-node .node-status.failed {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .session-tree-node .node-status.running {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .session-tree-children {
+      margin-left: 16px;
+      border-left: 1px solid #e5e7eb;
+      padding-left: 8px;
+    }
+
+    .session-tree-node.type-date {
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .session-tree-node.type-date .node-icon::before {
+      content: "📅";
+    }
+
+    .session-tree-node.type-session .node-icon::before {
+      content: "💬";
+    }
+
+    .session-tree-node.type-run .node-icon::before {
+      content: "▶️";
+    }
+
+    .session-tree-node.type-run.status-completed .node-icon::before {
+      content: "✅";
+    }
+
+    .session-tree-node.type-run.status-failed .node-icon::before {
+      content: "❌";
+    }
+
+    .session-tree-node.type-run.status-running .node-icon::before {
+      content: "🔄";
+    }
+
+    /* Session Log Detail Panel */
+    .session-log-detail {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .session-log-detail-header {
+      padding: 12px;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .session-log-detail-header h4 {
+      margin: 0;
+      font-size: 0.9rem;
+      color: #374151;
+    }
+
+    .session-log-detail-meta {
+      padding: 12px;
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 0.8rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+    }
+
+    .session-log-detail-meta .meta-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .session-log-detail-meta .meta-label {
+      color: #6b7280;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+    }
+
+    .session-log-detail-meta .meta-value {
+      color: #1f2937;
+      font-weight: 500;
+    }
+
+    .session-log-detail-content {
+      padding: 12px;
+      background: #1f2937;
+      color: #e5e7eb;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      max-height: 300px;
+      overflow: auto;
+      white-space: pre-wrap;
+      border-radius: 0 0 8px 8px;
+    }
+
+    .session-log-detail-content .log-stdout { color: #a3e635; }
+    .session-log-detail-content .log-stderr { color: #f87171; }
+    .session-log-detail-content .log-system { color: #60a5fa; }
+
+    /* Runbook Preset Buttons */
+    .runbook-presets {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .runbook-btn {
+      padding: 8px 16px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      background: #fff;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .runbook-btn:hover {
+      background: #f3f4f6;
+      border-color: #9ca3af;
+    }
+
+    .runbook-btn.running {
+      background: #fef3c7;
+      border-color: #f59e0b;
+      cursor: not-allowed;
+    }
+
+    .runbook-btn.success {
+      background: #dcfce7;
+      border-color: #22c55e;
+    }
+
+    .runbook-btn.error {
+      background: #fee2e2;
+      border-color: #ef4444;
+    }
+
+    .runbook-btn .btn-icon {
+      font-size: 1rem;
+    }
+
+    /* Web Dev Mode Toggle */
+    .web-dev-mode-card {
+      margin-bottom: 16px;
+    }
+
+    .web-dev-mode-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .web-dev-mode-header h3 {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .web-dev-mode-status {
+      font-size: 0.85rem;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-weight: 500;
+    }
+
+    .web-dev-mode-status.enabled {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .web-dev-mode-status.disabled {
+      background: #f3f4f6;
+      color: #6b7280;
+    }
+
+    .web-dev-mode-toggle {
+      position: relative;
+      width: 48px;
+      height: 24px;
+      background: #e5e7eb;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .web-dev-mode-toggle.enabled {
+      background: #22c55e;
+    }
+
+    .web-dev-mode-toggle::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.3s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    .web-dev-mode-toggle.enabled::after {
+      transform: translateX(24px);
+    }
+
+    .web-dev-mode-description {
+      margin-top: 8px;
+      font-size: 0.85rem;
+      color: #6b7280;
+    }
+
+    .web-dev-mode-warning {
+      margin-top: 12px;
+      padding: 12px;
+      background: #fef3c7;
+      border: 1px solid #fde047;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: #92400e;
+    }
+
+    .web-dev-mode-warning strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    /* Safety Confirmation Dialog */
+    .safety-dialog-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .safety-dialog {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    }
+
+    .safety-dialog h4 {
+      margin: 0 0 12px 0;
+      color: #dc2626;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .safety-dialog p {
+      margin: 0 0 16px 0;
+      color: #4b5563;
+      line-height: 1.5;
+    }
+
+    .safety-dialog-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    .safety-dialog-actions .btn-danger {
+      background: #dc2626;
+      color: white;
+      border: none;
+    }
+
+    .safety-dialog-actions .btn-danger:hover {
+      background: #b91c1c;
+    }
   </style>
 </head>
 <body>
@@ -1220,7 +1965,7 @@
               <div class="log-entry task-completed">
                 <div class="log-time">${formatFullDate(task.updated_at)}</div>
                 <div class="log-type">TASK COMPLETED</div>
-                <div class="log-content">Task completed successfully.</div>
+                <div class="log-content">${task.output ? escapeHtml(task.output) : 'Task completed successfully.'}</div>
               </div>
               ` : ''}
               ${task.status === 'ERROR' ? `
@@ -1290,6 +2035,24 @@
             <h3>Prompt</h3>
             <div class="prompt-box">${escapeHtml(task.prompt)}</div>
           </div>
+
+          ${task.output ? `
+          <div class="card">
+            <h3>Result</h3>
+            <div class="prompt-box" style="background-color: #f0fdf4; border-color: #22c55e;">${escapeHtml(task.output)}</div>
+          </div>
+          ` : ''}
+
+          ${task.status === 'AWAITING_RESPONSE' && task.clarification ? `
+          <div class="card" style="border-left: 4px solid #f59e0b;">
+            <h3>Clarification Needed</h3>
+            <div class="prompt-box" style="background-color: #fffbeb; border-color: #f59e0b;">
+              <strong>Question:</strong> ${escapeHtml(task.clarification.question || 'No question provided')}
+              ${task.clarification.options ? `<br><br><strong>Options:</strong><ul>${task.clarification.options.map(o => `<li>${escapeHtml(o)}</li>`).join('')}</ul>` : ''}
+              ${task.clarification.context ? `<br><strong>Context:</strong> ${escapeHtml(task.clarification.context)}` : ''}
+            </div>
+          </div>
+          ` : ''}
 
           ${errorSection}
           ${logEntries}
@@ -2320,11 +3083,20 @@
           ${project.projectType === 'runner-dev' ? '<div id="selfhost-section"></div>' : ''}
 
           ${resumeInfo ? '<div id="resume-info-section"></div>' : ''}
+
+          ${project.projectType === 'runner-dev' ? '<div id="web-dev-mode-section"></div>' : ''}
+          ${project.projectType === 'runner-dev' ? '<div id="dev-console-section"></div>' : ''}
         `;
 
         // Load self-hosting status for runner-dev projects
         if (project.projectType === 'runner-dev') {
           loadSelfhostStatus(projectId);
+          // Render Web Dev Mode toggle
+          renderWebDevModeSection(projectId);
+          // Load Dev Console for runner-dev projects (if enabled)
+          if (isWebDevModeEnabled(projectId)) {
+            renderDevConsole(projectId);
+          }
         }
 
         // Display resume info if available
@@ -3082,6 +3854,1080 @@
         runnerRefreshInterval = null;
       }
     }
+
+    // =========================================================================
+    // Web Dev Mode Functions
+    // =========================================================================
+
+    function getWebDevModeKey(projectId) {
+      return 'webDevMode_' + projectId;
+    }
+
+    function isWebDevModeEnabled(projectId) {
+      return localStorage.getItem(getWebDevModeKey(projectId)) === 'enabled';
+    }
+
+    function setWebDevModeEnabled(projectId, enabled) {
+      if (enabled) {
+        localStorage.setItem(getWebDevModeKey(projectId), 'enabled');
+      } else {
+        localStorage.removeItem(getWebDevModeKey(projectId));
+      }
+    }
+
+    function renderWebDevModeSection(projectId) {
+      var section = document.getElementById('web-dev-mode-section');
+      if (!section) return;
+
+      var enabled = isWebDevModeEnabled(projectId);
+
+      section.innerHTML = `
+        <div class="card web-dev-mode-card">
+          <div class="web-dev-mode-header">
+            <h3>
+              Web Dev Mode
+              <span class="web-dev-mode-status ${enabled ? 'enabled' : 'disabled'}">
+                ${enabled ? 'Enabled' : 'Disabled'}
+              </span>
+            </h3>
+            <div class="web-dev-mode-toggle ${enabled ? 'enabled' : ''}"
+                 onclick="toggleWebDevMode('${escapeHtml(projectId)}')"
+                 title="${enabled ? 'Click to disable' : 'Click to enable'}">
+            </div>
+          </div>
+          <p class="web-dev-mode-description">
+            Web Dev Mode allows you to develop this project directly from the Web UI,
+            including running commands, viewing logs, and managing git operations.
+          </p>
+          ${enabled ? `
+            <div class="web-dev-mode-warning">
+              <strong>Safety Notice</strong>
+              Web Dev Mode is enabled. Git push and destructive operations will require confirmation.
+              Always verify gate:all passes before pushing.
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function toggleWebDevMode(projectId) {
+      var currentlyEnabled = isWebDevModeEnabled(projectId);
+
+      if (currentlyEnabled) {
+        // Disabling - just disable without confirmation
+        setWebDevModeEnabled(projectId, false);
+        renderWebDevModeSection(projectId);
+        // Hide dev console
+        var devSection = document.getElementById('dev-console-section');
+        if (devSection) devSection.innerHTML = '';
+      } else {
+        // Enabling - show confirmation dialog
+        showSafetyDialog(
+          'Enable Web Dev Mode?',
+          'Enabling Web Dev Mode allows you to run commands and modify code directly from the Web UI. ' +
+          'This is intended for development of this PM Orchestrator Runner project itself. ' +
+          'Git push requires gate:all to pass first.',
+          'Enable',
+          function() {
+            setWebDevModeEnabled(projectId, true);
+            renderWebDevModeSection(projectId);
+            renderDevConsole(projectId);
+          }
+        );
+      }
+    }
+
+    function showSafetyDialog(title, message, confirmText, onConfirm) {
+      var overlay = document.createElement('div');
+      overlay.className = 'safety-dialog-overlay';
+      overlay.innerHTML = `
+        <div class="safety-dialog">
+          <h4>⚠️ ${escapeHtml(title)}</h4>
+          <p>${escapeHtml(message)}</p>
+          <div class="safety-dialog-actions">
+            <button class="btn btn-secondary" onclick="closeSafetyDialog()">Cancel</button>
+            <button class="btn btn-danger" onclick="confirmSafetyDialog()">
+              ${escapeHtml(confirmText)}
+            </button>
+          </div>
+        </div>
+      `;
+
+      window.safetyDialogCallback = onConfirm;
+      document.body.appendChild(overlay);
+    }
+
+    function closeSafetyDialog() {
+      var overlay = document.querySelector('.safety-dialog-overlay');
+      if (overlay) {
+        overlay.remove();
+      }
+      window.safetyDialogCallback = null;
+    }
+
+    function confirmSafetyDialog() {
+      var callback = window.safetyDialogCallback;
+      closeSafetyDialog();
+      if (callback) {
+        callback();
+      }
+    }
+
+    // =========================================================================
+    // Dev Console Functions (runner-dev projects only)
+    // =========================================================================
+
+    var devConsoleState = {
+      projectId: null,
+      currentPath: '.',
+      currentFile: null,
+      cmdHistory: [],
+      activeRunId: null,
+      pollInterval: null
+    };
+
+    function renderDevConsole(projectId) {
+      devConsoleState.projectId = projectId;
+      devConsoleState.currentPath = '.';
+      devConsoleState.currentFile = null;
+
+      var section = document.getElementById('dev-console-section');
+      if (!section) return;
+
+      section.innerHTML = `
+        <div class="card dev-console">
+          <h3>Dev Console</h3>
+          <div class="dev-console-layout">
+            <div class="dev-file-tree">
+              <div class="dev-file-tree-header">
+                <input type="text" id="dev-search-input" placeholder="Search files..." onkeydown="if(event.key==='Enter')devSearch()">
+              </div>
+              <div id="dev-search-results" class="dev-search-results" style="display:none;"></div>
+              <div id="dev-file-list" class="dev-file-list">
+                <div class="loading">Loading...</div>
+              </div>
+            </div>
+            <div class="dev-content-area">
+              <div class="dev-file-view">
+                <div class="dev-file-view-header">
+                  <span id="dev-file-path">No file selected</span>
+                </div>
+                <div id="dev-file-content" class="dev-file-view-content">Select a file to view its contents.</div>
+              </div>
+              <div class="dev-patch-section">
+                <h4>Apply Patch (unified diff)</h4>
+                <textarea id="dev-patch-input" class="dev-patch-textarea" placeholder="Paste unified diff here..."></textarea>
+                <div style="margin-top: 8px;">
+                  <button class="btn btn-primary" onclick="devApplyPatch()">Apply Patch</button>
+                  <span id="dev-patch-status" style="margin-left: 8px;"></span>
+                </div>
+              </div>
+            </div>
+            <div class="dev-cmd-section">
+              <h4>Command Execution</h4>
+              <!-- Runbook Preset Buttons -->
+              <div class="runbook-presets" id="runbook-presets">
+                <button class="runbook-btn" onclick="devRunRunbook('sync')" id="runbook-sync">
+                  <span class="btn-icon">🔄</span> SYNC
+                </button>
+                <button class="runbook-btn" onclick="devRunRunbook('build')" id="runbook-build">
+                  <span class="btn-icon">🔨</span> BUILD
+                </button>
+                <button class="runbook-btn" onclick="devRunRunbook('test')" id="runbook-test">
+                  <span class="btn-icon">🧪</span> TEST
+                </button>
+                <button class="runbook-btn" onclick="devRunRunbook('gate')" id="runbook-gate">
+                  <span class="btn-icon">🚦</span> GATE
+                </button>
+                <button class="runbook-btn" onclick="devRunRunbook('e2e')" id="runbook-e2e">
+                  <span class="btn-icon">🎭</span> E2E
+                </button>
+              </div>
+              <div class="dev-cmd-input-row">
+                <input type="text" id="dev-cmd-input" class="dev-cmd-input" placeholder="Enter command (e.g., npm run gate:all)" onkeydown="if(event.key==='Enter')devRunCmd()">
+                <button class="btn btn-primary" onclick="devRunCmd()">Run</button>
+                <button class="btn btn-secondary" onclick="devLoadCmdHistory()">History</button>
+              </div>
+              <div id="dev-cmd-log" class="dev-cmd-log">Ready. Enter a command above.</div>
+              <div id="dev-cmd-history" class="dev-cmd-history" style="display:none;"></div>
+            </div>
+            <!-- Session Log Tree -->
+            <div class="session-log-tree" id="session-log-tree">
+              <div class="session-log-tree-header">
+                <h4>Session Log Tree</h4>
+                <div class="session-log-tree-actions">
+                  <button class="btn btn-secondary btn-sm" onclick="devRefreshSessionTree()">Refresh</button>
+                  <button class="btn btn-secondary btn-sm" onclick="devCollapseAllSessions()">Collapse All</button>
+                </div>
+              </div>
+              <div class="session-log-tree-content" id="session-tree-content">
+                <div class="loading">Loading session tree...</div>
+              </div>
+            </div>
+            <!-- Session Log Detail Panel -->
+            <div class="session-log-detail" id="session-log-detail" style="display:none;">
+              <div class="session-log-detail-header">
+                <h4 id="session-log-detail-title">Run Details</h4>
+                <button class="btn btn-secondary btn-sm" onclick="devCloseLogDetail()">Close</button>
+              </div>
+              <div class="session-log-detail-meta" id="session-log-detail-meta"></div>
+              <div class="session-log-detail-content" id="session-log-detail-content"></div>
+            </div>
+            <div class="dev-git-section">
+              <h4>Git Operations</h4>
+              <div id="dev-git-status" class="dev-git-status">Loading git status...</div>
+              <div class="dev-git-actions">
+                <button class="btn btn-secondary" onclick="devGitRefresh()">Refresh</button>
+                <button class="btn btn-secondary" onclick="devGitShowDiff()">Show Diff</button>
+                <button class="btn btn-secondary" onclick="devGitShowDiff(true)">Show Staged</button>
+              </div>
+              <div id="dev-git-diff" class="dev-git-diff" style="display:none;"></div>
+              <div class="dev-git-commit-section">
+                <div id="dev-git-gate-status" class="dev-git-gate-status"></div>
+                <input type="text" id="dev-git-commit-msg" class="dev-cmd-input" placeholder="Commit message..." onkeydown="if(event.key==='Enter')devGitCommit()">
+                <div class="dev-git-actions" style="margin-top: 8px;">
+                  <button class="btn btn-primary" onclick="devGitCommit()" id="dev-git-commit-btn" disabled>Commit</button>
+                  <button class="btn btn-warning" onclick="devGitPush()" id="dev-git-push-btn" disabled>Push</button>
+                </div>
+                <div id="dev-git-result" class="dev-git-result"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      devLoadTree('.');
+      devLoadCmdHistory();
+      devGitRefresh();
+      devLoadSessionTree();
+    }
+
+    async function devLoadTree(dirPath) {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      devConsoleState.currentPath = dirPath;
+      var listEl = document.getElementById('dev-file-list');
+      if (!listEl) return;
+
+      listEl.innerHTML = '<div class="loading">Loading...</div>';
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/fs/tree?root=' + encodeURIComponent(dirPath));
+        var data = await resp.json();
+
+        if (data.error) {
+          listEl.innerHTML = '<div class="error-message">' + escapeHtml(data.message) + '</div>';
+          return;
+        }
+
+        var html = '';
+        if (dirPath !== '.') {
+          var parentPath = dirPath.split('/').slice(0, -1).join('/') || '.';
+          html += '<div class="dev-file-item parent" onclick="devLoadTree(\'' + escapeHtml(parentPath) + '\')">.. (parent)</div>';
+        }
+
+        for (var entry of data.entries) {
+          if (entry.type === 'directory') {
+            html += '<div class="dev-file-item directory" onclick="devLoadTree(\'' + escapeHtml(entry.relPath) + '\')">' + escapeHtml(entry.name) + '</div>';
+          } else {
+            html += '<div class="dev-file-item file" onclick="devReadFile(\'' + escapeHtml(entry.relPath) + '\')">' + escapeHtml(entry.name) + '</div>';
+          }
+        }
+
+        listEl.innerHTML = html || '<div class="empty-state">Empty directory</div>';
+      } catch (err) {
+        listEl.innerHTML = '<div class="error-message">Error: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    async function devReadFile(filePath) {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      devConsoleState.currentFile = filePath;
+      var pathEl = document.getElementById('dev-file-path');
+      var contentEl = document.getElementById('dev-file-content');
+      if (!pathEl || !contentEl) return;
+
+      pathEl.textContent = filePath;
+      contentEl.textContent = 'Loading...';
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/fs/read?path=' + encodeURIComponent(filePath));
+        var data = await resp.json();
+
+        if (data.error) {
+          contentEl.textContent = 'Error: ' + data.message;
+          return;
+        }
+
+        contentEl.textContent = data.content;
+      } catch (err) {
+        contentEl.textContent = 'Error: ' + err.message;
+      }
+    }
+
+    async function devSearch() {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var input = document.getElementById('dev-search-input');
+      var resultsEl = document.getElementById('dev-search-results');
+      if (!input || !resultsEl) return;
+
+      var query = input.value.trim();
+      if (!query) {
+        resultsEl.style.display = 'none';
+        return;
+      }
+
+      resultsEl.innerHTML = '<div class="loading">Searching...</div>';
+      resultsEl.style.display = 'block';
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/fs/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: query })
+        });
+        var results = await resp.json();
+
+        if (results.error) {
+          resultsEl.innerHTML = '<div class="error-message">' + escapeHtml(results.message) + '</div>';
+          return;
+        }
+
+        if (results.length === 0) {
+          resultsEl.innerHTML = '<div class="empty-state">No results found</div>';
+          return;
+        }
+
+        var html = results.slice(0, 50).map(function(r) {
+          return '<div class="dev-search-result" onclick="devReadFile(\'' + escapeHtml(r.relPath) + '\')">' +
+            '<span class="path">' + escapeHtml(r.relPath) + '</span>' +
+            '<span class="line">:' + r.line + '</span><br>' +
+            '<span class="text">' + escapeHtml(r.text.substring(0, 100)) + '</span>' +
+            '</div>';
+        }).join('');
+
+        resultsEl.innerHTML = html;
+      } catch (err) {
+        resultsEl.innerHTML = '<div class="error-message">Error: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    async function devApplyPatch() {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var input = document.getElementById('dev-patch-input');
+      var statusEl = document.getElementById('dev-patch-status');
+      if (!input || !statusEl) return;
+
+      var patch = input.value.trim();
+      if (!patch) {
+        statusEl.innerHTML = '<span style="color:#dc2626;">No patch provided</span>';
+        return;
+      }
+
+      statusEl.innerHTML = '<span style="color:#2563eb;">Applying...</span>';
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/fs/applyPatch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ patch: patch })
+        });
+        var result = await resp.json();
+
+        if (result.ok) {
+          statusEl.innerHTML = '<span style="color:#16a34a;">Success! Changed: ' + escapeHtml(result.changedFiles.join(', ')) + '</span>';
+          input.value = '';
+          // Refresh file view if current file was changed
+          if (devConsoleState.currentFile && result.changedFiles.includes(devConsoleState.currentFile)) {
+            devReadFile(devConsoleState.currentFile);
+          }
+        } else {
+          statusEl.innerHTML = '<span style="color:#dc2626;">Failed: ' + escapeHtml(result.error) + '</span>';
+        }
+      } catch (err) {
+        statusEl.innerHTML = '<span style="color:#dc2626;">Error: ' + escapeHtml(err.message) + '</span>';
+      }
+    }
+
+    async function devRunCmd() {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var input = document.getElementById('dev-cmd-input');
+      var logEl = document.getElementById('dev-cmd-log');
+      if (!input || !logEl) return;
+
+      var command = input.value.trim();
+      if (!command) return;
+
+      logEl.innerHTML = '<span class="system">$ ' + escapeHtml(command) + '</span>\n<span class="system">Starting...</span>\n';
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/cmd/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: command })
+        });
+        var result = await resp.json();
+
+        if (result.error) {
+          logEl.innerHTML += '<span class="stderr">Error: ' + escapeHtml(result.message) + '</span>\n';
+          return;
+        }
+
+        devConsoleState.activeRunId = result.runId;
+        input.value = '';
+
+        // Start polling for logs
+        devStartLogPolling(result.runId);
+      } catch (err) {
+        logEl.innerHTML += '<span class="stderr">Error: ' + escapeHtml(err.message) + '</span>\n';
+      }
+    }
+
+    function devStartLogPolling(runId) {
+      // Clear any existing interval
+      if (devConsoleState.pollInterval) {
+        clearInterval(devConsoleState.pollInterval);
+      }
+
+      var lastLogCount = 0;
+
+      devConsoleState.pollInterval = setInterval(async function() {
+        var projectId = devConsoleState.projectId;
+        if (!projectId) return;
+
+        try {
+          var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/cmd/' + encodeURIComponent(runId) + '/log');
+          var data = await resp.json();
+
+          if (data.error) return;
+
+          var logEl = document.getElementById('dev-cmd-log');
+          if (!logEl) return;
+
+          // Render all logs
+          var html = '';
+          for (var entry of data.logs) {
+            var cls = entry.stream;
+            html += '<span class="' + cls + '">' + escapeHtml(entry.text) + '</span>';
+          }
+          logEl.innerHTML = html;
+          logEl.scrollTop = logEl.scrollHeight;
+
+          // Stop polling if completed
+          if (data.status === 'completed' || data.status === 'failed') {
+            clearInterval(devConsoleState.pollInterval);
+            devConsoleState.pollInterval = null;
+            devConsoleState.activeRunId = null;
+            devLoadCmdHistory();
+          }
+        } catch (err) {
+          console.warn('Log polling error:', err);
+        }
+      }, 1000);
+    }
+
+    async function devLoadCmdHistory() {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var historyEl = document.getElementById('dev-cmd-history');
+      if (!historyEl) return;
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/cmd/list');
+        var data = await resp.json();
+
+        if (data.error || !data.runs || data.runs.length === 0) {
+          historyEl.style.display = 'none';
+          return;
+        }
+
+        var html = '<div style="font-size:0.8rem;color:#6b7280;margin-bottom:4px;">Recent commands:</div>';
+        for (var run of data.runs.slice(0, 5)) {
+          var statusColor = run.status === 'completed' ? '#16a34a' : run.status === 'failed' ? '#dc2626' : '#2563eb';
+          html += '<div class="dev-cmd-history-item" onclick="devViewLog(\'' + escapeHtml(run.runId) + '\')">' +
+            '<span>' + escapeHtml(run.command.substring(0, 40)) + (run.command.length > 40 ? '...' : '') + '</span>' +
+            '<span style="color:' + statusColor + ';">' + run.status + '</span>' +
+            '</div>';
+        }
+
+        historyEl.innerHTML = html;
+        historyEl.style.display = 'block';
+      } catch (err) {
+        console.warn('Failed to load cmd history:', err);
+      }
+    }
+
+    async function devViewLog(runId) {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var logEl = document.getElementById('dev-cmd-log');
+      if (!logEl) return;
+
+      logEl.innerHTML = '<span class="system">Loading log...</span>\n';
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/cmd/' + encodeURIComponent(runId) + '/log');
+        var data = await resp.json();
+
+        if (data.error) {
+          logEl.innerHTML = '<span class="stderr">Error: ' + escapeHtml(data.message) + '</span>\n';
+          return;
+        }
+
+        var html = '';
+        for (var entry of data.logs) {
+          var cls = entry.stream;
+          html += '<span class="' + cls + '">' + escapeHtml(entry.text) + '</span>';
+        }
+        logEl.innerHTML = html || '<span class="system">No logs</span>';
+        logEl.scrollTop = logEl.scrollHeight;
+      } catch (err) {
+        logEl.innerHTML = '<span class="stderr">Error: ' + escapeHtml(err.message) + '</span>\n';
+      }
+    }
+
+    // =========================================================================
+    // Session Log Tree Functions
+    // =========================================================================
+
+    var sessionTreeState = {
+      expandedNodes: new Set(),
+      selectedRunId: null
+    };
+
+    async function devLoadSessionTree() {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var contentEl = document.getElementById('session-tree-content');
+      if (!contentEl) return;
+
+      contentEl.innerHTML = '<div class="loading">Loading session tree...</div>';
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/session-logs/tree');
+        var data = await resp.json();
+
+        if (data.error) {
+          contentEl.innerHTML = '<div class="error-message">' + escapeHtml(data.message || data.error) + '</div>';
+          return;
+        }
+
+        if (!data.tree || data.tree.length === 0) {
+          contentEl.innerHTML = '<div class="empty-state">No session logs yet. Run commands to generate logs.</div>';
+          return;
+        }
+
+        var html = renderSessionTreeNodes(data.tree);
+        contentEl.innerHTML = html;
+      } catch (err) {
+        contentEl.innerHTML = '<div class="error-message">Error: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    function renderSessionTreeNodes(nodes, level) {
+      level = level || 0;
+      var html = '';
+
+      for (var node of nodes) {
+        var isExpanded = sessionTreeState.expandedNodes.has(node.id);
+        var isSelected = node.type === 'run' && sessionTreeState.selectedRunId === node.id;
+        var statusClass = node.status ? ' status-' + node.status : '';
+        var expandedClass = isExpanded ? ' expanded' : '';
+        var selectedClass = isSelected ? ' selected' : '';
+        var hasChildren = node.children && node.children.length > 0;
+
+        html += '<div class="session-tree-node type-' + node.type + statusClass + expandedClass + selectedClass + '" ' +
+          'data-node-id="' + escapeHtml(node.id) + '" ' +
+          'data-node-type="' + node.type + '" ' +
+          'onclick="devToggleSessionNode(\'' + escapeHtml(node.id) + '\', \'' + node.type + '\')">';
+
+        html += '<span class="node-icon">' + (hasChildren ? (isExpanded ? '▼' : '▶') : '') + '</span>';
+        html += '<span class="node-label">' + escapeHtml(node.label) + '</span>';
+
+        if (node.status) {
+          html += '<span class="node-status ' + node.status + '">' + node.status + '</span>';
+        }
+
+        html += '</div>';
+
+        if (hasChildren && isExpanded) {
+          html += '<div class="session-tree-children">';
+          html += renderSessionTreeNodes(node.children, level + 1);
+          html += '</div>';
+        }
+      }
+
+      return html;
+    }
+
+    function devToggleSessionNode(nodeId, nodeType) {
+      if (nodeType === 'run') {
+        // For run nodes, show detail
+        sessionTreeState.selectedRunId = nodeId;
+        devShowRunDetail(nodeId);
+        devRefreshSessionTree();
+      } else {
+        // For date and session nodes, toggle expansion
+        if (sessionTreeState.expandedNodes.has(nodeId)) {
+          sessionTreeState.expandedNodes.delete(nodeId);
+        } else {
+          sessionTreeState.expandedNodes.add(nodeId);
+        }
+        devRefreshSessionTree();
+      }
+    }
+
+    function devRefreshSessionTree() {
+      devLoadSessionTree();
+    }
+
+    function devCollapseAllSessions() {
+      sessionTreeState.expandedNodes.clear();
+      devRefreshSessionTree();
+    }
+
+    async function devShowRunDetail(runId) {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var detailPanel = document.getElementById('session-log-detail');
+      var titleEl = document.getElementById('session-log-detail-title');
+      var metaEl = document.getElementById('session-log-detail-meta');
+      var contentEl = document.getElementById('session-log-detail-content');
+
+      if (!detailPanel || !titleEl || !metaEl || !contentEl) return;
+
+      detailPanel.style.display = 'block';
+      titleEl.textContent = 'Loading...';
+      metaEl.innerHTML = '';
+      contentEl.innerHTML = '<span class="log-system">Loading logs...</span>';
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/session-logs/run/' + encodeURIComponent(runId));
+        var data = await resp.json();
+
+        if (data.error) {
+          titleEl.textContent = 'Error';
+          contentEl.innerHTML = '<span class="log-stderr">Error: ' + escapeHtml(data.message || data.error) + '</span>';
+          return;
+        }
+
+        // API returns run data directly (not wrapped in data.run)
+        var run = data;
+        titleEl.textContent = 'Run: ' + (run.command || runId);
+
+        // Render metadata
+        var metaHtml = '';
+        metaHtml += '<div class="meta-item"><span class="meta-label">Run ID</span><span class="meta-value">' + escapeHtml(run.runId) + '</span></div>';
+        metaHtml += '<div class="meta-item"><span class="meta-label">Status</span><span class="meta-value">' + escapeHtml(run.status) + '</span></div>';
+        metaHtml += '<div class="meta-item"><span class="meta-label">Started</span><span class="meta-value">' + escapeHtml(run.startedAt) + '</span></div>';
+        if (run.endedAt) {
+          metaHtml += '<div class="meta-item"><span class="meta-label">Ended</span><span class="meta-value">' + escapeHtml(run.endedAt) + '</span></div>';
+        }
+        if (run.exitCode !== undefined) {
+          metaHtml += '<div class="meta-item"><span class="meta-label">Exit Code</span><span class="meta-value">' + run.exitCode + '</span></div>';
+        }
+        if (run.sessionId) {
+          metaHtml += '<div class="meta-item"><span class="meta-label">Session</span><span class="meta-value">' + escapeHtml(run.sessionId) + '</span></div>';
+        }
+        metaEl.innerHTML = metaHtml;
+
+        // Render logs
+        if (data.logs && data.logs.length > 0) {
+          var logsHtml = '';
+          for (var entry of data.logs) {
+            var cls = 'log-' + (entry.stream || 'stdout');
+            logsHtml += '<span class="' + cls + '">' + escapeHtml(entry.text || '') + '</span>';
+          }
+          contentEl.innerHTML = logsHtml;
+        } else {
+          contentEl.innerHTML = '<span class="log-system">No logs available</span>';
+        }
+
+        contentEl.scrollTop = 0;
+      } catch (err) {
+        titleEl.textContent = 'Error';
+        contentEl.innerHTML = '<span class="log-stderr">Error: ' + escapeHtml(err.message) + '</span>';
+      }
+    }
+
+    function devCloseLogDetail() {
+      var detailPanel = document.getElementById('session-log-detail');
+      if (detailPanel) {
+        detailPanel.style.display = 'none';
+      }
+      sessionTreeState.selectedRunId = null;
+      devRefreshSessionTree();
+    }
+
+    // =========================================================================
+    // Runbook Preset Functions
+    // =========================================================================
+
+    var runbookCommands = {
+      sync: 'git pull --rebase',
+      build: 'npm run build',
+      test: 'npm test',
+      gate: 'npm run gate:all',
+      e2e: 'npm run test:e2e'
+    };
+
+    var runbookState = {
+      activeRunbook: null
+    };
+
+    async function devRunRunbook(preset) {
+      if (runbookState.activeRunbook) {
+        alert('A runbook command is already running: ' + runbookState.activeRunbook);
+        return;
+      }
+
+      var command = runbookCommands[preset];
+      if (!command) {
+        alert('Unknown runbook preset: ' + preset);
+        return;
+      }
+
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var btnEl = document.getElementById('runbook-' + preset);
+      var logEl = document.getElementById('dev-cmd-log');
+
+      // Update button state
+      if (btnEl) {
+        btnEl.classList.add('running');
+        btnEl.classList.remove('success', 'error');
+      }
+
+      runbookState.activeRunbook = preset;
+
+      if (logEl) {
+        logEl.innerHTML = '<span class="system">$ ' + escapeHtml(command) + '</span>\n<span class="system">Starting ' + preset.toUpperCase() + '...</span>\n';
+      }
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/cmd/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: command, preset: preset })
+        });
+        var result = await resp.json();
+
+        if (result.error) {
+          if (logEl) {
+            logEl.innerHTML += '<span class="stderr">Error: ' + escapeHtml(result.message) + '</span>\n';
+          }
+          devRunbookComplete(preset, false);
+          return;
+        }
+
+        devConsoleState.activeRunId = result.runId;
+
+        // Start polling for logs with runbook completion handling
+        devStartRunbookPolling(result.runId, preset);
+      } catch (err) {
+        if (logEl) {
+          logEl.innerHTML += '<span class="stderr">Error: ' + escapeHtml(err.message) + '</span>\n';
+        }
+        devRunbookComplete(preset, false);
+      }
+    }
+
+    function devStartRunbookPolling(runId, preset) {
+      // Clear any existing interval
+      if (devConsoleState.pollInterval) {
+        clearInterval(devConsoleState.pollInterval);
+      }
+
+      devConsoleState.pollInterval = setInterval(async function() {
+        var projectId = devConsoleState.projectId;
+        if (!projectId) return;
+
+        try {
+          var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/cmd/' + encodeURIComponent(runId) + '/log');
+          var data = await resp.json();
+
+          if (data.error) return;
+
+          var logEl = document.getElementById('dev-cmd-log');
+          if (logEl) {
+            var html = '';
+            for (var entry of data.logs) {
+              var cls = entry.stream;
+              html += '<span class="' + cls + '">' + escapeHtml(entry.text) + '</span>';
+            }
+            logEl.innerHTML = html;
+            logEl.scrollTop = logEl.scrollHeight;
+          }
+
+          // Stop polling if completed
+          if (data.status === 'completed' || data.status === 'failed') {
+            clearInterval(devConsoleState.pollInterval);
+            devConsoleState.pollInterval = null;
+            devConsoleState.activeRunId = null;
+
+            var success = data.status === 'completed' && data.exitCode === 0;
+            devRunbookComplete(preset, success);
+
+            devLoadCmdHistory();
+            devRefreshSessionTree();
+
+            // Refresh git status after gate command
+            if (preset === 'gate' && success) {
+              devGitRefresh();
+            }
+          }
+        } catch (err) {
+          console.warn('Log polling error:', err);
+        }
+      }, 1000);
+    }
+
+    function devRunbookComplete(preset, success) {
+      runbookState.activeRunbook = null;
+
+      var btnEl = document.getElementById('runbook-' + preset);
+      if (btnEl) {
+        btnEl.classList.remove('running');
+        if (success) {
+          btnEl.classList.add('success');
+        } else {
+          btnEl.classList.add('error');
+        }
+
+        // Clear status after 5 seconds
+        setTimeout(function() {
+          btnEl.classList.remove('success', 'error');
+        }, 5000);
+      }
+    }
+
+    // =========================================================================
+    // Git Functions
+    // =========================================================================
+
+    async function devGitRefresh() {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var statusEl = document.getElementById('dev-git-status');
+      var gateStatusEl = document.getElementById('dev-git-gate-status');
+      var commitBtn = document.getElementById('dev-git-commit-btn');
+      var pushBtn = document.getElementById('dev-git-push-btn');
+
+      if (statusEl) statusEl.innerHTML = '<span class="loading">Loading git status...</span>';
+
+      try {
+        // Fetch git status
+        var statusResp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/git/status');
+        var status = await statusResp.json();
+
+        if (status.error) {
+          if (statusEl) statusEl.innerHTML = '<span class="error-message">Error: ' + escapeHtml(status.message) + '</span>';
+          return;
+        }
+
+        // Build status display
+        var html = '<div class="git-branch">Branch: <strong>' + escapeHtml(status.branch) + '</strong>';
+        if (status.ahead > 0) html += ' <span class="git-ahead">+' + status.ahead + ' ahead</span>';
+        if (status.behind > 0) html += ' <span class="git-behind">-' + status.behind + ' behind</span>';
+        html += '</div>';
+
+        if (status.staged.length > 0) {
+          html += '<div class="git-staged"><strong>Staged (' + status.staged.length + '):</strong><ul>';
+          for (var f of status.staged.slice(0, 10)) {
+            html += '<li>' + escapeHtml(f) + '</li>';
+          }
+          if (status.staged.length > 10) html += '<li>... and ' + (status.staged.length - 10) + ' more</li>';
+          html += '</ul></div>';
+        }
+
+        if (status.unstaged.length > 0) {
+          html += '<div class="git-unstaged"><strong>Unstaged (' + status.unstaged.length + '):</strong><ul>';
+          for (var f of status.unstaged.slice(0, 10)) {
+            html += '<li>' + escapeHtml(f) + '</li>';
+          }
+          if (status.unstaged.length > 10) html += '<li>... and ' + (status.unstaged.length - 10) + ' more</li>';
+          html += '</ul></div>';
+        }
+
+        if (status.untracked.length > 0) {
+          html += '<div class="git-untracked"><strong>Untracked (' + status.untracked.length + '):</strong><ul>';
+          for (var f of status.untracked.slice(0, 5)) {
+            html += '<li>' + escapeHtml(f) + '</li>';
+          }
+          if (status.untracked.length > 5) html += '<li>... and ' + (status.untracked.length - 5) + ' more</li>';
+          html += '</ul></div>';
+        }
+
+        if (status.staged.length === 0 && status.unstaged.length === 0 && status.untracked.length === 0) {
+          html += '<div class="git-clean">Working tree clean</div>';
+        }
+
+        if (statusEl) statusEl.innerHTML = html;
+
+        // Fetch gate status
+        var gateResp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/git/gateStatus');
+        var gateData = await gateResp.json();
+
+        if (gateData.hasPass) {
+          if (gateStatusEl) {
+            gateStatusEl.innerHTML = '<span class="gate-pass">gate:all PASS found (run: ' + escapeHtml(gateData.gatePass.runId) + ')</span>';
+          }
+          // Enable commit button if there are staged changes
+          if (commitBtn && status.staged.length > 0) {
+            commitBtn.disabled = false;
+          }
+          // Enable push button if ahead of remote
+          if (pushBtn && status.ahead > 0) {
+            pushBtn.disabled = false;
+          }
+        } else {
+          if (gateStatusEl) {
+            gateStatusEl.innerHTML = '<span class="gate-fail">No gate:all PASS found. Run "npm run gate:all" first.</span>';
+          }
+          if (commitBtn) commitBtn.disabled = true;
+          if (pushBtn) pushBtn.disabled = true;
+        }
+
+      } catch (err) {
+        if (statusEl) statusEl.innerHTML = '<span class="error-message">Error: ' + escapeHtml(err.message) + '</span>';
+      }
+    }
+
+    async function devGitShowDiff(staged) {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var diffEl = document.getElementById('dev-git-diff');
+      if (!diffEl) return;
+
+      diffEl.style.display = 'block';
+      diffEl.innerHTML = '<span class="loading">Loading diff...</span>';
+
+      try {
+        var url = '/api/projects/' + encodeURIComponent(projectId) + '/dev/git/diff';
+        if (staged) url += '?staged=true';
+
+        var resp = await fetch(url);
+        var data = await resp.json();
+
+        if (data.error) {
+          diffEl.innerHTML = '<span class="error-message">Error: ' + escapeHtml(data.message) + '</span>';
+          return;
+        }
+
+        if (!data.diff || data.diff.trim() === '') {
+          diffEl.innerHTML = '<span class="system">No ' + (staged ? 'staged ' : '') + 'changes</span>';
+        } else {
+          diffEl.innerHTML = '<pre>' + escapeHtml(data.diff) + '</pre>';
+        }
+      } catch (err) {
+        diffEl.innerHTML = '<span class="error-message">Error: ' + escapeHtml(err.message) + '</span>';
+      }
+    }
+
+    async function devGitCommit() {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      var msgInput = document.getElementById('dev-git-commit-msg');
+      var resultEl = document.getElementById('dev-git-result');
+      if (!msgInput || !resultEl) return;
+
+      var message = msgInput.value.trim();
+      if (!message) {
+        resultEl.innerHTML = '<span class="error-message">Please enter a commit message</span>';
+        return;
+      }
+
+      resultEl.innerHTML = '<span class="loading">Committing...</span>';
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/git/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: message })
+        });
+        var data = await resp.json();
+
+        if (data.error) {
+          resultEl.innerHTML = '<span class="error-message">' + escapeHtml(data.error) + ': ' + escapeHtml(data.message) + '</span>';
+          if (data.reason) {
+            resultEl.innerHTML += '<br><span class="system">Reason: ' + escapeHtml(data.reason) + '</span>';
+          }
+          return;
+        }
+
+        resultEl.innerHTML = '<span class="success">Commit created: ' + escapeHtml(data.commitHash) + '</span>';
+        msgInput.value = '';
+        devGitRefresh();
+      } catch (err) {
+        resultEl.innerHTML = '<span class="error-message">Error: ' + escapeHtml(err.message) + '</span>';
+      }
+    }
+
+    async function devGitPush() {
+      var projectId = devConsoleState.projectId;
+      if (!projectId) return;
+
+      // Show safety confirmation
+      showSafetyDialog(
+        'Push to Remote?',
+        'You are about to push commits to the remote repository. ' +
+        'Make sure gate:all has passed before pushing. ' +
+        'This action cannot be easily undone.',
+        'Push',
+        function() {
+          doGitPush(projectId);
+        }
+      );
+    }
+
+    async function doGitPush(projectId) {
+      var resultEl = document.getElementById('dev-git-result');
+      if (!resultEl) return;
+
+      resultEl.innerHTML = '<span class="loading">Pushing...</span>';
+
+      try {
+        var resp = await fetch('/api/projects/' + encodeURIComponent(projectId) + '/dev/git/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        var data = await resp.json();
+
+        if (data.error) {
+          resultEl.innerHTML = '<span class="error-message">' + escapeHtml(data.error) + ': ' + escapeHtml(data.message) + '</span>';
+          if (data.reason) {
+            resultEl.innerHTML += '<br><span class="system">Reason: ' + escapeHtml(data.reason) + '</span>';
+          }
+          return;
+        }
+
+        resultEl.innerHTML = '<span class="success">Pushed ' + data.pushed + ' commit(s) successfully!</span>';
+        devGitRefresh();
+      } catch (err) {
+        resultEl.innerHTML = '<span class="error-message">Error: ' + escapeHtml(err.message) + '</span>';
+      }
+    }
+
+    // =========================================================================
+    // End Dev Console Functions
+    // =========================================================================
 
     // Initial load
     loadNamespaces();

@@ -52,10 +52,14 @@ const cli_interface_1 = require("./cli-interface");
 const repl_interface_1 = require("../repl/repl-interface");
 const server_1 = require("../web/server");
 const queue_1 = require("../queue");
+const in_memory_queue_store_1 = require("../queue/in-memory-queue-store");
 const auto_resolve_executor_1 = require("../executor/auto-resolve-executor");
+const test_incomplete_executor_1 = require("../executor/test-incomplete-executor");
+const deterministic_executor_1 = require("../executor/deterministic-executor");
 const namespace_1 = require("../config/namespace");
 const api_key_onboarding_1 = require("../keys/api-key-onboarding");
 const background_1 = require("../web/background");
+const dist_freshness_1 = require("../utils/dist-freshness");
 /**
  * Help text
  */
@@ -319,6 +323,10 @@ function parseWebArgs(args) {
         else if (arg === '--background') {
             result.background = true;
         }
+        // No DynamoDB mode - use in-memory queue store
+        else if (arg === '--no-dynamodb') {
+            result.noDynamodb = true;
+        }
     }
     return result;
 }
@@ -332,6 +340,77 @@ function generateWebSessionId() {
     return `web-${dateStr}-${random}`;
 }
 /**
+ * Build TaskContext block from QueueItem metadata.
+ * This gives the LLM access to "what the UI screen shows" so users can
+ * ask it to transcribe IDs, timestamps, etc.
+ *
+ * SECURITY: Never include raw API key strings. Only boolean flags.
+ */
+function buildTaskContext(item) {
+    const hasOpenAIKey = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.length > 0);
+    const hasRunnerDevDir = require('fs').existsSync(path.join(process.cwd(), '.claude'));
+    const lines = [
+        '[TaskContext]',
+        `status: ${item.status}`,
+        `taskId: ${item.task_id}`,
+        `taskGroupId: ${item.task_group_id}`,
+        `sessionId: ${item.session_id}`,
+        `createdAt: ${item.created_at}`,
+        `updatedAt: ${item.updated_at}`,
+        `taskType: ${item.task_type || 'READ_INFO'}`,
+        `hasOpenAIKey: ${hasOpenAIKey}`,
+        `hasRunnerDevDir: ${hasRunnerDevDir}`,
+        '[/TaskContext]',
+    ];
+    return lines.join('\n');
+}
+/**
+ * Inject TaskContext and output-format rules into the prompt
+ * before passing to executor.
+ *
+ * The TaskContext block is prepended as reference data.
+ * Output rules ensure the executor never inserts meta-blocks
+ * (e.g. "PM Orchestrator 起動ルール") into its response.
+ */
+function injectTaskContext(originalPrompt, item) {
+    const taskContext = buildTaskContext(item);
+    const outputRules = [
+        '[OutputRules]',
+        'You are running inside a Web Chat executor.',
+        'CRITICAL: Your response will be shown directly to the user in a Task Detail panel.',
+        '- Do NOT prepend any meta-blocks such as "PM Orchestrator 起動ルール" or status bars.',
+        '- Do NOT add decorative separators (━━━) or rule-display blocks.',
+        '- If the user specifies an output format, follow it EXACTLY. The first line of your output must match the first line the user requested.',
+        '- You may reference values from [TaskContext] above when the user asks about IDs, status, timestamps, etc.',
+        '- Never output raw API keys or secrets. Only use the boolean flags (hasOpenAIKey, hasRunnerDevDir).',
+        '- Do NOT fabricate evidence (e.g. "I read .env" or "I queried DynamoDB"). Only cite TaskContext or execution logs as evidence.',
+        '[/OutputRules]',
+    ];
+    return taskContext + '\n\n' + outputRules.join('\n') + '\n\n' + originalPrompt;
+}
+/**
+ * Strip PM Orchestrator meta-blocks from executor output.
+ * These blocks are injected by CLAUDE.md rules but must not appear
+ * in Web Chat results (AC1).
+ *
+ * Strips everything between "━━━" fence lines that contain
+ * "PM Orchestrator" or "起動ルール".
+ */
+function stripPmOrchestratorBlocks(output) {
+    if (!output)
+        return output;
+    // Pattern: block starting with ━━━ line, containing PM Orchestrator text, ending with ━━━ line
+    // This handles the every_chat block that CLAUDE.md forces
+    const fenceBlockPattern = /━━+[\s\S]*?━━+\n*/g;
+    let cleaned = output.replace(fenceBlockPattern, '');
+    // Also strip any leftover lines that are clearly PM Orchestrator artifacts
+    const pmLines = /^【(表示ルール|PM Orchestrator|禁止事項|Task Tool|重要).*\n?/gm;
+    cleaned = cleaned.replace(pmLines, '');
+    // Remove leading whitespace/newlines left after stripping
+    cleaned = cleaned.replace(/^\s*\n+/, '');
+    return cleaned;
+}
+/**
  * Create a TaskExecutor that uses AutoResolvingExecutor
  *
  * AutoResolvingExecutor automatically resolves clarification requests using LLM
@@ -343,7 +422,60 @@ function createTaskExecutor(projectPath) {
     return async (item) => {
         console.log(`[Runner] Executing task: ${item.task_id}`);
         console.log(`[Runner] Prompt: ${item.prompt.substring(0, 100)}${item.prompt.length > 100 ? '...' : ''}`);
+        // Inject TaskContext and OutputRules into the prompt for all Web Chat tasks
+        const enrichedPrompt = injectTaskContext(item.prompt, item);
         try {
+            // Check for test executor mode (for E2E testing of INCOMPLETE handling)
+            const testMode = (0, test_incomplete_executor_1.getTestExecutorMode)();
+            if (testMode !== 'passthrough') {
+                console.log(`[Runner] Test executor mode: ${testMode}`);
+                // Create a test executor that returns controlled status
+                const stubExecutor = new deterministic_executor_1.DeterministicExecutor();
+                const testExecutor = new test_incomplete_executor_1.TestIncompleteExecutor(stubExecutor, testMode);
+                const result = await testExecutor.execute({
+                    id: item.task_id,
+                    prompt: enrichedPrompt,
+                    workingDir: projectPath,
+                    taskType: item.task_type || 'READ_INFO', // Default to READ_INFO for chat messages
+                });
+                console.log(`[Runner] Test executor returned status: ${result.status}`);
+                // Post-process: strip PM Orchestrator blocks from output
+                const cleanOutput = stripPmOrchestratorBlocks(result.output || '');
+                // Handle test executor results
+                // For READ_INFO/REPORT tasks with INCOMPLETE + output, treat as COMPLETE
+                const taskType = item.task_type || 'READ_INFO';
+                const isReadInfoOrReport = taskType === 'READ_INFO' || taskType === 'REPORT';
+                if (result.status === 'COMPLETE') {
+                    // Return output for visibility in UI (AC-CHAT-001, AC-CHAT-002)
+                    return { status: 'COMPLETE', output: cleanOutput || undefined };
+                }
+                else if (result.status === 'INCOMPLETE') {
+                    if (isReadInfoOrReport && cleanOutput && cleanOutput.trim().length > 0) {
+                        // INCOMPLETE with output for READ_INFO/REPORT -> COMPLETE
+                        console.log(`[Runner] READ_INFO/REPORT INCOMPLETE with output -> COMPLETE`);
+                        return { status: 'COMPLETE', output: cleanOutput };
+                    }
+                    else if (isReadInfoOrReport) {
+                        // INCOMPLETE without output for READ_INFO/REPORT -> AWAITING_RESPONSE
+                        // Signal this as a special status that the queue should handle
+                        console.log(`[Runner] READ_INFO/REPORT INCOMPLETE without output -> needs clarification`);
+                        return {
+                            status: 'ERROR',
+                            errorMessage: 'AWAITING_CLARIFICATION:' + generateClarificationMessage(item.prompt)
+                        };
+                    }
+                    else {
+                        // IMPLEMENTATION INCOMPLETE -> ERROR
+                        return { status: 'ERROR', errorMessage: 'Task incomplete: no evidence of completion' };
+                    }
+                }
+                else if (result.status === 'ERROR') {
+                    return { status: 'ERROR', errorMessage: result.error || 'Task failed' };
+                }
+                else {
+                    return { status: 'ERROR', errorMessage: `Task ended with status: ${result.status}` };
+                }
+            }
             // Use AutoResolvingExecutor to automatically resolve clarification requests
             // When Claude Code asks "where should I save the file?", LLM decides automatically
             const executor = new auto_resolve_executor_1.AutoResolvingExecutor({
@@ -355,12 +487,16 @@ function createTaskExecutor(projectPath) {
             });
             const result = await executor.execute({
                 id: item.task_id,
-                prompt: item.prompt,
+                prompt: enrichedPrompt,
                 workingDir: projectPath,
+                taskType: item.task_type, // Propagate task type for READ_INFO/REPORT handling
             });
             console.log(`[Runner] Task ${item.task_id} completed with status: ${result.status}`);
+            // Post-process: strip PM Orchestrator blocks from output
+            const cleanOutput = stripPmOrchestratorBlocks(result.output || '');
             if (result.status === 'COMPLETE') {
-                return { status: 'COMPLETE' };
+                // Return output for visibility in UI (AC-CHAT-001, AC-CHAT-002)
+                return { status: 'COMPLETE', output: cleanOutput || undefined };
             }
             else if (result.status === 'ERROR') {
                 return { status: 'ERROR', errorMessage: result.error || 'Task failed' };
@@ -376,6 +512,24 @@ function createTaskExecutor(projectPath) {
             return { status: 'ERROR', errorMessage };
         }
     };
+}
+/**
+ * Generate clarification message for INCOMPLETE READ_INFO tasks
+ */
+function generateClarificationMessage(prompt) {
+    const isSummaryRequest = /(?:要約|まとめ|サマリ|summary|summarize|overview)/i.test(prompt);
+    const isStatusRequest = /(?:状態|状況|ステータス|status|state|current)/i.test(prompt);
+    const isAnalysisRequest = /(?:分析|解析|analyze|analysis|check|調べ|確認)/i.test(prompt);
+    if (isSummaryRequest) {
+        return '要約する対象を具体的に教えてください。例: 「このプロジェクトのREADMEを要約してください」';
+    }
+    else if (isStatusRequest) {
+        return '確認したい状態の対象を教えてください。例: 「gitの状態を確認してください」「テストの状態を確認してください」';
+    }
+    else if (isAnalysisRequest) {
+        return '分析対象を具体的に指定してください。例: 「src/index.tsのコードを分析してください」';
+    }
+    return 'リクエストをより具体的にしてください。何を確認または分析すべきか教えてください。';
 }
 /**
  * Start Web UI server in background mode
@@ -420,6 +574,33 @@ async function startWebServer(webArgs) {
         return startWebServerBackground(webArgs);
     }
     const projectPath = process.cwd();
+    // Ensure dist is fresh before starting server (auto-rebuild if needed)
+    // This guarantees src changes are reflected without manual user intervention
+    const packageJsonPath = path.join(projectPath, 'package.json');
+    const isRunningFromPackage = require.main?.filename?.includes('dist/cli/index.js');
+    if (isRunningFromPackage) {
+        // We're running from dist, check freshness
+        const projectRoot = path.resolve(projectPath);
+        const freshnessResult = (0, dist_freshness_1.ensureDistFresh)(projectRoot, { silent: false, copyPublic: true });
+        if (!freshnessResult.fresh && freshnessResult.error) {
+            console.error('[Web] Failed to ensure dist freshness:', freshnessResult.error);
+            process.exit(1);
+        }
+        if (freshnessResult.rebuilt) {
+            console.log('[Web] dist rebuilt successfully, continuing with fresh build');
+        }
+        // Ensure public files are copied
+        if (!(0, dist_freshness_1.checkPublicFilesCopied)(projectRoot)) {
+            console.log('[Web] Public files not found, copying...');
+            const { execSync } = require('child_process');
+            try {
+                execSync('cp -r src/web/public dist/web/', { cwd: projectRoot, stdio: 'pipe' });
+            }
+            catch (e) {
+                console.warn('[Web] Warning: Could not copy public files:', e);
+            }
+        }
+    }
     // Build namespace configuration
     const namespaceConfig = (0, namespace_1.buildNamespaceConfig)({
         autoDerive: true,
@@ -428,10 +609,40 @@ async function startWebServer(webArgs) {
         port: webArgs.port,
     });
     const port = webArgs.port || namespaceConfig.port;
-    const queueStore = new queue_1.QueueStore({
-        namespace: namespaceConfig.namespace,
-    });
-    await queueStore.ensureTable();
+    // Check for NO_DYNAMODB mode (env var or CLI flag)
+    const noDynamodb = webArgs.noDynamodb || process.env.PM_WEB_NO_DYNAMODB === '1';
+    // Create appropriate queue store based on mode
+    let queueStore;
+    if (noDynamodb) {
+        console.log('[NO_DYNAMODB] Using in-memory queue store');
+        queueStore = new in_memory_queue_store_1.InMemoryQueueStore({
+            namespace: namespaceConfig.namespace,
+        });
+    }
+    else {
+        // Try to create DynamoDB-based store with fallback to in-memory on connection error
+        try {
+            const dynamoStore = new queue_1.QueueStore({
+                namespace: namespaceConfig.namespace,
+            });
+            await dynamoStore.ensureTable();
+            queueStore = dynamoStore;
+        }
+        catch (error) {
+            // Check if it's a connection error (ECONNREFUSED)
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('connect')) {
+                console.warn('[DynamoDB] Connection failed, falling back to in-memory queue store');
+                console.warn('[DynamoDB] To use DynamoDB, start DynamoDB Local: docker-compose up -d dynamodb');
+                queueStore = new in_memory_queue_store_1.InMemoryQueueStore({
+                    namespace: namespaceConfig.namespace,
+                });
+            }
+            else {
+                throw error;
+            }
+        }
+    }
     // Create TaskExecutor and QueuePoller
     const taskExecutor = createTaskExecutor(projectPath);
     const poller = new queue_1.QueuePoller(queueStore, taskExecutor, {
@@ -455,16 +666,26 @@ async function startWebServer(webArgs) {
     poller.on('stale-recovered', (count) => {
         console.log(`[Runner] Recovered ${count} stale tasks`);
     });
+    // E2E isolation: override stateDir if PM_E2E_STATE_DIR is set
+    // This prevents E2E tests from polluting real user state
+    const effectiveStateDir = process.env.PM_E2E_STATE_DIR || namespaceConfig.stateDir;
+    const isE2eMode = !!process.env.PM_E2E_STATE_DIR;
     const server = new server_1.WebServer({
         port,
         queueStore,
         sessionId: generateWebSessionId(),
         namespace: namespaceConfig.namespace,
         projectRoot: projectPath,
+        stateDir: effectiveStateDir,
     });
     console.log(`Starting Web UI server on port ${port}...`);
     console.log(`Namespace: ${namespaceConfig.namespace}`);
-    console.log(`State directory: ${namespaceConfig.stateDir}`);
+    if (isE2eMode) {
+        console.log(`[E2E MODE] State directory: ${effectiveStateDir}`);
+    }
+    else {
+        console.log(`State directory: ${effectiveStateDir}`);
+    }
     console.log('');
     console.log('Verification steps:');
     console.log(`  1. Health check:  curl http://localhost:${port}/api/health`);

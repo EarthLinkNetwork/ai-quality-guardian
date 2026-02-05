@@ -32,6 +32,8 @@ const dashboard_1 = require("./routes/dashboard");
 const inspection_1 = require("./routes/inspection");
 const chat_1 = require("./routes/chat");
 const selfhost_1 = require("./routes/selfhost");
+const devconsole_1 = require("./routes/devconsole");
+const session_logs_1 = require("./routes/session-logs");
 /**
  * Derive namespace from folder path (same logic as CLI)
  */
@@ -74,10 +76,14 @@ function createApp(config) {
         app.use("/api", (0, dashboard_1.createDashboardRoutes)(stateDir)); // Also mount projects/activity/runs at /api
         // Inspection packet routes
         app.use("/api/inspection", (0, inspection_1.createInspectionRoutes)(stateDir));
-        // Chat routes (conversation management)
-        app.use("/api", (0, chat_1.createChatRoutes)(stateDir));
+        // Chat routes (conversation management with execution pipeline integration)
+        app.use("/api", (0, chat_1.createChatRoutes)({ stateDir, queueStore, sessionId }));
         // Self-hosting routes (dev/prod promotion)
         app.use("/api", (0, selfhost_1.createSelfhostRoutes)(stateDir));
+        // Dev Console routes (selfhost-runner only)
+        app.use("/api", (0, devconsole_1.createDevconsoleRoutes)(stateDir));
+        // Session Logs routes (selfhost-runner only, Session Log Tree feature)
+        app.use("/api", (0, session_logs_1.createSessionLogsRoutes)(stateDir));
     }
     // ===================
     // REST API Routes (v2)
@@ -200,6 +206,9 @@ function createApp(config) {
                     created_at: t.created_at,
                     updated_at: t.updated_at,
                     error_message: t.error_message,
+                    task_type: t.task_type,
+                    output: t.output, // Include output in list for UI visibility
+                    has_output: !!t.output, // Flag for quick check
                 })),
             });
         }
@@ -235,6 +244,9 @@ function createApp(config) {
                 created_at: task.created_at,
                 updated_at: task.updated_at,
                 error_message: task.error_message,
+                output: task.output, // Task output for READ_INFO/REPORT (AC-CHAT-002, AC-CHAT-003)
+                task_type: task.task_type,
+                clarification: task.clarification, // Clarification details for AWAITING_RESPONSE (AC-CHAT-005)
             });
         }
         catch (error) {
@@ -657,6 +669,29 @@ function createApp(config) {
             'GET /api/projects/:projectId/selfhost/status',
             'POST /api/projects/:projectId/selfhost/apply',
             'GET /api/projects/:projectId/selfhost/resume/:applyId',
+            // Dev Console routes (selfhost-runner only)
+            'GET /api/projects/:projectId/dev/fs/tree',
+            'GET /api/projects/:projectId/dev/fs/read',
+            'POST /api/projects/:projectId/dev/fs/search',
+            'POST /api/projects/:projectId/dev/fs/applyPatch',
+            'POST /api/projects/:projectId/dev/cmd/run',
+            'GET /api/projects/:projectId/dev/cmd/:runId/log',
+            'GET /api/projects/:projectId/dev/cmd/list',
+            // Git API
+            'GET /api/projects/:projectId/dev/git/status',
+            'GET /api/projects/:projectId/dev/git/diff',
+            'GET /api/projects/:projectId/dev/git/log',
+            'GET /api/projects/:projectId/dev/git/gateStatus',
+            'POST /api/projects/:projectId/dev/git/commit',
+            'POST /api/projects/:projectId/dev/git/push',
+            // Session Logs routes (Session Log Tree)
+            'GET /api/projects/:projectId/session-logs/tree',
+            'GET /api/projects/:projectId/session-logs/runs',
+            'GET /api/projects/:projectId/session-logs/run/:runId',
+            'POST /api/projects/:projectId/session-logs/sessions',
+            'PATCH /api/projects/:projectId/session-logs/sessions/:sessionId',
+            'GET /api/projects/:projectId/session-logs/sessions',
+            'GET /api/projects/:projectId/session-logs/summary',
         ];
         res.json({ routes });
     });

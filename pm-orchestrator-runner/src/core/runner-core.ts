@@ -160,7 +160,7 @@ interface ExecutionConfig {
  * Per redesign: Users need to see which executor is being used
  */
 type ExecutorMode = 'claude-code' | 'api' | 'stub' | 'recovery-stub' | 'deterministic' | 'none'
-  | 'test-incomplete' | 'test-incomplete_with_output' | 'test-no_evidence' | 'test-complete' | 'test-error' | 'test-static_output';
+  | 'test-incomplete' | 'test-incomplete_with_output' | 'test-no_evidence' | 'test-complete' | 'test-error' | 'test-static_output' | 'test-context_echo';
 
 interface ExecutionResult {
   session_id: string;

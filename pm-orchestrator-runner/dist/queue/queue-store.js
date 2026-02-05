@@ -255,8 +255,13 @@ class QueueStore {
     /**
      * Enqueue a new task
      * Creates item with status=QUEUED
+     * @param sessionId - Session identifier
+     * @param taskGroupId - Task group identifier
+     * @param prompt - Task prompt
+     * @param taskId - Optional task ID (auto-generated if not provided)
+     * @param taskType - Optional task type (READ_INFO/IMPLEMENTATION/REPORT)
      */
-    async enqueue(sessionId, taskGroupId, prompt, taskId) {
+    async enqueue(sessionId, taskGroupId, prompt, taskId, taskType) {
         const now = new Date().toISOString();
         const item = {
             namespace: this.namespace,
@@ -267,6 +272,7 @@ class QueueStore {
             prompt,
             created_at: now,
             updated_at: now,
+            task_type: taskType,
         };
         await this.docClient.send(new lib_dynamodb_1.PutCommand({
             TableName: exports.QUEUE_TABLE_NAME,
@@ -348,17 +354,26 @@ class QueueStore {
     /**
      * Update task status
      */
-    async updateStatus(taskId, status, errorMessage) {
+    async updateStatus(taskId, status, errorMessage, output) {
         const now = new Date().toISOString();
-        const updateExpression = errorMessage
-            ? 'SET #status = :status, updated_at = :now, error_message = :error'
-            : 'SET #status = :status, updated_at = :now';
+        let updateExpression = 'SET #status = :status, updated_at = :now';
         const expressionAttributeValues = {
             ':status': status,
             ':now': now,
         };
         if (errorMessage) {
+            updateExpression += ', error_message = :error';
             expressionAttributeValues[':error'] = errorMessage;
+        }
+        if (output) {
+            updateExpression += ', #output = :output';
+            expressionAttributeValues[':output'] = output;
+        }
+        const expressionAttributeNames = {
+            '#status': 'status',
+        };
+        if (output) {
+            expressionAttributeNames['#output'] = 'output';
         }
         await this.docClient.send(new lib_dynamodb_1.UpdateCommand({
             TableName: exports.QUEUE_TABLE_NAME,
@@ -367,9 +382,7 @@ class QueueStore {
                 task_id: taskId
             },
             UpdateExpression: updateExpression,
-            ExpressionAttributeNames: {
-                '#status': 'status',
-            },
+            ExpressionAttributeNames: expressionAttributeNames,
             ExpressionAttributeValues: expressionAttributeValues,
         }));
     }
