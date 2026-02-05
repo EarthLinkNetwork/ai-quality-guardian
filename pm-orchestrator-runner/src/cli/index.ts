@@ -482,29 +482,27 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         const taskType = item.task_type || 'READ_INFO';
         const isReadInfoOrReport = taskType === 'READ_INFO' || taskType === 'REPORT';
 
+        const hasOutput = cleanOutput && cleanOutput.trim().length > 0;
+
         if (result.status === 'COMPLETE') {
           // Return output for visibility in UI (AC-CHAT-001, AC-CHAT-002)
           return { status: 'COMPLETE', output: cleanOutput || undefined };
-        } else if (result.status === 'INCOMPLETE') {
-          if (isReadInfoOrReport && cleanOutput && cleanOutput.trim().length > 0) {
-            // INCOMPLETE with output for READ_INFO/REPORT -> COMPLETE
-            console.log(`[Runner] READ_INFO/REPORT INCOMPLETE with output -> COMPLETE`);
-            return { status: 'COMPLETE', output: cleanOutput };
-          } else if (isReadInfoOrReport) {
-            // INCOMPLETE without output for READ_INFO/REPORT -> AWAITING_RESPONSE
-            // Signal this as a special status that the queue should handle
-            console.log(`[Runner] READ_INFO/REPORT INCOMPLETE without output -> needs clarification`);
-            return {
-              status: 'ERROR',
-              errorMessage: 'AWAITING_CLARIFICATION:' + generateClarificationMessage(item.prompt)
-            };
-          } else {
-            // IMPLEMENTATION INCOMPLETE -> ERROR
-            return { status: 'ERROR', errorMessage: 'Task incomplete: no evidence of completion' };
-          }
         } else if (result.status === 'ERROR') {
           return { status: 'ERROR', errorMessage: result.error || 'Task failed' };
+        } else if (isReadInfoOrReport) {
+          // READ_INFO/REPORT: INCOMPLETE / NO_EVIDENCE / BLOCKED -> unified handling
+          if (hasOutput) {
+            console.log(`[Runner] READ_INFO/REPORT ${result.status} with output -> COMPLETE`);
+            return { status: 'COMPLETE', output: cleanOutput };
+          } else {
+            console.log(`[Runner] READ_INFO/REPORT ${result.status} without output -> needs clarification`);
+            return {
+              status: 'ERROR',
+              errorMessage: 'AWAITING_CLARIFICATION:' + generateClarificationMessage(item.prompt),
+            };
+          }
         } else {
+          // IMPLEMENTATION / other: non-COMPLETE -> ERROR
           return { status: 'ERROR', errorMessage: `Task ended with status: ${result.status}` };
         }
       }
@@ -531,45 +529,43 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
       // Post-process: strip PM Orchestrator blocks from output
       const cleanOutput = stripPmOrchestratorBlocks(result.output || '');
 
+      // Unified READ_INFO/REPORT handling for non-COMPLETE/non-ERROR statuses
+      // (INCOMPLETE, NO_EVIDENCE, BLOCKED all follow the same logic)
+      const taskType = item.task_type || 'READ_INFO';
+      const isReadInfoOrReport = taskType === 'READ_INFO' || taskType === 'REPORT';
+      const hasOutput = cleanOutput && cleanOutput.trim().length > 0;
+
       if (result.status === 'COMPLETE') {
         // Return output for visibility in UI (AC-CHAT-001, AC-CHAT-002)
         return { status: 'COMPLETE', output: cleanOutput || undefined };
       } else if (result.status === 'ERROR') {
         return { status: 'ERROR', errorMessage: result.error || 'Task failed', output: cleanOutput || undefined };
-      } else if (result.status === 'INCOMPLETE') {
-        // Handle INCOMPLETE based on task type
-        const taskType = item.task_type || 'READ_INFO';
-        const isReadInfoOrReport = taskType === 'READ_INFO' || taskType === 'REPORT';
-
-        if (isReadInfoOrReport) {
-          // READ_INFO/REPORT INCOMPLETE -> AWAITING_RESPONSE (not ERROR)
-          // Output is preserved whether present or not (fallback generated if empty)
-          const hasOutput = cleanOutput && cleanOutput.trim().length > 0;
-          const clarificationMsg = hasOutput
-            ? 'INCOMPLETE: Task returned partial results. Please review and provide more details.'
-            : generateClarificationMessage(item.prompt);
-          const outputToSave = hasOutput
-            ? cleanOutput
-            : `INCOMPLETE: Task could not produce results.\n${clarificationMsg}`;
-
-          console.log(`[Runner] READ_INFO/REPORT INCOMPLETE -> AWAITING_RESPONSE (hasOutput=${hasOutput})`);
+      } else if (isReadInfoOrReport) {
+        // READ_INFO/REPORT: output is the deliverable, not file evidence
+        // INCOMPLETE / NO_EVIDENCE / BLOCKED all route here
+        if (hasOutput) {
+          // Output exists -> task succeeded (COMPLETE)
+          console.log(`[Runner] READ_INFO/REPORT ${result.status} with output -> COMPLETE`);
+          return { status: 'COMPLETE', output: cleanOutput };
+        } else {
+          // No output -> needs clarification (AWAITING_RESPONSE, never ERROR)
+          const clarificationMsg = generateClarificationMessage(item.prompt);
+          const fallbackOutput = `INCOMPLETE: Task could not produce results.\n${clarificationMsg}`;
+          console.log(`[Runner] READ_INFO/REPORT ${result.status} without output -> AWAITING_RESPONSE`);
           return {
             status: 'ERROR',
             errorMessage: 'AWAITING_CLARIFICATION:' + clarificationMsg,
-            output: outputToSave,
-          };
-        } else {
-          // IMPLEMENTATION INCOMPLETE -> ERROR, but preserve output if present
-          console.log(`[Runner] IMPLEMENTATION INCOMPLETE -> ERROR (output preserved: ${!!cleanOutput})`);
-          return {
-            status: 'ERROR',
-            errorMessage: `Task ended with status: ${result.status}`,
-            output: cleanOutput || undefined,
+            output: fallbackOutput,
           };
         }
       } else {
-        // NO_EVIDENCE, BLOCKED -> treat as ERROR for queue purposes, preserve output
-        return { status: 'ERROR', errorMessage: `Task ended with status: ${result.status}`, output: cleanOutput || undefined };
+        // IMPLEMENTATION / other task types: non-COMPLETE -> ERROR, preserve output
+        console.log(`[Runner] ${taskType} ${result.status} -> ERROR (output preserved: ${hasOutput})`);
+        return {
+          status: 'ERROR',
+          errorMessage: `Task ended with status: ${result.status}`,
+          output: cleanOutput || undefined,
+        };
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

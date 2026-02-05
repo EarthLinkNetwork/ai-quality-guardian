@@ -483,3 +483,48 @@ dist verify:  detectTaskType("矛盾検知テスト") = "READ_INFO"
 - `test/unit/utils/task-type-detector.test.ts` (modified)
 - `test/e2e/web-task-type-propagation.e2e.test.ts` (new)
 - `docs/REPORT_web_incomplete_runtime.md` (new)
+
+---
+
+# NO_EVIDENCE/BLOCKED Path Fix for READ_INFO/REPORT Tasks
+
+## Implementation Date
+2026-02-06
+
+## Bug Description
+READ_INFO/REPORT tasks that produce output but have NO_EVIDENCE or BLOCKED executor status were incorrectly converted to ERROR in the Web UI. This is the third iteration of the INCOMPLETE->ERROR fix. Previous commits (3ede898, 6480a60, 6324cce) fixed the INCOMPLETE path but missed the NO_EVIDENCE and BLOCKED status paths.
+
+## Root Cause
+In `createTaskExecutor()` (src/cli/index.ts), the status handling had an if/else chain:
+1. COMPLETE -> return COMPLETE
+2. ERROR -> return ERROR
+3. INCOMPLETE -> check isReadInfoOrReport -> COMPLETE/AWAITING_RESPONSE
+4. **else (NO_EVIDENCE, BLOCKED)** -> return ERROR (no READ_INFO/REPORT check)
+
+Step 4 was the bug: NO_EVIDENCE and BLOCKED statuses bypassed all READ_INFO/REPORT logic.
+
+## Fix Applied
+Restructured the if/else chain to check `isReadInfoOrReport` BEFORE individual status codes:
+1. COMPLETE -> return COMPLETE
+2. ERROR -> return ERROR
+3. **isReadInfoOrReport** -> unified handling for INCOMPLETE/NO_EVIDENCE/BLOCKED:
+   - has output -> COMPLETE
+   - no output -> AWAITING_RESPONSE (via AWAITING_CLARIFICATION protocol)
+4. else (IMPLEMENTATION) -> ERROR with output preserved
+
+Both the test executor path and production path were fixed identically.
+
+## Gate Results
+```
+TypeScript:   PASS (0 errors)
+Build:        SUCCESS
+E2E tests:    8/8 PASS (no-evidence-read-info-complete)
+Related E2E:  35/35 PASS (read-info + incomplete + task-type-propagation)
+Full suite:   2631/2631 PASS (96 pending)
+Lint:         0 new errors (24 pre-existing errors in other files)
+```
+
+## Files Changed
+- `src/cli/index.ts` (modified - createTaskExecutor restructured)
+- `test/e2e/no-evidence-read-info-complete.e2e.test.ts` (new - 8 test cases)
+- `docs/REPORTS/2026-02-06_incomplete-error-rootcause.md` (new - root cause analysis)
