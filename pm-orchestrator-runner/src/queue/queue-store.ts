@@ -232,7 +232,7 @@ export interface IQueueStore {
   claim(): Promise<ClaimResult>;
   updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string, output?: string): Promise<void>;
   updateStatusWithValidation(taskId: string, newStatus: QueueItemStatus): Promise<StatusUpdateResult>;
-  setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[]): Promise<StatusUpdateResult>;
+  setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[], output?: string): Promise<StatusUpdateResult>;
   resumeWithResponse(taskId: string, userResponse: string): Promise<StatusUpdateResult>;
   getByStatus(status: QueueItemStatus): Promise<QueueItem[]>;
   getByTaskGroup(taskGroupId: string, targetNamespace?: string): Promise<QueueItem[]>;
@@ -691,7 +691,8 @@ export class QueueStore implements IQueueStore {
   async setAwaitingResponse(
     taskId: string,
     clarification: ClarificationRequest,
-    conversationHistory?: ConversationEntry[]
+    conversationHistory?: ConversationEntry[],
+    output?: string
   ): Promise<StatusUpdateResult> {
     const task = await this.getItem(taskId);
 
@@ -718,6 +719,21 @@ export class QueueStore implements IQueueStore {
 
     const now = new Date().toISOString();
 
+    const updateExpression = output
+      ? 'SET #status = :status, updated_at = :now, clarification = :clarification, conversation_history = :history, output = :output'
+      : 'SET #status = :status, updated_at = :now, clarification = :clarification, conversation_history = :history';
+
+    const expressionValues: Record<string, unknown> = {
+      ':status': 'AWAITING_RESPONSE',
+      ':now': now,
+      ':clarification': clarification,
+      ':history': conversationHistory || [],
+    };
+
+    if (output) {
+      expressionValues[':output'] = output;
+    }
+
     await this.docClient.send(
       new UpdateCommand({
         TableName: QUEUE_TABLE_NAME,
@@ -725,16 +741,11 @@ export class QueueStore implements IQueueStore {
           namespace: this.namespace,
           task_id: taskId,
         },
-        UpdateExpression: 'SET #status = :status, updated_at = :now, clarification = :clarification, conversation_history = :history',
+        UpdateExpression: updateExpression,
         ExpressionAttributeNames: {
           '#status': 'status',
         },
-        ExpressionAttributeValues: {
-          ':status': 'AWAITING_RESPONSE',
-          ':now': now,
-          ':clarification': clarification,
-          ':history': conversationHistory || [],
-        },
+        ExpressionAttributeValues: expressionValues,
       })
     );
 

@@ -96,7 +96,7 @@ export declare class InMemoryQueueStore implements IQueueStore {
     /**
      * Set task to AWAITING_RESPONSE with clarification details
      */
-    setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[]): Promise<StatusUpdateResult>;
+    setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[], output?: string): Promise<StatusUpdateResult>;
     /**
      * Resume task from AWAITING_RESPONSE with user response
      */

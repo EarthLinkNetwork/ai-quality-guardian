@@ -257,7 +257,8 @@ export class InMemoryQueueStore implements IQueueStore {
   async setAwaitingResponse(
     taskId: string,
     clarification: ClarificationRequest,
-    conversationHistory?: ConversationEntry[]
+    conversationHistory?: ConversationEntry[],
+    output?: string
   ): Promise<StatusUpdateResult> {
     const task = await this.getItem(taskId);
 
@@ -287,6 +288,9 @@ export class InMemoryQueueStore implements IQueueStore {
     task.updated_at = now;
     task.clarification = clarification;
     task.conversation_history = conversationHistory || [];
+    if (output) {
+      task.output = output;
+    }
 
     return {
       success: true,

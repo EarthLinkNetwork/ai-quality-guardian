@@ -185,7 +185,7 @@ export interface IQueueStore {
     claim(): Promise<ClaimResult>;
     updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string, output?: string): Promise<void>;
     updateStatusWithValidation(taskId: string, newStatus: QueueItemStatus): Promise<StatusUpdateResult>;
-    setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[]): Promise<StatusUpdateResult>;
+    setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[], output?: string): Promise<StatusUpdateResult>;
     resumeWithResponse(taskId: string, userResponse: string): Promise<StatusUpdateResult>;
     getByStatus(status: QueueItemStatus): Promise<QueueItem[]>;
     getByTaskGroup(taskGroupId: string, targetNamespace?: string): Promise<QueueItem[]>;
@@ -286,7 +286,7 @@ export declare class QueueStore implements IQueueStore {
     /**
      * Set task to AWAITING_RESPONSE with clarification details
      */
-    setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[]): Promise<StatusUpdateResult>;
+    setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[], output?: string): Promise<StatusUpdateResult>;
     /**
      * Resume task from AWAITING_RESPONSE with user response
      */

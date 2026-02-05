@@ -225,18 +225,19 @@ export class QueuePoller extends EventEmitter {
       // Execute the task
       const result = await this.executor(item);
 
-      // Check for AWAITING_CLARIFICATION special case (READ_INFO/REPORT INCOMPLETE without output)
+      // Check for AWAITING_CLARIFICATION special case (READ_INFO/REPORT INCOMPLETE)
       // This allows READ_INFO tasks to signal they need user clarification instead of failing
+      // Output is preserved when present so it can be displayed in the UI
       if (result.status === 'ERROR' &&
           result.errorMessage?.startsWith('AWAITING_CLARIFICATION:')) {
         const clarificationMessage = result.errorMessage.replace('AWAITING_CLARIFICATION:', '');
 
-        // Set task to AWAITING_RESPONSE with clarification details
+        // Set task to AWAITING_RESPONSE with clarification details and preserve output
         await this.store.setAwaitingResponse(item.task_id, {
           type: 'unknown',
           question: clarificationMessage,
           context: item.prompt,
-        });
+        }, undefined, result.output);
 
         this.emit('clarification_needed', item, clarificationMessage);
         return;

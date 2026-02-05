@@ -192,7 +192,7 @@ class InMemoryQueueStore {
     /**
      * Set task to AWAITING_RESPONSE with clarification details
      */
-    async setAwaitingResponse(taskId, clarification, conversationHistory) {
+    async setAwaitingResponse(taskId, clarification, conversationHistory, output) {
         const task = await this.getItem(taskId);
         if (!task) {
             return {
@@ -217,6 +217,9 @@ class InMemoryQueueStore {
         task.updated_at = now;
         task.clarification = clarification;
         task.conversation_history = conversationHistory || [];
+        if (output) {
+            task.output = output;
+        }
         return {
             success: true,
             task_id: taskId,

@@ -505,11 +505,42 @@ function createTaskExecutor(projectPath) {
                 return { status: 'COMPLETE', output: cleanOutput || undefined };
             }
             else if (result.status === 'ERROR') {
-                return { status: 'ERROR', errorMessage: result.error || 'Task failed' };
+                return { status: 'ERROR', errorMessage: result.error || 'Task failed', output: cleanOutput || undefined };
+            }
+            else if (result.status === 'INCOMPLETE') {
+                // Handle INCOMPLETE based on task type
+                const taskType = item.task_type || 'READ_INFO';
+                const isReadInfoOrReport = taskType === 'READ_INFO' || taskType === 'REPORT';
+                if (isReadInfoOrReport) {
+                    // READ_INFO/REPORT INCOMPLETE -> AWAITING_RESPONSE (not ERROR)
+                    // Output is preserved whether present or not (fallback generated if empty)
+                    const hasOutput = cleanOutput && cleanOutput.trim().length > 0;
+                    const clarificationMsg = hasOutput
+                        ? 'INCOMPLETE: Task returned partial results. Please review and provide more details.'
+                        : generateClarificationMessage(item.prompt);
+                    const outputToSave = hasOutput
+                        ? cleanOutput
+                        : `INCOMPLETE: Task could not produce results.\n${clarificationMsg}`;
+                    console.log(`[Runner] READ_INFO/REPORT INCOMPLETE -> AWAITING_RESPONSE (hasOutput=${hasOutput})`);
+                    return {
+                        status: 'ERROR',
+                        errorMessage: 'AWAITING_CLARIFICATION:' + clarificationMsg,
+                        output: outputToSave,
+                    };
+                }
+                else {
+                    // IMPLEMENTATION INCOMPLETE -> ERROR, but preserve output if present
+                    console.log(`[Runner] IMPLEMENTATION INCOMPLETE -> ERROR (output preserved: ${!!cleanOutput})`);
+                    return {
+                        status: 'ERROR',
+                        errorMessage: `Task ended with status: ${result.status}`,
+                        output: cleanOutput || undefined,
+                    };
+                }
             }
             else {
-                // INCOMPLETE, NO_EVIDENCE, BLOCKED -> treat as ERROR for queue purposes
-                return { status: 'ERROR', errorMessage: `Task ended with status: ${result.status}` };
+                // NO_EVIDENCE, BLOCKED -> treat as ERROR for queue purposes, preserve output
+                return { status: 'ERROR', errorMessage: `Task ended with status: ${result.status}`, output: cleanOutput || undefined };
             }
         }
         catch (error) {
