@@ -47,6 +47,9 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.buildTaskContext = buildTaskContext;
+exports.injectTaskContext = injectTaskContext;
+exports.stripPmOrchestratorBlocks = stripPmOrchestratorBlocks;
 const path = __importStar(require("path"));
 const cli_interface_1 = require("./cli-interface");
 const repl_interface_1 = require("../repl/repl-interface");
@@ -346,6 +349,7 @@ function generateWebSessionId() {
  *
  * SECURITY: Never include raw API key strings. Only boolean flags.
  */
+/** @internal Exported for testing only */
 function buildTaskContext(item) {
     const hasOpenAIKey = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.length > 0);
     const hasRunnerDevDir = require('fs').existsSync(path.join(process.cwd(), '.claude'));
@@ -372,6 +376,7 @@ function buildTaskContext(item) {
  * Output rules ensure the executor never inserts meta-blocks
  * (e.g. "PM Orchestrator 起動ルール") into its response.
  */
+/** @internal Exported for testing only */
 function injectTaskContext(originalPrompt, item) {
     const taskContext = buildTaskContext(item);
     const outputRules = [
@@ -396,6 +401,7 @@ function injectTaskContext(originalPrompt, item) {
  * Strips everything between "━━━" fence lines that contain
  * "PM Orchestrator" or "起動ルール".
  */
+/** @internal Exported for testing only */
 function stripPmOrchestratorBlocks(output) {
     if (!output)
         return output;

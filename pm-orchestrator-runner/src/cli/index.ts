@@ -363,7 +363,8 @@ function generateWebSessionId(): string {
  *
  * SECURITY: Never include raw API key strings. Only boolean flags.
  */
-function buildTaskContext(item: QueueItem): string {
+/** @internal Exported for testing only */
+export function buildTaskContext(item: QueueItem): string {
   const hasOpenAIKey = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.length > 0);
   const hasRunnerDevDir = require('fs').existsSync(path.join(process.cwd(), '.claude'));
 
@@ -391,7 +392,8 @@ function buildTaskContext(item: QueueItem): string {
  * Output rules ensure the executor never inserts meta-blocks
  * (e.g. "PM Orchestrator 起動ルール") into its response.
  */
-function injectTaskContext(originalPrompt: string, item: QueueItem): string {
+/** @internal Exported for testing only */
+export function injectTaskContext(originalPrompt: string, item: QueueItem): string {
   const taskContext = buildTaskContext(item);
 
   const outputRules = [
@@ -418,7 +420,8 @@ function injectTaskContext(originalPrompt: string, item: QueueItem): string {
  * Strips everything between "━━━" fence lines that contain
  * "PM Orchestrator" or "起動ルール".
  */
-function stripPmOrchestratorBlocks(output: string): string {
+/** @internal Exported for testing only */
+export function stripPmOrchestratorBlocks(output: string): string {
   if (!output) return output;
 
   // Pattern: block starting with ━━━ line, containing PM Orchestrator text, ending with ━━━ line
