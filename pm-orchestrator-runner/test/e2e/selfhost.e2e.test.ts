@@ -54,6 +54,10 @@ describe('E2E: Self-Hosting Apply Protocol', () => {
     fs.mkdirSync(stateDir, { recursive: true });
     fs.mkdirSync(devDir, { recursive: true });
 
+    // Reset NoDynamo singletons to avoid state pollution from prior test files
+    resetNoDynamo();
+    resetNoDynamoExtended();
+
     // Initialize NoDynamo DAL
     initNoDynamo(stateDir);
 

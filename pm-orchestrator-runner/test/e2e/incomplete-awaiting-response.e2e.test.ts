@@ -17,7 +17,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { createApp } from '../../src/web/server';
 import { InMemoryQueueStore } from '../../src/queue/in-memory-queue-store';
-import { initNoDynamo, resetNoDynamo } from '../../src/web/dal/no-dynamo';
+import { initNoDynamo, resetNoDynamo, resetNoDynamoExtended } from '../../src/web/dal/no-dynamo';
 import { IQueueStore } from '../../src/queue/queue-store';
 
 describe('E2E: INCOMPLETE -> AWAITING_RESPONSE Flow', () => {
@@ -37,6 +37,7 @@ describe('E2E: INCOMPLETE -> AWAITING_RESPONSE Flow', () => {
 
   after(() => {
     resetNoDynamo();
+    resetNoDynamoExtended();
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
     } catch {
