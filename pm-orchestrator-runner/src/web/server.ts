@@ -29,6 +29,7 @@ import { createChatRoutes } from './routes/chat';
 import { createSelfhostRoutes } from './routes/selfhost';
 import { createDevconsoleRoutes } from './routes/devconsole';
 import { createSessionLogsRoutes } from './routes/session-logs';
+import { createRunnerControlsRoutes } from './routes/runner-controls';
 import { detectTaskType } from '../utils/task-type-detector';
 
 /**
@@ -127,6 +128,9 @@ export function createApp(config: WebServerConfig): Express {
     app.use("/api", createDevconsoleRoutes(stateDir));
     // Session Logs routes (selfhost-runner only, Session Log Tree feature)
     app.use("/api", createSessionLogsRoutes(stateDir));
+    // Runner Controls routes (selfhost-runner only)
+    // Per AC-OPS-1: Web UI provides Run/Stop/Build/Restart controls
+    app.use("/api/runner", createRunnerControlsRoutes({ projectRoot: projectRoot || process.cwd() }));
 
   }
 

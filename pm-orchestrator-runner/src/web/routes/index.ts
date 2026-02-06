@@ -7,3 +7,4 @@
 export { createSettingsRoutes } from "./settings";
 export { createSelfhostRoutes } from "./selfhost";
 export { createDevconsoleRoutes } from "./devconsole";
+export { createRunnerControlsRoutes } from "./runner-controls";
