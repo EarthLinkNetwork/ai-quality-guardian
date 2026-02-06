@@ -23,6 +23,7 @@ import {
 import { loadSelftestConfig, filterScenariosForCI, calculateEffectiveThreshold } from './config-loader';
 import { createGenerator, ISelftestGenerator } from './generator';
 import { createJudge, ISelftestJudge } from './judge';
+import { createMockExecutor, IMockExecutor } from './mock-executor';
 
 /**
  * Generate a unique selftest run ID
@@ -88,6 +89,7 @@ async function executeSelftestCase(
   judge: ISelftestJudge,
   config: SelftestConfig,
   scenario: import('./types').SelftestScenario,
+  executor: IMockExecutor,
 ): Promise<SelftestCaseResult> {
   const startTime = Date.now();
 
@@ -102,19 +104,21 @@ async function executeSelftestCase(
 
   console.log(`[selftest] Enqueued: ${scenario.id} -> ${task.task_id}`);
 
-  // Wait for completion
-  const timeoutMs = config.timeout_seconds * 1000;
-  const completedTask = await waitForTaskCompletion(queueStore, task.task_id, timeoutMs);
-
-  if (!completedTask) {
-    // Task timed out
+  // Process the task with MockExecutor (synchronous in-process execution)
+  let completedTask: QueueItem | null = null;
+  try {
+    completedTask = await executor.processTask(task.task_id, scenario);
+    console.log(`[selftest] Processed: ${scenario.id} -> ${completedTask.status}`);
+  } catch (err) {
+    console.error(`[selftest] Error processing task: ${err}`);
+    // Task processing failed
     return {
       id: scenario.id,
       description: scenario.description,
       prompt: generatedPrompt.prompt,
       output: '',
       expected_status: scenario.expected_status,
-      actual_status: 'TIMEOUT',
+      actual_status: 'ERROR',
       scores: {
         format_score: 0,
         factuality_score: 0,
@@ -123,7 +127,7 @@ async function executeSelftestCase(
         overall_score: 0,
       },
       pass: false,
-      reasoning: 'Task timed out',
+      reasoning: `Task processing error: ${err}`,
       duration_ms: Date.now() - startTime,
     };
   }
@@ -349,9 +353,12 @@ export async function runSelftestWithAIJudge(
   console.log(`[selftest] Session ID: ${sessionId} (isolated namespace)`);
   console.log(`[selftest] Task Group: ${taskGroupId}`);
 
-  // Create generator and judge
+  // Create generator, judge, and executor
   const generator = createGenerator(config.generator);
   const judge = createJudge(config.judge);
+  const executor = createMockExecutor(queueStore);
+
+  console.log('[selftest] Using MockExecutor for in-process task execution');
 
   // Execute all test cases
   const caseResults: SelftestCaseResult[] = [];
@@ -362,7 +369,7 @@ export async function runSelftestWithAIJudge(
     // Generate prompt
     const generatedPrompt = await generator.generate(scenario);
 
-    // Execute and judge
+    // Execute and judge (with MockExecutor for synchronous processing)
     const result = await executeSelftestCase(
       queueStore,
       sessionId,
@@ -371,6 +378,7 @@ export async function runSelftestWithAIJudge(
       judge,
       config,
       scenario,
+      executor,
     );
 
     caseResults.push(result);

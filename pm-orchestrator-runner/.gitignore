@@ -3,3 +3,5 @@
 node_modules/
 *.tgz
 .tmp/
+reports/selftest/
+docs/reports/selftest/
