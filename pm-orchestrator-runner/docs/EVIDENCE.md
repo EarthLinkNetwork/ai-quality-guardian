@@ -1187,3 +1187,67 @@ test:      PASS (all tests passing)
 - `test/e2e/blocked-must-have-output.e2e.test.ts` (new - INV-1/AC-1 tests)
 - `test/e2e/implementation-never-blocked.e2e.test.ts` (new - INV-2/AC-2 tests)
 - `docs/EVIDENCE.md` (updated - this section)
+
+---
+
+# Web Complete Operation Evidence
+
+## Implementation Date
+2026-02-07
+
+## Objective
+Enable "Web UI Complete Operation" - all development operations can be performed entirely through the Web UI without requiring terminal access.
+
+## Specification Document
+See: `docs/spec/WEB_COMPLETE_OPERATION.md`
+
+Defines 10 acceptance criteria covering:
+- Resume/Replay after restart (AC-RESUME-1, AC-RESUME-2, AC-RESUME-3)
+- Auto-dev loop from Web (AC-AUTO-DEV-1)
+- Runner controls (AC-OPS-1)
+- Thread = TaskGroup invariant (AC-CHAT-1)
+- Question → AWAITING_RESPONSE (AC-STATE-1)
+- Reply UI (AC-UI-REPLY-1)
+- Progress-aware timeout (AC-TIMEOUT-1)
+
+## E2E → AC Mapping
+
+| AC | E2E Test File | Description |
+|----|---------------|-------------|
+| AC-CHAT-1 | chat-thread-continuation.e2e.test.ts | Thread = TaskGroup verification |
+| AC-UI-REPLY-1 | awaiting-response-reply-ui.e2e.test.ts | Reply textarea functionality |
+| AC-UI-REPLY-1 | multiline-input.e2e.test.ts | Multiline input behavior |
+| AC-RESUME-1, AC-RESUME-2 | resume-replay-after-restart.e2e.test.ts | Resume = Replay verification |
+| AC-RESUME-2, AC-RESUME-3 | rollback-and-replay.e2e.test.ts | Rollback behavior |
+| AC-OPS-1 | runner-controls.e2e.test.ts | Build/Restart controls |
+| AC-TIMEOUT-1 | timeout-progress.e2e.test.ts | Progress-aware timeout |
+| AC-STATE-1 | awaiting-response-reply-ui.e2e.test.ts | Question → AWAITING_RESPONSE |
+| AC-AUTO-DEV-1 | web-autodev-loop.e2e.test.ts | Auto-dev loop from Web |
+
+## Implementation Status
+
+### Phase 0: Specification (COMPLETE)
+- Created `docs/spec/WEB_COMPLETE_OPERATION.md` with all ACs defined
+- Updated `docs/EVIDENCE.md` with E2E mapping
+
+### Phase 1: Implementation (IN PROGRESS)
+- Resume/Replay design
+- Runner Controls API
+- Timeout improvements
+
+### Phase 2: E2E Tests (PENDING)
+- chat-thread-continuation.e2e.test.ts
+- awaiting-response-reply-ui.e2e.test.ts
+- multiline-input.e2e.test.ts
+- resume-replay-after-restart.e2e.test.ts
+- rollback-and-replay.e2e.test.ts
+- runner-controls.e2e.test.ts
+- timeout-progress.e2e.test.ts
+
+### Phase 3: Gate Verification (PENDING)
+- All E2E tests pass
+- gate:all ALL PASS
+
+## Files Created/Modified
+- `docs/spec/WEB_COMPLETE_OPERATION.md` (new - specification)
+- `docs/EVIDENCE.md` (updated - this section)
