@@ -40,6 +40,10 @@ class MockQueueStore {
     return this.namespace;
   }
 
+  getEndpoint(): string {
+    return 'mock://test';
+  }
+
   async enqueue(sessionId: string, taskGroupId: string, prompt: string): Promise<QueueItem> {
     const item: QueueItem = {
       namespace: this.namespace,
@@ -417,16 +421,22 @@ describe('AC-6: Web UI から命令投入可能', () => {
       const response = await makeRequest(app, 'GET', '/api/health');
 
       assert.strictEqual(response.status, 200);
-      
+
       const data = response.data as {
         status: string;
+        timestamp: string;
         namespace: string;
-        table_name: string;
+        queue_store: {
+          type: string;
+          endpoint: string;
+          table_name: string;
+        };
       };
-      
+
       assert.strictEqual(data.status, 'ok');
+      assert.ok(data.timestamp, 'timestamp should be present');
       assert.strictEqual(data.namespace, 'test-namespace');
-      assert.strictEqual(data.table_name, 'pm-runner-queue');
+      assert.strictEqual(data.queue_store.table_name, 'pm-runner-queue');
     });
   });
 

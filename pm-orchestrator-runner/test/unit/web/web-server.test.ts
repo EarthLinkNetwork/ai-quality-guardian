@@ -148,6 +148,14 @@ class MockQueueStore {
     return 'pm-runner-queue';
   }
 
+  getEndpoint(): string {
+    return 'mock://test';
+  }
+
+  getNamespace(): string {
+    return 'test-namespace';
+  }
+
   destroy(): void {
     // No-op for mock
   }
