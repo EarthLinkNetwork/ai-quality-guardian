@@ -2054,9 +2054,78 @@
           </div>
           ` : ''}
 
+          ${task.status === 'AWAITING_RESPONSE' || task.show_reply_ui ? `
+          <div class="card" style="border-left: 4px solid #3b82f6;">
+            <h3>Reply</h3>
+            <form id="reply-form" data-task-id="${escapeHtml(task.task_id)}">
+              <div class="form-group">
+                <label for="replyBox">Your Reply (Enter to send, Shift+Enter for newline)</label>
+                <textarea id="replyBox" name="reply" rows="4"
+                  placeholder="Enter your reply here..."
+                  style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; resize: vertical; min-height: 100px;"
+                  required></textarea>
+              </div>
+              <div id="reply-message"></div>
+              <button type="submit" id="reply-btn" class="btn btn-primary" style="margin-top: 10px;">
+                Send Reply
+              </button>
+            </form>
+          </div>
+          ` : ''}
+
           ${errorSection}
           ${logEntries}
         `;
+
+        // AC-CHAT-3, AC-INPUT-1: Setup reply form if present
+        const replyForm = document.getElementById('reply-form');
+        if (replyForm) {
+          const replyBox = document.getElementById('replyBox');
+          const replyBtn = document.getElementById('reply-btn');
+          const replyMessage = document.getElementById('reply-message');
+
+          // AC-INPUT-1: Enter to send, Shift+Enter for newline
+          replyBox.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              replyForm.dispatchEvent(new Event('submit', { cancelable: true }));
+            }
+          });
+
+          replyForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const taskId = replyForm.dataset.taskId;
+            const reply = replyBox.value.trim();
+
+            if (!reply) {
+              replyMessage.innerHTML = '<div class="error-message">Please enter a reply.</div>';
+              return;
+            }
+
+            replyBtn.disabled = true;
+            replyBtn.textContent = 'Sending...';
+
+            try {
+              const result = await api('/tasks/' + encodeURIComponent(taskId) + '/reply', {
+                method: 'POST',
+                body: JSON.stringify({ reply }),
+              });
+
+              replyMessage.innerHTML = '<div class="success-message">Reply sent! Task resumed.</div>';
+              replyBox.value = '';
+
+              // Refresh task detail after short delay
+              setTimeout(() => {
+                renderTaskDetail(taskId);
+              }, 1000);
+            } catch (error) {
+              replyMessage.innerHTML = '<div class="error-message">Error: ' + escapeHtml(error.message) + '</div>';
+            } finally {
+              replyBtn.disabled = false;
+              replyBtn.textContent = 'Send Reply';
+            }
+          });
+        }
       } catch (error) {
         app.innerHTML = `
           <div class="page-header">

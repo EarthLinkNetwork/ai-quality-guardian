@@ -7,7 +7,7 @@
  * - AC-INPUT-1: Textarea multiline support
  */
 
-import { describe, it, before, after } from 'mocha';
+import { describe, it, before, after, beforeEach } from 'mocha';
 import { strict as assert } from 'assert';
 import request from 'supertest';
 import { Express } from 'express';

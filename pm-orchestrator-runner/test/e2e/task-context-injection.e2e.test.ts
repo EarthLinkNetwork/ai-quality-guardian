@@ -29,6 +29,11 @@ import {
   injectTaskContext,
   stripPmOrchestratorBlocks,
 } from '../../src/cli/index';
+import {
+  loadGlobalConfig,
+  saveGlobalConfig,
+  GlobalConfig,
+} from '../../src/config/global-config';
 
 // Helper to create a mock QueueItem for unit tests
 function createMockQueueItem(overrides: Partial<QueueItem> = {}): QueueItem {
@@ -92,17 +97,32 @@ describe('E2E: TaskContext Injection and PM Block Stripping', () => {
     });
 
     it('AC3: should show hasOpenAIKey: false when no key is set', () => {
-      const originalKey = process.env.OPENAI_API_KEY;
+      const originalEnvKey = process.env.OPENAI_API_KEY;
+      // Also need to clear config file API key (DI compliance)
+      const originalConfig = loadGlobalConfig();
+      const originalConfigKey = originalConfig.apiKeys?.openai;
       try {
         delete process.env.OPENAI_API_KEY;
+        // Clear config file API key temporarily
+        if (originalConfig.apiKeys?.openai) {
+          const tempConfig = { ...originalConfig, apiKeys: { ...originalConfig.apiKeys, openai: undefined } };
+          saveGlobalConfig(tempConfig);
+        }
         const item = createMockQueueItem();
         const ctx = buildTaskContext(item);
         assert.ok(ctx.includes('hasOpenAIKey: false'), 'Should show hasOpenAIKey: false');
       } finally {
-        if (originalKey) {
-          process.env.OPENAI_API_KEY = originalKey;
+        if (originalEnvKey) {
+          process.env.OPENAI_API_KEY = originalEnvKey;
         } else {
           delete process.env.OPENAI_API_KEY;
+        }
+        // Restore config file API key
+        if (originalConfigKey) {
+          const restoredConfig = loadGlobalConfig();
+          restoredConfig.apiKeys = restoredConfig.apiKeys || {};
+          restoredConfig.apiKeys.openai = originalConfigKey;
+          saveGlobalConfig(restoredConfig);
         }
       }
     });
