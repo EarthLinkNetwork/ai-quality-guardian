@@ -65,6 +65,8 @@ export interface WebServerConfig {
   projectRoot?: string;
   /** State directory for trace files (per spec/28_CONVERSATION_TRACE.md Section 5.2) */
   stateDir?: string;
+  /** Queue store type for health endpoint display */
+  queueStoreType?: 'file' | 'dynamodb' | 'memory';
 }
 
 /**
@@ -90,7 +92,7 @@ interface ErrorResponse {
  */
 export function createApp(config: WebServerConfig): Express {
   const app = express();
-  const { queueStore, sessionId, namespace, projectRoot, stateDir } = config;
+  const { queueStore, sessionId, namespace, projectRoot, stateDir, queueStoreType } = config;
 
   // Middleware
   app.use(express.json());
@@ -251,6 +253,7 @@ export function createApp(config: WebServerConfig): Express {
         task_group_id,
         tasks: tasks.map(t => ({
           task_id: t.task_id,
+          task_group_id: t.task_group_id,
           status: t.status,
           prompt: t.prompt,
           created_at: t.created_at,
@@ -286,6 +289,9 @@ export function createApp(config: WebServerConfig): Express {
         return;
       }
 
+      // AC-CHAT-3: show_reply_ui = true when AWAITING_RESPONSE
+      const showReplyUI = task.status === 'AWAITING_RESPONSE';
+
       res.json({
         task_id: task.task_id,
         task_group_id: task.task_group_id,
@@ -299,6 +305,7 @@ export function createApp(config: WebServerConfig): Express {
         output: task.output,  // Task output for READ_INFO/REPORT (AC-CHAT-002, AC-CHAT-003)
         task_type: task.task_type,
         clarification: task.clarification,  // Clarification details for AWAITING_RESPONSE (AC-CHAT-005)
+        show_reply_ui: showReplyUI,  // AC-CHAT-3: Reply UI required for AWAITING_RESPONSE
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -623,14 +630,18 @@ export function createApp(config: WebServerConfig): Express {
 
   /**
    * GET /api/health
-   * Health check endpoint with namespace info
+   * Health check endpoint with namespace info and queue store details
    */
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
       namespace,
-      table_name: queueStore.getTableName(),
+      queue_store: {
+        type: queueStoreType || 'unknown',
+        endpoint: queueStore.getEndpoint(),
+        table_name: queueStore.getTableName(),
+      },
       project_root: projectRoot,
     });
   });

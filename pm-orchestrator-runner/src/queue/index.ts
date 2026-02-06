@@ -43,3 +43,8 @@ export {
   InMemoryQueueStore,
   InMemoryQueueStoreConfig,
 } from './in-memory-queue-store';
+
+export {
+  FileQueueStore,
+  FileQueueStoreConfig,
+} from './file-queue-store';

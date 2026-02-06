@@ -19,6 +19,7 @@ import { REPLInterface, ProjectMode } from '../repl/repl-interface';
 import { WebServer } from '../web/server';
 import { QueueStore, QueuePoller, QueueItem, TaskExecutor, IQueueStore } from '../queue';
 import { InMemoryQueueStore } from '../queue/in-memory-queue-store';
+import { FileQueueStore } from '../queue/file-queue-store';
 import { AutoResolvingExecutor } from '../executor/auto-resolve-executor';
 import { getTestExecutorMode, TestIncompleteExecutor } from '../executor/test-incomplete-executor';
 import { DeterministicExecutor } from '../executor/deterministic-executor';
@@ -26,6 +27,7 @@ import {
   validateNamespace,
   buildNamespaceConfig,
 } from '../config/namespace';
+import { getApiKey } from '../config/global-config';
 import { runApiKeyOnboarding, isOnboardingRequired } from '../keys/api-key-onboarding';
 import {
   PidFileManager,
@@ -298,6 +300,11 @@ async function startRepl(replArgs: ReplArguments): Promise<void> {
 }
 
 /**
+ * Queue store mode for Web server
+ */
+type QueueStoreMode = 'file' | 'dynamodb' | 'memory';
+
+/**
  * Web server arguments interface
  */
 interface WebArguments {
@@ -305,6 +312,8 @@ interface WebArguments {
   namespace?: string;
   background?: boolean;
   noDynamodb?: boolean;
+  /** Queue store mode: file (default), dynamodb, or memory */
+  storeMode?: QueueStoreMode;
 }
 
 /**
@@ -340,9 +349,18 @@ function parseWebArgs(args: string[]): WebArguments {
     else if (arg === '--background') {
       result.background = true;
     }
-    // No DynamoDB mode - use in-memory queue store
+    // No DynamoDB mode - use in-memory queue store (legacy flag)
     else if (arg === '--no-dynamodb') {
       result.noDynamodb = true;
+      result.storeMode = 'memory';
+    }
+    // DynamoDB mode - use DynamoDB queue store
+    else if (arg === '--dynamodb') {
+      result.storeMode = 'dynamodb';
+    }
+    // In-memory mode - use non-persistent in-memory store
+    else if (arg === '--in-memory') {
+      result.storeMode = 'memory';
     }
   }
 
@@ -368,7 +386,9 @@ function generateWebSessionId(): string {
  */
 /** @internal Exported for testing only */
 export function buildTaskContext(item: QueueItem): string {
-  const hasOpenAIKey = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.length > 0);
+  // Use centralized getApiKey() for DI compliance - no direct process.env access
+  const openaiKey = getApiKey('openai');
+  const hasOpenAIKey = !!(openaiKey && openaiKey.length > 0);
   const hasRunnerDevDir = require('fs').existsSync(path.join(process.cwd(), '.claude'));
 
   const lines = [
@@ -728,38 +748,77 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
 
   const port = webArgs.port || namespaceConfig.port;
 
-  // Check for NO_DYNAMODB mode (env var or CLI flag)
-  const noDynamodb = webArgs.noDynamodb || process.env.PM_WEB_NO_DYNAMODB === '1';
+  // E2E isolation: override stateDir if PM_E2E_STATE_DIR is set
+  // This prevents E2E tests from polluting real user state
+  // Must be defined BEFORE queue store creation since FileQueueStore uses it
+  const effectiveStateDir = process.env.PM_E2E_STATE_DIR || namespaceConfig.stateDir;
+  const isE2eMode = !!process.env.PM_E2E_STATE_DIR;
+
+  // Determine queue store mode (priority: CLI flag > env var > default 'file')
+  let storeMode: QueueStoreMode = 'file'; // Default to file-based persistent store
+
+  if (webArgs.storeMode) {
+    storeMode = webArgs.storeMode;
+  } else if (process.env.PM_WEB_STORE_MODE) {
+    const envMode = process.env.PM_WEB_STORE_MODE.toLowerCase();
+    if (envMode === 'dynamodb' || envMode === 'file' || envMode === 'memory') {
+      storeMode = envMode as QueueStoreMode;
+    }
+  } else if (webArgs.noDynamodb || process.env.PM_WEB_NO_DYNAMODB === '1') {
+    // Legacy support for --no-dynamodb flag
+    storeMode = 'memory';
+  } else if (process.env.PM_WEB_DYNAMODB === '1') {
+    // Legacy support for PM_WEB_DYNAMODB env var
+    storeMode = 'dynamodb';
+  }
 
   // Create appropriate queue store based on mode
   let queueStore: IQueueStore;
+  let queueStoreType: 'file' | 'dynamodb' | 'memory';
 
-  if (noDynamodb) {
-    console.log('[NO_DYNAMODB] Using in-memory queue store');
+  if (storeMode === 'memory') {
+    console.log('[QueueStore] Using in-memory store (non-persistent)');
     queueStore = new InMemoryQueueStore({
       namespace: namespaceConfig.namespace,
     });
-  } else {
-    // Try to create DynamoDB-based store with fallback to in-memory on connection error
+    queueStoreType = 'memory';
+  } else if (storeMode === 'dynamodb') {
+    // Try to create DynamoDB-based store with fallback to file on connection error
     try {
       const dynamoStore = new QueueStore({
         namespace: namespaceConfig.namespace,
       });
       await dynamoStore.ensureTable();
       queueStore = dynamoStore;
+      queueStoreType = 'dynamodb';
+      console.log(`[QueueStore] Using DynamoDB: ${dynamoStore.getEndpoint()}`);
     } catch (error) {
-      // Check if it's a connection error (ECONNREFUSED)
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('connect')) {
-        console.warn('[DynamoDB] Connection failed, falling back to in-memory queue store');
-        console.warn('[DynamoDB] To use DynamoDB, start DynamoDB Local: docker-compose up -d dynamodb');
-        queueStore = new InMemoryQueueStore({
+        console.warn('[QueueStore] DynamoDB connection failed, falling back to file store');
+        console.warn('[QueueStore] To use DynamoDB, start DynamoDB Local: docker-compose up -d dynamodb');
+        const fileStore = new FileQueueStore({
           namespace: namespaceConfig.namespace,
+          stateDir: effectiveStateDir,
         });
+        await fileStore.ensureTable();
+        queueStore = fileStore;
+        queueStoreType = 'file';
+        console.log(`[QueueStore] Using file store: ${fileStore.getEndpoint()}`);
       } else {
         throw error;
       }
     }
+  } else {
+    // Default: file-based persistent store
+    const fileStore = new FileQueueStore({
+      namespace: namespaceConfig.namespace,
+      stateDir: effectiveStateDir,
+    });
+    await fileStore.ensureTable();
+    queueStore = fileStore;
+    queueStoreType = 'file';
+    console.log(`[QueueStore] Using file store: ${fileStore.getEndpoint()}`);
   }
 
   // Create TaskExecutor and QueuePoller
@@ -787,11 +846,6 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     console.log(`[Runner] Recovered ${count} stale tasks`);
   });
 
-  // E2E isolation: override stateDir if PM_E2E_STATE_DIR is set
-  // This prevents E2E tests from polluting real user state
-  const effectiveStateDir = process.env.PM_E2E_STATE_DIR || namespaceConfig.stateDir;
-  const isE2eMode = !!process.env.PM_E2E_STATE_DIR;
-
   const server = new WebServer({
     port,
     queueStore,
@@ -799,6 +853,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     namespace: namespaceConfig.namespace,
     projectRoot: projectPath,
     stateDir: effectiveStateDir,
+    queueStoreType,
   });
 
   console.log(`Starting Web UI server on port ${port}...`);
