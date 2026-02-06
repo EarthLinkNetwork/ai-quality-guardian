@@ -7,23 +7,35 @@
  * 3. After page reload, still shows "Configured"
  * 4. After server restart, still shows "Configured"
  * 5. No console errors
+ *
+ * GATE: Requires PLAYWRIGHT_E2E=1 and playwright installed
  */
 
-import playwright from 'playwright';
-const { chromium } = playwright;
-type Browser = Awaited<ReturnType<typeof chromium.launch>>;
-type BrowserContext = Awaited<ReturnType<Browser['newContext']>>;
-type Page = Awaited<ReturnType<BrowserContext['newPage']>>;
 import { spawn, ChildProcess, execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { expect } from 'chai';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Check if playwright is available
+let playwright: typeof import('playwright') | null = null;
+let chromium: typeof import('playwright').chromium | null = null;
+type Browser = unknown;
+type BrowserContext = unknown;
+type Page = unknown;
 
-const PROJECT_ROOT = path.resolve(__dirname, '../..');
+try {
+  // Dynamic import to avoid compile error when not installed
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  playwright = require('playwright');
+  chromium = playwright?.chromium || null;
+} catch {
+  playwright = null;
+  chromium = null;
+}
+
+const PLAYWRIGHT_E2E_ENABLED = process.env.PLAYWRIGHT_E2E === '1' && chromium !== null;
+
+const PROJECT_ROOT = process.cwd();
 const TMP_DIR = path.join(PROJECT_ROOT, '.tmp');
 const LOG_FILE = path.join(TMP_DIR, 'settings-playwright-e2e.log');
 
@@ -57,6 +69,21 @@ async function waitForServer(port: number, maxWaitMs = 15000): Promise<boolean> 
 
 describe('Settings Route Playwright E2E', function () {
   this.timeout(120000);
+
+  // Gate check
+  before(function () {
+    if (!PLAYWRIGHT_E2E_ENABLED) {
+      console.log('======================================================================');
+      console.log('[Settings Route Playwright E2E] GATE: CLOSED - Tests will be SKIPPED');
+      if (!chromium) {
+        console.log('[Settings Route Playwright E2E] Reason: playwright is not installed');
+      } else {
+        console.log('[Settings Route Playwright E2E] Reason: PLAYWRIGHT_E2E is not set to 1');
+      }
+      console.log('======================================================================');
+      this.skip();
+    }
+  });
 
   let serverProcess: ChildProcess;
   let browser: Browser;
@@ -137,13 +164,15 @@ describe('Settings Route Playwright E2E', function () {
     page = await context.newPage();
 
     // Capture console errors
-    page.on('console', msg => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (page as any).on('console', (msg: { type: () => string; text: () => string }) => {
       if (msg.type() === 'error') {
         consoleErrors.push(msg.text());
         log(`[CONSOLE ERROR] ${msg.text()}`);
       }
     });
-    page.on('pageerror', err => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (page as any).on('pageerror', (err: { message: string }) => {
       consoleErrors.push(err.message);
       log(`[PAGE ERROR] ${err.message}`);
     });
@@ -167,7 +196,8 @@ describe('Settings Route Playwright E2E', function () {
     let apiResponseBody: any = null;
 
     // Intercept API response
-    page.on('response', async (response) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (page as any).on('response', async (response: { url: () => string; status: () => number; json: () => Promise<unknown> }) => {
       if (response.url().includes('/api/settings/api-key/status')) {
         log(`[RESPONSE] ${response.url()} -> ${response.status()}`);
         try {
@@ -198,8 +228,9 @@ describe('Settings Route Playwright E2E', function () {
     await page.waitForSelector('.settings-provider', { timeout: 5000 });
 
     // Get all status texts
-    const statusTexts = await page.$$eval('.provider-status', (els) =>
-      els.map(el => el.textContent?.trim())
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const statusTexts = await (page as any).$$eval('.provider-status', (els: Element[]) =>
+      els.map((el: Element) => el.textContent?.trim())
     );
     log(`Status texts found: ${JSON.stringify(statusTexts)}`);
 

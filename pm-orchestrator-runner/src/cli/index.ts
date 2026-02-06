@@ -34,7 +34,7 @@ import {
   WebStopExitCode,
 } from '../web/background';
 import { ensureDistFresh, checkPublicFilesCopied } from '../utils/dist-freshness';
-import { runSelftest, SELFTEST_CASES } from '../selftest/selftest-runner';
+import { runSelftest, SELFTEST_CASES, runSelftestWithAIJudge } from '../selftest/selftest-runner';
 import { hasUnansweredQuestions } from '../utils/question-detector';
 
 /**
@@ -51,6 +51,7 @@ Commands:
   repl                   Start interactive REPL mode (default if no command)
   web                    Start Web UI server for task queue management
   web-stop               Stop background Web UI server
+  selftest               Run selftest mode with AI judge
   start <path>           Start a new session on a project
   continue <session-id>  Continue a paused session
   status <session-id>    Get session status
@@ -1014,6 +1015,33 @@ async function main(): Promise<void> {
         // Set exit code based on status
         if (result.overall_status) {
           process.exit(cli.getExitCodeForStatus(result.overall_status));
+        }
+        break;
+      }
+
+      case 'selftest': {
+        // Run selftest mode per SELFTEST_AI_JUDGE.md specification
+        const ciMode = restArgs.includes('--ci');
+        const baseDir = process.cwd();
+
+        console.log(`\n[selftest] Starting selftest mode (${ciMode ? 'CI' : 'Full'})...\n`);
+
+        // Use InMemoryQueueStore for selftest isolation
+        const queueStore = new InMemoryQueueStore({
+          namespace: `selftest-${Date.now()}`,
+        });
+
+        try {
+          const { report, exitCode, jsonPath, mdPath } = await runSelftestWithAIJudge(
+            queueStore,
+            { ci: ciMode, baseDir },
+          );
+          console.log(`\n[selftest] JSON report: ${jsonPath}`);
+          console.log(`[selftest] Markdown report: ${mdPath}`);
+          process.exit(exitCode);
+        } catch (error) {
+          console.error(`[selftest] Error: ${(error as Error).message}`);
+          process.exit(1);
         }
         break;
       }
