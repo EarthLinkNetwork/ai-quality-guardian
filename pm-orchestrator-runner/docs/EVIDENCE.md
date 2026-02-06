@@ -1095,3 +1095,95 @@ The Task Groups API works correctly. The E2E tests prove that:
 5. sessionId is used as taskGroupId per SESSION_MODEL.md spec
 
 These tests are now part of the regression suite and will catch any future regressions.
+
+---
+
+# BLOCKED Output Invariants Implementation Evidence
+
+## Implementation Date
+2026-02-07
+
+## Problem Description
+AutoResolvingExecutor returned BLOCKED status with empty output, causing operational failure. When the system transitions to AWAITING_RESPONSE state but provides no question/output, the user has no way to understand or resolve the issue.
+
+## Solution Overview
+Implemented BLOCKED output guard that ensures:
+1. BLOCKED status always has non-empty, actionable output (INV-1)
+2. IMPLEMENTATION tasks never return BLOCKED - converted to INCOMPLETE for AWAITING_RESPONSE handling (INV-2)
+3. Fallback questions are provided when clarification cannot be extracted
+
+## Specification Document
+See: `docs/spec/BLOCKED_OUTPUT_INVARIANTS.md`
+
+Defines 6 invariants (INV-1 to INV-6) and 6 acceptance criteria (AC-1 to AC-6).
+
+## Implementation Summary
+
+### src/executor/auto-resolve-executor.ts
+
+**New Constants: FALLBACK_QUESTIONS**
+```typescript
+const FALLBACK_QUESTIONS = {
+  default: 'YES/NO: このタスクはコード変更を許可しますか？...',
+  implementation: 'このタスクを実行するために、以下の情報を教えてください:...',
+  blocked_timeout: 'タスクがタイムアウトしました。続行しますか？...',
+  blocked_interactive: '対話的な確認が必要です。続行を許可しますか？...',
+};
+```
+
+**New Method: applyBlockedOutputGuard()**
+- Checks if BLOCKED result has empty or insufficient output
+- Adds fallback question based on blocked_reason and task_type
+- Ensures output always contains actionable content (question mark, YES/NO, etc.)
+
+**New Method: selectFallbackQuestion()**
+- Selects appropriate fallback based on blocked_reason (TIMEOUT, INTERACTIVE_PROMPT)
+- Uses IMPLEMENTATION-specific question for IMPLEMENTATION tasks
+- Falls back to default question otherwise
+
+**Modified: execute() method**
+- Added INV-1 guard: BLOCKED results go through applyBlockedOutputGuard()
+- Added INV-2 guard: IMPLEMENTATION tasks with BLOCKED are converted to INCOMPLETE
+
+## E2E Tests
+
+### blocked-must-have-output.e2e.test.ts
+Tests for INV-1 and AC-1:
+- BLOCKED with empty output gets fallback question
+- BLOCKED with existing question is preserved
+- BLOCKED without question gets fallback added
+- Timeout-specific fallback for TIMEOUT blocked_reason
+- Interactive-specific fallback for INTERACTIVE_PROMPT blocked_reason
+
+### implementation-never-blocked.e2e.test.ts
+Tests for INV-2 and AC-2:
+- IMPLEMENTATION tasks get specific fallback question
+- Guard applies correctly to IMPLEMENTATION tasks
+- Non-IMPLEMENTATION tasks get different fallback
+- Japanese confirmation text is recognized
+
+## E2E → AC Mapping
+
+| AC | E2E Test File | Status |
+|----|---------------|--------|
+| AC-1 | blocked-must-have-output.e2e.test.ts | PASS |
+| AC-2 | implementation-never-blocked.e2e.test.ts | PASS |
+| AC-3 | open-chat-creates-task-group.e2e.test.ts | PASS (existing) |
+| AC-4 | open-chat-creates-task-group.e2e.test.ts | PASS (existing) |
+| AC-5 | task-groups-persists-across-restart.e2e.test.ts | PASS (existing) |
+| AC-6 | reply-ui.e2e.test.ts | PASS (existing) |
+
+## Gate Results
+```
+typecheck: PASS (tsc --noEmit: 0 errors)
+lint:      PASS (eslint: 0 errors)
+build:     PASS (tsc: 0 errors)
+test:      PASS (all tests passing)
+```
+
+## Files Created/Modified
+- `docs/spec/BLOCKED_OUTPUT_INVARIANTS.md` (new - specification)
+- `src/executor/auto-resolve-executor.ts` (modified - guard implementation)
+- `test/e2e/blocked-must-have-output.e2e.test.ts` (new - INV-1/AC-1 tests)
+- `test/e2e/implementation-never-blocked.e2e.test.ts` (new - INV-2/AC-2 tests)
+- `docs/EVIDENCE.md` (updated - this section)

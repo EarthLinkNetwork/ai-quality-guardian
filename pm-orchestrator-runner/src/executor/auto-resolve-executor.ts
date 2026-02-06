@@ -31,6 +31,82 @@ export type ClarificationType =
   | 'unknown';
 
 /**
+ * Fallback questions for BLOCKED status
+ * Per docs/spec/BLOCKED_OUTPUT_INVARIANTS.md: INV-1
+ */
+export const FALLBACK_QUESTIONS = {
+  default: 'YES/NO: このタスクはコード変更を許可しますか？\n(Do you permit code changes for this task?)',
+  implementation: 'このタスクを実行するために、以下の情報を教えてください:\n1. 変更対象のファイル\n2. 期待する動作\n\n(Please provide the following information to proceed:\n1. Target files to modify\n2. Expected behavior)',
+  blocked_timeout: 'タスクがタイムアウトしました。続行しますか？ (YES/NO)\n(Task timed out. Do you want to continue? YES/NO)',
+  blocked_interactive: '対話的な確認が必要です。続行を許可しますか？ (YES/NO)\n(Interactive confirmation required. Do you allow continuing? YES/NO)',
+};
+
+/**
+ * Select appropriate fallback question based on blocked reason and task type
+ * Exported for testing - INV-1 helper
+ */
+export function selectFallbackQuestion(result: ExecutorResult, task: ExecutorTask): string {
+  // For IMPLEMENTATION tasks, use implementation-specific question
+  if (task.taskType === 'IMPLEMENTATION') {
+    return FALLBACK_QUESTIONS.implementation;
+  }
+
+  // Check blocked reason for specific question
+  if (result.blocked_reason === 'TIMEOUT') {
+    return FALLBACK_QUESTIONS.blocked_timeout;
+  }
+
+  if (result.blocked_reason === 'INTERACTIVE_PROMPT') {
+    return FALLBACK_QUESTIONS.blocked_interactive;
+  }
+
+  // Default fallback
+  return FALLBACK_QUESTIONS.default;
+}
+
+/**
+ * Apply BLOCKED output guard (INV-1)
+ * Ensures BLOCKED status always has non-empty output with actionable question
+ * Per docs/spec/BLOCKED_OUTPUT_INVARIANTS.md
+ * Exported for testing
+ */
+export function applyBlockedOutputGuard(result: ExecutorResult, task: ExecutorTask): ExecutorResult {
+  // Check if output is empty or insufficient
+  const hasOutput = result.output && result.output.trim().length > 0;
+
+  if (hasOutput) {
+    // Output exists, but ensure it contains a question
+    const hasQuestion = result.output.includes('?') ||
+                        result.output.includes('YES/NO') ||
+                        result.output.includes('confirm') ||
+                        result.output.includes('許可') ||
+                        result.output.includes('確認') ||
+                        result.output.includes('？');
+
+    if (hasQuestion) {
+      console.log('[BlockedOutputGuard] INV-1: BLOCKED output already has question');
+      return result;
+    }
+
+    // Add fallback question to existing output
+    console.log('[BlockedOutputGuard] INV-1: Adding fallback question to BLOCKED output');
+    const fallbackQuestion = selectFallbackQuestion(result, task);
+    return {
+      ...result,
+      output: `${result.output}\n\n---\n${fallbackQuestion}`,
+    };
+  }
+
+  // No output - generate fallback question based on blocked reason
+  console.log('[BlockedOutputGuard] INV-1: BLOCKED with empty output, generating fallback question');
+  const fallbackQuestion = selectFallbackQuestion(result, task);
+  return {
+    ...result,
+    output: fallbackQuestion,
+  };
+}
+
+/**
  * Parsed clarification from output
  */
 export interface ParsedClarification {
@@ -188,6 +264,25 @@ export class AutoResolvingExecutor implements IExecutor {
           ...result,
           status: 'COMPLETE',
         };
+      }
+
+      // INV-1: BLOCKED Output Non-Empty Guard
+      // Per docs/spec/BLOCKED_OUTPUT_INVARIANTS.md
+      if (result.status === 'BLOCKED') {
+        const guardedResult = applyBlockedOutputGuard(result, task);
+
+        // INV-2: IMPLEMENTATION Task BLOCKED Prohibition
+        // IMPLEMENTATION tasks should never be BLOCKED, convert to AWAITING_RESPONSE
+        if (task.taskType === 'IMPLEMENTATION') {
+          console.log('[AutoResolvingExecutor] INV-2: Converting IMPLEMENTATION BLOCKED to AWAITING_RESPONSE');
+          return {
+            ...guardedResult,
+            status: 'INCOMPLETE' as const, // AWAITING_RESPONSE is handled at higher level
+            error: guardedResult.output, // Output becomes the clarification question
+          };
+        }
+
+        return guardedResult;
       }
 
       // Check if clarification is needed
