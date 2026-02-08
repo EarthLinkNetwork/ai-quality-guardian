@@ -6,7 +6,28 @@ PM Orchestrator Runner is a fail-closed execution environment for Claude Code. I
 
 ## Prerequisites
 
-Before using PM Orchestrator Runner, your project must have a valid `.claude` directory structure:
+### Executor Configuration (Required)
+
+PM Orchestrator Runner requires at least one executor to be configured. The system performs a **preflight check** at startup and fails fast with clear error messages if no executor is available.
+
+**Check executor configuration:**
+```bash
+npm run gate:auth
+```
+
+**Configure one of the following:**
+
+| Executor | Setup Command |
+|----------|---------------|
+| Claude Code CLI | `npm install -g @anthropic-ai/claude-code && claude login` |
+| OpenAI API | `export OPENAI_API_KEY=sk-...` |
+| Anthropic API | `export ANTHROPIC_API_KEY=sk-ant-...` |
+
+If no executor is configured, the system will display a clear error with fix instructions instead of timing out silently.
+
+### Project Structure
+
+Your project must have a valid `.claude` directory structure:
 
 ```
 your-project/

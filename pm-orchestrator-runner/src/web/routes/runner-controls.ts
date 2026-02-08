@@ -16,6 +16,11 @@ import { Router, Request, Response } from 'express';
 import { exec, spawn, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import { ProcessSupervisor, BuildMeta } from '../../supervisor/index';
+import {
+  runPreflightChecks,
+  PreflightReport,
+  ExecutorType,
+} from '../../diagnostics/executor-preflight';
 
 const execAsync = promisify(exec);
 
@@ -119,6 +124,41 @@ export function createRunnerControlsRoutes(config: RunnerControlsConfig): Router
     };
 
     res.json(status);
+  });
+
+  // ===================
+  // GET /api/runner/preflight
+  // Per spec: Web UI must display executor configuration status
+  // Fail-fast: All auth/config issues shown clearly, not as timeout
+  // ===================
+  router.get('/preflight', (_req: Request, res: Response) => {
+    // Run preflight checks for auto-detection mode
+    const executorType: ExecutorType = 'auto';
+    const report: PreflightReport = runPreflightChecks(executorType);
+
+    // Return structured response for Web UI
+    res.json({
+      status: report.status,
+      can_proceed: report.can_proceed,
+      executor: report.executor,
+      timestamp: report.timestamp,
+      checks: report.checks.map(check => ({
+        code: check.code,
+        ok: check.ok,
+        fatal: check.fatal,
+        message: check.message,
+        fix_hint: check.fix_hint,
+      })),
+      fatal_errors: report.fatal_errors.map(err => ({
+        code: err.code,
+        message: err.message,
+        fix_hint: err.fix_hint,
+      })),
+      // Summary for UI display
+      summary: report.can_proceed
+        ? 'Executor configured and ready'
+        : `Executor not configured: ${report.fatal_errors[0]?.message || 'Unknown error'}`,
+    });
   });
 
   // ===================

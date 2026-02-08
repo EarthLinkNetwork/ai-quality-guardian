@@ -90,9 +90,44 @@ npm pack
 
 ## Troubleshooting
 
+### Executor Not Configured (FAIL FAST)
+
+If you see "Executor preflight failed" or "No executor configured", the system has detected a configuration issue. This is designed to fail fast with clear instructions rather than timeout silently.
+
+**Run preflight diagnostics:**
+```bash
+npm run gate:auth
+```
+
+**Common error codes and fixes:**
+
+| Error Code | Fix |
+|------------|-----|
+| CLAUDE_CLI_NOT_FOUND | Install: `npm install -g @anthropic-ai/claude-code` |
+| CLAUDE_LOGIN_REQUIRED | Login: `claude login` |
+| OPENAI_KEY_MISSING | Set: `export OPENAI_API_KEY=sk-...` |
+| ANTHROPIC_KEY_MISSING | Set: `export ANTHROPIC_API_KEY=sk-ant-...` |
+| CONFIG_ERROR | Check API key format (sk-... or sk-ant-...) |
+| NETWORK_UNAVAILABLE | Check internet connection |
+
+**Quick setup (choose one):**
+
+```bash
+# Option 1: Claude Code CLI
+npm install -g @anthropic-ai/claude-code
+claude login
+
+# Option 2: OpenAI API
+export OPENAI_API_KEY=sk-...
+
+# Option 3: Anthropic API
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
 ### REPL does not start
 - Ensure `npm run build` has been run
 - Check that `dist/cli/index.js` exists
+- Run `npm run gate:auth` to verify executor configuration
 
 ### Tasks stuck in RUNNING
 - Use `/tasks` to check queue state
