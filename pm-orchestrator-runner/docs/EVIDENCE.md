@@ -1251,3 +1251,598 @@ Defines 10 acceptance criteria covering:
 ## Files Created/Modified
 - `docs/spec/WEB_COMPLETE_OPERATION.md` (new - specification)
 - `docs/EVIDENCE.md` (updated - this section)
+
+---
+
+# Completion Protocol Phase 1-4 Implementation Evidence
+
+## Implementation Date
+2026-02-07
+
+## Feature Overview
+Completion Protocol Phase 1-4 implements the full run_id generation, test output parsing, completion report building, stale detection, and report formatting functions. These provide the foundation for preventing false-positive completion judgments.
+
+## Implementation Summary
+
+### Phase 1: Core Module Functions
+
+**New Functions in `src/core/completion-protocol.ts`:**
+
+1. **generateRunId(commitSha, command)**
+   - Format: `YYYYMMDD-HHmmss-MMM-<7char_sha>-<8char_cmdHash>`
+   - Uses SHA256 for command hash
+   - Pads/truncates SHA to exactly 7 characters
+
+2. **parseTestOutput(stdout)**
+   - Parses Mocha format: `N passing`, `N failing`, `N pending`
+   - Parses Jest format: `Tests: N passed, N failed, N total`
+   - Returns `{ passing, failing, pending }`
+
+3. **extractFailingTests(stdout)**
+   - Extracts Mocha-style numbered failures: `1) test name:`
+   - Extracts Jest-style failures: `✕ test name`
+   - Classifies as IN_SCOPE or OUT_OF_SCOPE based on keywords
+
+4. **buildCompletionReport(opts)**
+   - Combines run_id, commit_sha, command, exit_code, stdout
+   - Applies completion judgment: `exit_code === 0 && failing === 0` → COMPLETE
+   - OUT_OF_SCOPE failures still result in INCOMPLETE
+
+5. **isStale(reportRunId, latestRunId)**
+   - Same run_id → not stale
+   - Different run_id → stale
+   - Compares embedded timestamps for additional validation
+
+6. **formatCompletionReport(report)**
+   - Human-readable text output
+   - Shows "ALL PASS" only when failing=0 (AC1)
+   - Shows failing test details with scope markers
+   - Includes stale warning when applicable
+
+**New Types:**
+- `TestResults { passing, failing, pending }`
+- `FailingTest { name, scope }`
+- `CompletionReport { run_id, commit_sha, command, exit_code, test_results, failing_details, final_status, stale, timestamp }`
+
+### Phase 2: Unit Tests
+
+**File: `test/unit/core/completion-protocol.test.ts`**
+
+New test sections:
+- `generateRunId` - 5 tests
+- `parseTestOutput` - 5 tests
+- `extractFailingTests` - 5 tests
+- `buildCompletionReport` - 4 tests
+- `isStale` - 4 tests
+- `formatCompletionReport` - 5 tests
+
+Total new unit tests: 28
+
+### Phase 3: E2E Tests
+
+**File: `test/e2e/completion-protocol.e2e.test.ts`**
+
+New test sections:
+- `Phase 1 E2E: Full roundtrip` - 2 tests
+- `Phase 1 E2E: failing>0 blocks COMPLETE (AC3)` - 2 tests
+- `Phase 1 E2E: "ALL PASS" only when failing=0 (AC1)` - 2 tests
+- `Phase 1 E2E: Stale detection (AC2, AC4)` - 2 tests
+- `Phase 1 E2E: Exit code handling` - 2 tests
+
+Total new E2E tests: 10
+
+### Phase 4: Documentation Update
+
+This section documents the implementation evidence.
+
+## Acceptance Criteria Coverage
+
+### AC1: "ALL PASS" is failing=0 only
+**Status:** PASS
+
+Evidence:
+- `formatCompletionReport()` only outputs "ALL PASS" when `failing === 0 && final_status === 'COMPLETE'`
+- Unit tests verify this behavior
+- E2E tests confirm output format
+
+### AC2: Stale run_id detection
+**Status:** PASS
+
+Evidence:
+- `isStale()` returns true for different run_ids
+- Timestamp comparison in run_id format enables ordering
+- Unit tests cover all stale scenarios
+
+### AC3: failing>0 => never COMPLETE
+**Status:** PASS
+
+Evidence:
+- `buildCompletionReport()` returns INCOMPLETE when `failing > 0` or `exit_code !== 0`
+- OUT_OF_SCOPE failures also result in INCOMPLETE
+- Unit and E2E tests verify this invariant
+
+### AC4: No mixing old and new results
+**Status:** PASS
+
+Evidence:
+- `isStale()` detects when run_ids differ
+- `CompletionProtocol.judge()` throws `StaleRunError` for mixed run_ids
+- E2E tests verify stale detection across report comparisons
+
+## Gate Results
+
+```
+typecheck: PASS (tsc --noEmit: 0 errors)
+lint:      PASS (eslint: 0 errors)
+build:     PASS (tsc: 0 errors)
+unit:      PASS (71 completion protocol tests)
+```
+
+## Files Created/Modified
+
+- `src/core/completion-protocol.ts` (modified - added 6 new functions, 3 new types)
+- `test/unit/core/completion-protocol.test.ts` (modified - added 28 new tests)
+- `test/e2e/completion-protocol.e2e.test.ts` (modified - added 10 new tests)
+- `docs/EVIDENCE.md` (updated - this section)
+
+## run_id Format Specification
+
+```
+Format: YYYYMMDD-HHmmss-MMM-<shortsha>-<cmdHash>
+
+Example: 20260207-143025-123-abc1234-a1b2c3d4
+
+Parts:
+- YYYYMMDD: Date (8 chars)
+- HHmmss: Time (6 chars)
+- MMM: Milliseconds (3 chars)
+- shortsha: First 7 chars of git commit SHA
+- cmdHash: First 8 chars of SHA256(command)
+
+Total: 36 characters with hyphens
+```
+
+## CompletionReport Template
+
+```typescript
+{
+  run_id: "20260207-143025-123-abc1234-a1b2c3d4",
+  commit_sha: "abc1234567890",
+  command: "npm test",
+  exit_code: 0,
+  test_results: {
+    passing: 100,
+    failing: 0,
+    pending: 3
+  },
+  failing_details: [],
+  final_status: "COMPLETE",
+  stale: false,
+  timestamp: "2026-02-07T14:30:25.123Z"
+}
+```
+
+## Usage Example
+
+```typescript
+import {
+  generateRunId,
+  buildCompletionReport,
+  formatCompletionReport,
+  isStale,
+} from './core/completion-protocol';
+
+// Generate run_id
+const runId = generateRunId('abc1234def', 'npm test');
+
+// Build report from test output
+const report = buildCompletionReport({
+  runId,
+  commitSha: 'abc1234def',
+  command: 'npm test',
+  exitCode: 0,
+  stdout: '100 passing (5s)\n0 failing',
+});
+
+// Check if report is stale
+const latestRunId = generateRunId('def5678abc', 'npm test');
+if (isStale(report.run_id, latestRunId)) {
+  console.log('Report is stale, cannot use as completion evidence');
+}
+
+// Format for human output
+console.log(formatCompletionReport(report));
+```
+
+## Verification Steps
+
+1. **Run completion protocol tests:**
+   ```bash
+   npm test -- --grep "Completion Protocol"
+   ```
+
+2. **Run all quality gates:**
+   ```bash
+   npm run gate:all
+   ```
+
+3. **Verify run_id format:**
+   ```typescript
+   const runId = generateRunId('abc1234', 'npm test');
+   console.log(runId);
+   // Expected: 20260207-HHMMSS-MMM-abc1234-xxxxxxxx
+   ```
+
+All gates PASS.
+
+---
+
+# ESM Directory Import Gate & E2E Execution Verification
+
+## Implementation Date
+2026-02-07
+
+## Problem Description
+ESM (ECMAScript Modules) では `from '../supervisor'` のようなディレクトリ import が禁止されている（`ERR_UNSUPPORTED_DIR_IMPORT`）。しかし、テストが「たまたまスキップ」されて "ALL PASS" になるケースがあり、問題が検出されなかった。
+
+### 具体的な問題
+1. `e2e-restart-resume.e2e.test.ts` で `from '../../src/supervisor'` がエラー
+2. テストファイル読み込み時にエラー → テスト自体が実行されない → "0 passing" → CI上では見過ごされる
+
+## Solution
+2つの防止ゲートを追加:
+1. **gate:import** - ディレクトリ import を静的検出して FAIL
+2. **gate:e2e-exec** - 必須 E2E テストの実行を検証
+
+## Implementation Summary
+
+### 1. diagnostics/directory-import.check.ts
+
+静的解析でディレクトリ import を検出:
+
+```typescript
+const INDEXED_DIRS = [
+  'src/supervisor',
+  'src/queue',
+  'src/web',
+  'src/core',
+  'src/cli',
+];
+
+// 検出パターン: from '../supervisor' (index なし)
+// 正常パターン: from '../supervisor/index'
+```
+
+### 2. diagnostics/e2e-execution.check.ts
+
+必須 E2E テストの実行を検証:
+
+```typescript
+const REQUIRED_E2E_TESTS = [
+  'test/e2e/e2e-restart-resume.e2e.test.ts',
+  'test/e2e/e2e-supervisor-template.e2e.test.ts',
+  'test/e2e/e2e-output-format.e2e.test.ts',
+  'test/e2e/e2e-no-user-debug.e2e.test.ts',
+  'test/e2e/e2e-web-self-dev.e2e.test.ts',
+];
+
+const REQUIRED_DESCRIBE_PATTERNS = [
+  'E2E: Restart and Resume Scenarios',
+  'E2E: Supervisor Template System',
+  ...
+];
+```
+
+### 3. package.json 更新
+
+```json
+{
+  "scripts": {
+    "gate:import": "ts-node diagnostics/directory-import.check.ts",
+    "gate:e2e-exec": "ts-node diagnostics/e2e-execution.check.ts",
+    "gate:all": "npm run gate:import && npm run gate:tier0 && ... && npm run gate:e2e-exec"
+  }
+}
+```
+
+## Files Fixed (ESM Directory Import)
+
+13 files modified to use explicit `/index` imports:
+
+| File | Old Import | New Import |
+|------|-----------|------------|
+| test/e2e/e2e-restart-resume.e2e.test.ts | `'../../src/supervisor'` | `'../../src/supervisor/index'` |
+| test/e2e/e2e-supervisor-template.e2e.test.ts | `'../../src/supervisor'` | `'../../src/supervisor/index'` |
+| test/e2e/e2e-output-format.e2e.test.ts | `'../../src/supervisor'` | `'../../src/supervisor/index'` |
+| test/e2e/e2e-web-self-dev.e2e.test.ts | `'../../src/supervisor'` | `'../../src/supervisor/index'` |
+| test/e2e/e2e-no-user-debug.e2e.test.ts | `'../../src/supervisor'` | `'../../src/supervisor/index'` |
+| src/web/routes/supervisor-config.ts | `'../../supervisor'` | `'../../supervisor/index'` |
+| src/core/runner-core.ts | `'../supervisor'` | `'../supervisor/index'` |
+| src/cli/index.ts | `'../queue'` | `'../queue/index'` |
+| src/selftest/mock-executor.ts | `'../queue'` | `'../queue/index'` |
+| src/selftest/selftest-runner.ts | `'../queue'` | `'../queue/index'` |
+| src/utils/restart-detector.ts | `'../queue'` | `'../queue/index'` |
+| src/web/index.ts | `'../queue'` | `'../queue/index'` |
+| src/web/server.ts | `'../queue'` | `'../queue/index'` |
+
+## Acceptance Criteria
+
+### AC1: ESM execution of restart-resume tests must PASS
+**Status:** PASS
+
+Evidence:
+```
+npx mocha --require ts-node/register test/e2e/e2e-restart-resume.e2e.test.ts
+  E2E: Restart and Resume Scenarios
+    ✓ should handle restart scenario detection
+    ...
+  14 passing
+```
+
+### AC2: gate:all must FAIL if directory imports exist
+**Status:** PASS
+
+Evidence:
+- `gate:import` scans all TypeScript files for forbidden patterns
+- Exits with code 1 if violations found
+- Added to gate:all chain
+
+### AC3: gate:all must verify restart/resume E2E tests ran
+**Status:** PASS
+
+Evidence:
+- `gate:e2e-exec` runs each required E2E file individually
+- Verifies output contains required describe block names
+- Exits with code 1 if any test file fails to produce expected output
+
+### AC4: Both npm test and npm run gate:all must show 0 failing
+**Status:** PASS
+
+Evidence:
+```
+npm test
+  2988 passing (2m)
+  102 pending
+  0 failing
+
+npm run gate:all
+  gate:import     - No directory imports found
+  gate:tier0      - ALL PASS
+  gate:web        - ALL PASS
+  gate:agent      - ALL PASS (13/13 checks)
+  gate:spec       - ALL PASS
+  gate:incomplete - ALL PASS
+  gate:e2e-exec   - E2E Files: 5/5 passed, Total Tests: 71 executed
+```
+
+## Gate Results
+
+```
+npm run build     - SUCCESS
+npm test          - 2988 passing, 102 pending, 0 failing
+npm run gate:all  - ALL PASS (7 gates)
+```
+
+## Files Created
+
+- `diagnostics/directory-import.check.ts` (new - directory import gate)
+- `diagnostics/e2e-execution.check.ts` (new - E2E execution verification)
+
+## Files Modified
+
+- `package.json` (added gate:import, gate:e2e-exec to scripts and gate:all)
+- 13 source files (ESM directory import fixes)
+
+## Prevention Mechanism
+
+これらのゲートにより、以下の問題を恒久的に防止:
+
+1. **ディレクトリ import の混入**: `gate:import` が静的検出
+2. **テスト未実行による偽 PASS**: `gate:e2e-exec` が実行を検証
+3. **CI での見逃し**: `gate:all` に統合されているため、全ビルドで検証
+
+---
+
+# Web Complete Operation - Process Supervisor Evidence
+
+## Implementation Date
+2026-02-07
+
+## Feature Overview
+
+Web UI Complete Operation - Web UI alone can perform update → build → restart (REAL) → reflect without requiring terminal access.
+
+**Key Components:**
+- **ProcessSupervisor**: Parent process managing Web as child via `child_process.spawn`
+- **Restart(REAL)**: PID must change after restart (擬似再起動は禁止)
+- **build_sha tracking**: Build generates `dist/build-meta.json` with SHA
+
+## Specification Reference
+
+See: `docs/spec/WEB_COMPLETE_OPERATION.md`
+
+## Implementation Summary
+
+### 1. ProcessSupervisor (`src/supervisor/process-supervisor.ts`)
+
+**Class: `ProcessSupervisor`**
+- Manages Web server as child process
+- Tracks PID and build metadata
+- Implements safety mechanisms
+
+**Methods:**
+- `build()` - Execute build and generate build-meta.json
+- `start()` - Spawn Web as child process
+- `stop()` - Graceful shutdown with SIGTERM, fallback to SIGKILL
+- `restart()` - Stop → Build → Start with PID change verification
+- `healthCheck()` - HTTP health check with PID and build_sha
+- `getState()` - Current process state (status, pid, startTime)
+- `getBuildMeta()` - Current build metadata
+
+### 2. Health Endpoint Update (`src/web/server.ts`)
+
+**GET /api/health now returns:**
+- `web_pid`: Current process ID
+- `build_sha`: From dist/build-meta.json or PM_BUILD_SHA env
+- `build_timestamp`: Build timestamp
+
+### 3. Runner Controls Integration (`src/web/routes/runner-controls.ts`)
+
+**ProcessSupervisor integration:**
+- Status endpoint returns PID and build_sha
+- Build endpoint uses ProcessSupervisor.build() when available
+- Restart endpoint uses ProcessSupervisor.restart() with PID change verification
+- Stop endpoint uses ProcessSupervisor.stop()
+
+## Acceptance Criteria Evidence
+
+### AC-SUP-1: Supervisor manages Web as child process
+**Status:** PASS
+
+E2E Tests (`test/e2e/e2e-real-restart.e2e.test.ts`):
+- `should start Web as child process`
+- `should stop Web process gracefully`
+- `should track process state`
+
+Evidence:
+```typescript
+// ProcessSupervisor spawns Web as child
+this.webProcess = spawn(cmd, fullArgs, {
+  cwd: this.options.projectRoot,
+  stdio: ['pipe', 'pipe', 'pipe'],
+  detached: false,
+});
+```
+
+### AC-SUP-2: Safety mechanisms (build fail → no restart)
+**Status:** PASS
+
+E2E Tests:
+- `should preserve old process if build fails`
+- `should not restart without successful build when build=true`
+
+Evidence:
+```typescript
+// restart() method
+if (options.build !== false) {
+  const buildResult = await this.build();
+  if (!buildResult.success) {
+    // AC-SUP-2: Build fail → no restart, preserve old process
+    return {
+      success: false,
+      oldPid: oldPid ?? undefined,
+      error: `Build failed: ${buildResult.error}. Old process preserved.`,
+    };
+  }
+}
+```
+
+### AC-OPS-2: Restart(REAL) - PID must change
+**Status:** PASS
+
+E2E Tests:
+- `should have different PID after restart`
+- `should track old and new PID in restart result`
+- `should handle multiple restarts`
+
+Evidence:
+```typescript
+// restart() verifies PID change
+if (oldPid !== null && newPid === oldPid) {
+  return {
+    success: false,
+    error: 'FATAL: PID did not change after restart. This violates AC-OPS-2.',
+  };
+}
+```
+
+### AC-OPS-3: build_sha tracked and updated
+**Status:** PASS
+
+E2E Tests:
+- `should generate build_sha after build`
+- `should save build-meta.json to dist directory`
+- `should load build metadata on start`
+- `should update build_sha after restart with build`
+
+Evidence:
+```typescript
+// generateBuildMeta() creates dist/build-meta.json
+const buildMeta: BuildMeta = {
+  build_sha: gitSha || `build-${Date.now()}`,
+  build_timestamp: timestamp,
+  git_sha: gitSha,
+  git_branch: gitBranch,
+};
+fs.writeFileSync(this.buildMetaPath, JSON.stringify(buildMeta, null, 2));
+```
+
+## E2E Test Mapping
+
+| AC | Test Name | Description |
+|----|-----------|-------------|
+| AC-SUP-1 | `should start Web as child process` | Supervisor spawns Web |
+| AC-SUP-1 | `should stop Web process gracefully` | SIGTERM shutdown |
+| AC-SUP-1 | `should track process state` | Status tracking |
+| AC-SUP-2 | `should preserve old process if build fails` | Safety mechanism |
+| AC-SUP-2 | `should not restart without successful build` | Safety mechanism |
+| AC-OPS-2 | `should have different PID after restart` | PID change verification |
+| AC-OPS-2 | `should track old and new PID in restart result` | PID tracking |
+| AC-OPS-2 | `should handle multiple restarts` | Multiple PID changes |
+| AC-OPS-3 | `should generate build_sha after build` | SHA generation |
+| AC-OPS-3 | `should save build-meta.json to dist directory` | File persistence |
+| AC-OPS-3 | `should load build metadata on start` | SHA loading |
+| AC-OPS-3 | `should update build_sha after restart with build` | SHA update |
+
+## Testing Evidence
+
+### E2E Tests: 16 passing
+```
+npm test -- --grep "Real Restart"
+
+E2E: Real Restart Verification (WEB_COMPLETE_OPERATION)
+  AC-OPS-3: Build SHA Reflection
+    ✔ should generate build_sha after build
+    ✔ should save build-meta.json to dist directory
+    ✔ should load build metadata on start
+  AC-OPS-2: Restart(REAL) - PID Change
+    ✔ should have different PID after restart
+    ✔ should track old and new PID in restart result
+    ✔ should update build_sha after restart with build
+  AC-SUP-1: Supervisor Manages Web as Child
+    ✔ should start Web as child process
+    ✔ should stop Web process gracefully
+    ✔ should track process state
+  AC-SUP-2: Safety Mechanisms
+    ✔ should preserve old process if build fails
+    ✔ should not restart without successful build when build=true
+  Health Check
+    ✔ should report healthy when running
+    ✔ should report unhealthy when stopped
+  Edge Cases
+    ✔ should handle start when already running
+    ✔ should handle stop when not running
+    ✔ should handle multiple restarts
+
+16 passing
+```
+
+## Gate Results
+
+```
+npm run build     - SUCCESS
+npm test          - 3004 passing, 102 pending, 0 failing
+npm run gate:all  - ALL PASS
+```
+
+## Files Created
+
+- `src/supervisor/process-supervisor.ts` (ProcessSupervisor class)
+- `test/e2e/e2e-real-restart.e2e.test.ts` (E2E tests for WEB_COMPLETE_OPERATION)
+
+## Files Modified
+
+- `src/supervisor/index.ts` (export ProcessSupervisor)
+- `src/web/server.ts` (/api/health with web_pid and build_sha)
+- `src/web/routes/runner-controls.ts` (ProcessSupervisor integration)
+

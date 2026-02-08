@@ -20,7 +20,7 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import { IQueueStore, QueueItemStatus } from '../queue';
+import { IQueueStore, QueueItemStatus } from '../queue/index';
 import { ConversationTracer } from '../trace/conversation-tracer';
 import { createSettingsRoutes } from './routes/settings';
 import { createDashboardRoutes } from './routes/dashboard';
@@ -30,6 +30,7 @@ import { createSelfhostRoutes } from './routes/selfhost';
 import { createDevconsoleRoutes } from './routes/devconsole';
 import { createSessionLogsRoutes } from './routes/session-logs';
 import { createRunnerControlsRoutes } from './routes/runner-controls';
+import { createSupervisorConfigRoutes } from './routes/supervisor-config';
 import { detectTaskType } from '../utils/task-type-detector';
 
 /**
@@ -131,6 +132,10 @@ export function createApp(config: WebServerConfig): Express {
     // Runner Controls routes (selfhost-runner only)
     // Per AC-OPS-1: Web UI provides Run/Stop/Build/Restart controls
     app.use("/api/runner", createRunnerControlsRoutes({ projectRoot: projectRoot || process.cwd() }));
+
+    // Supervisor Config routes (SUP-4, SUP-5)
+    // Per docs/spec/SUPERVISOR_SYSTEM.md
+    app.use("/api/supervisor", createSupervisorConfigRoutes({ projectRoot: projectRoot || process.cwd() }));
 
   }
 
@@ -635,12 +640,35 @@ export function createApp(config: WebServerConfig): Express {
   /**
    * GET /api/health
    * Health check endpoint with namespace info and queue store details
+   * Per docs/spec/WEB_COMPLETE_OPERATION.md:
+   * - AC-OPS-2: Returns web_pid for restart verification
+   * - AC-OPS-3: Returns build_sha for build tracking
    */
   app.get('/api/health', (_req: Request, res: Response) => {
+    // Read build_sha from environment (set by ProcessSupervisor) or build-meta.json
+    let buildSha: string | undefined = process.env.PM_BUILD_SHA;
+    let buildTimestamp: string | undefined;
+
+    if (!buildSha && projectRoot) {
+      try {
+        const buildMetaPath = path.join(projectRoot, 'dist', 'build-meta.json');
+        if (fs.existsSync(buildMetaPath)) {
+          const buildMeta = JSON.parse(fs.readFileSync(buildMetaPath, 'utf-8'));
+          buildSha = buildMeta.build_sha;
+          buildTimestamp = buildMeta.build_timestamp;
+        }
+      } catch {
+        // Ignore errors reading build-meta.json
+      }
+    }
+
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
       namespace,
+      web_pid: process.pid,
+      build_sha: buildSha,
+      build_timestamp: buildTimestamp,
       queue_store: {
         type: queueStoreType || 'unknown',
         endpoint: queueStore.getEndpoint(),

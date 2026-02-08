@@ -26,7 +26,76 @@ This specification defines the requirements for "Web UI Complete Operation" - th
 
 ---
 
+## Core Definitions
+
+### Open Chat
+- **Open Chat** = 新規スレッド作成 (新しい taskGroupId を生成)
+- **既存スレッド継続** = Task Groups リストから選択して入る
+
+### Restart (REAL)
+- **Restart (REAL)** = Web サーバープロセスが完全に終了し、別の PID として再起動
+- **擬似再起動は禁止** = 同一プロセス内の再初期化は Restart とは呼ばない
+
+---
+
 ## Acceptance Criteria
+
+### AC-SUP-1: Supervisor Mandatory for Web Process
+
+**Definition:** Supervisor が Web を子プロセスとして起動する（Web は自分自身を再起動できないので Supervisor 必須）
+
+**Requirements:**
+1. Supervisor が親プロセスとして常駐
+2. Web は child_process.spawn で起動
+3. Supervisor が Web の PID を追跡
+4. Web 終了時に Supervisor が検知
+
+**Verification:** E2E test confirms Web runs as child of Supervisor
+
+---
+
+### AC-SUP-2: Supervisor Safety Mechanisms
+
+**Definition:** Supervisor は安全装置を持つ（再起動失敗→ロールバック or 旧プロセス維持）
+
+**Requirements:**
+1. Build 失敗 → 再起動しない (旧プロセス維持)
+2. Restart 失敗 → 旧プロセス維持 or 自動リトライ
+3. Orphan プロセス検知と kill
+4. Health check で Web 生存確認
+
+**Verification:** E2E test with intentional build failure
+
+---
+
+### AC-OPS-2: Restart(REAL) - PID Change
+
+**Definition:** Restart は本物の再起動（PID が変わる）
+
+**Requirements:**
+1. 再起動前の web_pid を記録
+2. Stop → Spawn で新プロセス起動
+3. 再起動後の web_pid が異なる（必須）
+4. /api/health で web_pid を返す
+
+**Verification:** E2E test verifies PID change after restart
+
+---
+
+### AC-OPS-3: Build SHA Reflection
+
+**Definition:** Build→Restart 後、UI/HTTP レスポンスで build_sha が更新されている
+
+**Requirements:**
+1. Build 時に dist/build-meta.json を生成
+2. build_sha (git SHA or build timestamp hash) を記録
+3. Web 起動時に build-meta.json を読み込み
+4. /api/health で build_sha を返す
+5. Restart 後に build_sha が変化
+
+**Verification:** E2E test verifies build_sha update after restart
+
+---
 
 ### AC-RESUME-1: Resume = Replay
 
@@ -182,13 +251,18 @@ interface TimeoutProfile {
 
 | AC | E2E Test File | Description |
 |----|---------------|-------------|
+| AC-SUP-1 | e2e-real-restart.e2e.test.ts | Supervisor manages Web as child |
+| AC-SUP-2 | e2e-real-restart.e2e.test.ts | Safety mechanisms on failure |
+| AC-OPS-1 | e2e-real-restart.e2e.test.ts | Stop/Build/Restart controls |
+| AC-OPS-2 | e2e-real-restart.e2e.test.ts | PID change after restart |
+| AC-OPS-3 | e2e-real-restart.e2e.test.ts | build_sha update after restart |
 | AC-CHAT-1 | chat-thread-continuation.e2e.test.ts | Thread = TaskGroup verification |
 | AC-UI-REPLY-1 | awaiting-response-reply-ui.e2e.test.ts | Reply textarea functionality |
 | AC-UI-REPLY-1 | multiline-input.e2e.test.ts | Multiline input behavior |
-| AC-RESUME-1, AC-RESUME-2 | resume-replay-after-restart.e2e.test.ts | Resume = Replay verification |
-| AC-RESUME-2, AC-RESUME-3 | rollback-and-replay.e2e.test.ts | Rollback behavior |
-| AC-OPS-1 | runner-controls.e2e.test.ts | Build/Restart controls |
-| AC-TIMEOUT-1 | timeout-progress.e2e.test.ts | Progress-aware timeout |
+| AC-RESUME-1 | e2e-persist-across-restart.e2e.test.ts | Tasks persist after restart |
+| AC-RESUME-2 | rollback-and-replay.e2e.test.ts | Rollback behavior |
+| AC-RESUME-3 | resume-replay-after-restart.e2e.test.ts | Resume UI options |
+| AC-TIMEOUT-1 | e2e-timeout-progress.e2e.test.ts | Progress-aware timeout |
 | AC-STATE-1 | awaiting-response-reply-ui.e2e.test.ts | Question → AWAITING_RESPONSE |
 | AC-AUTO-DEV-1 | web-autodev-loop.e2e.test.ts | Auto-dev loop from Web |
 
