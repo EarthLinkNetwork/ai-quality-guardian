@@ -36,7 +36,10 @@
     "gate:agent": "ts-node diagnostics/agent-launcher.check.ts",
     "gate:tier0": "npm run gate:ui && npm run gate:task",
     "gate:incomplete": "ts-node diagnostics/read-info-incomplete.check.ts",
-    "gate:all": "npm run gate:tier0 && npm run gate:web && npm run gate:agent && npm run gate:spec && npm run gate:incomplete",
+    "gate:import": "ts-node diagnostics/directory-import.check.ts",
+    "gate:e2e-exec": "ts-node diagnostics/e2e-execution.check.ts",
+    "gate:flake-guard": "ts-node diagnostics/flake-guard.check.ts",
+    "gate:all": "npm run gate:import && npm run gate:tier0 && npm run gate:web && npm run gate:agent && npm run gate:spec && npm run gate:incomplete && npm run gate:e2e-exec && npm run gate:flake-guard",
     "gate:spec": "ts-node diagnostics/spec-coverage.check.ts",
     "gate:chat": "ts-node diagnostics/chat-tasktype.check.ts"
   },

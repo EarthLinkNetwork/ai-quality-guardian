@@ -235,6 +235,10 @@ describe('E2E: Open Chat Creates Task Group', () => {
         'Task group should exist before restart'
       );
 
+      // FLAKY FIX: Wait for any pending I/O to complete before recreating app
+      // This prevents ECONNRESET when supertest's internal sockets overlap
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       // Phase 2: "Restart" - create new store with same stateDir
       const queueStore2 = new FileQueueStore({
         namespace: testNamespace,

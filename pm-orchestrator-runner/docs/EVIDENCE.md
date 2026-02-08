@@ -1846,3 +1846,40 @@ npm run gate:all  - ALL PASS
 - `src/web/server.ts` (/api/health with web_pid and build_sha)
 - `src/web/routes/runner-controls.ts` (ProcessSupervisor integration)
 
+
+---
+
+## Flaky Test Zero - Stabilization Evidence (2026-02-08)
+
+### Issue
+- Test: `persist chat-created Task Groups after store recreation`
+- Error: `ECONNRESET` during app recreation
+- Type: Timing-dependent flaky test
+
+### Root Cause
+App recreation without I/O drain allowed supertest keep-alive sockets to conflict during transition.
+
+### Fix
+Added 50ms delay before app recreation in `test/e2e/open-chat-creates-task-group.e2e.test.ts`:
+```typescript
+// FLAKY FIX: Wait for any pending I/O to complete before recreating app
+await new Promise(resolve => setTimeout(resolve, 50));
+```
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| Single test 30x run | 30/30 PASS |
+| Full suite 3x run | 3/3 PASS (0 failing each) |
+| Flake Guard (10x) | 10/10 PASS |
+| gate:all | ALL PASS |
+
+### Flake Guard Gate
+Created `diagnostics/flake-guard.check.ts`:
+- Runs flaky-prone tests 10 consecutive times
+- Must pass all 10 to pass gate
+- Integrated into `gate:all`
+
+### Report
+Full analysis: `docs/REPORTS/flaky-2026-02-08.md`
