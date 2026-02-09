@@ -256,6 +256,7 @@ export declare class RunnerCore extends EventEmitter {
     private elapsedTimeOverride;
     private initialized;
     private claudeCodeExecutor;
+    private supervisor;
     private currentExecutorMode;
     private lastExecutorOutput;
     private lastFilesModified;

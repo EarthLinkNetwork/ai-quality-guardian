@@ -412,14 +412,13 @@ describe('Web Server', () => {
 
       const routes = response.body.routes as string[];
 
-      // Check that no route contains "run", "execute", "start" commands
-      // These would indicate direct Runner control which is prohibited
+      // Check that no route contains arbitrary execution commands
+      // Runner Controls API (/api/runner/*) is explicitly allowed per AC-RC-API-1
       const prohibitedPatterns = [
-        /POST.*\/api\/run/i,
+        /POST.*\/api\/run[^n]/i,  // exclude /api/runner
         /POST.*\/api\/execute/i,
         /POST.*\/api\/start/i,
         /POST.*\/api\/command/i,
-        /POST.*\/api\/runner/i,
       ];
 
       for (const route of routes) {
@@ -441,6 +440,7 @@ describe('Web Server', () => {
       const routes = response.body.routes as string[];
 
       // These are the only write APIs that should exist
+      // Runner Controls APIs added per AC-RC-API-1
       const expectedWriteApis = [
         'POST /api/tasks',
         'POST /api/task-groups',
@@ -448,6 +448,10 @@ describe('Web Server', () => {
         'POST /api/projects/:projectId/archive',
         'POST /api/projects/:projectId/unarchive',
         'POST /api/inspection/run/:runId',
+        'POST /api/runner/build',
+        'POST /api/runner/restart',
+        'POST /api/runner/stop',
+        'POST /api/tasks/:task_id/reply',
       ];
 
       const writeApis = routes.filter((r: string) => r.startsWith('POST /api/'));

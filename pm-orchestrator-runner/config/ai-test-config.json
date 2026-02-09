@@ -1,0 +1,11 @@
+{
+  "passThreshold": 0.72,
+  "strictMode": false,
+  "maxAutoFixIterations": 5,
+  "sandboxDir": "testsandbox",
+  "enableAutoE2E": true,
+  "judgeModel": "gpt-4o-mini",
+  "testGeneratorModel": "gpt-4o-mini",
+  "timeoutMs": 30000,
+  "retryDelayMs": 1000
+}

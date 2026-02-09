@@ -16,7 +16,7 @@
  * Submit = queue insert only.
  */
 import { Express } from 'express';
-import { IQueueStore } from '../queue';
+import { IQueueStore } from '../queue/index';
 /**
  * Web Server configuration
  */
@@ -35,6 +35,8 @@ export interface WebServerConfig {
     projectRoot?: string;
     /** State directory for trace files (per spec/28_CONVERSATION_TRACE.md Section 5.2) */
     stateDir?: string;
+    /** Queue store type for health endpoint display */
+    queueStoreType?: 'file' | 'dynamodb' | 'memory';
 }
 /**
  * Web Server state

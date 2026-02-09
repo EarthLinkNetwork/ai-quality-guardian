@@ -63,6 +63,35 @@ export interface CompletionVerdict {
     stale_results: boolean;
 }
 /**
+ * Parsed test output results
+ */
+export interface TestResults {
+    passing: number;
+    failing: number;
+    pending: number;
+}
+/**
+ * Details of a failing test
+ */
+export interface FailingTest {
+    name: string;
+    scope: 'IN_SCOPE' | 'OUT_OF_SCOPE';
+}
+/**
+ * Completion Report generated from a test run
+ */
+export interface CompletionReport {
+    run_id: string;
+    commit_sha: string;
+    command: string;
+    exit_code: number;
+    test_results: TestResults;
+    failing_details: FailingTest[];
+    final_status: 'COMPLETE' | 'INCOMPLETE';
+    stale: boolean;
+    timestamp: string;
+}
+/**
  * Thrown when a stale run_id is detected in QA gate results.
  * This prevents using old run outputs as completion evidence.
  */
@@ -71,6 +100,56 @@ export declare class StaleRunError extends Error {
     readonly actual_run_ids: string[];
     constructor(message: string, expected?: string, actual?: string[]);
 }
+/**
+ * Generate a run_id with format: YYYYMMDD-HHmmss-MMM-<shortsha>-<cmdHash>
+ *
+ * @param commitSha - Git commit SHA (7+ characters)
+ * @param command - Command that was executed
+ * @returns Formatted run_id string
+ */
+export declare function generateRunId(commitSha: string, command: string): string;
+/**
+ * Parse test output (Mocha/Jest format) to extract passing/failing/pending counts
+ *
+ * @param stdout - Test output string
+ * @returns Parsed TestResults
+ */
+export declare function parseTestOutput(stdout: string): TestResults;
+/**
+ * Extract failing test names from test output
+ *
+ * @param stdout - Test output string
+ * @returns Array of FailingTest objects
+ */
+export declare function extractFailingTests(stdout: string): FailingTest[];
+/**
+ * Build a CompletionReport from test run results
+ *
+ * @param opts - Options containing run data
+ * @returns CompletionReport
+ */
+export declare function buildCompletionReport(opts: {
+    runId: string;
+    commitSha: string;
+    command: string;
+    exitCode: number;
+    stdout: string;
+}): CompletionReport;
+/**
+ * Check if a report's run_id is stale compared to the latest run_id
+ *
+ * @param reportRunId - The run_id from the report being checked
+ * @param latestRunId - The current/latest run_id
+ * @returns true if the report is stale (old)
+ */
+export declare function isStale(reportRunId: string, latestRunId: string): boolean;
+/**
+ * Format a CompletionReport as human-readable text output
+ *
+ * @param report - The CompletionReport to format
+ * @returns Formatted text string
+ */
+export declare function formatCompletionReport(report: CompletionReport): string;
 /**
  * Completion Protocol - the single authority for task completion judgment.
  *

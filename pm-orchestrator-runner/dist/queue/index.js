@@ -13,7 +13,7 @@
  * - QueuePoller: Polling and task execution
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.InMemoryQueueStore = exports.QueuePoller = exports.RUNNERS_TABLE_NAME = exports.QUEUE_TABLE_NAME = exports.isValidStatusTransition = exports.VALID_STATUS_TRANSITIONS = exports.QueueStore = void 0;
+exports.FileQueueStore = exports.InMemoryQueueStore = exports.QueuePoller = exports.RUNNERS_TABLE_NAME = exports.QUEUE_TABLE_NAME = exports.isValidStatusTransition = exports.VALID_STATUS_TRANSITIONS = exports.QueueStore = void 0;
 var queue_store_1 = require("./queue-store");
 Object.defineProperty(exports, "QueueStore", { enumerable: true, get: function () { return queue_store_1.QueueStore; } });
 Object.defineProperty(exports, "VALID_STATUS_TRANSITIONS", { enumerable: true, get: function () { return queue_store_1.VALID_STATUS_TRANSITIONS; } });
@@ -24,4 +24,6 @@ var queue_poller_1 = require("./queue-poller");
 Object.defineProperty(exports, "QueuePoller", { enumerable: true, get: function () { return queue_poller_1.QueuePoller; } });
 var in_memory_queue_store_1 = require("./in-memory-queue-store");
 Object.defineProperty(exports, "InMemoryQueueStore", { enumerable: true, get: function () { return in_memory_queue_store_1.InMemoryQueueStore; } });
+var file_queue_store_1 = require("./file-queue-store");
+Object.defineProperty(exports, "FileQueueStore", { enumerable: true, get: function () { return file_queue_store_1.FileQueueStore; } });
 //# sourceMappingURL=index.js.map

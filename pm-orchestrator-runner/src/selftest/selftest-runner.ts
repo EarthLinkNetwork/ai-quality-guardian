@@ -12,7 +12,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { IQueueStore, QueueItem } from '../queue';
+import { IQueueStore, QueueItem } from '../queue/index';
 import {
   SelftestConfig,
   SelftestReport as AIJudgeSelftestReport,

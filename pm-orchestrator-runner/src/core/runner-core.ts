@@ -26,6 +26,7 @@ import { OutputControlManager } from '../output/output-control-manager';
 import { LifecycleController } from '../lifecycle/lifecycle-controller';
 import { L1SubagentPool, L2ExecutorPool } from '../pool/agent-pool';
 import { TaskLogManager } from '../logging/task-log-manager';
+import { Supervisor, getSupervisor } from '../supervisor/index';
 import { Thread, Run, TaskLog } from '../models/repl/task-log';
 import {
   OverallStatus,
@@ -311,6 +312,10 @@ export class RunnerCore extends EventEmitter {
   // Claude Code Executor for natural language task execution
   private claudeCodeExecutor: IExecutor | null = null;
 
+  // Supervisor for SUP-1 through SUP-7 compliance
+  // Per docs/spec/SUPERVISOR_SYSTEM.md: All LLM calls MUST go through Supervisor
+  private supervisor: Supervisor | null = null;
+
   // Executor visibility tracking (per redesign)
   private currentExecutorMode: ExecutorMode = 'none';
   private lastExecutorOutput: string = '';
@@ -496,6 +501,10 @@ export class RunnerCore extends EventEmitter {
     this.promptAssembler = new PromptAssembler({
       projectPath: targetProject,
     });
+
+    // Initialize Supervisor for SUP-1 through SUP-7 compliance
+    // Per docs/spec/SUPERVISOR_SYSTEM.md: All LLM calls MUST go through Supervisor
+    this.supervisor = getSupervisor(targetProject);
 
     // Initialize TaskLogManager for Property 26/27: TaskLog Lifecycle Recording
     // Per spec 06_CORRECTNESS_PROPERTIES.md Property 26: Fail-Closed Logging
@@ -842,15 +851,50 @@ export class RunnerCore extends EventEmitter {
             }
           }
 
+          // SUP-2: Compose prompt through Supervisor (GLOBAL → PROJECT → USER)
+          // Per docs/spec/SUPERVISOR_SYSTEM.md: All prompts MUST be composed through Supervisor
+          let finalPrompt = assembledPrompt;
+          const projectId = this.session?.session_id || 'default';
+          if (this.supervisor) {
+            const composed = this.supervisor.compose(assembledPrompt, projectId);
+            finalPrompt = composed.composed;
+            executionLog.push(`[${new Date().toISOString()}] SUP-2: Prompt composed through Supervisor`);
+          }
+
           // Per spec 10_REPL_UX.md L117-118: Pass model to executor
           // Model selection is REPL-local; executor passes it to Claude Code CLI
           const executorResult = await this.claudeCodeExecutor.execute({
             id: task.id,
-            prompt: assembledPrompt,
+            prompt: finalPrompt,
             workingDir: this.session.target_project,
             selectedModel: this.currentSelectedModel,
             taskType: task.taskType,
           });
+
+          // SUP-3 & SUP-7: Apply output template and validate through Supervisor
+          // Per docs/spec/SUPERVISOR_SYSTEM.md: All outputs MUST be validated
+          if (this.supervisor && executorResult.output) {
+            const formatted = this.supervisor.format(executorResult.output, projectId);
+            const validation = this.supervisor.validate(formatted.formatted);
+
+            if (!validation.valid) {
+              // SUP-7: Handle violations
+              const majorViolations = validation.violations.filter(v => v.severity === 'major');
+              if (majorViolations.length > 0) {
+                executionLog.push(`[${new Date().toISOString()}] SUP-7: Major violations detected: ${majorViolations.map(v => v.type).join(', ')}`);
+                // For major violations, mark task as error
+                throw new Error(`Supervisor validation failed: ${majorViolations.map(v => v.message).join('; ')}`);
+              }
+              // Minor violations are logged but don't fail
+              executionLog.push(`[${new Date().toISOString()}] SUP-7: Minor violations: ${validation.violations.map(v => v.type).join(', ')}`);
+            }
+
+            // Update output with formatted version
+            if (formatted.templateApplied) {
+              executorResult.output = formatted.formatted;
+              executionLog.push(`[${new Date().toISOString()}] SUP-3: Output template applied`);
+            }
+          }
 
           // Save executor output for visibility (per redesign)
           this.lastExecutorOutput = executorResult.output || '';

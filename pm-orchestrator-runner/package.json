@@ -13,6 +13,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "postbuild": "node scripts/generate-build-meta.js",
     "test": "mocha --require ts-node/register 'test/**/*.test.ts'",
     "test:unit": "mocha --require ts-node/register 'test/unit/**/*.test.ts'",
     "test:property": "mocha --require ts-node/register 'test/property/**/*.test.ts'",

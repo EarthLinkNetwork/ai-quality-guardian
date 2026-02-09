@@ -1,0 +1,49 @@
+{
+  "run_id": "selftest-20260206-1439",
+  "timestamp": "2026-02-06T05:39:19.428Z",
+  "total": 5,
+  "success": 0,
+  "fail": 5,
+  "results": [
+    {
+      "task_id": "53b48395-4cbf-4bd7-9ebf-b7ec86d7988d",
+      "name": "summary",
+      "status": "ERROR",
+      "ok": false,
+      "reason": "status=ERROR (expected COMPLETE)",
+      "output_length": 0
+    },
+    {
+      "task_id": "ea896fba-167a-4958-807e-184f2222c7fa",
+      "name": "unverified_stop",
+      "status": "ERROR",
+      "ok": false,
+      "reason": "status=ERROR (expected COMPLETE)",
+      "output_length": 0
+    },
+    {
+      "task_id": "0093d6ee-33dd-46cb-b7d9-0a17ffce6978",
+      "name": "contradiction_detect",
+      "status": "ERROR",
+      "ok": false,
+      "reason": "status=ERROR (expected COMPLETE)",
+      "output_length": 0
+    },
+    {
+      "task_id": "9b9d465b-e751-491d-a247-ce800bd4b20b",
+      "name": "evidence_restriction",
+      "status": "ERROR",
+      "ok": false,
+      "reason": "status=ERROR (expected COMPLETE)",
+      "output_length": 0
+    },
+    {
+      "task_id": "dcef1578-a096-4ca4-98a8-05a7426af8b6",
+      "name": "normal_question",
+      "status": "ERROR",
+      "ok": false,
+      "reason": "status=ERROR (expected COMPLETE)",
+      "output_length": 0
+    }
+  ]
+}

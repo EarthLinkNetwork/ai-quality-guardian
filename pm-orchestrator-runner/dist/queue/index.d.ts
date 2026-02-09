@@ -14,4 +14,5 @@
 export { QueueStore, QueueStoreConfig, QueueItem, QueueItemStatus, ClaimResult, TaskGroupSummary, StatusUpdateResult, NamespaceSummary, RunnerRecord, RunnerStatus, VALID_STATUS_TRANSITIONS, isValidStatusTransition, QUEUE_TABLE_NAME, RUNNERS_TABLE_NAME, IQueueStore, TaskTypeValue, } from './queue-store';
 export { QueuePoller, QueuePollerConfig, QueuePollerState, QueuePollerEvents, TaskExecutor, } from './queue-poller';
 export { InMemoryQueueStore, InMemoryQueueStoreConfig, } from './in-memory-queue-store';
+export { FileQueueStore, FileQueueStoreConfig, } from './file-queue-store';
 //# sourceMappingURL=index.d.ts.map

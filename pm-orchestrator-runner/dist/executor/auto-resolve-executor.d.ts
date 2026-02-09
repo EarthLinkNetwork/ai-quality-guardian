@@ -19,6 +19,28 @@ import { BestPracticeRule } from './decision-classifier';
  */
 export type ClarificationType = 'target_file_ambiguous' | 'scope_unclear' | 'action_ambiguous' | 'missing_context' | 'unknown';
 /**
+ * Fallback questions for BLOCKED status
+ * Per docs/spec/BLOCKED_OUTPUT_INVARIANTS.md: INV-1
+ */
+export declare const FALLBACK_QUESTIONS: {
+    default: string;
+    implementation: string;
+    blocked_timeout: string;
+    blocked_interactive: string;
+};
+/**
+ * Select appropriate fallback question based on blocked reason and task type
+ * Exported for testing - INV-1 helper
+ */
+export declare function selectFallbackQuestion(result: ExecutorResult, task: ExecutorTask): string;
+/**
+ * Apply BLOCKED output guard (INV-1)
+ * Ensures BLOCKED status always has non-empty output with actionable question
+ * Per docs/spec/BLOCKED_OUTPUT_INVARIANTS.md
+ * Exported for testing
+ */
+export declare function applyBlockedOutputGuard(result: ExecutorResult, task: ExecutorTask): ExecutorResult;
+/**
  * Parsed clarification from output
  */
 export interface ParsedClarification {

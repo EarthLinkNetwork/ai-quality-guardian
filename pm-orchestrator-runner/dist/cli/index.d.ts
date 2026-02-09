@@ -12,7 +12,7 @@
  *   pm status <session-id>                   - Get session status
  *   pm validate <path>                       - Validate project structure (per spec 05_CLI.md L23)
  */
-import { QueueItem } from '../queue';
+import { QueueItem } from '../queue/index';
 /**
  * Build TaskContext block from QueueItem metadata.
  * This gives the LLM access to "what the UI screen shows" so users can

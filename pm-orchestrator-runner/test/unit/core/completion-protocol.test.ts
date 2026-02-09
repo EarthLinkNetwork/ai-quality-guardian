@@ -8,6 +8,14 @@
  * AC2: Stale run_id detection (old outputs cannot be used as evidence)
  * AC3: failing>0 => never COMPLETE
  * AC4: No mixing of old and new run results
+ *
+ * Phase 1 New Functions:
+ * - generateRunId
+ * - parseTestOutput
+ * - extractFailingTests
+ * - buildCompletionReport
+ * - isStale
+ * - formatCompletionReport
  */
 
 import { describe, it, beforeEach } from 'mocha';
@@ -17,6 +25,15 @@ import {
   CompletionVerdict,
   CompletionProtocol,
   StaleRunError,
+  generateRunId,
+  parseTestOutput,
+  extractFailingTests,
+  buildCompletionReport,
+  isStale,
+  formatCompletionReport,
+  TestResults,
+  FailingTest,
+  CompletionReport,
 } from '../../../src/core/completion-protocol';
 
 describe('Completion Protocol', () => {
@@ -420,6 +437,337 @@ describe('Completion Protocol', () => {
       // Should not throw - no run_id enforcement
       const verdict = protocol.judge([gate]);
       assert.strictEqual(verdict.final_status, 'COMPLETE');
+    });
+  });
+
+  // ─── Phase 1: generateRunId ───
+
+  describe('generateRunId', () => {
+    it('should have correct format (YYYYMMDD-HHmmss-MMM-<7char>-<8char>)', () => {
+      const runId = generateRunId('abc1234def5678', 'npm test');
+
+      // Format: YYYYMMDD-HHmmss-MMM-<7char>-<8char>
+      // Example: 20260207-143025-123-abc1234-a1b2c3d4
+      const parts = runId.split('-');
+      assert.strictEqual(parts.length, 5, `Expected 5 parts, got ${parts.length}: ${runId}`);
+      assert.strictEqual(parts[0].length, 8, 'Date part should be 8 chars');
+      assert.strictEqual(parts[1].length, 6, 'Time part should be 6 chars');
+      assert.strictEqual(parts[2].length, 3, 'Millis part should be 3 chars');
+      assert.strictEqual(parts[3].length, 7, 'Short SHA should be 7 chars');
+      assert.strictEqual(parts[4].length, 8, 'Command hash should be 8 chars');
+    });
+
+    it('should generate same cmdHash for same command', () => {
+      const runId1 = generateRunId('abc1234', 'npm test');
+      const runId2 = generateRunId('abc1234', 'npm test');
+
+      // cmdHash (last part) should be the same
+      const cmdHash1 = runId1.split('-')[4];
+      const cmdHash2 = runId2.split('-')[4];
+      assert.strictEqual(cmdHash1, cmdHash2);
+    });
+
+    it('should generate different cmdHash for different commands', () => {
+      const runId1 = generateRunId('abc1234', 'npm test');
+      const runId2 = generateRunId('abc1234', 'npm run lint');
+
+      // cmdHash (last part) should be different
+      const cmdHash1 = runId1.split('-')[4];
+      const cmdHash2 = runId2.split('-')[4];
+      assert.notStrictEqual(cmdHash1, cmdHash2);
+    });
+
+    it('should truncate long SHA to 7 characters', () => {
+      const runId = generateRunId('abc1234567890abcdef', 'npm test');
+      const shortSha = runId.split('-')[3];
+      assert.strictEqual(shortSha, 'abc1234');
+    });
+
+    it('should pad short SHA to 7 characters', () => {
+      const runId = generateRunId('abc', 'npm test');
+      const shortSha = runId.split('-')[3];
+      assert.strictEqual(shortSha.length, 7);
+      assert.strictEqual(shortSha.substring(0, 3), 'abc');
+    });
+  });
+
+  // ─── Phase 1: parseTestOutput ───
+
+  describe('parseTestOutput', () => {
+    it('should parse Mocha output correctly', () => {
+      const stdout = `
+  10 passing (2s)
+  2 failing
+  1 pending
+`;
+      const result = parseTestOutput(stdout);
+      assert.strictEqual(result.passing, 10);
+      assert.strictEqual(result.failing, 2);
+      assert.strictEqual(result.pending, 1);
+    });
+
+    it('should handle failing=0 case', () => {
+      const stdout = `
+  25 passing (5s)
+`;
+      const result = parseTestOutput(stdout);
+      assert.strictEqual(result.passing, 25);
+      assert.strictEqual(result.failing, 0);
+      assert.strictEqual(result.pending, 0);
+    });
+
+    it('should handle empty/invalid output', () => {
+      assert.deepStrictEqual(parseTestOutput(''), { passing: 0, failing: 0, pending: 0 });
+      assert.deepStrictEqual(parseTestOutput(null as any), { passing: 0, failing: 0, pending: 0 });
+      assert.deepStrictEqual(parseTestOutput(undefined as any), { passing: 0, failing: 0, pending: 0 });
+    });
+
+    it('should parse Jest output format', () => {
+      const stdout = `
+Tests: 15 passed, 3 failed, 18 total
+`;
+      const result = parseTestOutput(stdout);
+      assert.strictEqual(result.passing, 15);
+      assert.strictEqual(result.failing, 3);
+    });
+
+    it('should handle Jest skipped tests', () => {
+      const stdout = `
+Tests: 10 passed, 0 failed, 2 skipped, 12 total
+`;
+      const result = parseTestOutput(stdout);
+      assert.strictEqual(result.pending, 2);
+    });
+  });
+
+  // ─── Phase 1: extractFailingTests ───
+
+  describe('extractFailingTests', () => {
+    it('should extract Mocha-style failing test names', () => {
+      const stdout = `
+  1) MyModule should work correctly:
+     AssertionError: expected true to be false
+
+  2) Another test should pass:
+     Error: timeout
+`;
+      const tests = extractFailingTests(stdout);
+      assert.ok(tests.length >= 1);
+      assert.ok(tests.some(t => t.name.includes('MyModule')));
+    });
+
+    it('should mark IN_SCOPE for regular tests', () => {
+      const stdout = `
+  1) unit test should work:
+`;
+      const tests = extractFailingTests(stdout);
+      if (tests.length > 0) {
+        assert.strictEqual(tests[0].scope, 'IN_SCOPE');
+      }
+    });
+
+    it('should mark OUT_OF_SCOPE for integration tests', () => {
+      const stdout = `
+  1) integration test external API:
+`;
+      const tests = extractFailingTests(stdout);
+      if (tests.length > 0) {
+        assert.strictEqual(tests[0].scope, 'OUT_OF_SCOPE');
+      }
+    });
+
+    it('should handle empty/invalid output', () => {
+      assert.deepStrictEqual(extractFailingTests(''), []);
+      assert.deepStrictEqual(extractFailingTests(null as any), []);
+    });
+
+    it('should extract Jest-style failing tests', () => {
+      const stdout = `
+  ✕ should validate input (15 ms)
+  ✕ external API test should work (200 ms)
+`;
+      const tests = extractFailingTests(stdout);
+      assert.ok(tests.length >= 1);
+    });
+  });
+
+  // ─── Phase 1: buildCompletionReport ───
+
+  describe('buildCompletionReport', () => {
+    it('should return COMPLETE when failing=0 and exit_code=0', () => {
+      const report = buildCompletionReport({
+        runId: 'run_1',
+        commitSha: 'abc1234',
+        command: 'npm test',
+        exitCode: 0,
+        stdout: '10 passing (2s)',
+      });
+
+      assert.strictEqual(report.final_status, 'COMPLETE');
+      assert.strictEqual(report.test_results.passing, 10);
+      assert.strictEqual(report.test_results.failing, 0);
+    });
+
+    it('should return INCOMPLETE when failing>0 (AC3)', () => {
+      const report = buildCompletionReport({
+        runId: 'run_1',
+        commitSha: 'abc1234',
+        command: 'npm test',
+        exitCode: 1,
+        stdout: '10 passing\n2 failing',
+      });
+
+      assert.strictEqual(report.final_status, 'INCOMPLETE');
+      assert.strictEqual(report.test_results.failing, 2);
+    });
+
+    it('should return INCOMPLETE when exit_code != 0', () => {
+      const report = buildCompletionReport({
+        runId: 'run_1',
+        commitSha: 'abc1234',
+        command: 'npm test',
+        exitCode: 19,
+        stdout: '10 passing',
+      });
+
+      assert.strictEqual(report.final_status, 'INCOMPLETE');
+    });
+
+    it('should include all required fields', () => {
+      const report = buildCompletionReport({
+        runId: 'run_test',
+        commitSha: 'abc1234567',
+        command: 'npm test',
+        exitCode: 0,
+        stdout: '5 passing',
+      });
+
+      assert.ok(report.run_id);
+      assert.ok(report.commit_sha);
+      assert.ok(report.command);
+      assert.ok(typeof report.exit_code === 'number');
+      assert.ok(report.test_results);
+      assert.ok(Array.isArray(report.failing_details));
+      assert.ok(report.final_status);
+      assert.strictEqual(report.stale, false);
+      assert.ok(report.timestamp);
+    });
+  });
+
+  // ─── Phase 1: isStale ───
+
+  describe('isStale', () => {
+    it('should return false for same run_id', () => {
+      const runId = '20260207-143025-123-abc1234-a1b2c3d4';
+      assert.strictEqual(isStale(runId, runId), false);
+    });
+
+    it('should return true for different run_id (AC2)', () => {
+      const oldRunId = '20260207-143025-123-abc1234-a1b2c3d4';
+      const newRunId = '20260207-143030-456-abc1234-a1b2c3d4';
+      assert.strictEqual(isStale(oldRunId, newRunId), true);
+    });
+
+    it('should return true for older timestamp (AC4)', () => {
+      const oldRunId = '20260207-143025-123-abc1234-a1b2c3d4';
+      const newRunId = '20260207-153025-123-abc1234-a1b2c3d4'; // 1 hour later
+      assert.strictEqual(isStale(oldRunId, newRunId), true);
+    });
+
+    it('should return true for empty/missing run_id', () => {
+      assert.strictEqual(isStale('', 'run_1'), true);
+      assert.strictEqual(isStale('run_1', ''), true);
+    });
+  });
+
+  // ─── Phase 1: formatCompletionReport ───
+
+  describe('formatCompletionReport', () => {
+    it('should include "ALL PASS" only when failing=0 (AC1)', () => {
+      const report: CompletionReport = {
+        run_id: 'run_1',
+        commit_sha: 'abc1234',
+        command: 'npm test',
+        exit_code: 0,
+        test_results: { passing: 10, failing: 0, pending: 0 },
+        failing_details: [],
+        final_status: 'COMPLETE',
+        stale: false,
+        timestamp: new Date().toISOString(),
+      };
+
+      const formatted = formatCompletionReport(report);
+      assert.ok(formatted.includes('ALL PASS'));
+    });
+
+    it('should NOT include "ALL PASS" when failing>0', () => {
+      const report: CompletionReport = {
+        run_id: 'run_1',
+        commit_sha: 'abc1234',
+        command: 'npm test',
+        exit_code: 1,
+        test_results: { passing: 10, failing: 2, pending: 0 },
+        failing_details: [],
+        final_status: 'INCOMPLETE',
+        stale: false,
+        timestamp: new Date().toISOString(),
+      };
+
+      const formatted = formatCompletionReport(report);
+      assert.ok(!formatted.includes('ALL PASS'));
+      assert.ok(formatted.includes('2 FAILING'));
+    });
+
+    it('should show failing test details when present', () => {
+      const report: CompletionReport = {
+        run_id: 'run_1',
+        commit_sha: 'abc1234',
+        command: 'npm test',
+        exit_code: 1,
+        test_results: { passing: 10, failing: 1, pending: 0 },
+        failing_details: [{ name: 'MyTest should work', scope: 'IN_SCOPE' }],
+        final_status: 'INCOMPLETE',
+        stale: false,
+        timestamp: new Date().toISOString(),
+      };
+
+      const formatted = formatCompletionReport(report);
+      assert.ok(formatted.includes('MyTest should work'));
+      assert.ok(formatted.includes('Failing Tests:'));
+    });
+
+    it('should mark OUT_OF_SCOPE tests', () => {
+      const report: CompletionReport = {
+        run_id: 'run_1',
+        commit_sha: 'abc1234',
+        command: 'npm test',
+        exit_code: 1,
+        test_results: { passing: 10, failing: 1, pending: 0 },
+        failing_details: [{ name: 'external API test', scope: 'OUT_OF_SCOPE' }],
+        final_status: 'INCOMPLETE',
+        stale: false,
+        timestamp: new Date().toISOString(),
+      };
+
+      const formatted = formatCompletionReport(report);
+      assert.ok(formatted.includes('[OUT_OF_SCOPE]'));
+    });
+
+    it('should include stale warning when stale=true', () => {
+      const report: CompletionReport = {
+        run_id: 'run_1',
+        commit_sha: 'abc1234',
+        command: 'npm test',
+        exit_code: 0,
+        test_results: { passing: 10, failing: 0, pending: 0 },
+        failing_details: [],
+        final_status: 'COMPLETE',
+        stale: true,
+        timestamp: new Date().toISOString(),
+      };
+
+      const formatted = formatCompletionReport(report);
+      assert.ok(formatted.includes('stale'));
     });
   });
 });

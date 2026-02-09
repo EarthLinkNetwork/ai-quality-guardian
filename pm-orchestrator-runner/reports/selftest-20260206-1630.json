@@ -1,0 +1,49 @@
+{
+  "run_id": "selftest-20260206-1630",
+  "timestamp": "2026-02-06T07:30:59.106Z",
+  "total": 5,
+  "success": 5,
+  "fail": 0,
+  "results": [
+    {
+      "task_id": "77befb0e-195e-4c04-abf6-f9677d802913",
+      "name": "summary",
+      "status": "COMPLETE",
+      "ok": true,
+      "reason": "COMPLETE with output",
+      "output_length": 219
+    },
+    {
+      "task_id": "74cd474b-1766-463c-a9d8-5a71e83f5fa6",
+      "name": "unverified_stop",
+      "status": "COMPLETE",
+      "ok": true,
+      "reason": "COMPLETE with output",
+      "output_length": 1096
+    },
+    {
+      "task_id": "7625bf82-7a7a-45de-bce3-29cad0974933",
+      "name": "contradiction_detect",
+      "status": "COMPLETE",
+      "ok": true,
+      "reason": "COMPLETE with output",
+      "output_length": 1099
+    },
+    {
+      "task_id": "877aa0df-dec8-4415-a406-7ceccce19143",
+      "name": "evidence_restriction",
+      "status": "COMPLETE",
+      "ok": true,
+      "reason": "COMPLETE with output",
+      "output_length": 1096
+    },
+    {
+      "task_id": "360c9697-16e0-455c-8267-1332b5864e0a",
+      "name": "normal_question",
+      "status": "COMPLETE",
+      "ok": true,
+      "reason": "COMPLETE with output",
+      "output_length": 1084
+    }
+  ]
+}

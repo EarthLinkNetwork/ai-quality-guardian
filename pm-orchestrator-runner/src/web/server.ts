@@ -895,6 +895,12 @@ export function createApp(config: WebServerConfig): Express {
       'GET /api/projects/:projectId/dev/git/gateStatus',
       'POST /api/projects/:projectId/dev/git/commit',
       'POST /api/projects/:projectId/dev/git/push',
+      // Runner Controls routes
+      'GET /api/runner/status',
+      'GET /api/runner/preflight',
+      'POST /api/runner/stop',
+      'POST /api/runner/build',
+      'POST /api/runner/restart',
       // Session Logs routes (Session Log Tree)
       'GET /api/projects/:projectId/session-logs/tree',
       'GET /api/projects/:projectId/session-logs/runs',

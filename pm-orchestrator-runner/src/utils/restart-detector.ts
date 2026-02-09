@@ -7,7 +7,7 @@
  * - Default is rollback → replay for safety
  */
 
-import { QueueItem, QueueItemStatus } from '../queue';
+import { QueueItem, QueueItemStatus } from '../queue/index';
 
 /**
  * Progress event types emitted by executor

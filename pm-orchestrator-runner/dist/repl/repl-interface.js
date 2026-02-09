@@ -1469,16 +1469,16 @@ class REPLInterface extends events_1.EventEmitter {
             this.print('Env: ALLOWLIST mode (only PATH, HOME, etc. passed to subprocess)');
         }
         else {
-            // Check for API keys when using API mode
-            const anthropicKey = process.env.ANTHROPIC_API_KEY;
-            const openaiKey = process.env.OPENAI_API_KEY;
+            // Check for API keys when using API mode - use centralized getApiKey() for DI compliance
+            const anthropicKey = (0, global_config_1.getApiKey)('anthropic');
+            const openaiKey = (0, global_config_1.getApiKey)('openai');
             this.print('Executor: API Mode');
             this.print('  ANTHROPIC_API_KEY: ' + (anthropicKey ? 'SET' : 'NOT SET'));
             this.print('  OPENAI_API_KEY: ' + (openaiKey ? 'SET' : 'NOT SET'));
             if (!anthropicKey && !openaiKey) {
                 this.print('');
                 this.print('  WARNING: No API keys configured!');
-                this.print('  Set ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable.');
+                this.print('  Set ANTHROPIC_API_KEY or OPENAI_API_KEY, or run /config to set in config file.');
             }
         }
         this.print('');

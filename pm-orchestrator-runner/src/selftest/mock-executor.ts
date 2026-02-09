@@ -5,7 +5,7 @@
  * Generates appropriate mock outputs based on scenario expectations.
  */
 
-import { IQueueStore, QueueItem } from '../queue';
+import { IQueueStore, QueueItem } from '../queue/index';
 import { SelftestScenario } from './types';
 
 /**

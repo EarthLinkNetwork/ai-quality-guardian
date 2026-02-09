@@ -60,6 +60,7 @@ const output_control_manager_1 = require("../output/output-control-manager");
 const lifecycle_controller_1 = require("../lifecycle/lifecycle-controller");
 const agent_pool_1 = require("../pool/agent-pool");
 const task_log_manager_1 = require("../logging/task-log-manager");
+const index_1 = require("../supervisor/index");
 const enums_1 = require("../models/enums");
 const session_1 = require("../models/session");
 const error_codes_1 = require("../errors/error-codes");
@@ -123,6 +124,9 @@ class RunnerCore extends events_1.EventEmitter {
     initialized = false;
     // Claude Code Executor for natural language task execution
     claudeCodeExecutor = null;
+    // Supervisor for SUP-1 through SUP-7 compliance
+    // Per docs/spec/SUPERVISOR_SYSTEM.md: All LLM calls MUST go through Supervisor
+    supervisor = null;
     // Executor visibility tracking (per redesign)
     currentExecutorMode = 'none';
     lastExecutorOutput = '';
@@ -283,6 +287,9 @@ class RunnerCore extends events_1.EventEmitter {
         this.promptAssembler = new prompt_assembler_1.PromptAssembler({
             projectPath: targetProject,
         });
+        // Initialize Supervisor for SUP-1 through SUP-7 compliance
+        // Per docs/spec/SUPERVISOR_SYSTEM.md: All LLM calls MUST go through Supervisor
+        this.supervisor = (0, index_1.getSupervisor)(targetProject);
         // Initialize TaskLogManager for Property 26/27: TaskLog Lifecycle Recording
         // Per spec 06_CORRECTNESS_PROPERTIES.md Property 26: Fail-Closed Logging
         this.taskLogManager = new task_log_manager_1.TaskLogManager(targetProject);
@@ -555,15 +562,46 @@ class RunnerCore extends events_1.EventEmitter {
                             executionLog.push(`[${new Date().toISOString()}] WARNING: Prompt assembly failed, using raw input`);
                         }
                     }
+                    // SUP-2: Compose prompt through Supervisor (GLOBAL → PROJECT → USER)
+                    // Per docs/spec/SUPERVISOR_SYSTEM.md: All prompts MUST be composed through Supervisor
+                    let finalPrompt = assembledPrompt;
+                    const projectId = this.session?.session_id || 'default';
+                    if (this.supervisor) {
+                        const composed = this.supervisor.compose(assembledPrompt, projectId);
+                        finalPrompt = composed.composed;
+                        executionLog.push(`[${new Date().toISOString()}] SUP-2: Prompt composed through Supervisor`);
+                    }
                     // Per spec 10_REPL_UX.md L117-118: Pass model to executor
                     // Model selection is REPL-local; executor passes it to Claude Code CLI
                     const executorResult = await this.claudeCodeExecutor.execute({
                         id: task.id,
-                        prompt: assembledPrompt,
+                        prompt: finalPrompt,
                         workingDir: this.session.target_project,
                         selectedModel: this.currentSelectedModel,
                         taskType: task.taskType,
                     });
+                    // SUP-3 & SUP-7: Apply output template and validate through Supervisor
+                    // Per docs/spec/SUPERVISOR_SYSTEM.md: All outputs MUST be validated
+                    if (this.supervisor && executorResult.output) {
+                        const formatted = this.supervisor.format(executorResult.output, projectId);
+                        const validation = this.supervisor.validate(formatted.formatted);
+                        if (!validation.valid) {
+                            // SUP-7: Handle violations
+                            const majorViolations = validation.violations.filter(v => v.severity === 'major');
+                            if (majorViolations.length > 0) {
+                                executionLog.push(`[${new Date().toISOString()}] SUP-7: Major violations detected: ${majorViolations.map(v => v.type).join(', ')}`);
+                                // For major violations, mark task as error
+                                throw new Error(`Supervisor validation failed: ${majorViolations.map(v => v.message).join('; ')}`);
+                            }
+                            // Minor violations are logged but don't fail
+                            executionLog.push(`[${new Date().toISOString()}] SUP-7: Minor violations: ${validation.violations.map(v => v.type).join(', ')}`);
+                        }
+                        // Update output with formatted version
+                        if (formatted.templateApplied) {
+                            executorResult.output = formatted.formatted;
+                            executionLog.push(`[${new Date().toISOString()}] SUP-3: Output template applied`);
+                        }
+                    }
                     // Save executor output for visibility (per redesign)
                     this.lastExecutorOutput = executorResult.output || '';
                     this.lastFilesModified = executorResult.files_modified || [];

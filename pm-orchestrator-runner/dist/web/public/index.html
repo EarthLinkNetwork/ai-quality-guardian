@@ -1661,6 +1661,142 @@
     .safety-dialog-actions .btn-danger:hover {
       background: #b91c1c;
     }
+    /* Runner Controls Styles */
+    .runner-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .runner-controls-status {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 16px;
+      background: #f3f4f6;
+      border-radius: 8px;
+    }
+
+    .runner-controls-status .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .runner-controls-status .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .runner-controls-status .status-dot.running {
+      background: #22c55e;
+      box-shadow: 0 0 8px #22c55e;
+    }
+
+    .runner-controls-status .status-dot.stopped {
+      background: #ef4444;
+    }
+
+    .runner-controls-status .status-dot.building {
+      background: #f59e0b;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .runner-controls-status .status-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .runner-controls-status .status-label {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    .runner-controls-status .status-detail {
+      font-size: 0.75rem;
+      color: #6b7280;
+      font-family: monospace;
+    }
+
+    .runner-controls-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .runner-controls-actions .btn {
+      min-width: 100px;
+    }
+
+    .runner-controls-actions .btn-build {
+      background: #3b82f6;
+      color: white;
+    }
+
+    .runner-controls-actions .btn-build:hover {
+      background: #2563eb;
+    }
+
+    .runner-controls-actions .btn-restart {
+      background: #f59e0b;
+      color: white;
+    }
+
+    .runner-controls-actions .btn-restart:hover {
+      background: #d97706;
+    }
+
+    .runner-controls-actions .btn-stop {
+      background: #ef4444;
+      color: white;
+    }
+
+    .runner-controls-actions .btn-stop:hover {
+      background: #dc2626;
+    }
+
+    .runner-controls-actions .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .runner-controls-result {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+
+    .runner-controls-result.success {
+      background: #f0fdf4;
+      border: 1px solid #22c55e;
+      color: #166534;
+    }
+
+    .runner-controls-result.error {
+      background: #fef2f2;
+      border: 1px solid #ef4444;
+      color: #991b1b;
+    }
+
+    .runner-controls-result pre {
+      margin-top: 8px;
+      padding: 8px;
+      background: rgba(0,0,0,0.05);
+      border-radius: 4px;
+      font-size: 0.8rem;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
   </style>
 </head>
 <body>
@@ -2054,9 +2190,78 @@
           </div>
           ` : ''}
 
+          ${task.status === 'AWAITING_RESPONSE' || task.show_reply_ui ? `
+          <div class="card" style="border-left: 4px solid #3b82f6;">
+            <h3>Reply</h3>
+            <form id="reply-form" data-task-id="${escapeHtml(task.task_id)}">
+              <div class="form-group">
+                <label for="replyBox">Your Reply (Enter to send, Shift+Enter for newline)</label>
+                <textarea id="replyBox" name="reply" rows="4"
+                  placeholder="Enter your reply here..."
+                  style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; resize: vertical; min-height: 100px;"
+                  required></textarea>
+              </div>
+              <div id="reply-message"></div>
+              <button type="submit" id="reply-btn" class="btn btn-primary" style="margin-top: 10px;">
+                Send Reply
+              </button>
+            </form>
+          </div>
+          ` : ''}
+
           ${errorSection}
           ${logEntries}
         `;
+
+        // AC-CHAT-3, AC-INPUT-1: Setup reply form if present
+        const replyForm = document.getElementById('reply-form');
+        if (replyForm) {
+          const replyBox = document.getElementById('replyBox');
+          const replyBtn = document.getElementById('reply-btn');
+          const replyMessage = document.getElementById('reply-message');
+
+          // AC-INPUT-1: Enter to send, Shift+Enter for newline
+          replyBox.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              replyForm.dispatchEvent(new Event('submit', { cancelable: true }));
+            }
+          });
+
+          replyForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const taskId = replyForm.dataset.taskId;
+            const reply = replyBox.value.trim();
+
+            if (!reply) {
+              replyMessage.innerHTML = '<div class="error-message">Please enter a reply.</div>';
+              return;
+            }
+
+            replyBtn.disabled = true;
+            replyBtn.textContent = 'Sending...';
+
+            try {
+              const result = await api('/tasks/' + encodeURIComponent(taskId) + '/reply', {
+                method: 'POST',
+                body: JSON.stringify({ reply }),
+              });
+
+              replyMessage.innerHTML = '<div class="success-message">Reply sent! Task resumed.</div>';
+              replyBox.value = '';
+
+              // Refresh task detail after short delay
+              setTimeout(() => {
+                renderTaskDetail(taskId);
+              }, 1000);
+            } catch (error) {
+              replyMessage.innerHTML = '<div class="error-message">Error: ' + escapeHtml(error.message) + '</div>';
+            } finally {
+              replyBtn.disabled = false;
+              replyBtn.textContent = 'Send Reply';
+            }
+          });
+        }
       } catch (error) {
         app.innerHTML = `
           <div class="page-header">
@@ -2307,6 +2512,30 @@
             </div>
           </div>
 
+
+          <!-- Runner Controls (AC-RC-UI-1) -->
+          <div data-testid="settings-runner-controls" class="card settings-section">
+            <h3>Runner Controls</h3>
+            <p class="settings-hint">Manage the pm-orchestrator-runner process. Build, restart, or stop the runner.</p>
+            <div class="runner-controls">
+              <div class="runner-controls-status" id="runner-controls-status">
+                <div class="status-indicator">
+                  <span class="status-dot stopped" id="runner-status-dot"></span>
+                  <div class="status-info">
+                    <span class="status-label" id="runner-status-label">Checking...</span>
+                    <span class="status-detail" id="runner-status-detail"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="runner-controls-actions">
+                <button class="btn btn-build" id="btn-runner-build" onclick="runnerBuild()" disabled>Build</button>
+                <button class="btn btn-restart" id="btn-runner-restart" onclick="runnerRestart()" disabled>Restart</button>
+                <button class="btn btn-stop" id="btn-runner-stop" onclick="runnerStop()" disabled>Stop</button>
+              </div>
+              <div id="runner-controls-result" class="runner-controls-result" style="display: none;"></div>
+            </div>
+          </div>
+
           <!-- Global: API Keys (ONLY in Global tab) -->
           <div data-testid="settings-apikeys" class="card settings-section">
             <h3>API Keys</h3>
@@ -2364,6 +2593,9 @@
         </div>
         ${getSettingsStyles()}
       `;
+      
+      // Load Runner Controls status after rendering
+      loadRunnerControlsStatus();
     }
 
     // Render PROJECT settings tab (overrides)
@@ -2718,6 +2950,181 @@
         alert(`Error: ${error.message}`);
       }
     }
+
+    // ===================
+    // Runner Controls (AC-RC-UI-1, AC-RC-API-1)
+    // ===================
+    let runnerControlsState = {
+      isRunning: false,
+      pid: null,
+      build_sha: null,
+      build_timestamp: null,
+      isOperationInProgress: false
+    };
+
+    // Load runner status from API
+    async function loadRunnerControlsStatus() {
+      try {
+        const response = await fetch('/api/runner/status');
+        if (!response.ok) throw new Error('Failed to fetch runner status');
+        const data = await response.json();
+        
+        runnerControlsState.isRunning = data.isRunning;
+        runnerControlsState.pid = data.pid;
+        runnerControlsState.build_sha = data.build_sha;
+        runnerControlsState.build_timestamp = data.build_timestamp;
+        
+        updateRunnerControlsUI();
+      } catch (error) {
+        console.warn('Failed to load runner status:', error);
+        // Still update UI to show error state
+        runnerControlsState.isRunning = false;
+        updateRunnerControlsUI();
+      }
+    }
+
+    // Update Runner Controls UI based on state
+    function updateRunnerControlsUI() {
+      const dot = document.getElementById('runner-status-dot');
+      const label = document.getElementById('runner-status-label');
+      const detail = document.getElementById('runner-status-detail');
+      const btnBuild = document.getElementById('btn-runner-build');
+      const btnRestart = document.getElementById('btn-runner-restart');
+      const btnStop = document.getElementById('btn-runner-stop');
+      
+      if (!dot || !label) return; // Not on settings page
+      
+      const { isRunning, pid, build_sha, build_timestamp, isOperationInProgress } = runnerControlsState;
+      
+      // Update status indicator
+      if (isOperationInProgress) {
+        dot.className = 'status-dot building';
+        label.textContent = 'Operation in progress...';
+        detail.textContent = '';
+      } else if (isRunning) {
+        dot.className = 'status-dot running';
+        label.textContent = 'Running';
+        let detailText = pid ? 'PID: ' + pid : '';
+        if (build_sha) {
+          detailText += (detailText ? ' | ' : '') + 'Build: ' + build_sha;
+        }
+        if (build_timestamp) {
+          const ts = new Date(build_timestamp).toLocaleString();
+          detailText += (detailText ? ' | ' : '') + 'Built: ' + ts;
+        }
+        detail.textContent = detailText;
+      } else {
+        dot.className = 'status-dot stopped';
+        label.textContent = 'Stopped';
+        detail.textContent = 'Runner is not running';
+      }
+      
+      // Update button states
+      if (btnBuild) btnBuild.disabled = isOperationInProgress;
+      if (btnRestart) btnRestart.disabled = isOperationInProgress || !isRunning;
+      if (btnStop) btnStop.disabled = isOperationInProgress || !isRunning;
+    }
+
+    // Show operation result
+    function showRunnerResult(success, message, output) {
+      const resultDiv = document.getElementById('runner-controls-result');
+      if (!resultDiv) return;
+      
+      resultDiv.style.display = 'block';
+      resultDiv.className = 'runner-controls-result ' + (success ? 'success' : 'error');
+      
+      let html = '<strong>' + (success ? 'Success' : 'Error') + ':</strong> ' + escapeHtml(message);
+      if (output) {
+        html += '<pre>' + escapeHtml(output) + '</pre>';
+      }
+      resultDiv.innerHTML = html;
+      
+      // Auto-hide success messages after 5 seconds
+      if (success) {
+        setTimeout(() => {
+          if (resultDiv) resultDiv.style.display = 'none';
+        }, 5000);
+      }
+    }
+
+    // Build action
+    async function runnerBuild() {
+      if (runnerControlsState.isOperationInProgress) return;
+      
+      runnerControlsState.isOperationInProgress = true;
+      updateRunnerControlsUI();
+      
+      try {
+        const response = await fetch('/api/runner/build', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+          showRunnerResult(true, 'Build completed successfully', 'Build SHA: ' + (data.build_sha || 'N/A') + '\nDuration: ' + (data.duration_ms || 0) + 'ms');
+          runnerControlsState.build_sha = data.build_sha;
+          runnerControlsState.build_timestamp = data.build_timestamp;
+        } else {
+          showRunnerResult(false, data.message || 'Build failed', data.output || data.error);
+        }
+      } catch (error) {
+        showRunnerResult(false, 'Build request failed', error.message);
+      } finally {
+        runnerControlsState.isOperationInProgress = false;
+        await loadRunnerControlsStatus();
+      }
+    }
+
+    // Restart action
+    async function runnerRestart() {
+      if (runnerControlsState.isOperationInProgress) return;
+      if (!confirm('Restart the runner? This will briefly interrupt task processing.')) return;
+      
+      runnerControlsState.isOperationInProgress = true;
+      updateRunnerControlsUI();
+      
+      try {
+        const response = await fetch('/api/runner/restart', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+          const info = 'Old PID: ' + (data.old_pid || 'N/A') + '\nNew PID: ' + (data.new_pid || 'N/A') + '\nBuild SHA: ' + (data.build_sha || 'N/A');
+          showRunnerResult(true, 'Restart completed successfully', info);
+        } else {
+          showRunnerResult(false, data.message || 'Restart failed', data.output || data.error);
+        }
+      } catch (error) {
+        showRunnerResult(false, 'Restart request failed', error.message);
+      } finally {
+        runnerControlsState.isOperationInProgress = false;
+        await loadRunnerControlsStatus();
+      }
+    }
+
+    // Stop action
+    async function runnerStop() {
+      if (runnerControlsState.isOperationInProgress) return;
+      if (!confirm('Stop the runner? Task processing will stop until manually restarted.')) return;
+      
+      runnerControlsState.isOperationInProgress = true;
+      updateRunnerControlsUI();
+      
+      try {
+        const response = await fetch('/api/runner/stop', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+          showRunnerResult(true, data.message || 'Runner stopped', 
+            'Duration: ' + (data.duration_ms || 0) + 'ms');
+        } else {
+          showRunnerResult(false, data.message || 'Stop failed', data.error);
+        }
+      } catch (error) {
+        showRunnerResult(false, 'Stop request failed', error.message);
+      } finally {
+        runnerControlsState.isOperationInProgress = false;
+        await loadRunnerControlsStatus();
+      }
+    }
+
 
     // ===================
     // Agent Launcher

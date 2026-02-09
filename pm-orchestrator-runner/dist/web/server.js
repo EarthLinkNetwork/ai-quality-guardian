@@ -34,6 +34,8 @@ const chat_1 = require("./routes/chat");
 const selfhost_1 = require("./routes/selfhost");
 const devconsole_1 = require("./routes/devconsole");
 const session_logs_1 = require("./routes/session-logs");
+const runner_controls_1 = require("./routes/runner-controls");
+const supervisor_config_1 = require("./routes/supervisor-config");
 const task_type_detector_1 = require("../utils/task-type-detector");
 /**
  * Derive namespace from folder path (same logic as CLI)
@@ -54,7 +56,7 @@ function getStateDir(folderPath) {
  */
 function createApp(config) {
     const app = (0, express_1.default)();
-    const { queueStore, sessionId, namespace, projectRoot, stateDir } = config;
+    const { queueStore, sessionId, namespace, projectRoot, stateDir, queueStoreType } = config;
     // Middleware
     app.use(express_1.default.json());
     app.use(express_1.default.urlencoded({ extended: true }));
@@ -85,6 +87,12 @@ function createApp(config) {
         app.use("/api", (0, devconsole_1.createDevconsoleRoutes)(stateDir));
         // Session Logs routes (selfhost-runner only, Session Log Tree feature)
         app.use("/api", (0, session_logs_1.createSessionLogsRoutes)(stateDir));
+        // Runner Controls routes (selfhost-runner only)
+        // Per AC-OPS-1: Web UI provides Run/Stop/Build/Restart controls
+        app.use("/api/runner", (0, runner_controls_1.createRunnerControlsRoutes)({ projectRoot: projectRoot || process.cwd() }));
+        // Supervisor Config routes (SUP-4, SUP-5)
+        // Per docs/spec/SUPERVISOR_SYSTEM.md
+        app.use("/api/supervisor", (0, supervisor_config_1.createSupervisorConfigRoutes)({ projectRoot: projectRoot || process.cwd() }));
     }
     // ===================
     // REST API Routes (v2)
@@ -203,6 +211,7 @@ function createApp(config) {
                 task_group_id,
                 tasks: tasks.map(t => ({
                     task_id: t.task_id,
+                    task_group_id: t.task_group_id,
                     status: t.status,
                     prompt: t.prompt,
                     created_at: t.created_at,
@@ -236,6 +245,8 @@ function createApp(config) {
                 });
                 return;
             }
+            // AC-CHAT-3: show_reply_ui = true when AWAITING_RESPONSE
+            const showReplyUI = task.status === 'AWAITING_RESPONSE';
             res.json({
                 task_id: task.task_id,
                 task_group_id: task.task_group_id,
@@ -249,6 +260,7 @@ function createApp(config) {
                 output: task.output, // Task output for READ_INFO/REPORT (AC-CHAT-002, AC-CHAT-003)
                 task_type: task.task_type,
                 clarification: task.clarification, // Clarification details for AWAITING_RESPONSE (AC-CHAT-005)
+                show_reply_ui: showReplyUI, // AC-CHAT-3: Reply UI required for AWAITING_RESPONSE
             });
         }
         catch (error) {
@@ -540,14 +552,40 @@ function createApp(config) {
     // ===================
     /**
      * GET /api/health
-     * Health check endpoint with namespace info
+     * Health check endpoint with namespace info and queue store details
+     * Per docs/spec/WEB_COMPLETE_OPERATION.md:
+     * - AC-OPS-2: Returns web_pid for restart verification
+     * - AC-OPS-3: Returns build_sha for build tracking
      */
     app.get('/api/health', (_req, res) => {
+        // Read build_sha from environment (set by ProcessSupervisor) or build-meta.json
+        let buildSha = process.env.PM_BUILD_SHA;
+        let buildTimestamp;
+        if (!buildSha && projectRoot) {
+            try {
+                const buildMetaPath = path_1.default.join(projectRoot, 'dist', 'build-meta.json');
+                if (fs_1.default.existsSync(buildMetaPath)) {
+                    const buildMeta = JSON.parse(fs_1.default.readFileSync(buildMetaPath, 'utf-8'));
+                    buildSha = buildMeta.build_sha;
+                    buildTimestamp = buildMeta.build_timestamp;
+                }
+            }
+            catch {
+                // Ignore errors reading build-meta.json
+            }
+        }
         res.json({
             status: 'ok',
             timestamp: new Date().toISOString(),
             namespace,
-            table_name: queueStore.getTableName(),
+            web_pid: process.pid,
+            build_sha: buildSha,
+            build_timestamp: buildTimestamp,
+            queue_store: {
+                type: queueStoreType || 'unknown',
+                endpoint: queueStore.getEndpoint(),
+                table_name: queueStore.getTableName(),
+            },
             project_root: projectRoot,
         });
     });
@@ -750,6 +788,12 @@ function createApp(config) {
             'GET /api/projects/:projectId/dev/git/gateStatus',
             'POST /api/projects/:projectId/dev/git/commit',
             'POST /api/projects/:projectId/dev/git/push',
+            // Runner Controls routes
+            'GET /api/runner/status',
+            'GET /api/runner/preflight',
+            'POST /api/runner/stop',
+            'POST /api/runner/build',
+            'POST /api/runner/restart',
             // Session Logs routes (Session Log Tree)
             'GET /api/projects/:projectId/session-logs/tree',
             'GET /api/projects/:projectId/session-logs/runs',

@@ -13,7 +13,7 @@
  */
 export { WebServer, WebServerConfig, WebServerState, createApp, } from './server';
 import { WebServer } from './server';
-import { QueueStore } from '../queue';
+import { QueueStore } from '../queue/index';
 /**
  * Namespace configuration for WebServer
  * Per spec/21_STABLE_DEV.md

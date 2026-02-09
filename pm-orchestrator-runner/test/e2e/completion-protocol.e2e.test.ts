@@ -9,6 +9,11 @@
  * 1. A task run produces QA gate results
  * 2. The Completion Protocol judges the results
  * 3. The final_status controls whether the task is marked complete
+ *
+ * Phase 1 Additional E2E Tests:
+ * - Full roundtrip: generateRunId -> buildCompletionReport -> formatCompletionReport
+ * - Stale detection with isStale
+ * - Report formatting verification
  */
 
 import { describe, it, beforeEach } from 'mocha';
@@ -17,6 +22,12 @@ import {
   QAGateResult,
   CompletionProtocol,
   StaleRunError,
+  generateRunId,
+  buildCompletionReport,
+  formatCompletionReport,
+  isStale,
+  parseTestOutput,
+  CompletionReport,
 } from '../../src/core/completion-protocol';
 
 /**
@@ -214,6 +225,217 @@ describe('Completion Protocol E2E', () => {
 
       assert.strictEqual(verdict.final_status, 'COMPLETE');
       assert.strictEqual(verdict.skipped_total, 50);
+    });
+  });
+
+  // ─── Phase 1 E2E: Full roundtrip ───
+
+  describe('Phase 1 E2E: Full roundtrip', () => {
+    it('should complete full workflow: generateRunId -> buildCompletionReport -> formatCompletionReport', () => {
+      const commitSha = 'abc123def';
+      const command = 'npm test';
+
+      // Step 1: Generate run_id
+      const runId = generateRunId(commitSha, command);
+      assert.ok(runId, 'run_id should be generated');
+      assert.ok(runId.includes('abc123d'), 'run_id should contain short SHA');
+
+      // Step 2: Build completion report
+      const stdout = '10 passing (2s)\n0 failing';
+      const report = buildCompletionReport({
+        runId,
+        commitSha,
+        command,
+        exitCode: 0,
+        stdout,
+      });
+
+      assert.strictEqual(report.run_id, runId);
+      assert.strictEqual(report.final_status, 'COMPLETE');
+      assert.strictEqual(report.test_results.passing, 10);
+
+      // Step 3: Format report
+      const formatted = formatCompletionReport(report);
+      assert.ok(formatted.includes('ALL PASS'), 'Should show ALL PASS for complete report');
+      assert.ok(formatted.includes(runId), 'Should include run_id');
+      assert.ok(formatted.includes(commitSha), 'Should include commit SHA');
+    });
+
+    it('should include all required fields in formatted output', () => {
+      const runId = generateRunId('abc1234', 'npm test');
+      const report = buildCompletionReport({
+        runId,
+        commitSha: 'abc1234',
+        command: 'npm test',
+        exitCode: 0,
+        stdout: '5 passing',
+      });
+
+      const formatted = formatCompletionReport(report);
+
+      // Check all required sections
+      assert.ok(formatted.includes('COMPLETION REPORT'));
+      assert.ok(formatted.includes('Run ID:'));
+      assert.ok(formatted.includes('Commit:'));
+      assert.ok(formatted.includes('Command:'));
+      assert.ok(formatted.includes('TEST RESULTS'));
+      assert.ok(formatted.includes('Passing:'));
+      assert.ok(formatted.includes('Failing:'));
+      assert.ok(formatted.includes('FINAL STATUS'));
+    });
+  });
+
+  // ─── Phase 1 E2E: failing>0 blocks COMPLETE (AC3) ───
+
+  describe('Phase 1 E2E: failing>0 blocks COMPLETE (AC3)', () => {
+    it('should return INCOMPLETE when Mocha output has failing tests', () => {
+      const runId = generateRunId('abc1234', 'npm test');
+      const stdout = `
+  Completion Protocol
+    ✓ should work
+    1) should not fail
+
+  1 passing (500ms)
+  1 failing
+
+  1) Completion Protocol
+       should not fail:
+     AssertionError: expected true to be false
+`;
+
+      const report = buildCompletionReport({
+        runId,
+        commitSha: 'abc1234',
+        command: 'npm test',
+        exitCode: 1,
+        stdout,
+      });
+
+      assert.strictEqual(report.final_status, 'INCOMPLETE');
+      assert.strictEqual(report.test_results.failing, 1);
+      assert.strictEqual(report.exit_code, 1);
+    });
+
+    it('should format INCOMPLETE report correctly', () => {
+      const runId = generateRunId('abc1234', 'npm test');
+      const report = buildCompletionReport({
+        runId,
+        commitSha: 'abc1234',
+        command: 'npm test',
+        exitCode: 1,
+        stdout: '10 passing\n3 failing',
+      });
+
+      const formatted = formatCompletionReport(report);
+
+      assert.ok(!formatted.includes('ALL PASS'), 'Should NOT show ALL PASS');
+      assert.ok(formatted.includes('3 FAILING'), 'Should show failing count');
+      assert.ok(formatted.includes('INCOMPLETE'), 'Should show INCOMPLETE status');
+    });
+  });
+
+  // ─── Phase 1 E2E: "ALL PASS" only when failing=0 (AC1) ───
+
+  describe('Phase 1 E2E: "ALL PASS" only when failing=0 (AC1)', () => {
+    it('should include "ALL PASS" when failing=0', () => {
+      const runId = generateRunId('abc1234', 'npm test');
+      const report = buildCompletionReport({
+        runId,
+        commitSha: 'abc1234',
+        command: 'npm test',
+        exitCode: 0,
+        stdout: '100 passing',
+      });
+
+      const formatted = formatCompletionReport(report);
+      assert.ok(formatted.includes('ALL PASS'));
+    });
+
+    it('should NOT include "ALL PASS" when failing>0', () => {
+      const runId = generateRunId('abc1234', 'npm test');
+      const report = buildCompletionReport({
+        runId,
+        commitSha: 'abc1234',
+        command: 'npm test',
+        exitCode: 1,
+        stdout: '100 passing\n1 failing',
+      });
+
+      const formatted = formatCompletionReport(report);
+      assert.ok(!formatted.includes('ALL PASS'));
+    });
+  });
+
+  // ─── Phase 1 E2E: Stale detection (AC2, AC4) ───
+
+  describe('Phase 1 E2E: Stale detection (AC2, AC4)', () => {
+    it('should detect stale run_id using isStale', () => {
+      // Generate two run_ids with slight time difference
+      const oldRunId = '20260207-100000-000-abc1234-12345678';
+      const newRunId = '20260207-100001-000-abc1234-12345678';
+
+      assert.strictEqual(isStale(oldRunId, newRunId), true);
+      assert.strictEqual(isStale(newRunId, newRunId), false);
+    });
+
+    it('should detect stale when comparing reports from different runs', () => {
+      const oldRunId = generateRunId('abc1234', 'npm test');
+
+      // Simulate time passing
+      const laterRunId = generateRunId('def5678', 'npm test');
+
+      // Old report should be stale compared to new
+      const report1 = buildCompletionReport({
+        runId: oldRunId,
+        commitSha: 'abc1234',
+        command: 'npm test',
+        exitCode: 0,
+        stdout: '10 passing',
+      });
+
+      const report2 = buildCompletionReport({
+        runId: laterRunId,
+        commitSha: 'def5678',
+        command: 'npm test',
+        exitCode: 0,
+        stdout: '10 passing',
+      });
+
+      // If run_ids are different, report1 is stale relative to report2
+      assert.strictEqual(isStale(report1.run_id, report2.run_id), true);
+    });
+  });
+
+  // ─── Phase 1 E2E: Exit code handling ───
+
+  describe('Phase 1 E2E: Exit code handling', () => {
+    it('should handle exit code 19 (common timeout/error code) as INCOMPLETE', () => {
+      const runId = generateRunId('abc1234', 'npm test');
+      const report = buildCompletionReport({
+        runId,
+        commitSha: 'abc1234',
+        command: 'npm test',
+        exitCode: 19,
+        stdout: '',
+      });
+
+      assert.strictEqual(report.final_status, 'INCOMPLETE');
+      assert.strictEqual(report.exit_code, 19);
+    });
+
+    it('should handle exit code 0 with failing tests as INCOMPLETE', () => {
+      // Some test runners exit 0 even with failures
+      const runId = generateRunId('abc1234', 'npm test');
+      const report = buildCompletionReport({
+        runId,
+        commitSha: 'abc1234',
+        command: 'npm test',
+        exitCode: 0,
+        stdout: '10 passing\n1 failing',
+      });
+
+      // Should still be INCOMPLETE because failing > 0
+      assert.strictEqual(report.final_status, 'INCOMPLETE');
     });
   });
 });

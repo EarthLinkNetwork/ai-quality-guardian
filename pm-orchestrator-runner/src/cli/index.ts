@@ -17,7 +17,7 @@ import * as path from 'path';
 import { CLI, CLIError } from './cli-interface';
 import { REPLInterface, ProjectMode } from '../repl/repl-interface';
 import { WebServer } from '../web/server';
-import { QueueStore, QueuePoller, QueueItem, TaskExecutor, IQueueStore } from '../queue';
+import { QueueStore, QueuePoller, QueueItem, TaskExecutor, IQueueStore } from '../queue/index';
 import { InMemoryQueueStore } from '../queue/in-memory-queue-store';
 import { FileQueueStore } from '../queue/file-queue-store';
 import { AutoResolvingExecutor } from '../executor/auto-resolve-executor';
@@ -38,6 +38,13 @@ import {
 import { ensureDistFresh, checkPublicFilesCopied } from '../utils/dist-freshness';
 import { runSelftest, SELFTEST_CASES, runSelftestWithAIJudge } from '../selftest/selftest-runner';
 import { hasUnansweredQuestions } from '../utils/question-detector';
+import {
+  runPreflightChecks,
+  enforcePreflightCheck,
+  formatPreflightReport,
+  PreflightReport,
+  ExecutorType,
+} from '../diagnostics/executor-preflight';
 
 /**
  * Help text
@@ -820,6 +827,55 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     queueStoreType = 'file';
     console.log(`[QueueStore] Using file store: ${fileStore.getEndpoint()}`);
   }
+
+  // =========================================================================
+  // PREFLIGHT CHECK: Fail-fast executor configuration validation
+  // Per spec: All auth/config issues must fail fast, not timeout
+  // =========================================================================
+  console.log('[Preflight] Running executor preflight checks...');
+
+  // Default to 'auto' mode: check what executors are available
+  const preflightReport = runPreflightChecks('auto');
+
+  if (!preflightReport.can_proceed) {
+    // FATAL: No executor configured
+    console.error('');
+    console.error('='.repeat(60));
+    console.error('  EXECUTOR PREFLIGHT FAILED');
+    console.error('='.repeat(60));
+    console.error('');
+    console.error('  No executor is configured. At least one of the following is required:');
+    console.error('');
+    console.error('  Option 1: Claude Code CLI');
+    console.error('    $ npm install -g @anthropic-ai/claude-code');
+    console.error('    $ claude login');
+    console.error('');
+    console.error('  Option 2: OpenAI API Key');
+    console.error('    $ export OPENAI_API_KEY=sk-...');
+    console.error('');
+    console.error('  Option 3: Anthropic API Key');
+    console.error('    $ export ANTHROPIC_API_KEY=sk-ant-...');
+    console.error('');
+    for (const err of preflightReport.fatal_errors) {
+      console.error(`  [${err.code}] ${err.message}`);
+      if (err.fix_hint) {
+        console.error(`    Fix: ${err.fix_hint}`);
+      }
+    }
+    console.error('');
+    console.error('='.repeat(60));
+    console.error('');
+    process.exit(1);
+  }
+
+  // Log successful checks
+  for (const check of preflightReport.checks) {
+    if (check.ok) {
+      console.log(`[Preflight] [OK] ${check.message}`);
+    }
+  }
+  console.log('[Preflight] Executor preflight checks passed');
+  console.log('');
 
   // Create TaskExecutor and QueuePoller
   const taskExecutor = createTaskExecutor(projectPath);

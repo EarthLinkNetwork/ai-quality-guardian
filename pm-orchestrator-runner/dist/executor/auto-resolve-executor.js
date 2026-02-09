@@ -47,13 +47,81 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AutoResolvingExecutor = void 0;
+exports.AutoResolvingExecutor = exports.FALLBACK_QUESTIONS = void 0;
+exports.selectFallbackQuestion = selectFallbackQuestion;
+exports.applyBlockedOutputGuard = applyBlockedOutputGuard;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const claude_code_executor_1 = require("./claude-code-executor");
 const llm_client_1 = require("../mediation/llm-client");
 const decision_classifier_1 = require("./decision-classifier");
 const user_preference_store_1 = require("./user-preference-store");
+/**
+ * Fallback questions for BLOCKED status
+ * Per docs/spec/BLOCKED_OUTPUT_INVARIANTS.md: INV-1
+ */
+exports.FALLBACK_QUESTIONS = {
+    default: 'YES/NO: このタスクはコード変更を許可しますか？\n(Do you permit code changes for this task?)',
+    implementation: 'このタスクを実行するために、以下の情報を教えてください:\n1. 変更対象のファイル\n2. 期待する動作\n\n(Please provide the following information to proceed:\n1. Target files to modify\n2. Expected behavior)',
+    blocked_timeout: 'タスクがタイムアウトしました。続行しますか？ (YES/NO)\n(Task timed out. Do you want to continue? YES/NO)',
+    blocked_interactive: '対話的な確認が必要です。続行を許可しますか？ (YES/NO)\n(Interactive confirmation required. Do you allow continuing? YES/NO)',
+};
+/**
+ * Select appropriate fallback question based on blocked reason and task type
+ * Exported for testing - INV-1 helper
+ */
+function selectFallbackQuestion(result, task) {
+    // For IMPLEMENTATION tasks, use implementation-specific question
+    if (task.taskType === 'IMPLEMENTATION') {
+        return exports.FALLBACK_QUESTIONS.implementation;
+    }
+    // Check blocked reason for specific question
+    if (result.blocked_reason === 'TIMEOUT') {
+        return exports.FALLBACK_QUESTIONS.blocked_timeout;
+    }
+    if (result.blocked_reason === 'INTERACTIVE_PROMPT') {
+        return exports.FALLBACK_QUESTIONS.blocked_interactive;
+    }
+    // Default fallback
+    return exports.FALLBACK_QUESTIONS.default;
+}
+/**
+ * Apply BLOCKED output guard (INV-1)
+ * Ensures BLOCKED status always has non-empty output with actionable question
+ * Per docs/spec/BLOCKED_OUTPUT_INVARIANTS.md
+ * Exported for testing
+ */
+function applyBlockedOutputGuard(result, task) {
+    // Check if output is empty or insufficient
+    const hasOutput = result.output && result.output.trim().length > 0;
+    if (hasOutput) {
+        // Output exists, but ensure it contains a question
+        const hasQuestion = result.output.includes('?') ||
+            result.output.includes('YES/NO') ||
+            result.output.includes('confirm') ||
+            result.output.includes('許可') ||
+            result.output.includes('確認') ||
+            result.output.includes('？');
+        if (hasQuestion) {
+            console.log('[BlockedOutputGuard] INV-1: BLOCKED output already has question');
+            return result;
+        }
+        // Add fallback question to existing output
+        console.log('[BlockedOutputGuard] INV-1: Adding fallback question to BLOCKED output');
+        const fallbackQuestion = selectFallbackQuestion(result, task);
+        return {
+            ...result,
+            output: `${result.output}\n\n---\n${fallbackQuestion}`,
+        };
+    }
+    // No output - generate fallback question based on blocked reason
+    console.log('[BlockedOutputGuard] INV-1: BLOCKED with empty output, generating fallback question');
+    const fallbackQuestion = selectFallbackQuestion(result, task);
+    return {
+        ...result,
+        output: fallbackQuestion,
+    };
+}
 /**
  * Patterns to detect clarification requests in output
  */
@@ -139,6 +207,22 @@ class AutoResolvingExecutor {
                     ...result,
                     status: 'COMPLETE',
                 };
+            }
+            // INV-1: BLOCKED Output Non-Empty Guard
+            // Per docs/spec/BLOCKED_OUTPUT_INVARIANTS.md
+            if (result.status === 'BLOCKED') {
+                const guardedResult = applyBlockedOutputGuard(result, task);
+                // INV-2: IMPLEMENTATION Task BLOCKED Prohibition
+                // IMPLEMENTATION tasks should never be BLOCKED, convert to AWAITING_RESPONSE
+                if (task.taskType === 'IMPLEMENTATION') {
+                    console.log('[AutoResolvingExecutor] INV-2: Converting IMPLEMENTATION BLOCKED to AWAITING_RESPONSE');
+                    return {
+                        ...guardedResult,
+                        status: 'INCOMPLETE', // AWAITING_RESPONSE is handled at higher level
+                        error: guardedResult.output, // Output becomes the clarification question
+                    };
+                }
+                return guardedResult;
             }
             // Check if clarification is needed
             const clarification = this.detectClarification(result.output, result.error);

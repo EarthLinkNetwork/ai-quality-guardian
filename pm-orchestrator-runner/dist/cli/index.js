@@ -54,17 +54,20 @@ const path = __importStar(require("path"));
 const cli_interface_1 = require("./cli-interface");
 const repl_interface_1 = require("../repl/repl-interface");
 const server_1 = require("../web/server");
-const queue_1 = require("../queue");
+const index_1 = require("../queue/index");
 const in_memory_queue_store_1 = require("../queue/in-memory-queue-store");
+const file_queue_store_1 = require("../queue/file-queue-store");
 const auto_resolve_executor_1 = require("../executor/auto-resolve-executor");
 const test_incomplete_executor_1 = require("../executor/test-incomplete-executor");
 const deterministic_executor_1 = require("../executor/deterministic-executor");
 const namespace_1 = require("../config/namespace");
+const global_config_1 = require("../config/global-config");
 const api_key_onboarding_1 = require("../keys/api-key-onboarding");
 const background_1 = require("../web/background");
 const dist_freshness_1 = require("../utils/dist-freshness");
 const selftest_runner_1 = require("../selftest/selftest-runner");
 const question_detector_1 = require("../utils/question-detector");
+const executor_preflight_1 = require("../diagnostics/executor-preflight");
 /**
  * Help text
  */
@@ -79,6 +82,7 @@ Commands:
   repl                   Start interactive REPL mode (default if no command)
   web                    Start Web UI server for task queue management
   web-stop               Stop background Web UI server
+  selftest               Run selftest mode with AI judge
   start <path>           Start a new session on a project
   continue <session-id>  Continue a paused session
   status <session-id>    Get session status
@@ -328,9 +332,18 @@ function parseWebArgs(args) {
         else if (arg === '--background') {
             result.background = true;
         }
-        // No DynamoDB mode - use in-memory queue store
+        // No DynamoDB mode - use in-memory queue store (legacy flag)
         else if (arg === '--no-dynamodb') {
             result.noDynamodb = true;
+            result.storeMode = 'memory';
+        }
+        // DynamoDB mode - use DynamoDB queue store
+        else if (arg === '--dynamodb') {
+            result.storeMode = 'dynamodb';
+        }
+        // In-memory mode - use non-persistent in-memory store
+        else if (arg === '--in-memory') {
+            result.storeMode = 'memory';
         }
     }
     return result;
@@ -353,7 +366,9 @@ function generateWebSessionId() {
  */
 /** @internal Exported for testing only */
 function buildTaskContext(item) {
-    const hasOpenAIKey = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.length > 0);
+    // Use centralized getApiKey() for DI compliance - no direct process.env access
+    const openaiKey = (0, global_config_1.getApiKey)('openai');
+    const hasOpenAIKey = !!(openaiKey && openaiKey.length > 0);
     const hasRunnerDevDir = require('fs').existsSync(path.join(process.cwd(), '.claude'));
     const lines = [
         '[TaskContext]',
@@ -681,43 +696,129 @@ async function startWebServer(webArgs) {
         port: webArgs.port,
     });
     const port = webArgs.port || namespaceConfig.port;
-    // Check for NO_DYNAMODB mode (env var or CLI flag)
-    const noDynamodb = webArgs.noDynamodb || process.env.PM_WEB_NO_DYNAMODB === '1';
+    // E2E isolation: override stateDir if PM_E2E_STATE_DIR is set
+    // This prevents E2E tests from polluting real user state
+    // Must be defined BEFORE queue store creation since FileQueueStore uses it
+    const effectiveStateDir = process.env.PM_E2E_STATE_DIR || namespaceConfig.stateDir;
+    const isE2eMode = !!process.env.PM_E2E_STATE_DIR;
+    // Determine queue store mode (priority: CLI flag > env var > default 'file')
+    let storeMode = 'file'; // Default to file-based persistent store
+    if (webArgs.storeMode) {
+        storeMode = webArgs.storeMode;
+    }
+    else if (process.env.PM_WEB_STORE_MODE) {
+        const envMode = process.env.PM_WEB_STORE_MODE.toLowerCase();
+        if (envMode === 'dynamodb' || envMode === 'file' || envMode === 'memory') {
+            storeMode = envMode;
+        }
+    }
+    else if (webArgs.noDynamodb || process.env.PM_WEB_NO_DYNAMODB === '1') {
+        // Legacy support for --no-dynamodb flag
+        storeMode = 'memory';
+    }
+    else if (process.env.PM_WEB_DYNAMODB === '1') {
+        // Legacy support for PM_WEB_DYNAMODB env var
+        storeMode = 'dynamodb';
+    }
     // Create appropriate queue store based on mode
     let queueStore;
-    if (noDynamodb) {
-        console.log('[NO_DYNAMODB] Using in-memory queue store');
+    let queueStoreType;
+    if (storeMode === 'memory') {
+        console.log('[QueueStore] Using in-memory store (non-persistent)');
         queueStore = new in_memory_queue_store_1.InMemoryQueueStore({
             namespace: namespaceConfig.namespace,
         });
+        queueStoreType = 'memory';
     }
-    else {
-        // Try to create DynamoDB-based store with fallback to in-memory on connection error
+    else if (storeMode === 'dynamodb') {
+        // Try to create DynamoDB-based store with fallback to file on connection error
         try {
-            const dynamoStore = new queue_1.QueueStore({
+            const dynamoStore = new index_1.QueueStore({
                 namespace: namespaceConfig.namespace,
             });
             await dynamoStore.ensureTable();
             queueStore = dynamoStore;
+            queueStoreType = 'dynamodb';
+            console.log(`[QueueStore] Using DynamoDB: ${dynamoStore.getEndpoint()}`);
         }
         catch (error) {
-            // Check if it's a connection error (ECONNREFUSED)
             const errorMessage = error instanceof Error ? error.message : String(error);
             if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('connect')) {
-                console.warn('[DynamoDB] Connection failed, falling back to in-memory queue store');
-                console.warn('[DynamoDB] To use DynamoDB, start DynamoDB Local: docker-compose up -d dynamodb');
-                queueStore = new in_memory_queue_store_1.InMemoryQueueStore({
+                console.warn('[QueueStore] DynamoDB connection failed, falling back to file store');
+                console.warn('[QueueStore] To use DynamoDB, start DynamoDB Local: docker-compose up -d dynamodb');
+                const fileStore = new file_queue_store_1.FileQueueStore({
                     namespace: namespaceConfig.namespace,
+                    stateDir: effectiveStateDir,
                 });
+                await fileStore.ensureTable();
+                queueStore = fileStore;
+                queueStoreType = 'file';
+                console.log(`[QueueStore] Using file store: ${fileStore.getEndpoint()}`);
             }
             else {
                 throw error;
             }
         }
     }
+    else {
+        // Default: file-based persistent store
+        const fileStore = new file_queue_store_1.FileQueueStore({
+            namespace: namespaceConfig.namespace,
+            stateDir: effectiveStateDir,
+        });
+        await fileStore.ensureTable();
+        queueStore = fileStore;
+        queueStoreType = 'file';
+        console.log(`[QueueStore] Using file store: ${fileStore.getEndpoint()}`);
+    }
+    // =========================================================================
+    // PREFLIGHT CHECK: Fail-fast executor configuration validation
+    // Per spec: All auth/config issues must fail fast, not timeout
+    // =========================================================================
+    console.log('[Preflight] Running executor preflight checks...');
+    // Default to 'auto' mode: check what executors are available
+    const preflightReport = (0, executor_preflight_1.runPreflightChecks)('auto');
+    if (!preflightReport.can_proceed) {
+        // FATAL: No executor configured
+        console.error('');
+        console.error('='.repeat(60));
+        console.error('  EXECUTOR PREFLIGHT FAILED');
+        console.error('='.repeat(60));
+        console.error('');
+        console.error('  No executor is configured. At least one of the following is required:');
+        console.error('');
+        console.error('  Option 1: Claude Code CLI');
+        console.error('    $ npm install -g @anthropic-ai/claude-code');
+        console.error('    $ claude login');
+        console.error('');
+        console.error('  Option 2: OpenAI API Key');
+        console.error('    $ export OPENAI_API_KEY=sk-...');
+        console.error('');
+        console.error('  Option 3: Anthropic API Key');
+        console.error('    $ export ANTHROPIC_API_KEY=sk-ant-...');
+        console.error('');
+        for (const err of preflightReport.fatal_errors) {
+            console.error(`  [${err.code}] ${err.message}`);
+            if (err.fix_hint) {
+                console.error(`    Fix: ${err.fix_hint}`);
+            }
+        }
+        console.error('');
+        console.error('='.repeat(60));
+        console.error('');
+        process.exit(1);
+    }
+    // Log successful checks
+    for (const check of preflightReport.checks) {
+        if (check.ok) {
+            console.log(`[Preflight] [OK] ${check.message}`);
+        }
+    }
+    console.log('[Preflight] Executor preflight checks passed');
+    console.log('');
     // Create TaskExecutor and QueuePoller
     const taskExecutor = createTaskExecutor(projectPath);
-    const poller = new queue_1.QueuePoller(queueStore, taskExecutor, {
+    const poller = new index_1.QueuePoller(queueStore, taskExecutor, {
         pollIntervalMs: 1000,
         recoverOnStartup: true,
         projectRoot: projectPath,
@@ -738,10 +839,6 @@ async function startWebServer(webArgs) {
     poller.on('stale-recovered', (count) => {
         console.log(`[Runner] Recovered ${count} stale tasks`);
     });
-    // E2E isolation: override stateDir if PM_E2E_STATE_DIR is set
-    // This prevents E2E tests from polluting real user state
-    const effectiveStateDir = process.env.PM_E2E_STATE_DIR || namespaceConfig.stateDir;
-    const isE2eMode = !!process.env.PM_E2E_STATE_DIR;
     const server = new server_1.WebServer({
         port,
         queueStore,
@@ -749,6 +846,7 @@ async function startWebServer(webArgs) {
         namespace: namespaceConfig.namespace,
         projectRoot: projectPath,
         stateDir: effectiveStateDir,
+        queueStoreType,
     });
     console.log(`Starting Web UI server on port ${port}...`);
     console.log(`Namespace: ${namespaceConfig.namespace}`);
@@ -925,6 +1023,27 @@ async function main() {
                 // Set exit code based on status
                 if (result.overall_status) {
                     process.exit(cli.getExitCodeForStatus(result.overall_status));
+                }
+                break;
+            }
+            case 'selftest': {
+                // Run selftest mode per SELFTEST_AI_JUDGE.md specification
+                const ciMode = restArgs.includes('--ci');
+                const baseDir = process.cwd();
+                console.log(`\n[selftest] Starting selftest mode (${ciMode ? 'CI' : 'Full'})...\n`);
+                // Use InMemoryQueueStore for selftest isolation
+                const queueStore = new in_memory_queue_store_1.InMemoryQueueStore({
+                    namespace: `selftest-${Date.now()}`,
+                });
+                try {
+                    const { report, exitCode, jsonPath, mdPath } = await (0, selftest_runner_1.runSelftestWithAIJudge)(queueStore, { ci: ciMode, baseDir });
+                    console.log(`\n[selftest] JSON report: ${jsonPath}`);
+                    console.log(`[selftest] Markdown report: ${mdPath}`);
+                    process.exit(exitCode);
+                }
+                catch (error) {
+                    console.error(`[selftest] Error: ${error.message}`);
+                    process.exit(1);
                 }
                 break;
             }

@@ -20,7 +20,7 @@ export {
 } from './server';
 
 import { WebServer, WebServerConfig } from './server';
-import { QueueStore } from '../queue';
+import { QueueStore } from '../queue/index';
 
 /**
  * Namespace configuration for WebServer

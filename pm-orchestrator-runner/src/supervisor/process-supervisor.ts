@@ -13,6 +13,11 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
+import {
+  runPreflightChecks,
+  PreflightReport,
+  ExecutorType,
+} from '../diagnostics/executor-preflight';
 
 const execAsync = promisify(exec);
 
@@ -35,6 +40,8 @@ export interface WebProcessState {
   status: 'stopped' | 'starting' | 'running' | 'stopping' | 'error';
   lastError?: string;
   buildMeta?: BuildMeta;
+  /** Preflight check result (set on start) */
+  preflightReport?: PreflightReport;
 }
 
 /**
@@ -226,15 +233,43 @@ export class ProcessSupervisor extends EventEmitter {
   }
 
   /**
+   * Run preflight checks for executor configuration
+   * Returns the preflight report for inspection
+   */
+  runPreflightCheck(executorType: ExecutorType = 'auto'): PreflightReport {
+    return runPreflightChecks(executorType);
+  }
+
+  /**
    * Start Web server as child process
    * AC-SUP-1: Web runs as child of Supervisor
+   *
+   * FAIL-FAST: Runs preflight checks before starting.
+   * If no executor is configured, returns error immediately.
    */
-  async start(): Promise<{ success: boolean; pid?: number; error?: string }> {
+  async start(): Promise<{ success: boolean; pid?: number; error?: string; preflightReport?: PreflightReport }> {
     if (this.state.status === 'running' && this.webProcess && !this.webProcess.killed) {
       return { success: true, pid: this.webProcess.pid };
     }
 
     this.state.status = 'starting';
+
+    // PREFLIGHT CHECK: Fail-fast on missing executor configuration
+    // Per spec: All auth/config issues must FAIL FAST, not timeout
+    const preflightReport = this.runPreflightCheck('auto');
+    this.state.preflightReport = preflightReport;
+
+    if (!preflightReport.can_proceed) {
+      this.state.status = 'error';
+      const firstError = preflightReport.fatal_errors[0];
+      const errorMsg = `Executor preflight failed: ${firstError.code} - ${firstError.message}. Fix: ${firstError.fix_hint}`;
+      this.state.lastError = errorMsg;
+      return {
+        success: false,
+        error: errorMsg,
+        preflightReport,
+      };
+    }
 
     // Load build metadata
     this.state.buildMeta = this.loadBuildMeta();
@@ -406,6 +441,7 @@ export class ProcessSupervisor extends EventEmitter {
 
   /**
    * Health check
+   * Includes preflight status for visibility in Web UI
    */
   async healthCheck(): Promise<{
     healthy: boolean;
@@ -413,6 +449,7 @@ export class ProcessSupervisor extends EventEmitter {
     buildMeta?: BuildMeta;
     uptime_ms?: number;
     error?: string;
+    preflightReport?: PreflightReport;
   }> {
     if (this.state.status !== 'running' || !this.webProcess || this.webProcess.killed) {
       return {
@@ -437,12 +474,14 @@ export class ProcessSupervisor extends EventEmitter {
         pid: this.state.pid ?? undefined,
         buildMeta: this.state.buildMeta,
         uptime_ms: this.state.startTime ? Date.now() - this.state.startTime.getTime() : undefined,
+        preflightReport: this.state.preflightReport,
       };
     } catch (error) {
       return {
         healthy: false,
         pid: this.state.pid ?? undefined,
         error: error instanceof Error ? error.message : String(error),
+        preflightReport: this.state.preflightReport,
       };
     }
   }
