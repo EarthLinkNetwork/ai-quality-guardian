@@ -41,9 +41,17 @@
     "gate:e2e-exec": "ts-node diagnostics/e2e-execution.check.ts",
     "gate:flake-guard": "ts-node diagnostics/flake-guard.check.ts",
     "gate:auth": "ts-node diagnostics/auth.check.ts",
-    "gate:all": "npm run gate:import && npm run gate:auth && npm run gate:tier0 && npm run gate:web && npm run gate:agent && npm run gate:spec && npm run gate:incomplete && npm run gate:e2e-exec && npm run gate:flake-guard",
+    "gate:logs-visible": "ts-node diagnostics/logs-visible.check.ts",
+    "gate:timeout-real": "ts-node diagnostics/timeout-real.check.ts",
+    "gate:blocked-scope": "ts-node diagnostics/blocked-scope.check.ts",
+    "gate:p0": "npm run gate:logs-visible && npm run gate:timeout-real && npm run gate:blocked-scope",
+    "gate:p0-stale-final": "bash scripts/p0-stale-final.sh",
+    "gate:all": "npm run gate:import && npm run gate:auth && npm run gate:p0 && npm run gate:p0-stale-final && npm run gate:tier0 && npm run gate:web && npm run gate:agent && npm run gate:spec && npm run gate:incomplete && npm run gate:e2e-exec && npm run gate:browser && npm run gate:flake-guard",
     "gate:spec": "ts-node diagnostics/spec-coverage.check.ts",
-    "gate:chat": "ts-node diagnostics/chat-tasktype.check.ts"
+    "gate:chat": "ts-node diagnostics/chat-tasktype.check.ts",
+    "gate:browser": "ts-node diagnostics/browser-ui.check.ts",
+    "test:playwright": "npx playwright test",
+    "test:playwright:headed": "npx playwright test --headed"
   },
   "keywords": [
     "pm-orchestrator",
@@ -53,6 +61,7 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/chai": "^5.2.3",
     "@types/express": "^5.0.6",
     "@types/minimatch": "^5.1.2",

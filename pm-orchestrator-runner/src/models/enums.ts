@@ -206,14 +206,25 @@ export function isLastPhase(phase: Phase): boolean {
 /**
  * Executor blocking reasons
  * Per spec 05_DATA_MODELS.md - Property 34-36 non-interactive guarantees
+ * P0-2: Added preflight failure reasons
  */
-export type BlockedReason = 'INTERACTIVE_PROMPT' | 'TIMEOUT' | 'STDIN_REQUIRED';
+export type BlockedReason =
+  | 'INTERACTIVE_PROMPT'
+  | 'TIMEOUT'
+  | 'STDIN_REQUIRED'
+  | 'PREFLIGHT_CLI_NOT_AVAILABLE'   // P0-2: CLI not found
+  | 'PREFLIGHT_AUTH_FAILED';        // P0-2: CLI not logged in
 
 /**
  * Executor termination triggers
  * Per spec 05_DATA_MODELS.md - Property 34-36 non-interactive guarantees
+ * P0-2: Added preflight fail-closed trigger
  */
-export type TerminatedBy = 'REPL_FAIL_CLOSED' | 'USER' | 'TIMEOUT';
+export type TerminatedBy =
+  | 'REPL_FAIL_CLOSED'
+  | 'USER'
+  | 'TIMEOUT'
+  | 'PREFLIGHT_FAIL_CLOSED';        // P0-2: Preflight check failed
 
 /**
  * Thread types

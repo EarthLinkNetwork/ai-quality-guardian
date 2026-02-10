@@ -7,30 +7,39 @@
  *
  * This is NOT a simulation - it actually spawns the `claude` CLI process.
  *
- * Timeout Design (v2 - Production Ready):
+ * Timeout Design (v3 - AC B: Abolish silence=timeout):
  * - SOFT_TIMEOUT: Warning only, continue execution
- * - HARD_TIMEOUT: No output for extended period, terminate
- * - OVERALL_TIMEOUT: Total execution time limit
+ * - HARD_TIMEOUT: ABOLISHED - silence alone does NOT terminate
+ * - OVERALL_TIMEOUT: Total execution time limit (safety net, optional)
  * - Process state monitoring: Check if process is still alive
+ *
+ * Key principle: "silence=timeout" is ABOLISHED.
+ * Process is only terminated when:
+ * 1. Interactive prompt detected (Property 34-36)
+ * 2. Overall timeout exceeded (safety net)
+ * 3. Process dies naturally
  */
 
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { BlockedReason, TerminatedBy } from '../models/enums';
+import { getExecutorOutputStream } from './executor-output-stream';
 
 /**
  * Executor configuration
  */
 export interface ExecutorConfig {
   projectPath: string;
-  timeout: number;  // Overall timeout in ms
+  timeout: number;  // Overall timeout in ms (safety net)
   cliPath?: string;  // Path to claude CLI, defaults to 'claude'
-  // New timeout configuration options
-  softTimeoutMs?: number;   // Warning threshold (default: 60000)
-  hardTimeoutMs?: number;   // No-output terminate threshold (default: 120000)
+  // Timeout configuration options (v3 - AC B: silence=timeout abolished)
+  softTimeoutMs?: number;   // Warning threshold (default: 60000) - logging only
+  silenceLogIntervalMs?: number; // Silence log interval (default: 30000) - logging only
   /** Show verbose executor logs (default: false) */
   verbose?: boolean;
+  /** Disable overall timeout (for very long tasks) */
+  disableOverallTimeout?: boolean;
 }
 
 /**
@@ -147,20 +156,21 @@ const INTERACTIVE_PROMPT_PATTERNS = [
 ];
 
 /**
- * Timeout configuration (v2 - Production Ready)
+ * Timeout configuration (v3 - AC B: Abolish silence=timeout)
  *
  * SOFT_TIMEOUT: Log warning but continue (Claude might be thinking)
- * HARD_TIMEOUT: No output for extended period - likely stuck
- * OVERALL_TIMEOUT: Total execution time limit
+ * HARD_TIMEOUT: ABOLISHED - silence does NOT terminate process
+ * OVERALL_TIMEOUT: Total execution time limit (safety net)
  *
- * Design principle: "Production first, safety second"
- * - Small tasks (README) should complete within soft timeout
- * - Complex tasks may exceed soft timeout but should show progress
- * - Only terminate if truly stuck (no output for hard timeout period)
+ * Design principle: "Let the LLM work, don't preemptively kill"
+ * - Silence is NOT a reason to terminate
+ * - LLM may be processing complex tasks internally
+ * - Only overall timeout provides a safety net (default: very long)
+ * - Interactive prompt detection still works (Property 34-36)
  */
-const DEFAULT_SOFT_TIMEOUT_MS = 60000;   // 60s - warning only
-const DEFAULT_HARD_TIMEOUT_MS = 120000;  // 120s no output - terminate
-const DEFAULT_OVERALL_TIMEOUT_MS = 300000; // 5 min total
+const DEFAULT_SOFT_TIMEOUT_MS = 60000;    // 60s - warning only (for logging)
+const DEFAULT_SILENCE_LOG_INTERVAL_MS = 30000; // 30s - log silence (not terminate)
+const DEFAULT_OVERALL_TIMEOUT_MS = 600000; // 10 min total (increased safety net)
 
 /**
  * Grace period before force kill after SIGTERM
@@ -237,18 +247,20 @@ export class ClaudeCodeExecutor implements IExecutor {
   private readonly config: ExecutorConfig;
   private readonly cliPath: string;
   private readonly softTimeoutMs: number;
-  private readonly hardTimeoutMs: number;
+  private readonly silenceLogIntervalMs: number;
   private readonly verbose: boolean;
+  private readonly disableOverallTimeout: boolean;
 
   constructor(config: ExecutorConfig) {
     this.config = config;
     this.cliPath = config.cliPath || 'claude';
     // Allow environment variable override for testing
     const envSoft = parseInt(process.env.SOFT_TIMEOUT_MS || '', 10);
-    const envHard = parseInt(process.env.HARD_TIMEOUT_MS || '', 10);
+    const envSilenceLog = parseInt(process.env.SILENCE_LOG_INTERVAL_MS || '', 10);
     this.softTimeoutMs = envSoft || config.softTimeoutMs || DEFAULT_SOFT_TIMEOUT_MS;
-    this.hardTimeoutMs = envHard || config.hardTimeoutMs || DEFAULT_HARD_TIMEOUT_MS;
+    this.silenceLogIntervalMs = envSilenceLog || config.silenceLogIntervalMs || DEFAULT_SILENCE_LOG_INTERVAL_MS;
     this.verbose = config.verbose ?? false;
+    this.disableOverallTimeout = config.disableOverallTimeout ?? false;
   }
 
 
@@ -465,21 +477,64 @@ export class ClaudeCodeExecutor implements IExecutor {
     // Enforce cwd = projectPath (never use process.cwd())
     const cwd = task.workingDir;
 
-    // Check CLI availability first (fail-closed)
-    const available = await this.isClaudeCodeAvailable();
-    if (!available) {
+    // AC A.2: Real-time output streaming - emit preflight logs
+    const preflightStream = getExecutorOutputStream();
+    preflightStream.emit(task.id, 'preflight', '[preflight] start');
+
+    // P0-2: Preflight check - fail-closed BEFORE execution starts
+    // Per AC P0-2: Auth errors must NEVER result in TIMEOUT - must be ERROR with recovery steps
+    const authResult = await this.checkAuthStatus();
+
+    if (!authResult.available) {
+      // CLI not available - return ERROR (not TIMEOUT/BLOCKED)
+      preflightStream.emit(task.id, 'preflight', `[preflight] CLI NOT FOUND at ${this.cliPath}`);
+      preflightStream.emit(task.id, 'recovery', `[recovery] Install Claude Code CLI`);
       return {
         executed: false,
         output: '',
-        error: `Claude Code CLI not available or not found at: ${this.cliPath}`,
+        error: `Preflight check failed: CLI not available. ${authResult.error || ''}`,
         files_modified: [],
         duration_ms: Date.now() - startTime,
         status: 'ERROR',
         cwd,
         verified_files: [],
         unverified_files: [],
+        // P0-2: Include preflight failure info for Web UI
+        executor_blocked: false,
+        blocked_reason: 'PREFLIGHT_CLI_NOT_AVAILABLE' as BlockedReason,
+        terminated_by: 'PREFLIGHT_FAIL_CLOSED' as TerminatedBy,
       };
     }
+
+    preflightStream.emit(task.id, 'preflight', '[preflight] cli found');
+
+    if (!authResult.loggedIn) {
+      // CLI available but not logged in - return ERROR (not TIMEOUT/BLOCKED)
+      preflightStream.emit(task.id, 'preflight', '[preflight] NOT LOGGED IN → ERROR');
+      preflightStream.emit(task.id, 'recovery', '[recovery] claude login / claude setup-token / set ANTHROPIC_API_KEY');
+      const recoverySteps = [
+        'Run: claude login',
+        'Or run: claude setup-token',
+        'Or set ANTHROPIC_API_KEY environment variable',
+      ].join('\n  - ');
+      return {
+        executed: false,
+        output: '',
+        error: `Preflight check failed: CLI not logged in. ${authResult.error || ''}\n\nRecovery steps:\n  - ${recoverySteps}`,
+        files_modified: [],
+        duration_ms: Date.now() - startTime,
+        status: 'ERROR',
+        cwd,
+        verified_files: [],
+        unverified_files: [],
+        // P0-2: Include preflight failure info for Web UI
+        executor_blocked: false,
+        blocked_reason: 'PREFLIGHT_AUTH_FAILED' as BlockedReason,
+        terminated_by: 'PREFLIGHT_FAIL_CLOSED' as TerminatedBy,
+      };
+    }
+
+    preflightStream.emit(task.id, 'preflight', '[preflight] login OK');
 
     // Get list of files before execution (for diff)
     const filesBefore = await this.listFiles(task.workingDir);
@@ -498,28 +553,33 @@ export class ClaudeCodeExecutor implements IExecutor {
       // Placeholder for child process (assigned after spawn)
       let childProcess: ChildProcess;
 
-      // Timer handles
-      let hardTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+      // Timer handles (v3 - AC B: no hard timeout, only overall safety net)
       let overallTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
       let processCheckHandle: ReturnType<typeof setInterval> | null = null;
+      let silenceLogHandle: ReturnType<typeof setInterval> | null = null;
 
       // Progress log slot tracking (slot 0 = 5-15s, slot 1 = 15-25s, etc.)
       let lastProgressSlot = -1;
+
+      // AC A.2: Real-time output streaming
+      const outputStream = getExecutorOutputStream();
+      outputStream.startTask(task.id);
 
       // Helper to safely resolve (prevent double resolution)
       const safeResolve = (result: ExecutorResult) => {
         if (resolved) return;
         resolved = true;
         clearAllTimers();
+
+        // AC A.2: Mark task as ended in output stream with status-aware message
+        const success = result.status === 'COMPLETE';
+        outputStream.endTask(task.id, success, undefined, result.status);
+
         resolve(result);
       };
 
-      // Helper to clear all timers
+      // Helper to clear all timers (v3 - AC B: no hard timeout)
       const clearAllTimers = () => {
-        if (hardTimeoutHandle) {
-          clearTimeout(hardTimeoutHandle);
-          hardTimeoutHandle = null;
-        }
         if (overallTimeoutHandle) {
           clearTimeout(overallTimeoutHandle);
           overallTimeoutHandle = null;
@@ -527,6 +587,10 @@ export class ClaudeCodeExecutor implements IExecutor {
         if (processCheckHandle) {
           clearInterval(processCheckHandle);
           processCheckHandle = null;
+        }
+        if (silenceLogHandle) {
+          clearInterval(silenceLogHandle);
+          silenceLogHandle = null;
         }
       };
 
@@ -549,25 +613,11 @@ export class ClaudeCodeExecutor implements IExecutor {
         }
       };
 
-      // Reset hard timeout on output (v2: only reset hard timeout, not soft)
-      const resetHardTimeout = () => {
+      // Update last output time on any output (v3 - AC B: no hard timeout, just track)
+      const updateLastOutputTime = () => {
         lastOutputTime = Date.now();
 
-        // Clear existing hard timeout
-        if (hardTimeoutHandle) {
-          clearTimeout(hardTimeoutHandle);
-        }
-
-        // Set new hard timeout
-        hardTimeoutHandle = setTimeout(() => {
-          if (!blocked && !timedOut && !resolved) {
-            const elapsed = Date.now() - startTime;
-            this.log(`[ClaudeCodeExecutor] Hard timeout - no output for ${this.hardTimeoutMs}ms (total elapsed: ${elapsed}ms)`);
-            terminateWithBlocking('TIMEOUT', 'REPL_FAIL_CLOSED');
-          }
-        }, this.hardTimeoutMs);
-
-        // Check for soft timeout warning (only once)
+        // Check for soft timeout warning (only once, for logging purposes)
         if (!softTimeoutWarned) {
           const timeSinceStart = Date.now() - startTime;
           if (timeSinceStart > this.softTimeoutMs) {
@@ -607,7 +657,13 @@ export class ClaudeCodeExecutor implements IExecutor {
       if (task.selectedModel) {
         this.log(`[ClaudeCodeExecutor] model: ${task.selectedModel}`);
       }
-      this.log(`[ClaudeCodeExecutor] Timeout config: soft=${this.softTimeoutMs}ms, hard=${this.hardTimeoutMs}ms, overall=${this.config.timeout}ms`);
+      this.log(`[ClaudeCodeExecutor] Timeout config: soft=${this.softTimeoutMs}ms, silenceLog=${this.silenceLogIntervalMs}ms, overall=${this.disableOverallTimeout ? 'DISABLED' : this.config.timeout + 'ms'} (v3: silence=timeout ABOLISHED)`);
+
+      // AC A.2: Emit spawn trace before process creation
+      outputStream.emit(task.id, 'spawn', `[spawn] start`);
+      outputStream.emit(task.id, 'spawn', `[spawn] command: ${this.cliPath} ${cliArgs.slice(0, -1).join(' ')} <prompt>`);
+      outputStream.emit(task.id, 'spawn', `[spawn] cwd: ${cwd}`);
+      outputStream.emit(task.id, 'spawn', `[spawn] timeout: soft=${this.softTimeoutMs}ms overall=${this.disableOverallTimeout ? 'DISABLED' : this.config.timeout + 'ms'}`);
 
       try {
         // Per spec/15_API_KEY_ENV_SANITIZE.md: Use ALLOWLIST approach
@@ -627,6 +683,7 @@ export class ClaudeCodeExecutor implements IExecutor {
         });
       } catch (spawnError) {
         const err = spawnError as Error;
+        outputStream.emit(task.id, 'spawn', `[spawn] FAILED: ${err.message}`);
         this.log(`[ClaudeCodeExecutor] Spawn failed: ${err.message}`);
         safeResolve({
           executed: false,
@@ -642,17 +699,38 @@ export class ClaudeCodeExecutor implements IExecutor {
         return;
       }
 
-      // Start hard timeout monitoring
-      resetHardTimeout();
+      // Log PID after successful spawn
+      outputStream.emit(task.id, 'spawn', `[spawn] pid: ${childProcess.pid ?? 'unknown'}`);
 
-      // Start overall timeout
-      overallTimeoutHandle = setTimeout(() => {
-        if (!blocked && !timedOut && !resolved) {
-          this.log(`[ClaudeCodeExecutor] Overall timeout - execution exceeded ${this.config.timeout}ms`);
-          timedOut = true;
-          terminateWithBlocking('TIMEOUT', 'TIMEOUT');
+      // Initialize last output time
+      updateLastOutputTime();
+
+      // Start overall timeout (safety net, can be disabled)
+      // v3 - AC B: This is the ONLY timeout that can terminate the process
+      // Silence alone does NOT terminate
+      if (!this.disableOverallTimeout) {
+        overallTimeoutHandle = setTimeout(() => {
+          if (!blocked && !timedOut && !resolved) {
+            this.log(`[ClaudeCodeExecutor] Overall timeout - execution exceeded ${this.config.timeout}ms`);
+            outputStream.emit(task.id, 'timeout', `[timeout] OVERALL TIMEOUT exceeded ${this.config.timeout}ms - terminating`);
+            timedOut = true;
+            terminateWithBlocking('TIMEOUT', 'TIMEOUT');
+          }
+        }, this.config.timeout);
+      }
+
+      // Start silence logging (v3 - AC B: log only, do NOT terminate)
+      silenceLogHandle = setInterval(() => {
+        if (resolved || blocked || timedOut) {
+          return;
         }
-      }, this.config.timeout);
+        const silentTime = Date.now() - lastOutputTime;
+        if (silentTime >= this.silenceLogIntervalMs) {
+          const totalTime = Date.now() - startTime;
+          this.log(`[ClaudeCodeExecutor] Silent for ${Math.round(silentTime/1000)}s (total: ${Math.round(totalTime/1000)}s) - continuing execution`);
+          outputStream.emit(task.id, 'timeout', `[timeout] silent=${Math.round(silentTime/1000)}s total=${Math.round(totalTime/1000)}s (continuing)`);
+        }
+      }, this.silenceLogIntervalMs);
 
       // Start process state monitoring
       processCheckHandle = setInterval(() => {
@@ -687,6 +765,7 @@ export class ClaudeCodeExecutor implements IExecutor {
           if (currentSlot > lastProgressSlot) {
             lastProgressSlot = currentSlot;
             process.stderr.write(`[executor] silent=${Math.round(silentTime/1000)}s total=${Math.round(totalTime/1000)}s\n`);
+            outputStream.emit(task.id, 'timeout', `[timeout] silent=${Math.round(silentTime/1000)}s total=${Math.round(totalTime/1000)}s`);
           }
         }
       }, PROCESS_CHECK_INTERVAL_MS);
@@ -702,8 +781,11 @@ export class ClaudeCodeExecutor implements IExecutor {
         const chunk = data.toString();
         output += chunk;
 
+        // AC A.2: Stream to subscribers
+        outputStream.emit(task.id, 'stdout', chunk);
+
         // Reset hard timeout on any output
-        resetHardTimeout();
+        updateLastOutputTime();
 
         // Check for interactive prompt patterns (Property 34)
         if (!blocked && containsInteractivePrompt(chunk)) {
@@ -717,8 +799,12 @@ export class ClaudeCodeExecutor implements IExecutor {
       childProcess.stderr?.on('data', (data: Buffer) => {
         const chunk = data.toString();
         errorOutput += chunk;
+
+        // AC A.2: Stream to subscribers
+        outputStream.emit(task.id, 'stderr', chunk);
+
         // Also reset hard timeout on stderr output (CLI is still producing output)
-        resetHardTimeout();
+        updateLastOutputTime();
 
         // Also check stderr for interactive prompts
         if (!blocked && containsInteractivePrompt(chunk)) {

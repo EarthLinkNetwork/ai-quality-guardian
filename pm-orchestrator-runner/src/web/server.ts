@@ -31,6 +31,8 @@ import { createDevconsoleRoutes } from './routes/devconsole';
 import { createSessionLogsRoutes } from './routes/session-logs';
 import { createRunnerControlsRoutes } from './routes/runner-controls';
 import { createSupervisorConfigRoutes } from './routes/supervisor-config';
+import { createSupervisorLogsRoutes } from './routes/supervisor-logs';
+import { createExecutorLogsRoutes } from './routes/executor-logs';
 import { detectTaskType } from '../utils/task-type-detector';
 
 /**
@@ -137,6 +139,13 @@ export function createApp(config: WebServerConfig): Express {
     // Per docs/spec/SUPERVISOR_SYSTEM.md
     app.use("/api/supervisor", createSupervisorConfigRoutes({ projectRoot: projectRoot || process.cwd() }));
 
+    // Supervisor Logs routes (AC A.1 - Observability)
+    // Per docs/spec/RUNNER_CONTROLS_SELF_UPDATE.md - Decision transparency
+    app.use("/api/supervisor", createSupervisorLogsRoutes());
+
+    // Executor Logs routes (AC A.2 - Real-time stdout/stderr streaming)
+    // Per docs/spec/RUNNER_CONTROLS_SELF_UPDATE.md - Executor Live Log
+    app.use("/api/executor", createExecutorLogsRoutes());
   }
 
   // ===================
@@ -425,11 +434,11 @@ export function createApp(config: WebServerConfig): Express {
   /**
    * POST /api/tasks
    * Enqueue a new task (does NOT run it directly)
-   * Body: { task_group_id: string, prompt: string }
+   * Body: { task_group_id: string, prompt: string, task_type?: string }
    */
   app.post('/api/tasks', async (req: Request, res: Response) => {
     try {
-      const { task_group_id, prompt } = req.body;
+      const { task_group_id, prompt, task_type } = req.body;
 
       if (!task_group_id || typeof task_group_id !== 'string' || task_group_id.trim() === '') {
         res.status(400).json({
@@ -447,7 +456,8 @@ export function createApp(config: WebServerConfig): Express {
         return;
       }
 
-      const taskType = detectTaskType(prompt.trim());
+      // Use provided task_type if valid, otherwise detect from prompt
+      const taskType = task_type || detectTaskType(prompt.trim());
       const item = await queueStore.enqueue(sessionId, task_group_id.trim(), prompt.trim(), undefined, taskType);
 
       res.status(201).json({
@@ -481,7 +491,8 @@ export function createApp(config: WebServerConfig): Express {
         return;
       }
 
-      const validStatuses: QueueItemStatus[] = ['QUEUED', 'RUNNING', 'COMPLETE', 'ERROR', 'CANCELLED'];
+      // v2.1: Added AWAITING_RESPONSE for clarification flow (P0-3, P0-4)
+      const validStatuses: QueueItemStatus[] = ['QUEUED', 'RUNNING', 'AWAITING_RESPONSE', 'COMPLETE', 'ERROR', 'CANCELLED'];
       if (!validStatuses.includes(status as QueueItemStatus)) {
         res.status(400).json({
           error: 'INVALID_STATUS',
@@ -909,6 +920,14 @@ export function createApp(config: WebServerConfig): Express {
       'PATCH /api/projects/:projectId/session-logs/sessions/:sessionId',
       'GET /api/projects/:projectId/session-logs/sessions',
       'GET /api/projects/:projectId/session-logs/summary',
+      // Supervisor Logs routes (AC A.1 - Observability)
+      'GET /api/supervisor/logs',
+      'GET /api/supervisor/logs/recent',
+      'GET /api/supervisor/logs/task/:taskId',
+      'GET /api/supervisor/logs/stream',
+      'GET /api/supervisor/logs/categories',
+      'GET /api/supervisor/logs/summary',
+      'DELETE /api/supervisor/logs',
     ];
     res.json({ routes });
   });

@@ -132,7 +132,7 @@ export interface SupervisedResult {
 
 export interface ISupervisor {
   compose(userPrompt: string, projectId: string): ComposedPrompt;
-  execute(composed: ComposedPrompt): Promise<SupervisedResult>;
+  execute(composed: ComposedPrompt, projectId?: string, taskId?: string): Promise<SupervisedResult>;
   validate(output: string): ValidationResult;
   format(output: string, projectId: string): FormattedOutput;
 }

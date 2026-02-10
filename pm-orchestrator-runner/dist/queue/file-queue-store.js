@@ -409,7 +409,7 @@ class FileQueueStore {
             content: userResponse,
             timestamp: now,
         });
-        task.status = 'RUNNING';
+        task.status = 'QUEUED';
         task.updated_at = now;
         task.conversation_history = history;
         this.saveTasks();
@@ -417,7 +417,7 @@ class FileQueueStore {
             success: true,
             task_id: taskId,
             old_status: 'AWAITING_RESPONSE',
-            new_status: 'RUNNING',
+            new_status: 'QUEUED',
         };
     }
     /**

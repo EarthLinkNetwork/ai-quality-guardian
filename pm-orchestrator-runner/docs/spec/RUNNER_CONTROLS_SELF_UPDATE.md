@@ -10,7 +10,92 @@ This specification defines the requirements for "Web-only Self-Update" - the abi
 
 ---
 
-## Acceptance Criteria
+## Browser UI Verification (NEW - Critical)
+
+These ACs ensure that Runner Controls are ACTUALLY VISIBLE in a real browser,
+not just present in HTML. This prevents "feature exists but not displayed" bugs.
+
+### AC-UI-RC-1: Settings画面にRunner Controlsセクションが必ず表示される
+
+**Definition:** Settings画面をブラウザで開いた時、Runner Controlsセクションが可視状態である
+
+**Requirements:**
+1. `/settings` へのナビゲーションでRunner Controlsセクションが表示される
+2. `[data-testid="settings-runner-controls"]` が visible 状態である
+3. Build, Restart, Stop の3つのボタンが可視である
+4. ステータス表示（ドット、ラベル）が可視である
+
+**Verification:**
+- Playwright E2E: `test/playwright/runner-controls-browser.spec.ts`
+- Gate: `npm run gate:browser`
+
+---
+
+### AC-UI-RC-2: ボタン押下でAPIが呼ばれUIにフィードバック表示
+
+**Definition:** ボタンをクリックした時、対応するAPIが呼ばれ、成功/失敗がUIに表示される
+
+**Requirements:**
+1. Stop ボタン押下 → `/api/runner/stop` が呼ばれる
+2. Build ボタン押下 → `/api/runner/build` が呼ばれる
+3. Restart ボタン押下 → `/api/runner/restart` が呼ばれる
+4. API成功時 → `#runner-controls-result` に成功メッセージ表示
+5. API失敗時 → `#runner-controls-result` にエラーメッセージ表示（.error クラス付与）
+
+**Verification:**
+- Playwright E2E: `test/playwright/runner-controls-browser.spec.ts`
+- Gate: `npm run gate:browser`
+
+---
+
+### AC-UI-RC-3: Build/Restart後にbuild_shaとweb_pidの変化を検証可能
+
+**Definition:** Build→Restart後、build_sha と web_pid がUIと/api/healthの両方で変化を確認できる
+
+**Requirements:**
+1. `/api/health` レスポンスに `build_sha` と `web_pid` が含まれる
+2. Restart後に `web_pid` が変化する（プロセスが再起動された証拠）
+3. Build後に `build_sha` が更新される（新しいビルドの証拠）
+4. UI上でこれらの値が表示される（#runner-status-detail）
+
+**Verification:**
+- E2E: `test/e2e/build-and-restart-reflection.e2e.test.ts`
+- Playwright E2E: `test/playwright/runner-controls-browser.spec.ts`
+
+---
+
+### AC-UI-RC-4: リロード後もRunner Controlsが表示され続ける
+
+**Definition:** ブラウザリロード後、または新規コンテキストでもRunner Controlsが表示される
+
+**Requirements:**
+1. `page.reload()` 後もRunner Controlsセクションが可視
+2. 新しいブラウザコンテキスト（キャッシュなし）でもRunner Controlsが可視
+3. これによりキャッシュ事故（古いbundle混入）を検出可能
+
+**Verification:**
+- Playwright E2E: `test/playwright/runner-controls-browser.spec.ts`
+- Gate: `npm run gate:browser`
+
+---
+
+### AC-GATE-RC-1: E2Eがgate:allに組み込まれ失敗時は完了判定不可
+
+**Definition:** Browser UI E2Eが`gate:all`に含まれ、失敗した場合は完了と言えない
+
+**Requirements:**
+1. `npm run gate:browser` が `gate:all` の一部として実行される
+2. Playwright E2Eが1件でも失敗 → gate:browser FAIL
+3. gate:browser FAIL → gate:all FAIL
+4. gate:all FAIL → 完了と報告してはいけない
+
+**Verification:**
+- `package.json` の `gate:all` スクリプトに `gate:browser` が含まれる
+- `diagnostics/browser-ui.check.ts` が存在し実行される
+
+---
+
+## Original Acceptance Criteria
 
 ### AC-RC-UI-1: Runner Controls UI Visibility
 
@@ -187,8 +272,59 @@ This specification defines the requirements for "Web-only Self-Update" - the abi
 
 ---
 
+## E1: Build & Restart Enhancement
+
+### E1-1: Build & Restart Button Always Enabled
+
+**Problem:** Build & Restart button was disabled when status showed "Stopped", preventing fresh rebuilds.
+
+**Solution:** Button is now always enabled (disabled only during operations in progress).
+
+**Behavior:**
+- Build Only button: Always enabled (disabled only during operation)
+- Build & Restart button: Always enabled (disabled only during operation)
+- Stop button: Enabled only when runner is running
+
+---
+
+### E1-2: Selfhost Mode Status Fix
+
+**Problem:** In selfhost/test mode, status showed "Stopped" even when web was responding.
+
+**Root Cause:** When `processSupervisor` is null AND `runnerProcess` is null, `isRunning` returned `false`.
+
+**Solution:** In selfhost mode, if API is responding, the web server IS running. Return `isRunning: true` with `process.pid` as fallback.
+
+**API Response (selfhost mode):**
+```json
+{
+  "isRunning": true,
+  "pid": 12345
+}
+```
+
+---
+
+### E1-3: Playwright E2E Test Expansion
+
+**New Tests Added:**
+1. `E1-1: Build & Restart button is enabled even when API returns status`
+2. `E1-2: Runner status shows Running when web is alive (selfhost mode)`
+3. `E1-3: Build Only button is always enabled`
+4. `E1-3: Stop button respects running state`
+5. `E1-3: Status dot reflects running state`
+
+**Verification:**
+```bash
+npx playwright test test/playwright/runner-controls-browser.spec.ts --grep "E1"
+npm run gate:browser
+```
+
+---
+
 ## Version History
 
 | Version | Date | Description |
 |---------|------|-------------|
 | 1.0.0 | 2026-02-09 | Initial specification |
+| 1.1.0 | 2026-02-09 | E1: Build & Restart enhancement (button always enabled, selfhost status fix) |

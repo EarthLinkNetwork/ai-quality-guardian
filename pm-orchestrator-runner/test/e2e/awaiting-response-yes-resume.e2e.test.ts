@@ -66,7 +66,7 @@ describe('E2E: AWAITING_RESPONSE YES Resume (AC-YES-RESUME-1)', () => {
 
       assert.ok(res.body.success, 'Reply should succeed');
       assert.strictEqual(res.body.old_status, 'AWAITING_RESPONSE');
-      assert.strictEqual(res.body.new_status, 'RUNNING');
+      assert.strictEqual(res.body.new_status, 'QUEUED');
     });
 
     it('should resume task with lowercase "yes" reply', async () => {
@@ -84,7 +84,7 @@ describe('E2E: AWAITING_RESPONSE YES Resume (AC-YES-RESUME-1)', () => {
         .expect(200);
 
       assert.ok(res.body.success);
-      assert.strictEqual(res.body.new_status, 'RUNNING');
+      assert.strictEqual(res.body.new_status, 'QUEUED');
     });
 
     it('should resume task with "Yes" reply', async () => {
@@ -102,7 +102,7 @@ describe('E2E: AWAITING_RESPONSE YES Resume (AC-YES-RESUME-1)', () => {
         .expect(200);
 
       assert.ok(res.body.success);
-      assert.strictEqual(res.body.new_status, 'RUNNING');
+      assert.strictEqual(res.body.new_status, 'QUEUED');
     });
 
     it('should resume task with "y" reply', async () => {
@@ -120,7 +120,7 @@ describe('E2E: AWAITING_RESPONSE YES Resume (AC-YES-RESUME-1)', () => {
         .expect(200);
 
       assert.ok(res.body.success);
-      assert.strictEqual(res.body.new_status, 'RUNNING');
+      assert.strictEqual(res.body.new_status, 'QUEUED');
     });
 
     it('should resume task with "Y" reply', async () => {
@@ -138,7 +138,7 @@ describe('E2E: AWAITING_RESPONSE YES Resume (AC-YES-RESUME-1)', () => {
         .expect(200);
 
       assert.ok(res.body.success);
-      assert.strictEqual(res.body.new_status, 'RUNNING');
+      assert.strictEqual(res.body.new_status, 'QUEUED');
     });
   });
 
@@ -186,10 +186,11 @@ describe('E2E: AWAITING_RESPONSE YES Resume (AC-YES-RESUME-1)', () => {
         .send({ reply: 'First answer' })
         .expect(200);
 
-      // Task is now in RUNNING - set to AWAITING_RESPONSE again for second round
+      // Task is now in QUEUED - transition to RUNNING first, then AWAITING_RESPONSE
+      await queueStore.updateStatus(task.task_id, 'RUNNING');
       const currentTask = await queueStore.getItem(task.task_id);
       const currentHistory = currentTask?.conversation_history || [];
-      
+
       await queueStore.setAwaitingResponse(
         task.task_id,
         { type: 'unknown', question: 'Continue?' },
@@ -274,7 +275,7 @@ describe('E2E: AWAITING_RESPONSE YES Resume (AC-YES-RESUME-1)', () => {
 
       // OK is also a valid affirmative reply
       assert.ok(res.body.success);
-      assert.strictEqual(res.body.new_status, 'RUNNING');
+      assert.strictEqual(res.body.new_status, 'QUEUED');
     });
 
     it('should accept any non-empty reply as valid', async () => {
@@ -292,7 +293,7 @@ describe('E2E: AWAITING_RESPONSE YES Resume (AC-YES-RESUME-1)', () => {
         .expect(200);
 
       assert.ok(res.body.success);
-      assert.strictEqual(res.body.new_status, 'RUNNING');
+      assert.strictEqual(res.body.new_status, 'QUEUED');
 
       const updatedTask = await queueStore.getItem(task.task_id);
       const lastEntry = updatedTask?.conversation_history?.[updatedTask.conversation_history.length - 1];

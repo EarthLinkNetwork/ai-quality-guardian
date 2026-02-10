@@ -41,7 +41,7 @@ exports.RUNNERS_TABLE_NAME = 'pm-runner-runners';
 exports.VALID_STATUS_TRANSITIONS = {
     QUEUED: ['RUNNING', 'CANCELLED'],
     RUNNING: ['COMPLETE', 'ERROR', 'CANCELLED', 'AWAITING_RESPONSE'],
-    AWAITING_RESPONSE: ['RUNNING', 'CANCELLED', 'ERROR'], // User response resumes to RUNNING
+    AWAITING_RESPONSE: ['QUEUED', 'RUNNING', 'CANCELLED', 'ERROR'], // User response re-queues for executor pickup
     COMPLETE: [], // Terminal state
     ERROR: [], // Terminal state
     CANCELLED: [], // Terminal state
@@ -513,7 +513,7 @@ class QueueStore {
                 '#status': 'status',
             },
             ExpressionAttributeValues: {
-                ':status': 'RUNNING',
+                ':status': 'QUEUED',
                 ':now': now,
                 ':history': history,
             },
@@ -522,7 +522,7 @@ class QueueStore {
             success: true,
             task_id: taskId,
             old_status: 'AWAITING_RESPONSE',
-            new_status: 'RUNNING',
+            new_status: 'QUEUED',
         };
     }
     /**

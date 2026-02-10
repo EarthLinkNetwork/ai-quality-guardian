@@ -68,3 +68,17 @@ export type {
   ProcessSupervisorOptions,
   ProcessSupervisorEvents,
 } from './process-supervisor';
+
+// Supervisor Logger (AC A.1 - Observability)
+export {
+  SupervisorLogger,
+  getSupervisorLogger,
+  resetSupervisorLogger,
+} from './supervisor-logger';
+
+export type {
+  SupervisorLogLevel,
+  SupervisorLogCategory,
+  SupervisorLogEntry,
+  SupervisorLogSubscriber,
+} from './supervisor-logger';

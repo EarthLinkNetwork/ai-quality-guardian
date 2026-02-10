@@ -216,6 +216,53 @@ export function checkSpecCoverage(projectRoot: string): SpecCoverageResult {
     }
   }
 
+  // Check 6: P0 Completion Declaration Rules exist in P0_RUNTIME_GUARANTEE.md
+  const p0SpecDir = path.join(projectRoot, 'docs', 'spec');
+  const p0SpecPath = path.join(p0SpecDir, 'P0_RUNTIME_GUARANTEE.md');
+  if (fs.existsSync(p0SpecPath)) {
+    const p0Content = fs.readFileSync(p0SpecPath, 'utf-8');
+
+    // Check P0-6: Stale Notification Mixing
+    const hasP0_6 = /P0-6.*Stale Notification/i.test(p0Content);
+    results.push({
+      rule: 'SPEC-P0-6',
+      description: 'P0-6 Stale Notification Mixing spec exists',
+      status: hasP0_6 ? 'PASS' : 'FAIL',
+      reason: hasP0_6 ? undefined : 'P0_RUNTIME_GUARANTEE.md missing P0-6 Stale Notification section',
+    });
+
+    // Check P0 Completion Declaration Rules
+    const REQUIRED_COMPLETION_KEYS = ['verdict', 'violations', 'sessionCount', 'staleFiltered', 'totalChunks', 'evidencePath'];
+    const hasCompletionSection = /Completion Declaration Rules/i.test(p0Content);
+    const hasAllKeys = REQUIRED_COMPLETION_KEYS.every(key => p0Content.includes(key));
+    const hasAmbiguousBan = /[Aa]mbiguous.*forbidden|曖昧.*禁止/i.test(p0Content);
+
+    const completionPass = hasCompletionSection && hasAllKeys && hasAmbiguousBan;
+    results.push({
+      rule: 'SPEC-P0-COMPLETION',
+      description: 'P0 Completion Declaration Rules (fail-closed format)',
+      status: completionPass ? 'PASS' : 'FAIL',
+      reason: completionPass ? undefined : [
+        !hasCompletionSection && 'Missing "Completion Declaration Rules" section',
+        !hasAllKeys && `Missing required keys: ${REQUIRED_COMPLETION_KEYS.filter(k => !p0Content.includes(k)).join(', ')}`,
+        !hasAmbiguousBan && 'Missing ambiguous expression ban',
+      ].filter(Boolean).join('; '),
+    });
+  } else {
+    results.push({
+      rule: 'SPEC-P0-6',
+      description: 'P0-6 Stale Notification Mixing spec exists',
+      status: 'FAIL',
+      reason: 'docs/spec/P0_RUNTIME_GUARANTEE.md not found',
+    });
+    results.push({
+      rule: 'SPEC-P0-COMPLETION',
+      description: 'P0 Completion Declaration Rules (fail-closed format)',
+      status: 'FAIL',
+      reason: 'docs/spec/P0_RUNTIME_GUARANTEE.md not found',
+    });
+  }
+
   const passed = results.every(r => r.status === 'PASS');
 
   return {

@@ -1728,12 +1728,24 @@
 
     .runner-controls-actions {
       display: flex;
+      flex-direction: column;
       gap: 12px;
-      flex-wrap: wrap;
+    }
+
+    .runner-btn-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .runner-btn-group .btn-hint {
+      font-size: 0.8rem;
+      color: #6b7280;
     }
 
     .runner-controls-actions .btn {
-      min-width: 100px;
+      min-width: 140px;
+      flex-shrink: 0;
     }
 
     .runner-controls-actions .btn-build {
@@ -1899,6 +1911,144 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+    }
+
+    // P0-1: Global EventSource for executor log streaming
+    let executorLogEventSource = null;
+
+    // P0-1: Load executor logs for a task
+    async function loadExecutorLogs(taskId, taskStatus) {
+      const container = document.getElementById('executor-logs-container');
+      const statusBadge = document.getElementById('executor-logs-status');
+      if (!container) return;
+
+      try {
+        // Fetch existing logs
+        const response = await fetch(`/api/executor/logs/task/${encodeURIComponent(taskId)}`);
+        const data = await response.json();
+
+        if (data.chunks && data.chunks.length > 0) {
+          container.innerHTML = '';
+          data.chunks.forEach(chunk => {
+            appendExecutorLogChunk(container, chunk);
+          });
+          if (statusBadge) {
+            statusBadge.textContent = `${data.chunks.length} entries`;
+            statusBadge.className = 'badge badge-success';
+          }
+        } else {
+          container.innerHTML = '<div class="executor-no-logs" style="color: #6b7280; font-style: italic;">No executor output captured yet.</div>';
+          if (statusBadge) {
+            statusBadge.textContent = 'empty';
+            statusBadge.className = 'badge badge-secondary';
+          }
+        }
+
+        // Set up SSE streaming for RUNNING tasks
+        if (taskStatus === 'RUNNING') {
+          setupExecutorLogStream(taskId);
+          if (statusBadge) {
+            statusBadge.textContent = 'streaming';
+            statusBadge.className = 'badge badge-primary';
+          }
+        }
+
+        // Scroll to bottom
+        container.scrollTop = container.scrollHeight;
+
+      } catch (error) {
+        container.innerHTML = `<div class="executor-error" style="color: #ef4444;">Error loading logs: ${escapeHtml(error.message)}</div>`;
+        if (statusBadge) {
+          statusBadge.textContent = 'error';
+          statusBadge.className = 'badge badge-error';
+        }
+      }
+    }
+
+    // P0-1: Append a log chunk to the container
+    function appendExecutorLogChunk(container, chunk) {
+      const div = document.createElement('div');
+      div.className = `executor-log-chunk executor-${chunk.stream}`;
+      div.setAttribute('data-testid', 'executor-log-chunk');
+      div.setAttribute('data-stream', chunk.stream);
+      div.setAttribute('data-sequence', chunk.sequence);
+
+      // Color coding by stream type
+      const colors = {
+        stdout: '#d4d4d4',
+        stderr: '#f87171',
+        system: '#60a5fa',
+        error: '#ef4444',
+      };
+      div.style.color = colors[chunk.stream] || '#d4d4d4';
+
+      // Timestamp prefix
+      const time = new Date(chunk.timestamp).toLocaleTimeString();
+      const prefix = `[${time}] `;
+
+      div.innerHTML = `<span class="executor-time" style="color: #6b7280;">${escapeHtml(prefix)}</span><span class="executor-content">${escapeHtml(chunk.content)}</span>`;
+      container.appendChild(div);
+    }
+
+    // P0-1: Set up SSE streaming for executor logs
+    function setupExecutorLogStream(taskId) {
+      // Close existing connection
+      if (executorLogEventSource) {
+        executorLogEventSource.close();
+        executorLogEventSource = null;
+      }
+
+      const container = document.getElementById('executor-logs-container');
+      if (!container) return;
+
+      // Get the last sequence number for resuming
+      const lastChunk = container.querySelector('.executor-log-chunk:last-child');
+      const since = lastChunk ? lastChunk.getAttribute('data-sequence') : '0';
+
+      // Connect to SSE stream
+      const url = `/api/executor/logs/stream?taskId=${encodeURIComponent(taskId)}&since=${since}`;
+      executorLogEventSource = new EventSource(url);
+
+      executorLogEventSource.addEventListener('output', (event) => {
+        try {
+          const chunk = JSON.parse(event.data);
+          appendExecutorLogChunk(container, chunk);
+          container.scrollTop = container.scrollHeight;
+
+          // Update status badge
+          const statusBadge = document.getElementById('executor-logs-status');
+          if (statusBadge) {
+            const count = container.querySelectorAll('.executor-log-chunk').length;
+            statusBadge.textContent = `${count} entries (live)`;
+          }
+        } catch (e) {
+          console.error('Error parsing SSE output:', e);
+        }
+      });
+
+      executorLogEventSource.addEventListener('error', (event) => {
+        console.error('Executor log SSE error:', event);
+        const indicator = document.getElementById('executor-stream-indicator');
+        if (indicator) {
+          indicator.style.background = '#ef4444';
+        }
+      });
+
+      executorLogEventSource.addEventListener('connected', (event) => {
+        console.log('Executor log SSE connected');
+        const indicator = document.getElementById('executor-stream-indicator');
+        if (indicator) {
+          indicator.style.background = '#22c55e';
+        }
+      });
+    }
+
+    // P0-1: Clean up SSE on navigation
+    function cleanupExecutorLogStream() {
+      if (executorLogEventSource) {
+        executorLogEventSource.close();
+        executorLogEventSource = null;
+      }
     }
 
     // Update nav active state
@@ -2122,6 +2272,33 @@
           `;
         }
 
+        // P0-1: Real Executor Logs Section (stdout/stderr from Claude Code)
+        const executorLogsSection = `
+          <div class="card" data-testid="executor-logs-section">
+            <h3>Executor Output <span id="executor-logs-status" class="badge badge-secondary" style="font-size: 0.8rem; margin-left: 8px;">loading...</span></h3>
+            <div id="executor-logs-container" data-testid="executor-logs-container" style="
+              max-height: 400px;
+              overflow-y: auto;
+              background: #1e1e1e;
+              color: #d4d4d4;
+              font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+              font-size: 12px;
+              padding: 12px;
+              border-radius: 6px;
+              white-space: pre-wrap;
+              word-break: break-all;
+            ">
+              <div class="executor-loading">Fetching executor logs...</div>
+            </div>
+            ${task.status === 'RUNNING' ? `
+            <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+              <span id="executor-stream-indicator" style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%; animation: pulse 1.5s infinite;"></span>
+              <span style="font-size: 12px; color: #6b7280;">Live streaming</span>
+            </div>
+            ` : ''}
+          </div>
+        `;
+
         app.innerHTML = `
           <div class="page-header">
             <h2>Task Detail</h2>
@@ -2211,7 +2388,11 @@
 
           ${errorSection}
           ${logEntries}
+          ${executorLogsSection}
         `;
+
+        // P0-1: Load executor logs and set up SSE streaming
+        await loadExecutorLogs(task.task_id, task.status);
 
         // AC-CHAT-3, AC-INPUT-1: Setup reply form if present
         const replyForm = document.getElementById('reply-form');
@@ -2515,8 +2696,11 @@
 
           <!-- Runner Controls (AC-RC-UI-1) -->
           <div data-testid="settings-runner-controls" class="card settings-section">
-            <h3>Runner Controls</h3>
-            <p class="settings-hint">Manage the pm-orchestrator-runner process. Build, restart, or stop the runner.</p>
+            <h3>Self-Update (Build & Restart)</h3>
+            <p class="settings-hint">
+              Web UI から pm-orchestrator-runner 自身をビルド・再起動できます。<br>
+              コード修正後にここから反映すれば、ターミナルに戻る必要はありません。
+            </p>
             <div class="runner-controls">
               <div class="runner-controls-status" id="runner-controls-status">
                 <div class="status-indicator">
@@ -2528,9 +2712,18 @@
                 </div>
               </div>
               <div class="runner-controls-actions">
-                <button class="btn btn-build" id="btn-runner-build" onclick="runnerBuild()" disabled>Build</button>
-                <button class="btn btn-restart" id="btn-runner-restart" onclick="runnerRestart()" disabled>Restart</button>
-                <button class="btn btn-stop" id="btn-runner-stop" onclick="runnerStop()" disabled>Stop</button>
+                <div class="runner-btn-group">
+                  <button class="btn btn-build" id="btn-runner-build" onclick="runnerBuild()" disabled>Build Only</button>
+                  <span class="btn-hint">TypeScript をコンパイル (npm run build)。プロセスは再起動しない。</span>
+                </div>
+                <div class="runner-btn-group">
+                  <button class="btn btn-restart" id="btn-runner-restart" onclick="runnerRestart()" disabled>Build & Restart</button>
+                  <span class="btn-hint">Build + プロセス再起動。通常はこれを使う。反映にはこれが必要。</span>
+                </div>
+                <div class="runner-btn-group">
+                  <button class="btn btn-stop" id="btn-runner-stop" onclick="runnerStop()" disabled>Stop</button>
+                  <span class="btn-hint">Runner を停止。タスク処理が完全に止まる。</span>
+                </div>
               </div>
               <div id="runner-controls-result" class="runner-controls-result" style="display: none;"></div>
             </div>
@@ -3020,9 +3213,10 @@
       }
       
       // Update button states
+      // E1-1: Build & Restart should work even when stopped (allows fresh rebuild)
       if (btnBuild) btnBuild.disabled = isOperationInProgress;
-      if (btnRestart) btnRestart.disabled = isOperationInProgress || !isRunning;
-      if (btnStop) btnStop.disabled = isOperationInProgress || !isRunning;
+      if (btnRestart) btnRestart.disabled = isOperationInProgress; // Always enabled unless op in progress
+      if (btnStop) btnStop.disabled = isOperationInProgress || !isRunning; // Only when running
     }
 
     // Show operation result
@@ -4141,6 +4335,8 @@
 
     // Navigate
     function navigate(path) {
+      // P0-1: Clean up SSE connections on navigation
+      cleanupExecutorLogStream();
       history.pushState(null, '', path);
       router();
     }

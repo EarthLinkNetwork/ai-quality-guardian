@@ -338,7 +338,7 @@ export class InMemoryQueueStore implements IQueueStore {
       timestamp: now,
     });
 
-    task.status = 'RUNNING';
+    task.status = 'QUEUED';
     task.updated_at = now;
     task.conversation_history = history;
 
@@ -346,7 +346,7 @@ export class InMemoryQueueStore implements IQueueStore {
       success: true,
       task_id: taskId,
       old_status: 'AWAITING_RESPONSE',
-      new_status: 'RUNNING',
+      new_status: 'QUEUED',
     };
   }
 

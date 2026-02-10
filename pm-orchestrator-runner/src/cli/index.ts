@@ -45,6 +45,7 @@ import {
   PreflightReport,
   ExecutorType,
 } from '../diagnostics/executor-preflight';
+import { getExecutorOutputStream } from '../executor/executor-output-stream';
 
 /**
  * Help text
@@ -482,8 +483,22 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
     console.log(`[Runner] Executing task: ${item.task_id}`);
     console.log(`[Runner] Prompt: ${item.prompt.substring(0, 100)}${item.prompt.length > 100 ? '...' : ''}`);
 
+    // AC A.2: Get output stream for state transition logging
+    const stateStream = getExecutorOutputStream();
+
+    // Build prompt including conversation history for re-execution after reply
+    let effectivePrompt = item.prompt;
+    if (item.conversation_history && item.conversation_history.length > 0) {
+      const historyLines = item.conversation_history.map(entry =>
+        `[${entry.role}]: ${entry.content}`
+      ).join('\n');
+      effectivePrompt = `${item.prompt}\n\n[Conversation History]\n${historyLines}\n[/Conversation History]\n\nPlease continue based on the conversation above. The user has already replied.`;
+      console.log(`[Runner] Re-executing with ${item.conversation_history.length} conversation history entries`);
+      stateStream.emit(item.task_id, 'recovery', `[resume] re-executing with ${item.conversation_history.length} history entries`);
+    }
+
     // Inject TaskContext and OutputRules into the prompt for all Web Chat tasks
-    const enrichedPrompt = injectTaskContext(item.prompt, item);
+    const enrichedPrompt = injectTaskContext(effectivePrompt, item);
 
     try {
       // Check for test executor mode (for E2E testing of INCOMPLETE handling)
@@ -558,11 +573,12 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
 
       // Use AutoResolvingExecutor to automatically resolve clarification requests
       // When Claude Code asks "where should I save the file?", LLM decides automatically
+      // v3 - AC B: silence=timeout ABOLISHED. Only overall timeout as safety net.
       const executor = new AutoResolvingExecutor({
         projectPath,
-        timeout: 10 * 60 * 1000, // 10 minutes
-        softTimeoutMs: 60 * 1000,
-        hardTimeoutMs: 120 * 1000,
+        timeout: 10 * 60 * 1000, // 10 minutes (overall safety net)
+        softTimeoutMs: 60 * 1000, // warning only (for logging)
+        silenceLogIntervalMs: 30 * 1000, // silence logging interval (NOT termination)
         maxRetries: 2, // Allow 2 retry attempts for auto-resolution
       });
 
@@ -589,6 +605,7 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         // Questions in output -> AWAITING_RESPONSE (not COMPLETE)
         if (isReadInfoOrReport && hasOutput && hasUnansweredQuestions(cleanOutput)) {
           console.log(`[Runner] READ_INFO/REPORT COMPLETE but has questions -> AWAITING_RESPONSE`);
+          stateStream.emit(item.task_id, 'state', `[state] AWAITING_RESPONSE (questions detected in COMPLETE output)`);
           return {
             status: 'ERROR',
             errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
@@ -596,8 +613,10 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
           };
         }
         // Return output for visibility in UI (AC-CHAT-001, AC-CHAT-002)
+        stateStream.emit(item.task_id, 'state', `[state] COMPLETE`);
         return { status: 'COMPLETE', output: cleanOutput || undefined };
       } else if (result.status === 'ERROR') {
+        stateStream.emit(item.task_id, 'state', `[state] ERROR`);
         return { status: 'ERROR', errorMessage: result.error || 'Task failed', output: cleanOutput || undefined };
       } else if (isReadInfoOrReport) {
         // READ_INFO/REPORT: output is the deliverable, not file evidence
@@ -606,6 +625,7 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
           // Per COMPLETION_JUDGMENT.md: Check for questions before marking COMPLETE
           if (hasUnansweredQuestions(cleanOutput)) {
             console.log(`[Runner] READ_INFO/REPORT ${result.status} with questions -> AWAITING_RESPONSE`);
+            stateStream.emit(item.task_id, 'state', `[state] AWAITING_RESPONSE (questions in ${result.status} output)`);
             return {
               status: 'ERROR',
               errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
@@ -614,12 +634,14 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
           }
           // Output exists, no questions -> task succeeded (COMPLETE)
           console.log(`[Runner] READ_INFO/REPORT ${result.status} with output -> COMPLETE`);
+          stateStream.emit(item.task_id, 'state', `[state] COMPLETE (${result.status} with output)`);
           return { status: 'COMPLETE', output: cleanOutput };
         } else {
           // No output -> needs clarification (AWAITING_RESPONSE, never ERROR)
           const clarificationMsg = generateClarificationMessage(item.prompt);
           const fallbackOutput = `INCOMPLETE: Task could not produce results.\n${clarificationMsg}`;
           console.log(`[Runner] READ_INFO/REPORT ${result.status} without output -> AWAITING_RESPONSE`);
+          stateStream.emit(item.task_id, 'state', `[state] AWAITING_RESPONSE (no output)`);
           return {
             status: 'ERROR',
             errorMessage: 'AWAITING_CLARIFICATION:' + clarificationMsg,
@@ -629,6 +651,7 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
       } else {
         // IMPLEMENTATION / other task types: non-COMPLETE -> ERROR, preserve output
         console.log(`[Runner] ${taskType} ${result.status} -> ERROR (output preserved: ${hasOutput})`);
+        stateStream.emit(item.task_id, 'state', `[state] ERROR (${taskType} ${result.status})`);
         return {
           status: 'ERROR',
           errorMessage: `Task ended with status: ${result.status}`,
@@ -638,6 +661,7 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`[Runner] Task ${item.task_id} failed:`, errorMessage);
+      stateStream.emit(item.task_id, 'state', `[state] ERROR (catch: ${errorMessage.substring(0, 100)})`);
       return { status: 'ERROR', errorMessage };
     }
   };
@@ -902,10 +926,16 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     console.log(`[Runner] Recovered ${count} stale tasks`);
   });
 
+  const webSessionId = generateWebSessionId();
+
+  // Tag ExecutorOutputStream with current session for stale filtering
+  const outputStream = getExecutorOutputStream();
+  outputStream.setSessionId(webSessionId);
+
   const server = new WebServer({
     port,
     queueStore,
-    sessionId: generateWebSessionId(),
+    sessionId: webSessionId,
     namespace: namespaceConfig.namespace,
     projectRoot: projectPath,
     stateDir: effectiveStateDir,

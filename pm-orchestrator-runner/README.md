@@ -222,6 +222,30 @@ curl http://localhost:5678/api/tasks/<task_id>/trace?latest=true
 
 ---
 
+## P0 Completion Declaration Rules
+
+P0/P1 の完了宣言は固定フォーマットに従う。違反は gate:spec で FAIL。
+
+```
+verdict:       PASS | FAIL
+violations:    <number>
+sessionCount:  <number>
+staleFiltered: <number>
+totalChunks:   <number>
+evidencePath:  <path to JSON evidence>
+```
+
+**Rules:**
+- 上記 6 キーが全て揃っていなければ FAIL
+- `evidencePath` のファイルが存在しなければ FAIL
+- AWAITING_RESPONSE は trigger → reply → resume → COMPLETE の機械実行証拠が必須
+- 曖昧表現（"たぶん", "かもしれない", "probably", "maybe"）を含む完了レポートは FAIL
+- 手順・レポートはコードブロックで提示（コードブロック外の手順提示は禁止）
+
+詳細: [docs/spec/P0_RUNTIME_GUARANTEE.md](docs/spec/P0_RUNTIME_GUARANTEE.md)
+
+---
+
 ## Why This Exists
 
 Claude Code などの LLM ツールは:

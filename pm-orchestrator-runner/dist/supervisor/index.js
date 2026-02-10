@@ -19,7 +19,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createProcessSupervisor = exports.ProcessSupervisor = exports.RestartHandler = exports.detectRestartState = exports.resetSupervisor = exports.getSupervisor = exports.Supervisor = exports.TEMPLATE_MARKERS = exports.extractComponents = exports.validateTemplate = exports.substituteVariables = exports.applyOutputTemplateWithMarkers = exports.applyOutputTemplate = exports.mergePromptWithMarkers = exports.mergePrompt = exports.getProjectConfigPath = exports.getGlobalConfigPath = exports.SupervisorConfigManager = exports.mergeConfigs = exports.saveProjectConfig = exports.loadProjectConfig = exports.saveGlobalConfig = exports.loadGlobalConfig = void 0;
+exports.resetSupervisorLogger = exports.getSupervisorLogger = exports.SupervisorLogger = exports.createProcessSupervisor = exports.ProcessSupervisor = exports.RestartHandler = exports.detectRestartState = exports.resetSupervisor = exports.getSupervisor = exports.Supervisor = exports.TEMPLATE_MARKERS = exports.extractComponents = exports.validateTemplate = exports.substituteVariables = exports.applyOutputTemplateWithMarkers = exports.applyOutputTemplate = exports.mergePromptWithMarkers = exports.mergePrompt = exports.getProjectConfigPath = exports.getGlobalConfigPath = exports.SupervisorConfigManager = exports.mergeConfigs = exports.saveProjectConfig = exports.loadProjectConfig = exports.saveGlobalConfig = exports.loadGlobalConfig = void 0;
 // Types
 __exportStar(require("./types"), exports);
 // Config Loader
@@ -55,4 +55,9 @@ Object.defineProperty(exports, "RestartHandler", { enumerable: true, get: functi
 var process_supervisor_1 = require("./process-supervisor");
 Object.defineProperty(exports, "ProcessSupervisor", { enumerable: true, get: function () { return process_supervisor_1.ProcessSupervisor; } });
 Object.defineProperty(exports, "createProcessSupervisor", { enumerable: true, get: function () { return process_supervisor_1.createProcessSupervisor; } });
+// Supervisor Logger (AC A.1 - Observability)
+var supervisor_logger_1 = require("./supervisor-logger");
+Object.defineProperty(exports, "SupervisorLogger", { enumerable: true, get: function () { return supervisor_logger_1.SupervisorLogger; } });
+Object.defineProperty(exports, "getSupervisorLogger", { enumerable: true, get: function () { return supervisor_logger_1.getSupervisorLogger; } });
+Object.defineProperty(exports, "resetSupervisorLogger", { enumerable: true, get: function () { return supervisor_logger_1.resetSupervisorLogger; } });
 //# sourceMappingURL=index.js.map

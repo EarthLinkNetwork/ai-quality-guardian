@@ -64,13 +64,16 @@ describe('E2E: Runner Controls (AC-OPS-1)', () => {
   });
 
   describe('GET /api/runner/status', () => {
-    it('should return status when runner is not running', async () => {
+    it('should return status with web process info (E1-2: selfhost mode always running)', async () => {
       const res = await request(app)
         .get('/api/runner/status')
         .expect(200);
 
-      assert.strictEqual(res.body.isRunning, false);
-      assert.strictEqual(res.body.pid, undefined);
+      // E1-2 Fix: In selfhost mode, web is always running since API is responding
+      assert.strictEqual(res.body.isRunning, true);
+      // Should return current process.pid as fallback
+      assert.ok(typeof res.body.pid === 'number', 'pid should be a number');
+      assert.ok(res.body.pid > 0, 'pid should be positive');
     });
   });
 

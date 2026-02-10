@@ -165,7 +165,7 @@ describe('E2E: Reply UI (AC-CHAT-2, AC-CHAT-3, AC-INPUT-1)', () => {
   });
 
   describe('Reply flow integration', () => {
-    it('should complete the reply flow: AWAITING_RESPONSE -> reply -> RUNNING', async () => {
+    it('should complete the reply flow: AWAITING_RESPONSE -> reply -> QUEUED', async () => {
       // 1. Create task
       const createRes = await request(app)
         .post('/api/tasks')

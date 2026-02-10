@@ -19,6 +19,7 @@ import { ClaudeCodeExecutor, ExecutorConfig, ExecutorTask, ExecutorResult, IExec
 import { LLMClient } from '../mediation/llm-client';
 import { DecisionClassifier, ClassificationResult, BestPracticeRule } from './decision-classifier';
 import { UserPreferenceStore, PreferenceMatch } from './user-preference-store';
+import { getExecutorOutputStream } from './executor-output-stream';
 
 /**
  * Clarification types detected from Claude Code output
@@ -39,13 +40,25 @@ export const FALLBACK_QUESTIONS = {
   implementation: 'このタスクを実行するために、以下の情報を教えてください:\n1. 変更対象のファイル\n2. 期待する動作\n\n(Please provide the following information to proceed:\n1. Target files to modify\n2. Expected behavior)',
   blocked_timeout: 'タスクがタイムアウトしました。続行しますか？ (YES/NO)\n(Task timed out. Do you want to continue? YES/NO)',
   blocked_interactive: '対話的な確認が必要です。続行を許可しますか？ (YES/NO)\n(Interactive confirmation required. Do you allow continuing? YES/NO)',
+  dangerous_op: '危険な操作の確認が必要です。続行を許可しますか？ (YES/NO)\n(Dangerous operation confirmation required. Do you allow continuing? YES/NO)',
 };
+
+/**
+ * Task types that can be BLOCKED (require explicit confirmation)
+ * AC D: Guard Responsibility - Only DANGEROUS_OP and forgery prevention can block
+ */
+export const BLOCKABLE_TASK_TYPES: string[] = ['DANGEROUS_OP'];
 
 /**
  * Select appropriate fallback question based on blocked reason and task type
  * Exported for testing - INV-1 helper
  */
 export function selectFallbackQuestion(result: ExecutorResult, task: ExecutorTask): string {
+  // For DANGEROUS_OP tasks (the only type that can be BLOCKED per AC D)
+  if (task.taskType === 'DANGEROUS_OP') {
+    return FALLBACK_QUESTIONS.dangerous_op;
+  }
+
   // For IMPLEMENTATION tasks, use implementation-specific question
   if (task.taskType === 'IMPLEMENTATION') {
     return FALLBACK_QUESTIONS.implementation;
@@ -62,6 +75,15 @@ export function selectFallbackQuestion(result: ExecutorResult, task: ExecutorTas
 
   // Default fallback
   return FALLBACK_QUESTIONS.default;
+}
+
+/**
+ * Check if a task type can be BLOCKED
+ * AC D: Guard Responsibility - Only DANGEROUS_OP can be BLOCKED
+ * All other task types convert BLOCKED to INCOMPLETE
+ */
+export function canTaskTypeBeBlocked(taskType?: string): boolean {
+  return taskType !== undefined && BLOCKABLE_TASK_TYPES.includes(taskType);
 }
 
 /**
@@ -183,10 +205,10 @@ const CLARIFICATION_PATTERNS = [
  */
 export class AutoResolvingExecutor implements IExecutor {
   private readonly innerExecutor: ClaudeCodeExecutor;
-  private readonly llmClient: LLMClient;
+  private readonly llmClient: LLMClient | null;
   private readonly maxRetries: number;
   private readonly projectPath: string;
-  private readonly classifier: DecisionClassifier;
+  private readonly classifier: DecisionClassifier | null;
   private readonly preferenceStore: UserPreferenceStore;
   private readonly userResponseHandler?: UserResponseHandler;
 
@@ -196,18 +218,24 @@ export class AutoResolvingExecutor implements IExecutor {
     this.maxRetries = config.maxRetries ?? 2;
     this.userResponseHandler = config.userResponseHandler;
 
-    // Initialize LLM client for auto-resolution
-    this.llmClient = LLMClient.fromEnv(
-      config.llmProvider ?? 'openai',
-      undefined,
-      { temperature: 0.3 } // Lower temperature for more deterministic decisions
-    );
-
-    // Initialize decision classifier with custom rules
-    this.classifier = new DecisionClassifier(
-      config.customRules,
-      this.llmClient
-    );
+    // Initialize LLM client for auto-resolution (optional - tasks work without it)
+    let llmClient: LLMClient | null = null;
+    let classifier: DecisionClassifier | null = null;
+    try {
+      llmClient = LLMClient.fromEnv(
+        config.llmProvider ?? 'openai',
+        undefined,
+        { temperature: 0.3 }
+      );
+      classifier = new DecisionClassifier(
+        config.customRules,
+        llmClient
+      );
+    } catch (e) {
+      console.log(`[AutoResolvingExecutor] LLM client not available (auto-resolution disabled): ${(e as Error).message}`);
+    }
+    this.llmClient = llmClient;
+    this.classifier = classifier;
 
     // Initialize user preference store
     this.preferenceStore = new UserPreferenceStore(
@@ -241,6 +269,11 @@ export class AutoResolvingExecutor implements IExecutor {
     let currentTask = task;
     let lastResult: ExecutorResult | undefined;
 
+    // Guard trace: log task type and guard decision
+    const guardStream = getExecutorOutputStream();
+    guardStream.emit(task.id, 'guard', `[guard] taskType=${task.taskType || 'unknown'}`);
+    guardStream.emit(task.id, 'guard', `[guard] maxRetries=${this.maxRetries}`);
+
     while (attempts < this.maxRetries) {
       attempts++;
       console.log(`[AutoResolvingExecutor] Attempt ${attempts}/${this.maxRetries}`);
@@ -252,6 +285,7 @@ export class AutoResolvingExecutor implements IExecutor {
       // If successful, return
       if (result.status === 'COMPLETE') {
         console.log('[AutoResolvingExecutor] Task completed successfully');
+        guardStream.emit(task.id, 'guard', `[guard] decision=PROCEED status=COMPLETE`);
         return result;
       }
 
@@ -271,10 +305,13 @@ export class AutoResolvingExecutor implements IExecutor {
       if (result.status === 'BLOCKED') {
         const guardedResult = applyBlockedOutputGuard(result, task);
 
-        // INV-2: IMPLEMENTATION Task BLOCKED Prohibition
-        // IMPLEMENTATION tasks should never be BLOCKED, convert to AWAITING_RESPONSE
-        if (task.taskType === 'IMPLEMENTATION') {
-          console.log('[AutoResolvingExecutor] INV-2: Converting IMPLEMENTATION BLOCKED to AWAITING_RESPONSE');
+        // AC D: Guard Responsibility - Only DANGEROUS_OP can be BLOCKED
+        // All other task types convert BLOCKED to INCOMPLETE
+        // This replaces the previous INV-2 (IMPLEMENTATION-only prohibition)
+        if (!canTaskTypeBeBlocked(task.taskType)) {
+          const taskTypeStr = task.taskType || 'unknown';
+          console.log(`[AutoResolvingExecutor] AC D Guard: Converting ${taskTypeStr} BLOCKED to INCOMPLETE (only DANGEROUS_OP can be BLOCKED)`);
+          guardStream.emit(task.id, 'guard', `[guard] decision=BLOCKED_TO_INCOMPLETE taskType=${taskTypeStr}`);
           return {
             ...guardedResult,
             status: 'INCOMPLETE' as const, // AWAITING_RESPONSE is handled at higher level
@@ -282,6 +319,9 @@ export class AutoResolvingExecutor implements IExecutor {
           };
         }
 
+        // DANGEROUS_OP: Allow BLOCKED status (requires explicit user confirmation)
+        console.log('[AutoResolvingExecutor] AC D Guard: DANGEROUS_OP task allowed to be BLOCKED');
+        guardStream.emit(task.id, 'guard', `[guard] decision=BLOCKED (DANGEROUS_OP)`);
         return guardedResult;
       }
 
@@ -335,7 +375,11 @@ export class AutoResolvingExecutor implements IExecutor {
       return this.applyPreference(preferenceMatch, originalPrompt, clarification);
     }
 
-    // Step 2: Classify the clarification
+    // Step 2: Classify the clarification (requires LLM client)
+    if (!this.classifier) {
+      console.log('[AutoResolvingExecutor] No classifier available, cannot auto-resolve');
+      return { resolved: false };
+    }
     const classification = await this.classifier.classifyFull(question, clarification.context);
     console.log(`[AutoResolvingExecutor] Classification: ${classification.category} (confidence: ${classification.confidence})`);
 
@@ -634,6 +678,7 @@ Do not ask for further clarification. Proceed with the above.`;
     originalPrompt: string,
     clarification: ParsedClarification
   ): Promise<AutoResolution> {
+    if (!this.llmClient) return { resolved: false };
     const projectStructure = this.scanProjectStructure();
     const questionStr = clarification.question || 'Where should the file be saved?';
 
@@ -697,6 +742,7 @@ Determine the appropriate file path.`,
     originalPrompt: string,
     clarification: ParsedClarification
   ): Promise<AutoResolution> {
+    if (!this.llmClient) return { resolved: false };
     const questionStr = clarification.question || 'What is the scope?';
 
     const response = await this.llmClient.chat([
@@ -752,6 +798,7 @@ Clarify the scope.`,
     originalPrompt: string,
     clarification: ParsedClarification
   ): Promise<AutoResolution> {
+    if (!this.llmClient) return { resolved: false };
     const questionStr = clarification.question || 'What action should be taken?';
 
     const response = await this.llmClient.chat([

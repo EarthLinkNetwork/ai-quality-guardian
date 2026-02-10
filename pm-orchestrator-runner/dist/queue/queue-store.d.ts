@@ -73,9 +73,15 @@ export interface ClarificationRequest {
  * Task type for execution handling
  * - READ_INFO: Information requests, no file changes expected
  * - REPORT: Report/summary generation, no file changes expected
+ * - LIGHT_EDIT: Small changes, bug fixes (low risk)
  * - IMPLEMENTATION: File creation/modification tasks
+ * - REVIEW_RESPONSE: Code review responses
+ * - CONFIG_CI_CHANGE: Configuration and CI/CD changes
+ * - DANGEROUS_OP: Destructive operations (only type that can be BLOCKED)
+ *
+ * AC D: Guard Responsibility - Only DANGEROUS_OP can be BLOCKED
  */
-export type TaskTypeValue = 'READ_INFO' | 'IMPLEMENTATION' | 'REPORT';
+export type TaskTypeValue = 'READ_INFO' | 'REPORT' | 'LIGHT_EDIT' | 'IMPLEMENTATION' | 'REVIEW_RESPONSE' | 'CONFIG_CI_CHANGE' | 'DANGEROUS_OP';
 /**
  * Queue Item schema (v2.2)
  * Per spec/20_QUEUE_STORE.md

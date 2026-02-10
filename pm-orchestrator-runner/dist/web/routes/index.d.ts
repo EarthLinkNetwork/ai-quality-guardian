@@ -7,4 +7,6 @@ export { createSettingsRoutes } from "./settings";
 export { createSelfhostRoutes } from "./selfhost";
 export { createDevconsoleRoutes } from "./devconsole";
 export { createRunnerControlsRoutes } from "./runner-controls";
+export { createSupervisorLogsRoutes } from "./supervisor-logs";
+export { createExecutorLogsRoutes } from "./executor-logs";
 //# sourceMappingURL=index.d.ts.map

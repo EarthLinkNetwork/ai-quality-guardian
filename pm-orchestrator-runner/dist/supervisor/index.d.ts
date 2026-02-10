@@ -12,4 +12,6 @@ export { RestartHandler, } from './restart-handler';
 export type { RestartHandlerOptions, RestartCheckResult, } from './restart-handler';
 export { ProcessSupervisor, createProcessSupervisor, } from './process-supervisor';
 export type { BuildMeta, WebProcessState, ProcessSupervisorOptions, ProcessSupervisorEvents, } from './process-supervisor';
+export { SupervisorLogger, getSupervisorLogger, resetSupervisorLogger, } from './supervisor-logger';
+export type { SupervisorLogLevel, SupervisorLogCategory, SupervisorLogEntry, SupervisorLogSubscriber, } from './supervisor-logger';
 //# sourceMappingURL=index.d.ts.map

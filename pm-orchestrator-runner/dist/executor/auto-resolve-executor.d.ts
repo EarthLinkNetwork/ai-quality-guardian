@@ -27,12 +27,24 @@ export declare const FALLBACK_QUESTIONS: {
     implementation: string;
     blocked_timeout: string;
     blocked_interactive: string;
+    dangerous_op: string;
 };
+/**
+ * Task types that can be BLOCKED (require explicit confirmation)
+ * AC D: Guard Responsibility - Only DANGEROUS_OP and forgery prevention can block
+ */
+export declare const BLOCKABLE_TASK_TYPES: string[];
 /**
  * Select appropriate fallback question based on blocked reason and task type
  * Exported for testing - INV-1 helper
  */
 export declare function selectFallbackQuestion(result: ExecutorResult, task: ExecutorTask): string;
+/**
+ * Check if a task type can be BLOCKED
+ * AC D: Guard Responsibility - Only DANGEROUS_OP can be BLOCKED
+ * All other task types convert BLOCKED to INCOMPLETE
+ */
+export declare function canTaskTypeBeBlocked(taskType?: string): boolean;
 /**
  * Apply BLOCKED output guard (INV-1)
  * Ensures BLOCKED status always has non-empty output with actionable question

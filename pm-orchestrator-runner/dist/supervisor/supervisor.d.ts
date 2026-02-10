@@ -8,6 +8,7 @@
  */
 import { ISupervisor, ComposedPrompt, SupervisedResult, ValidationResult, FormattedOutput, MergedConfig, RestartState } from './types';
 import { SupervisorConfigManager } from './config-loader';
+import { SupervisorLogger } from './supervisor-logger';
 export interface IExecutor {
     execute(prompt: string, options: ExecutorOptions): Promise<ExecutorResult>;
 }
@@ -24,7 +25,12 @@ export interface ExecutorResult {
 export declare class Supervisor implements ISupervisor {
     private configManager;
     private executor;
+    private logger;
     constructor(projectRoot: string);
+    /**
+     * Get the logger instance for external access
+     */
+    getLogger(): SupervisorLogger;
     /**
      * Set the executor (dependency injection)
      */
@@ -38,7 +44,7 @@ export declare class Supervisor implements ISupervisor {
     /**
      * SUP-1: Execute through supervisor (never direct)
      */
-    execute(composed: ComposedPrompt, projectId?: string): Promise<SupervisedResult>;
+    execute(composed: ComposedPrompt, projectId?: string, taskId?: string): Promise<SupervisedResult>;
     /**
      * SUP-7: Validate output against rules
      */

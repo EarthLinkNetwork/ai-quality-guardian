@@ -7,11 +7,17 @@
  *
  * This is NOT a simulation - it actually spawns the `claude` CLI process.
  *
- * Timeout Design (v2 - Production Ready):
+ * Timeout Design (v3 - AC B: Abolish silence=timeout):
  * - SOFT_TIMEOUT: Warning only, continue execution
- * - HARD_TIMEOUT: No output for extended period, terminate
- * - OVERALL_TIMEOUT: Total execution time limit
+ * - HARD_TIMEOUT: ABOLISHED - silence alone does NOT terminate
+ * - OVERALL_TIMEOUT: Total execution time limit (safety net, optional)
  * - Process state monitoring: Check if process is still alive
+ *
+ * Key principle: "silence=timeout" is ABOLISHED.
+ * Process is only terminated when:
+ * 1. Interactive prompt detected (Property 34-36)
+ * 2. Overall timeout exceeded (safety net)
+ * 3. Process dies naturally
  */
 import type { BlockedReason, TerminatedBy } from '../models/enums';
 /**
@@ -22,9 +28,11 @@ export interface ExecutorConfig {
     timeout: number;
     cliPath?: string;
     softTimeoutMs?: number;
-    hardTimeoutMs?: number;
+    silenceLogIntervalMs?: number;
     /** Show verbose executor logs (default: false) */
     verbose?: boolean;
+    /** Disable overall timeout (for very long tasks) */
+    disableOverallTimeout?: boolean;
 }
 /**
  * Task to execute
@@ -123,8 +131,9 @@ export declare class ClaudeCodeExecutor implements IExecutor {
     private readonly config;
     private readonly cliPath;
     private readonly softTimeoutMs;
-    private readonly hardTimeoutMs;
+    private readonly silenceLogIntervalMs;
     private readonly verbose;
+    private readonly disableOverallTimeout;
     constructor(config: ExecutorConfig);
     /**
      * Log message if verbose mode is enabled

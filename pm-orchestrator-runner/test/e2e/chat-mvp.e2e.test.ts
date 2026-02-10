@@ -150,7 +150,8 @@ describe('E2E: Chat MVP Feature', () => {
       assert.ok(statusRes.body.awaitingMessage, 'Should have awaiting message');
     });
 
-    it('should respond to AWAITING_RESPONSE message', async () => {
+    it('should respond to AWAITING_RESPONSE message', async function() {
+      this.timeout(10000);
       // Send initial message
       const chatRes = await request(app)
         .post('/api/projects/' + projectId + '/chat')

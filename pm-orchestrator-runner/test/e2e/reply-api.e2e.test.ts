@@ -70,8 +70,8 @@ describe('E2E: Reply API', () => {
         assert.ok(res.body.success, 'Should be successful');
         assert.equal(res.body.task_id, task.task_id);
         assert.equal(res.body.old_status, 'AWAITING_RESPONSE');
-        // Note: resumeWithResponse returns RUNNING not QUEUED per implementation
-        assert.equal(res.body.new_status, 'RUNNING');
+        // resumeWithResponse returns QUEUED for poller re-pickup
+        assert.equal(res.body.new_status, 'QUEUED');
       });
 
       it('should trim whitespace from reply', async () => {
@@ -285,10 +285,12 @@ describe('E2E: Reply API', () => {
           .send({ reply: 'PDF format' })
           .expect(200);
 
-        // Note: resumeWithResponse returns RUNNING per implementation
-        assert.equal(res.body.new_status, 'RUNNING');
+        // resumeWithResponse returns QUEUED for poller re-pickup
+        assert.equal(res.body.new_status, 'QUEUED');
 
         // Simulate processing and another question
+        // Need to transition through RUNNING first since QUEUED->AWAITING_RESPONSE is not valid
+        await queueStore.updateStatus(task.task_id, 'RUNNING');
         await queueStore.updateStatus(task.task_id, 'AWAITING_RESPONSE', undefined, 'Include charts?');
 
         // Second round

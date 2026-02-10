@@ -21,6 +21,7 @@ import {
 } from './types';
 import { SupervisorConfigManager } from './config-loader';
 import { mergePrompt, applyOutputTemplate } from './template-engine';
+import { getSupervisorLogger, SupervisorLogger } from './supervisor-logger';
 
 // =============================================================================
 // Executor Interface (to be implemented by actual LLM executors)
@@ -49,9 +50,18 @@ export interface ExecutorResult {
 export class Supervisor implements ISupervisor {
   private configManager: SupervisorConfigManager;
   private executor: IExecutor | null = null;
+  private logger: SupervisorLogger;
 
   constructor(projectRoot: string) {
     this.configManager = new SupervisorConfigManager(projectRoot);
+    this.logger = getSupervisorLogger();
+  }
+
+  /**
+   * Get the logger instance for external access
+   */
+  getLogger(): SupervisorLogger {
+    return this.logger;
   }
 
   /**
@@ -79,18 +89,39 @@ export class Supervisor implements ISupervisor {
   /**
    * SUP-1: Execute through supervisor (never direct)
    */
-  async execute(composed: ComposedPrompt, projectId: string = 'default'): Promise<SupervisedResult> {
+  async execute(composed: ComposedPrompt, projectId: string = 'default', taskId?: string): Promise<SupervisedResult> {
     const startTime = Date.now();
     const config = this.configManager.getMergedConfig(projectId);
 
+    // Log execution start
+    this.logger.logExecutionStart(taskId || 'unknown', {
+      projectId,
+      prompt: composed.userPrompt,
+    });
+
     // Ensure supervisor is enabled
     if (!config.supervisorEnabled) {
-      throw new Error('Supervisor is disabled but execute() was called. This is a violation.');
+      const error = new Error('Supervisor is disabled but execute() was called. This is a violation.');
+      this.logger.logError('Supervisor disabled violation', error, { taskId, projectId });
+      throw error;
     }
 
     // Ensure executor is set
     if (!this.executor) {
-      throw new Error('No executor set. Call setExecutor() before execute().');
+      const error = new Error('No executor set. Call setExecutor() before execute().');
+      this.logger.logError('No executor configured', error, { taskId, projectId });
+      throw error;
+    }
+
+    // Log template selection
+    const outputTemplate = config.projectOutputTemplate || config.globalOutputTemplate;
+    if (outputTemplate) {
+      this.logger.logTemplateSelection(outputTemplate.substring(0, 50), {
+        taskId,
+        projectId,
+        templateType: 'output',
+        source: config.projectOutputTemplate ? 'project' : 'global',
+      });
     }
 
     let retryCount = 0;
@@ -98,6 +129,16 @@ export class Supervisor implements ISupervisor {
 
     while (retryCount <= config.maxRetries) {
       try {
+        // Log retry attempt if not first try
+        if (retryCount > 0) {
+          this.logger.logRetryResume('retry', `Attempt ${retryCount + 1} of ${config.maxRetries + 1}: ${lastError}`, {
+            taskId,
+            projectId,
+            attempt: retryCount + 1,
+            maxAttempts: config.maxRetries + 1,
+          });
+        }
+
         // Execute through LLM
         const result = await this.executor.execute(composed.composed, {
           timeoutMs: config.timeoutMs,
@@ -106,6 +147,11 @@ export class Supervisor implements ISupervisor {
 
         if (!result.success) {
           lastError = result.error;
+          this.logger.log('warn', 'EXECUTION_END', `Execution attempt failed: ${result.error}`, {
+            taskId,
+            projectId,
+            details: { attempt: retryCount + 1, error: result.error },
+          });
           retryCount++;
           continue;
         }
@@ -116,10 +162,18 @@ export class Supervisor implements ISupervisor {
         // SUP-7: Validate output
         const validation = this.validate(formatted.formatted);
 
+        // Log validation result
+        this.logger.logValidation(validation.valid, validation.violations, { taskId, projectId });
+
         // Handle violations
         if (!validation.valid && config.failOnViolation) {
           const majorViolations = validation.violations.filter(v => v.severity === 'major');
           if (majorViolations.length > 0) {
+            this.logger.logExecutionEnd(taskId || 'unknown', false, {
+              projectId,
+              durationMs: Date.now() - startTime,
+              error: `Validation failed with ${majorViolations.length} major violations`,
+            });
             return {
               success: false,
               output: formatted,
@@ -129,6 +183,12 @@ export class Supervisor implements ISupervisor {
             };
           }
         }
+
+        // Log successful execution
+        this.logger.logExecutionEnd(taskId || 'unknown', true, {
+          projectId,
+          durationMs: Date.now() - startTime,
+        });
 
         return {
           success: true,
@@ -140,11 +200,18 @@ export class Supervisor implements ISupervisor {
 
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
+        this.logger.logError(`Execution attempt ${retryCount + 1} threw error`, error, { taskId, projectId });
         retryCount++;
       }
     }
 
     // All retries exhausted
+    this.logger.logExecutionEnd(taskId || 'unknown', false, {
+      projectId,
+      durationMs: Date.now() - startTime,
+      error: `All ${retryCount} retries exhausted: ${lastError}`,
+    });
+
     return {
       success: false,
       output: {
@@ -280,13 +347,17 @@ export interface TaskState {
  * SUP-6: Detect restart state and determine action
  */
 export function detectRestartState(task: TaskState, staleThresholdMs: number = 30000): RestartState {
+  const logger = getSupervisorLogger();
+
   // AWAITING_RESPONSE: continue without change
   if (task.status === 'AWAITING_RESPONSE') {
-    return {
+    const result: RestartState = {
       action: 'continue',
       reason: 'Task is awaiting response, can continue',
       taskId: task.taskId,
     };
+    logger.logRetryResume('resume', result.reason, { taskId: task.taskId });
+    return result;
   }
 
   // RUNNING: check for stale state
@@ -299,17 +370,21 @@ export function detectRestartState(task: TaskState, staleThresholdMs: number = 3
     if (elapsed > staleThresholdMs) {
       // Stale - decide based on artifacts
       if (task.hasCompleteArtifacts) {
-        return {
+        const result: RestartState = {
           action: 'resume',
           reason: `Stale (${elapsed}ms since last progress) but has complete artifacts`,
           taskId: task.taskId,
         };
+        logger.logRetryResume('resume', result.reason, { taskId: task.taskId });
+        return result;
       } else {
-        return {
+        const result: RestartState = {
           action: 'rollback_replay',
           reason: `Stale (${elapsed}ms since last progress) without complete artifacts`,
           taskId: task.taskId,
         };
+        logger.logRetryResume('rollback', result.reason, { taskId: task.taskId });
+        return result;
       }
     }
   }

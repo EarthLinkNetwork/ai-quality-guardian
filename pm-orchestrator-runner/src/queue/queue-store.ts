@@ -62,7 +62,7 @@ export type QueueItemStatus = 'QUEUED' | 'RUNNING' | 'AWAITING_RESPONSE' | 'COMP
 export const VALID_STATUS_TRANSITIONS: Record<QueueItemStatus, QueueItemStatus[]> = {
   QUEUED: ['RUNNING', 'CANCELLED'],
   RUNNING: ['COMPLETE', 'ERROR', 'CANCELLED', 'AWAITING_RESPONSE'],
-  AWAITING_RESPONSE: ['RUNNING', 'CANCELLED', 'ERROR'], // User response resumes to RUNNING
+  AWAITING_RESPONSE: ['QUEUED', 'RUNNING', 'CANCELLED', 'ERROR'], // User response re-queues for executor pickup
   COMPLETE: [], // Terminal state
   ERROR: [], // Terminal state
   CANCELLED: [], // Terminal state
@@ -111,9 +111,22 @@ export interface ClarificationRequest {
  * Task type for execution handling
  * - READ_INFO: Information requests, no file changes expected
  * - REPORT: Report/summary generation, no file changes expected
+ * - LIGHT_EDIT: Small changes, bug fixes (low risk)
  * - IMPLEMENTATION: File creation/modification tasks
+ * - REVIEW_RESPONSE: Code review responses
+ * - CONFIG_CI_CHANGE: Configuration and CI/CD changes
+ * - DANGEROUS_OP: Destructive operations (only type that can be BLOCKED)
+ *
+ * AC D: Guard Responsibility - Only DANGEROUS_OP can be BLOCKED
  */
-export type TaskTypeValue = 'READ_INFO' | 'IMPLEMENTATION' | 'REPORT';
+export type TaskTypeValue =
+  | 'READ_INFO'
+  | 'REPORT'
+  | 'LIGHT_EDIT'
+  | 'IMPLEMENTATION'
+  | 'REVIEW_RESPONSE'
+  | 'CONFIG_CI_CHANGE'
+  | 'DANGEROUS_OP';
 
 /**
  * Queue Item schema (v2.2)
@@ -807,7 +820,7 @@ export class QueueStore implements IQueueStore {
           '#status': 'status',
         },
         ExpressionAttributeValues: {
-          ':status': 'RUNNING',
+          ':status': 'QUEUED',
           ':now': now,
           ':history': history,
         },
@@ -818,7 +831,7 @@ export class QueueStore implements IQueueStore {
       success: true,
       task_id: taskId,
       old_status: 'AWAITING_RESPONSE',
-      new_status: 'RUNNING',
+      new_status: 'QUEUED',
     };
   }
 

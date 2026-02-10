@@ -329,13 +329,14 @@ describe('E2E: Task Output Visibility (AC-CHAT-001 to AC-CHAT-005)', () => {
       const resumeResult = await queueStore.resumeWithResponse(task.task_id, 'React');
       assert.ok(resumeResult.success, 'resumeWithResponse should succeed');
 
-      // Should be back to RUNNING
+      // Should be back to QUEUED (for poller re-pickup)
       let response = await request(app)
         .get(`/api/tasks/${task.task_id}`)
         .expect(200);
-      assert.equal(response.body.status, 'RUNNING');
+      assert.equal(response.body.status, 'QUEUED');
 
-      // Complete with final output
+      // Simulate poller claiming (QUEUED -> RUNNING) then completing
+      await queueStore.updateStatus(task.task_id, 'RUNNING');
       const finalOutput = 'Analysis complete. Using React framework as selected.';
       await queueStore.updateStatus(task.task_id, 'COMPLETE', undefined, finalOutput);
 

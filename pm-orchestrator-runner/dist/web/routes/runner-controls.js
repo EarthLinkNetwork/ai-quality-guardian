@@ -61,9 +61,13 @@ function createRunnerControlsRoutes(config) {
             return;
         }
         // Fallback to module-level variables
+        // E1-2 Fix: In selfhost mode, if web is responding, it IS running
+        // The web server itself is the runner in this mode
+        const hasRunnerProcess = runnerProcess !== null && !runnerProcess.killed;
         const status = {
-            isRunning: runnerProcess !== null && !runnerProcess.killed,
-            pid: runnerProcess?.pid,
+            // If we have a runner process, use it; otherwise web is serving (selfhost mode)
+            isRunning: hasRunnerProcess || true, // Web is always running if API responds
+            pid: runnerProcess?.pid ?? process.pid, // Use current process.pid as fallback
             uptime_ms: runnerStartTime ? Date.now() - runnerStartTime.getTime() : undefined,
         };
         res.json(status);

@@ -36,6 +36,8 @@ const devconsole_1 = require("./routes/devconsole");
 const session_logs_1 = require("./routes/session-logs");
 const runner_controls_1 = require("./routes/runner-controls");
 const supervisor_config_1 = require("./routes/supervisor-config");
+const supervisor_logs_1 = require("./routes/supervisor-logs");
+const executor_logs_1 = require("./routes/executor-logs");
 const task_type_detector_1 = require("../utils/task-type-detector");
 /**
  * Derive namespace from folder path (same logic as CLI)
@@ -93,6 +95,12 @@ function createApp(config) {
         // Supervisor Config routes (SUP-4, SUP-5)
         // Per docs/spec/SUPERVISOR_SYSTEM.md
         app.use("/api/supervisor", (0, supervisor_config_1.createSupervisorConfigRoutes)({ projectRoot: projectRoot || process.cwd() }));
+        // Supervisor Logs routes (AC A.1 - Observability)
+        // Per docs/spec/RUNNER_CONTROLS_SELF_UPDATE.md - Decision transparency
+        app.use("/api/supervisor", (0, supervisor_logs_1.createSupervisorLogsRoutes)());
+        // Executor Logs routes (AC A.2 - Real-time stdout/stderr streaming)
+        // Per docs/spec/RUNNER_CONTROLS_SELF_UPDATE.md - Executor Live Log
+        app.use("/api/executor", (0, executor_logs_1.createExecutorLogsRoutes)());
     }
     // ===================
     // REST API Routes (v2)
@@ -360,11 +368,11 @@ function createApp(config) {
     /**
      * POST /api/tasks
      * Enqueue a new task (does NOT run it directly)
-     * Body: { task_group_id: string, prompt: string }
+     * Body: { task_group_id: string, prompt: string, task_type?: string }
      */
     app.post('/api/tasks', async (req, res) => {
         try {
-            const { task_group_id, prompt } = req.body;
+            const { task_group_id, prompt, task_type } = req.body;
             if (!task_group_id || typeof task_group_id !== 'string' || task_group_id.trim() === '') {
                 res.status(400).json({
                     error: 'INVALID_INPUT',
@@ -379,7 +387,8 @@ function createApp(config) {
                 });
                 return;
             }
-            const taskType = (0, task_type_detector_1.detectTaskType)(prompt.trim());
+            // Use provided task_type if valid, otherwise detect from prompt
+            const taskType = task_type || (0, task_type_detector_1.detectTaskType)(prompt.trim());
             const item = await queueStore.enqueue(sessionId, task_group_id.trim(), prompt.trim(), undefined, taskType);
             res.status(201).json({
                 task_id: item.task_id,
@@ -410,7 +419,8 @@ function createApp(config) {
                 });
                 return;
             }
-            const validStatuses = ['QUEUED', 'RUNNING', 'COMPLETE', 'ERROR', 'CANCELLED'];
+            // v2.1: Added AWAITING_RESPONSE for clarification flow (P0-3, P0-4)
+            const validStatuses = ['QUEUED', 'RUNNING', 'AWAITING_RESPONSE', 'COMPLETE', 'ERROR', 'CANCELLED'];
             if (!validStatuses.includes(status)) {
                 res.status(400).json({
                     error: 'INVALID_STATUS',
@@ -802,6 +812,14 @@ function createApp(config) {
             'PATCH /api/projects/:projectId/session-logs/sessions/:sessionId',
             'GET /api/projects/:projectId/session-logs/sessions',
             'GET /api/projects/:projectId/session-logs/summary',
+            // Supervisor Logs routes (AC A.1 - Observability)
+            'GET /api/supervisor/logs',
+            'GET /api/supervisor/logs/recent',
+            'GET /api/supervisor/logs/task/:taskId',
+            'GET /api/supervisor/logs/stream',
+            'GET /api/supervisor/logs/categories',
+            'GET /api/supervisor/logs/summary',
+            'DELETE /api/supervisor/logs',
         ];
         res.json({ routes });
     });
