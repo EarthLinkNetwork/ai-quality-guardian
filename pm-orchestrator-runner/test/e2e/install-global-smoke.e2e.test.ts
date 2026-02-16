@@ -16,12 +16,6 @@ import { strict as assert } from 'assert';
 import * as path from 'path';
 import { execSync, spawn, ChildProcess } from 'child_process';
 import * as http from 'http';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
-// ESM-compatible __dirname replacement
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const CLI_PATH = path.join(PROJECT_ROOT, 'dist/cli/index.js');
