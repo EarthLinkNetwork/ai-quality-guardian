@@ -7,16 +7,7 @@
  * - Default is rollback → replay for safety
  */
 
-import { QueueItem, QueueItemStatus } from '../queue/index';
-
-/**
- * Progress event types emitted by executor
- */
-export interface ProgressEvent {
-  type: 'heartbeat' | 'tool_progress' | 'log_chunk';
-  timestamp: string;
-  data?: unknown;
-}
+import { QueueItem, QueueItemStatus, ProgressEvent } from '../queue/index';
 
 /**
  * Extended task with progress events for restart detection

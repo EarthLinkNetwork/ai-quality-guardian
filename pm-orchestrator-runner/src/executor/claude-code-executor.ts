@@ -40,6 +40,12 @@ export interface ExecutorConfig {
   verbose?: boolean;
   /** Disable overall timeout (for very long tasks) */
   disableOverallTimeout?: boolean;
+  /**
+   * Progress-aware timeout: reset overall timeout on output activity.
+   * When true, output (stdout/stderr) extends the timeout window.
+   * Default: false (preserve v3 "overall safety net" semantics).
+   */
+  progressAwareTimeout?: boolean;
 }
 
 /**
@@ -250,6 +256,7 @@ export class ClaudeCodeExecutor implements IExecutor {
   private readonly silenceLogIntervalMs: number;
   private readonly verbose: boolean;
   private readonly disableOverallTimeout: boolean;
+  private readonly progressAwareTimeout: boolean;
 
   constructor(config: ExecutorConfig) {
     this.config = config;
@@ -261,6 +268,7 @@ export class ClaudeCodeExecutor implements IExecutor {
     this.silenceLogIntervalMs = envSilenceLog || config.silenceLogIntervalMs || DEFAULT_SILENCE_LOG_INTERVAL_MS;
     this.verbose = config.verbose ?? false;
     this.disableOverallTimeout = config.disableOverallTimeout ?? false;
+    this.progressAwareTimeout = config.progressAwareTimeout ?? false;
   }
 
 
@@ -613,9 +621,35 @@ export class ClaudeCodeExecutor implements IExecutor {
         }
       };
 
+      // Overall timeout scheduler (supports progress-aware reset)
+      const scheduleOverallTimeout = () => {
+        if (this.disableOverallTimeout) return;
+        if (overallTimeoutHandle) {
+          clearTimeout(overallTimeoutHandle);
+        }
+        overallTimeoutHandle = setTimeout(() => {
+          if (!blocked && !timedOut && !resolved) {
+            const modeLabel = this.progressAwareTimeout ? 'NO PROGRESS' : 'OVERALL';
+            this.log(`[ClaudeCodeExecutor] Overall timeout (${modeLabel}) - execution exceeded ${this.config.timeout}ms`);
+            outputStream.emit(
+              task.id,
+              'timeout',
+              `[timeout] ${modeLabel} TIMEOUT exceeded ${this.config.timeout}ms - terminating`
+            );
+            timedOut = true;
+            terminateWithBlocking('TIMEOUT', 'TIMEOUT');
+          }
+        }, this.config.timeout);
+      };
+
       // Update last output time on any output (v3 - AC B: no hard timeout, just track)
       const updateLastOutputTime = () => {
         lastOutputTime = Date.now();
+
+        // Progress-aware timeout: reset overall timeout window on any output activity
+        if (this.progressAwareTimeout && !this.disableOverallTimeout) {
+          scheduleOverallTimeout();
+        }
 
         // Check for soft timeout warning (only once, for logging purposes)
         if (!softTimeoutWarned) {
@@ -657,7 +691,7 @@ export class ClaudeCodeExecutor implements IExecutor {
       if (task.selectedModel) {
         this.log(`[ClaudeCodeExecutor] model: ${task.selectedModel}`);
       }
-      this.log(`[ClaudeCodeExecutor] Timeout config: soft=${this.softTimeoutMs}ms, silenceLog=${this.silenceLogIntervalMs}ms, overall=${this.disableOverallTimeout ? 'DISABLED' : this.config.timeout + 'ms'} (v3: silence=timeout ABOLISHED)`);
+      this.log(`[ClaudeCodeExecutor] Timeout config: soft=${this.softTimeoutMs}ms, silenceLog=${this.silenceLogIntervalMs}ms, overall=${this.disableOverallTimeout ? 'DISABLED' : this.config.timeout + 'ms'}, progressAware=${this.progressAwareTimeout} (v3: silence=timeout ABOLISHED)`);
 
       // AC A.2: Emit spawn trace before process creation
       outputStream.emit(task.id, 'spawn', `[spawn] start`);
@@ -707,16 +741,9 @@ export class ClaudeCodeExecutor implements IExecutor {
 
       // Start overall timeout (safety net, can be disabled)
       // v3 - AC B: This is the ONLY timeout that can terminate the process
-      // Silence alone does NOT terminate
+      // Silence alone does NOT terminate unless progress-aware timeout is enabled
       if (!this.disableOverallTimeout) {
-        overallTimeoutHandle = setTimeout(() => {
-          if (!blocked && !timedOut && !resolved) {
-            this.log(`[ClaudeCodeExecutor] Overall timeout - execution exceeded ${this.config.timeout}ms`);
-            outputStream.emit(task.id, 'timeout', `[timeout] OVERALL TIMEOUT exceeded ${this.config.timeout}ms - terminating`);
-            timedOut = true;
-            terminateWithBlocking('TIMEOUT', 'TIMEOUT');
-          }
-        }, this.config.timeout);
+        scheduleOverallTimeout();
       }
 
       // Start silence logging (v3 - AC B: log only, do NOT terminate)

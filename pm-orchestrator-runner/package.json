@@ -51,7 +51,8 @@
     "gate:chat": "ts-node diagnostics/chat-tasktype.check.ts",
     "gate:browser": "ts-node diagnostics/browser-ui.check.ts",
     "test:playwright": "npx playwright test",
-    "test:playwright:headed": "npx playwright test --headed"
+    "test:playwright:headed": "npx playwright test --headed",
+    "test:playwright:self-update": "npx playwright test --config playwright.selfupdate.config.ts"
   },
   "keywords": [
     "pm-orchestrator",

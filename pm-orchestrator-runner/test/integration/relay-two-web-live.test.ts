@@ -24,7 +24,7 @@
 import { spawn, ChildProcess, execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import { expect } from 'chai';
+import assert from 'node:assert/strict';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -500,14 +500,14 @@ describe('Relay Two-Web Live E2E Tests', function () {
       const healthA = await healthCheck(serverA);
       const healthB = await healthCheck(serverB);
 
-      expect(healthA).to.be.true;
-      expect(healthB).to.be.true;
+      assert.equal(healthA, true);
+      assert.equal(healthB, true);
 
       log('[AC-1] PASS: Both servers healthy');
     });
 
     it('should have different namespaces', function () {
-      expect(serverA.namespace).to.not.equal(serverB.namespace);
+      assert.notEqual(serverA.namespace, serverB.namespace);
       log(`[AC-1] PASS: Different namespaces: ${serverA.namespace} vs ${serverB.namespace}`);
     });
   });
@@ -527,9 +527,9 @@ describe('Relay Two-Web Live E2E Tests', function () {
       taskA = await submitTask(serverA, PROMPT_A);
       taskB = await submitTask(serverB, PROMPT_B);
 
-      expect(taskA.task_id).to.be.a('string');
-      expect(taskB.task_id).to.be.a('string');
-      expect(taskA.task_id).to.not.equal(taskB.task_id);
+      assert.equal(typeof taskA.task_id, 'string');
+      assert.equal(typeof taskB.task_id, 'string');
+      assert.notEqual(taskA.task_id, taskB.task_id);
 
       log('[AC-2] PASS: Tasks submitted with unique IDs');
     });
@@ -546,8 +546,8 @@ describe('Relay Two-Web Live E2E Tests', function () {
       taskAResult = resultA;
       taskBResult = resultB;
 
-      expect(taskAResult.status).to.match(/^COMPLETE(D)?$/);
-      expect(taskBResult.status).to.match(/^COMPLETE(D)?$/);
+      assert.match(taskAResult.status, /^COMPLETE(D)?$/);
+      assert.match(taskBResult.status, /^COMPLETE(D)?$/);
 
       log('[AC-2] PASS: Both tasks completed automatically');
     });
@@ -566,8 +566,8 @@ describe('Relay Two-Web Live E2E Tests', function () {
         log(`[AC-3] ERROR events found in Server B trace`);
       }
 
-      expect(hasErrorA).to.be.false;
-      expect(hasErrorB).to.be.false;
+      assert.equal(hasErrorA, false);
+      assert.equal(hasErrorB, false);
 
       log('[AC-3] PASS: No ERROR events in traces');
     });
@@ -579,8 +579,8 @@ describe('Relay Two-Web Live E2E Tests', function () {
       log(`Server A LLM_RESPONSE count: ${llmResponsesA}`);
       log(`Server B LLM_RESPONSE count: ${llmResponsesB}`);
 
-      expect(llmResponsesA).to.be.at.least(2);
-      expect(llmResponsesB).to.be.at.least(2);
+      assert.ok(llmResponsesA >= 2);
+      assert.ok(llmResponsesB >= 2);
 
       log(`[AC-4] PASS: LLM_RESPONSE counts: A=${llmResponsesA}, B=${llmResponsesB}`);
     });
@@ -595,7 +595,7 @@ describe('Relay Two-Web Live E2E Tests', function () {
 
       log(`File isolation details:\n${result.details}`);
 
-      expect(result.passed).to.be.true;
+      assert.equal(result.passed, true);
 
       log('[AC-5] PASS: Files isolated correctly');
     });
@@ -619,8 +619,8 @@ describe('Relay Two-Web Live E2E Tests', function () {
       log(`Server A namespace in B's stateDir: ${aNamespaceInB}`);
       log(`Server B namespace in A's stateDir: ${bNamespaceInA}`);
 
-      expect(aNamespaceInB).to.be.false;
-      expect(bNamespaceInA).to.be.false;
+      assert.equal(aNamespaceInB, false);
+      assert.equal(bNamespaceInA, false);
 
       log('[AC-6] PASS: No namespace cross-contamination');
     });

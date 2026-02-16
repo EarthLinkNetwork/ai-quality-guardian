@@ -132,10 +132,10 @@ function formatGateOutput(result: AuthCheckResult): string {
     lines.push('    claude login');
     lines.push('');
     lines.push('  Option 2: Set OpenAI API key');
-    lines.push('    export OPENAI_API_KEY=sk-...');
+    lines.push('    export OPENAI_API_KEY=<value>');
     lines.push('');
     lines.push('  Option 3: Set Anthropic API key');
-    lines.push('    export ANTHROPIC_API_KEY=sk-ant-...');
+    lines.push('    export ANTHROPIC_API_KEY=<value>');
   }
 
   lines.push('');

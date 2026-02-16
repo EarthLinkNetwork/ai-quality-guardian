@@ -187,27 +187,23 @@ describe('E2E: Executor Preflight Auth Detection', function() {
       }
     });
 
-    it('should detect invalid API key format', function() {
+    it('should allow non-standard API key format', function() {
       // Save original
       const originalOpenAI = process.env.OPENAI_API_KEY;
       const originalAnthropic = process.env.ANTHROPIC_API_KEY;
 
       try {
-        // Test with invalid OpenAI key format
+        // Test with non-standard OpenAI key format
         process.env.OPENAI_API_KEY = 'invalid-key-format';
         const openaiResult = checkOpenAIKey();
-        if (!openaiResult.ok) {
-          assert.equal(openaiResult.code, 'CONFIG_ERROR', 'Should detect invalid format');
-          assert.ok(openaiResult.message.includes('invalid') || openaiResult.message.includes('should'),
-            'Should mention invalid format');
-        }
+        assert.equal(openaiResult.ok, true, 'Should accept non-standard format');
+        assert.equal(openaiResult.code, 'OK');
 
-        // Test with invalid Anthropic key format
+        // Test with non-standard Anthropic key format
         process.env.ANTHROPIC_API_KEY = 'invalid-key-format';
         const anthropicResult = checkAnthropicKey();
-        if (!anthropicResult.ok) {
-          assert.equal(anthropicResult.code, 'CONFIG_ERROR', 'Should detect invalid format');
-        }
+        assert.equal(anthropicResult.ok, true, 'Should accept non-standard format');
+        assert.equal(anthropicResult.code, 'OK');
       } finally {
         // Restore
         if (originalOpenAI) {

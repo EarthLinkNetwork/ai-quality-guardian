@@ -17,7 +17,7 @@
  * - Support multiple signal types for progress detection
  */
 
-import { describe, it, before } from 'mocha';
+import { describe, it, before, after } from 'mocha';
 import { strict as assert } from 'assert';
 import { Express } from 'express';
 import request from 'supertest';
@@ -33,6 +33,8 @@ import {
 
 describe('E2E: P0-3 Progress-Aware Timeout', () => {
   let app: Express;
+  let server: import('http').Server;
+  let agent: request.Agent;
   let queueStore: IQueueStore;
   const namespace = 'p0-3-progress-test';
   const sessionId = 'session-p0-3-001';
@@ -43,6 +45,14 @@ describe('E2E: P0-3 Progress-Aware Timeout', () => {
       queueStore,
       sessionId,
       namespace,
+    });
+    server = app.listen(0, '127.0.0.1');
+    agent = request(server);
+  });
+
+  after(async () => {
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
     });
   });
 
@@ -200,7 +210,7 @@ describe('E2E: P0-3 Progress-Aware Timeout', () => {
 
     it('T-3B-2: Task with AWAITING_RESPONSE can be resumed', async () => {
       // Create a task
-      const createRes = await request(app)
+      const createRes = await agent
         .post('/api/tasks')
         .send({
           task_group_id: 'resume-test',
@@ -212,31 +222,31 @@ describe('E2E: P0-3 Progress-Aware Timeout', () => {
       const taskId = createRes.body.task_id;
 
       // First set to RUNNING (valid transition from QUEUED)
-      await request(app)
+      await agent
         .patch(`/api/tasks/${taskId}/status`)
         .send({ status: 'RUNNING' })
         .expect(200);
 
       // Update task to AWAITING_RESPONSE (valid transition from RUNNING)
-      await request(app)
+      await agent
         .patch(`/api/tasks/${taskId}/status`)
         .send({ status: 'AWAITING_RESPONSE' })
         .expect(200);
 
       // Verify status
-      const taskRes = await request(app)
+      const taskRes = await agent
         .get(`/api/tasks/${taskId}`)
         .expect(200);
 
       assert.strictEqual(taskRes.body.status, 'AWAITING_RESPONSE');
 
       // Resume the task (set back to RUNNING - valid transition from AWAITING_RESPONSE)
-      await request(app)
+      await agent
         .patch(`/api/tasks/${taskId}/status`)
         .send({ status: 'RUNNING' })
         .expect(200);
 
-      const resumedRes = await request(app)
+      const resumedRes = await agent
         .get(`/api/tasks/${taskId}`)
         .expect(200);
 
@@ -245,7 +255,7 @@ describe('E2E: P0-3 Progress-Aware Timeout', () => {
 
     it('T-3B-3: Resume preserves task context', async () => {
       // Create a task with specific prompt
-      const createRes = await request(app)
+      const createRes = await agent
         .post('/api/tasks')
         .send({
           task_group_id: 'context-preserve-test',
@@ -257,25 +267,25 @@ describe('E2E: P0-3 Progress-Aware Timeout', () => {
       const taskId = createRes.body.task_id;
 
       // First set to RUNNING
-      await request(app)
+      await agent
         .patch(`/api/tasks/${taskId}/status`)
         .send({ status: 'RUNNING' })
         .expect(200);
 
       // Simulate timeout → AWAITING_RESPONSE
-      await request(app)
+      await agent
         .patch(`/api/tasks/${taskId}/status`)
         .send({ status: 'AWAITING_RESPONSE' })
         .expect(200);
 
       // Resume (AWAITING_RESPONSE -> RUNNING)
-      await request(app)
+      await agent
         .patch(`/api/tasks/${taskId}/status`)
         .send({ status: 'RUNNING' })
         .expect(200);
 
       // Verify prompt is preserved
-      const taskRes = await request(app)
+      const taskRes = await agent
         .get(`/api/tasks/${taskId}`)
         .expect(200);
 

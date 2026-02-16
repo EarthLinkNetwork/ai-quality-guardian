@@ -236,6 +236,28 @@ describe('INCOMPLETE -> AWAITING_RESPONSE handling', () => {
       }
     });
 
+    it('IMPLEMENTATION + INCOMPLETE + question output should produce AWAITING_CLARIFICATION', () => {
+      const taskType: string = 'IMPLEMENTATION';
+      const executorStatus: string = 'INCOMPLETE';
+      const output: string = 'Which file should I update?';
+
+      const isReadInfoOrReport = taskType === 'READ_INFO' || taskType === 'REPORT';
+      const hasQuestions = output.includes('?') || output.includes('？');
+
+      if (executorStatus === 'INCOMPLETE' && !isReadInfoOrReport && hasQuestions) {
+        const result = {
+          status: 'ERROR' as const,
+          errorMessage: 'AWAITING_CLARIFICATION:' + output,
+          output,
+        };
+
+        assert.ok(result.errorMessage?.startsWith('AWAITING_CLARIFICATION:'));
+        assert.equal(result.output, output);
+      } else {
+        assert.fail('Should not reach here for IMPLEMENTATION + INCOMPLETE + question output');
+      }
+    });
+
     it('REPORT + INCOMPLETE + output should produce AWAITING_CLARIFICATION with output', () => {
       const taskType: string = 'REPORT';
       const executorStatus: string = 'INCOMPLETE';

@@ -108,6 +108,16 @@ export interface ClarificationRequest {
 }
 
 /**
+ * Progress event emitted during task execution
+ * Used for restart detection and live progress visibility
+ */
+export interface ProgressEvent {
+  type: 'heartbeat' | 'tool_progress' | 'log_chunk';
+  timestamp: string;
+  data?: unknown;
+}
+
+/**
  * Task type for execution handling
  * - READ_INFO: Information requests, no file changes expected
  * - REPORT: Report/summary generation, no file changes expected
@@ -151,6 +161,8 @@ export interface QueueItem {
   conversation_history?: ConversationEntry[];
   /** Task output/response for READ_INFO/REPORT tasks */
   output?: string;
+  /** Progress events emitted by executor (for restart detection) */
+  events?: ProgressEvent[];
 }
 
 /**
@@ -244,6 +256,7 @@ export interface IQueueStore {
   getItem(taskId: string, targetNamespace?: string): Promise<QueueItem | null>;
   claim(): Promise<ClaimResult>;
   updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string, output?: string): Promise<void>;
+  appendEvent(taskId: string, event: ProgressEvent): Promise<boolean>;
   updateStatusWithValidation(taskId: string, newStatus: QueueItemStatus): Promise<StatusUpdateResult>;
   setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[], output?: string): Promise<StatusUpdateResult>;
   resumeWithResponse(taskId: string, userResponse: string): Promise<StatusUpdateResult>;
@@ -656,6 +669,47 @@ export class QueueStore implements IQueueStore {
         ExpressionAttributeValues: expressionAttributeValues,
       })
     );
+  }
+
+  /**
+   * Append a progress event to a task (best-effort)
+   */
+  async appendEvent(taskId: string, event: ProgressEvent): Promise<boolean> {
+    const timestamp = event.timestamp || new Date().toISOString();
+    const newEvent: ProgressEvent = { ...event, timestamp };
+
+    try {
+      await this.docClient.send(
+        new UpdateCommand({
+          TableName: QUEUE_TABLE_NAME,
+          Key: {
+            namespace: this.namespace,
+            task_id: taskId,
+          },
+          UpdateExpression: 'SET updated_at = :now, #events = list_append(if_not_exists(#events, :empty), :event)',
+          ExpressionAttributeNames: {
+            '#events': 'events',
+          },
+          ExpressionAttributeValues: {
+            ':now': timestamp,
+            ':empty': [],
+            ':event': [newEvent],
+          },
+          ConditionExpression: 'attribute_exists(task_id)',
+        })
+      );
+      return true;
+    } catch (error: unknown) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'name' in error &&
+        error.name === 'ConditionalCheckFailedException'
+      ) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   /**

@@ -71,9 +71,29 @@ export interface RunnerControlsConfig {
   stopTimeoutMs?: number;
   /** ProcessSupervisor instance for real restart (AC-OPS-2) */
   processSupervisor?: ProcessSupervisor;
+  /** Optional self-restart handler (for in-process restart) */
+  restartHandler?: () => Promise<RunnerRestartResult>;
 }
 
-const DEFAULT_CONFIG: Required<Omit<RunnerControlsConfig, 'projectRoot' | 'processSupervisor'>> = {
+/**
+ * Restart handler result (used for self-restart flows)
+ */
+export interface RunnerRestartResult {
+  success: boolean;
+  oldPid?: number;
+  newPid?: number;
+  buildMeta?: BuildMeta;
+  output?: string;
+  error?: string;
+  message?: string;
+  /**
+   * Optional callback to execute after HTTP response is sent.
+   * Useful for self-restart that would terminate this process.
+   */
+  postResponse?: () => void;
+}
+
+const DEFAULT_CONFIG: Required<Omit<RunnerControlsConfig, 'projectRoot' | 'processSupervisor' | 'restartHandler'>> = {
   buildScript: 'build',
   startScript: 'start',
   buildTimeoutMs: 300_000,
@@ -318,6 +338,50 @@ export function createRunnerControlsRoutes(config: RunnerControlsConfig): Router
     const steps: Array<{ step: string; success: boolean; duration_ms: number; error?: string }> = [];
 
     try {
+      // Use custom restart handler if provided (self-restart flow)
+      if (settings.restartHandler) {
+        const result = await settings.restartHandler();
+        if (result.success) {
+          res.json({
+            success: true,
+            operation: 'restart',
+            message: result.message || 'Restart completed successfully',
+            duration_ms: Date.now() - startTime,
+            output: result.output,
+            old_pid: result.oldPid,
+            new_pid: result.newPid,
+            build_sha: result.buildMeta?.build_sha,
+            build_timestamp: result.buildMeta?.build_timestamp,
+          } as RunnerControlResult & { old_pid?: number; new_pid?: number; build_sha?: string; build_timestamp?: string });
+
+          if (result.postResponse) {
+            setTimeout(() => {
+              try {
+                result.postResponse?.();
+              } catch (error) {
+                // Best-effort; can't report after response
+                console.warn('[RunnerControls] postResponse failed:', error);
+              }
+            }, 0);
+          }
+        } else {
+          res.status(500).json({
+            success: false,
+            operation: 'restart',
+            message: result.message || 'Restart failed',
+            error: result.error,
+            duration_ms: Date.now() - startTime,
+            output: result.output,
+            nextActions: [
+              { label: 'Retry', action: 'retry' },
+              { label: 'View Logs', action: 'view_logs' },
+              { label: 'Back', action: 'back' },
+            ],
+          } as RunnerControlResult);
+        }
+        return;
+      }
+
       // Use ProcessSupervisor if available (AC-OPS-2, AC-SUP-2)
       if (processSupervisor) {
         const result = await processSupervisor.restart({ build: true });

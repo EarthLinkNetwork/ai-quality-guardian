@@ -7,7 +7,7 @@
  * - Interactive prompt detection still works
  */
 
-import { expect } from 'chai';
+import { strict as assert } from 'assert';
 import { ClaudeCodeExecutor, ExecutorConfig } from '../../../src/executor/claude-code-executor';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -42,10 +42,10 @@ describe('Timeout Design v3 (AC B: silence=timeout abolished)', () => {
 
       // If hardTimeoutMs existed, TypeScript would require it here
       // The fact that this compiles proves hardTimeoutMs is not required
-      expect(config.timeout).to.equal(300000);
-      expect(config.softTimeoutMs).to.equal(60000);
-      expect(config.silenceLogIntervalMs).to.equal(30000);
-      expect(config.disableOverallTimeout).to.equal(false);
+      assert.equal(config.timeout, 300000);
+      assert.equal(config.softTimeoutMs, 60000);
+      assert.equal(config.silenceLogIntervalMs, 30000);
+      assert.equal(config.disableOverallTimeout, false);
     });
 
     it('should support disableOverallTimeout option', () => {
@@ -55,7 +55,7 @@ describe('Timeout Design v3 (AC B: silence=timeout abolished)', () => {
         disableOverallTimeout: true,
       };
 
-      expect(config.disableOverallTimeout).to.equal(true);
+      assert.equal(config.disableOverallTimeout, true);
     });
 
     it('should have silenceLogIntervalMs for logging (not termination)', () => {
@@ -65,7 +65,7 @@ describe('Timeout Design v3 (AC B: silence=timeout abolished)', () => {
         silenceLogIntervalMs: 45000, // 45 seconds
       };
 
-      expect(config.silenceLogIntervalMs).to.equal(45000);
+      assert.equal(config.silenceLogIntervalMs, 45000);
     });
   });
 
@@ -79,7 +79,7 @@ describe('Timeout Design v3 (AC B: silence=timeout abolished)', () => {
       });
 
       // Executor should be created successfully
-      expect(executor).to.be.instanceOf(ClaudeCodeExecutor);
+      assert.ok(executor instanceof ClaudeCodeExecutor);
     });
 
     it('should use default silence log interval if not specified', () => {
@@ -89,7 +89,7 @@ describe('Timeout Design v3 (AC B: silence=timeout abolished)', () => {
       });
 
       // Default silenceLogIntervalMs should be 30000 (30s)
-      expect(executor).to.be.instanceOf(ClaudeCodeExecutor);
+      assert.ok(executor instanceof ClaudeCodeExecutor);
     });
 
     it('should allow disabling overall timeout for long tasks', () => {
@@ -99,7 +99,7 @@ describe('Timeout Design v3 (AC B: silence=timeout abolished)', () => {
         disableOverallTimeout: true,
       });
 
-      expect(executor).to.be.instanceOf(ClaudeCodeExecutor);
+      assert.ok(executor instanceof ClaudeCodeExecutor);
     });
   });
 
@@ -130,7 +130,7 @@ describe('Timeout Design v3 (AC B: silence=timeout abolished)', () => {
         softTimeoutMs: 60000, // This should be overridden by env var
       });
 
-      expect(executor).to.be.instanceOf(ClaudeCodeExecutor);
+      assert.ok(executor instanceof ClaudeCodeExecutor);
     });
 
     it('should respect SILENCE_LOG_INTERVAL_MS environment variable', () => {
@@ -142,7 +142,7 @@ describe('Timeout Design v3 (AC B: silence=timeout abolished)', () => {
         silenceLogIntervalMs: 30000, // This should be overridden by env var
       });
 
-      expect(executor).to.be.instanceOf(ClaudeCodeExecutor);
+      assert.ok(executor instanceof ClaudeCodeExecutor);
     });
   });
 
@@ -164,11 +164,11 @@ describe('Timeout Design v3 (AC B: silence=timeout abolished)', () => {
         silenceLogIntervalIsLoggingOnly: true, // NOT termination
       };
 
-      expect(principles.silenceAloneTerminates).to.equal(false);
-      expect(principles.overallTimeoutCanTerminate).to.equal(true);
-      expect(principles.interactivePromptDetection).to.equal(true);
-      expect(principles.softTimeoutIsWarningOnly).to.equal(true);
-      expect(principles.silenceLogIntervalIsLoggingOnly).to.equal(true);
+      assert.equal(principles.silenceAloneTerminates, false);
+      assert.equal(principles.overallTimeoutCanTerminate, true);
+      assert.equal(principles.interactivePromptDetection, true);
+      assert.equal(principles.softTimeoutIsWarningOnly, true);
+      assert.equal(principles.silenceLogIntervalIsLoggingOnly, true);
     });
 
     it('should NOT have HARD_TIMEOUT_MS environment variable support (abolished)', () => {
@@ -177,7 +177,51 @@ describe('Timeout Design v3 (AC B: silence=timeout abolished)', () => {
 
       // Note: The code no longer reads HARD_TIMEOUT_MS
       // This test documents that design decision
-      expect(true).to.equal(true); // Design principle validated
+      assert.equal(true, true); // Design principle validated
+    });
+  });
+
+  describe('Progress-aware timeout (optional)', () => {
+    it('should extend overall timeout when output keeps flowing', async function() {
+      this.timeout(5000);
+
+      // Mock Claude CLI that emits output for > timeout duration
+      const mockCli = path.join(tempDir, 'mock-claude-progress.js');
+      fs.writeFileSync(
+        mockCli,
+        `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args.includes('--version')) { console.log('mock'); process.exit(0); }
+if (args.includes('echo test')) { console.log('test'); process.exit(0); }
+let count = 0;
+const interval = setInterval(() => {
+  count += 1;
+  process.stdout.write('tick ' + count + '\\n');
+}, 100);
+setTimeout(() => {
+  clearInterval(interval);
+  process.exit(0);
+}, 1200);
+`,
+        { mode: 0o755 }
+      );
+
+      const executor = new ClaudeCodeExecutor({
+        projectPath: tempDir,
+        timeout: 300, // 300ms overall window (would timeout without progress-aware reset)
+        progressAwareTimeout: true,
+        cliPath: mockCli,
+      });
+
+      const result = await executor.execute({
+        id: 'progress-aware-timeout-test',
+        prompt: 'long running task with output',
+        workingDir: tempDir,
+      });
+
+      assert.notEqual(result.status, 'BLOCKED');
+      assert.notEqual(result.blocked_reason, 'TIMEOUT');
+      assert.ok(result.duration_ms > 900);
     });
   });
 });

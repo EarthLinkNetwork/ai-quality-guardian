@@ -13,7 +13,7 @@
  * - No context → fail-closed (stale)
  */
 
-import { expect } from 'chai';
+import { strict as assert } from 'assert';
 import {
   ExecutorOutputStream,
   ExecutorOutputChunk,
@@ -34,49 +34,49 @@ describe('isStaleNotification (fail-closed)', () => {
 
   it('should return true (stale) when no context provided', () => {
     const chunk = makeChunk();
-    expect(isStaleNotification(chunk, {})).to.be.true;
+    assert.equal(isStaleNotification(chunk, {}), true);
   });
 
   it('should return false for matching task ID', () => {
     const chunk = makeChunk({ taskId: 'task-123' });
-    expect(isStaleNotification(chunk, { currentTaskId: 'task-123' })).to.be.false;
+    assert.equal(isStaleNotification(chunk, { currentTaskId: 'task-123' }), false);
   });
 
   it('should return true for mismatched task ID', () => {
     const chunk = makeChunk({ taskId: 'task-old' });
-    expect(isStaleNotification(chunk, { currentTaskId: 'task-current' })).to.be.true;
+    assert.equal(isStaleNotification(chunk, { currentTaskId: 'task-current' }), true);
   });
 
   it('should return true for mismatched session ID', () => {
     const chunk = makeChunk({ sessionId: 'session-old' });
-    expect(isStaleNotification(chunk, {
+    assert.equal(isStaleNotification(chunk, {
       currentTaskId: 'task-current',
       currentSessionId: 'session-current',
-    })).to.be.true;
+    }), true);
   });
 
   it('should return false when chunk has no sessionId (backward compat)', () => {
     const chunk = makeChunk({ sessionId: undefined });
-    expect(isStaleNotification(chunk, {
+    assert.equal(isStaleNotification(chunk, {
       currentTaskId: 'task-current',
       currentSessionId: 'session-current',
-    })).to.be.false;
+    }), false);
   });
 
   it('should return true when timestamp is before task creation', () => {
     const chunk = makeChunk({ timestamp: '2026-02-10T03:00:00.000Z' });
-    expect(isStaleNotification(chunk, {
+    assert.equal(isStaleNotification(chunk, {
       currentTaskId: 'task-current',
       taskCreatedAt: '2026-02-10T03:30:00.000Z',
-    })).to.be.true;
+    }), true);
   });
 
   it('should return false when timestamp is after task creation', () => {
     const chunk = makeChunk({ timestamp: '2026-02-10T04:00:00.000Z' });
-    expect(isStaleNotification(chunk, {
+    assert.equal(isStaleNotification(chunk, {
       currentTaskId: 'task-current',
       taskCreatedAt: '2026-02-10T03:30:00.000Z',
-    })).to.be.false;
+    }), false);
   });
 
   describe('stale text pattern detection', () => {
@@ -90,7 +90,7 @@ describe('isStaleNotification (fail-closed)', () => {
     for (const text of staleTexts) {
       it(`should detect stale pattern: "${text.substring(0, 40)}..."`, () => {
         const chunk = makeChunk({ text });
-        expect(isStaleNotification(chunk, { currentTaskId: 'task-current' })).to.be.true;
+        assert.equal(isStaleNotification(chunk, { currentTaskId: 'task-current' }), true);
       });
     }
 
@@ -105,7 +105,7 @@ describe('isStaleNotification (fail-closed)', () => {
 
       for (const text of normalTexts) {
         const chunk = makeChunk({ text });
-        expect(isStaleNotification(chunk, { currentTaskId: 'task-current' })).to.be.false;
+        assert.equal(isStaleNotification(chunk, { currentTaskId: 'task-current' }), false);
       }
     });
   });
@@ -116,11 +116,11 @@ describe('isStaleNotification (fail-closed)', () => {
       sessionId: 'session-abc',
       timestamp: '2026-02-10T04:00:00.000Z',
     });
-    expect(isStaleNotification(chunk, {
+    assert.equal(isStaleNotification(chunk, {
       currentTaskId: 'task-123',
       currentSessionId: 'session-abc',
       taskCreatedAt: '2026-02-10T03:00:00.000Z',
-    })).to.be.false;
+    }), false);
   });
 
   it('should fail-closed: any single mismatch → stale', () => {
@@ -129,10 +129,10 @@ describe('isStaleNotification (fail-closed)', () => {
       taskId: 'task-123',
       sessionId: 'session-OLD',
     });
-    expect(isStaleNotification(chunk, {
+    assert.equal(isStaleNotification(chunk, {
       currentTaskId: 'task-123',
       currentSessionId: 'session-NEW',
-    })).to.be.true;
+    }), true);
   });
 });
 
@@ -145,14 +145,14 @@ describe('ExecutorOutputStream stale filtering', () => {
   });
 
   it('setSessionId/getSessionId should work', () => {
-    expect(stream.getSessionId()).to.equal('session-current');
+    assert.equal(stream.getSessionId(), 'session-current');
     stream.setSessionId('session-new');
-    expect(stream.getSessionId()).to.equal('session-new');
+    assert.equal(stream.getSessionId(), 'session-new');
   });
 
   it('emitted chunks should include sessionId', () => {
     const chunk = stream.emit('task-1', 'stdout', 'Hello');
-    expect(chunk.sessionId).to.equal('session-current');
+    assert.equal(chunk.sessionId, 'session-current');
   });
 
   it('getByTaskIdFiltered should exclude chunks from other tasks', () => {
@@ -161,8 +161,8 @@ describe('ExecutorOutputStream stale filtering', () => {
     stream.emit('task-1', 'stdout', 'Task 1 more');
 
     const filtered = stream.getByTaskIdFiltered('task-1');
-    expect(filtered.length).to.equal(2);
-    expect(filtered.every(c => c.taskId === 'task-1')).to.be.true;
+    assert.equal(filtered.length, 2);
+    assert.ok(filtered.every(c => c.taskId === 'task-1'));
   });
 
   it('getByTaskIdFiltered should exclude chunks before task creation', () => {
@@ -172,7 +172,7 @@ describe('ExecutorOutputStream stale filtering', () => {
     // The old chunk's timestamp is now, simulate taskCreatedAt in the future
     const futureTime = new Date(Date.now() + 60000).toISOString();
     const filtered = stream.getByTaskIdFiltered('task-1', futureTime);
-    expect(filtered.length).to.equal(0);
+    assert.equal(filtered.length, 0);
   });
 
   it('getByTaskIdFiltered should exclude chunks from different sessions', () => {
@@ -192,8 +192,8 @@ describe('ExecutorOutputStream stale filtering', () => {
     (stream as any).chunks.push(oldChunk);
 
     const filtered = stream.getByTaskIdFiltered('task-1');
-    expect(filtered.length).to.equal(1);
-    expect(filtered[0].text).to.equal('Current session chunk');
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].text, 'Current session chunk');
   });
 
   it('getByTaskIdFiltered should exclude stale text patterns', () => {
@@ -202,8 +202,8 @@ describe('ExecutorOutputStream stale filtering', () => {
     stream.emit('task-1', 'stdout', 'More normal output');
 
     const filtered = stream.getByTaskIdFiltered('task-1');
-    expect(filtered.length).to.equal(2);
-    expect(filtered.every(c => !c.text.includes('previous session'))).to.be.true;
+    assert.equal(filtered.length, 2);
+    assert.ok(filtered.every(c => !c.text.includes('previous session')));
   });
 
   it('complete task lifecycle should have zero stale chunks', () => {
@@ -223,16 +223,16 @@ describe('ExecutorOutputStream stale filtering', () => {
       currentSessionId: stream.getSessionId() ?? undefined,
     };
     const staleCount = filtered.filter(c => isStaleNotification(c, context)).length;
-    expect(staleCount).to.equal(0);
+    assert.equal(staleCount, 0);
 
     // Verify all expected stream types present
     const streamTypes = new Set(filtered.map(c => c.stream));
-    expect(streamTypes.has('system')).to.be.true;
-    expect(streamTypes.has('spawn')).to.be.true;
-    expect(streamTypes.has('preflight')).to.be.true;
-    expect(streamTypes.has('guard')).to.be.true;
-    expect(streamTypes.has('stdout')).to.be.true;
-    expect(streamTypes.has('state')).to.be.true;
+    assert.equal(streamTypes.has('system'), true);
+    assert.equal(streamTypes.has('spawn'), true);
+    assert.equal(streamTypes.has('preflight'), true);
+    assert.equal(streamTypes.has('guard'), true);
+    assert.equal(streamTypes.has('stdout'), true);
+    assert.equal(streamTypes.has('state'), true);
   });
 
   it('mixed old/new session chunks: only current session visible', () => {
@@ -254,9 +254,9 @@ describe('ExecutorOutputStream stale filtering', () => {
 
     // Filtered should only show current session
     const filtered = stream.getByTaskIdFiltered('task-1');
-    expect(filtered.length).to.equal(2);
-    expect(filtered.every(c => c.sessionId === 'session-current')).to.be.true;
-    expect(filtered.some(c => c.text === 'New session output')).to.be.true;
-    expect(filtered.some(c => c.text === 'Old session output')).to.be.false;
+    assert.equal(filtered.length, 2);
+    assert.ok(filtered.every(c => c.sessionId === 'session-current'));
+    assert.ok(filtered.some(c => c.text === 'New session output'));
+    assert.equal(filtered.some(c => c.text === 'Old session output'), false);
   });
 });

@@ -4,7 +4,7 @@
  * AC A.1: Supervisor Log: TaskType判定、write許可、ガード判定、再試行/再開理由、採用したテンプレ
  */
 
-import { expect } from 'chai';
+import assert from 'node:assert/strict';
 import {
   SupervisorLogger,
   getSupervisorLogger,
@@ -24,10 +24,10 @@ describe('SupervisorLogger', () => {
     it('should create a log entry with timestamp', () => {
       const entry = logger.log('info', 'TASK_TYPE_DETECTION', 'Test message');
 
-      expect(entry.timestamp).to.be.a('string');
-      expect(entry.level).to.equal('info');
-      expect(entry.category).to.equal('TASK_TYPE_DETECTION');
-      expect(entry.message).to.equal('Test message');
+      assert.equal(typeof entry.timestamp, 'string');
+      assert.equal(entry.level, 'info');
+      assert.equal(entry.category, 'TASK_TYPE_DETECTION');
+      assert.equal(entry.message, 'Test message');
     });
 
     it('should include details when provided', () => {
@@ -35,7 +35,7 @@ describe('SupervisorLogger', () => {
         details: { taskType: 'READ_INFO', inputLength: 100 },
       });
 
-      expect(entry.details).to.deep.equal({ taskType: 'READ_INFO', inputLength: 100 });
+      assert.deepEqual(entry.details, { taskType: 'READ_INFO', inputLength: 100 });
     });
 
     it('should include taskId and projectId when provided', () => {
@@ -44,8 +44,8 @@ describe('SupervisorLogger', () => {
         projectId: 'project-456',
       });
 
-      expect(entry.taskId).to.equal('task-123');
-      expect(entry.projectId).to.equal('project-456');
+      assert.equal(entry.taskId, 'task-123');
+      assert.equal(entry.projectId, 'project-456');
     });
 
     it('should trim entries when over maxEntries limit', () => {
@@ -56,8 +56,8 @@ describe('SupervisorLogger', () => {
       }
 
       const entries = smallLogger.getAll();
-      expect(entries.length).to.equal(5);
-      expect(entries[0].message).to.equal('Message 5'); // First 5 trimmed
+      assert.equal(entries.length, 5);
+      assert.equal(entries[0].message, 'Message 5'); // First 5 trimmed
     });
   });
 
@@ -68,19 +68,19 @@ describe('SupervisorLogger', () => {
         taskId: 'task-123',
       });
 
-      expect(entry.category).to.equal('TASK_TYPE_DETECTION');
-      expect(entry.message).to.include('READ_INFO');
-      expect(entry.details?.taskType).to.equal('READ_INFO');
-      expect(entry.details?.inputPreview).to.include('What is the status');
-      expect(entry.details?.inputLength).to.equal(input.length);
+      assert.equal(entry.category, 'TASK_TYPE_DETECTION');
+      assert.ok(entry.message.includes('READ_INFO'));
+      assert.equal(entry.details?.taskType, 'READ_INFO');
+      assert.ok(entry.details?.inputPreview?.includes('What is the status'));
+      assert.equal(entry.details?.inputLength, input.length);
     });
 
     it('should truncate long input previews', () => {
       const longInput = 'A'.repeat(200);
       const entry = logger.logTaskTypeDetection('IMPLEMENTATION', longInput);
 
-      expect(entry.details?.inputPreview).to.include('...');
-      expect((entry.details?.inputPreview as string).length).to.be.lessThan(110);
+      assert.ok(entry.details?.inputPreview?.includes('...'));
+      assert.ok((entry.details?.inputPreview as string).length < 110);
     });
   });
 
@@ -91,10 +91,10 @@ describe('SupervisorLogger', () => {
         taskType: 'IMPLEMENTATION',
       });
 
-      expect(entry.level).to.equal('info');
-      expect(entry.category).to.equal('WRITE_PERMISSION');
-      expect(entry.message).to.include('ALLOWED');
-      expect(entry.details?.allowed).to.equal(true);
+      assert.equal(entry.level, 'info');
+      assert.equal(entry.category, 'WRITE_PERMISSION');
+      assert.ok(entry.message.includes('ALLOWED'));
+      assert.equal(entry.details?.allowed, true);
     });
 
     it('should log denied permission with warn level', () => {
@@ -103,9 +103,9 @@ describe('SupervisorLogger', () => {
         taskType: 'READ_INFO',
       });
 
-      expect(entry.level).to.equal('warn');
-      expect(entry.message).to.include('DENIED');
-      expect(entry.details?.allowed).to.equal(false);
+      assert.equal(entry.level, 'warn');
+      assert.ok(entry.message.includes('DENIED'));
+      assert.equal(entry.details?.allowed, false);
     });
   });
 
@@ -115,10 +115,10 @@ describe('SupervisorLogger', () => {
         taskId: 'task-123',
       });
 
-      expect(entry.level).to.equal('info');
-      expect(entry.category).to.equal('GUARD_DECISION');
-      expect(entry.message).to.include('PASSED');
-      expect(entry.details?.guardName).to.equal('API_KEY_CHECK');
+      assert.equal(entry.level, 'info');
+      assert.equal(entry.category, 'GUARD_DECISION');
+      assert.ok(entry.message.includes('PASSED'));
+      assert.equal(entry.details?.guardName, 'API_KEY_CHECK');
     });
 
     it('should log blocked guard with warn level', () => {
@@ -127,9 +127,9 @@ describe('SupervisorLogger', () => {
         details: { riskLevel: 'high' },
       });
 
-      expect(entry.level).to.equal('warn');
-      expect(entry.message).to.include('BLOCKED');
-      expect(entry.details?.riskLevel).to.equal('high');
+      assert.equal(entry.level, 'warn');
+      assert.ok(entry.message.includes('BLOCKED'));
+      assert.equal(entry.details?.riskLevel, 'high');
     });
   });
 
@@ -141,10 +141,10 @@ describe('SupervisorLogger', () => {
         maxAttempts: 3,
       });
 
-      expect(entry.category).to.equal('RETRY_RESUME');
-      expect(entry.message).to.include('RETRY');
-      expect(entry.details?.attempt).to.equal(2);
-      expect(entry.details?.maxAttempts).to.equal(3);
+      assert.equal(entry.category, 'RETRY_RESUME');
+      assert.ok(entry.message.includes('RETRY'));
+      assert.equal(entry.details?.attempt, 2);
+      assert.equal(entry.details?.maxAttempts, 3);
     });
 
     it('should log resume action', () => {
@@ -152,7 +152,7 @@ describe('SupervisorLogger', () => {
         taskId: 'task-123',
       });
 
-      expect(entry.message).to.include('RESUME');
+      assert.ok(entry.message.includes('RESUME'));
     });
 
     it('should log rollback action', () => {
@@ -160,7 +160,7 @@ describe('SupervisorLogger', () => {
         taskId: 'task-123',
       });
 
-      expect(entry.message).to.include('ROLLBACK');
+      assert.ok(entry.message.includes('ROLLBACK'));
     });
   });
 
@@ -172,10 +172,10 @@ describe('SupervisorLogger', () => {
         source: 'global',
       });
 
-      expect(entry.category).to.equal('TEMPLATE_SELECTION');
-      expect(entry.message).to.include('default-output-template');
-      expect(entry.details?.templateType).to.equal('output');
-      expect(entry.details?.source).to.equal('global');
+      assert.equal(entry.category, 'TEMPLATE_SELECTION');
+      assert.ok(entry.message.includes('default-output-template'));
+      assert.equal(entry.details?.templateType, 'output');
+      assert.equal(entry.details?.source, 'global');
     });
   });
 
@@ -187,9 +187,9 @@ describe('SupervisorLogger', () => {
         prompt: 'Create a new feature',
       });
 
-      expect(entry.category).to.equal('EXECUTION_START');
-      expect(entry.taskId).to.equal('task-123');
-      expect(entry.details?.taskType).to.equal('IMPLEMENTATION');
+      assert.equal(entry.category, 'EXECUTION_START');
+      assert.equal(entry.taskId, 'task-123');
+      assert.equal(entry.details?.taskType, 'IMPLEMENTATION');
     });
 
     it('should log successful execution end', () => {
@@ -198,10 +198,10 @@ describe('SupervisorLogger', () => {
         durationMs: 5000,
       });
 
-      expect(entry.level).to.equal('info');
-      expect(entry.category).to.equal('EXECUTION_END');
-      expect(entry.message).to.include('completed');
-      expect(entry.details?.durationMs).to.equal(5000);
+      assert.equal(entry.level, 'info');
+      assert.equal(entry.category, 'EXECUTION_END');
+      assert.ok(entry.message.includes('completed'));
+      assert.equal(entry.details?.durationMs, 5000);
     });
 
     it('should log failed execution end', () => {
@@ -210,9 +210,9 @@ describe('SupervisorLogger', () => {
         error: 'Timeout exceeded',
       });
 
-      expect(entry.level).to.equal('error');
-      expect(entry.message).to.include('failed');
-      expect(entry.details?.error).to.equal('Timeout exceeded');
+      assert.equal(entry.level, 'error');
+      assert.ok(entry.message.includes('failed'));
+      assert.equal(entry.details?.error, 'Timeout exceeded');
     });
   });
 
@@ -220,9 +220,9 @@ describe('SupervisorLogger', () => {
     it('should log valid output', () => {
       const entry = logger.logValidation(true, [], { taskId: 'task-123' });
 
-      expect(entry.level).to.equal('info');
-      expect(entry.category).to.equal('VALIDATION');
-      expect(entry.message).to.include('PASSED');
+      assert.equal(entry.level, 'info');
+      assert.equal(entry.category, 'VALIDATION');
+      assert.ok(entry.message.includes('PASSED'));
     });
 
     it('should log invalid output with violations', () => {
@@ -233,9 +233,9 @@ describe('SupervisorLogger', () => {
 
       const entry = logger.logValidation(false, violations, { taskId: 'task-123' });
 
-      expect(entry.level).to.equal('warn');
-      expect(entry.message).to.include('FAILED');
-      expect(entry.details?.violationCount).to.equal(2);
+      assert.equal(entry.level, 'warn');
+      assert.ok(entry.message.includes('FAILED'));
+      assert.equal(entry.details?.violationCount, 2);
     });
   });
 
@@ -244,16 +244,16 @@ describe('SupervisorLogger', () => {
       const error = new Error('Something went wrong');
       const entry = logger.logError('Execution failed', error, { taskId: 'task-123' });
 
-      expect(entry.level).to.equal('error');
-      expect(entry.category).to.equal('ERROR');
-      expect(entry.details?.error).to.equal('Something went wrong');
-      expect(entry.details?.stack).to.be.a('string');
+      assert.equal(entry.level, 'error');
+      assert.equal(entry.category, 'ERROR');
+      assert.equal(entry.details?.error, 'Something went wrong');
+      assert.equal(typeof entry.details?.stack, 'string');
     });
 
     it('should handle non-Error objects', () => {
       const entry = logger.logError('Execution failed', 'String error');
 
-      expect(entry.details?.error).to.equal('String error');
+      assert.equal(entry.details?.error, 'String error');
     });
   });
 
@@ -267,26 +267,26 @@ describe('SupervisorLogger', () => {
 
     it('getAll() should return all entries', () => {
       const entries = logger.getAll();
-      expect(entries.length).to.equal(4);
+      assert.equal(entries.length, 4);
     });
 
     it('getByTaskId() should filter by task', () => {
       const entries = logger.getByTaskId('task-1');
-      expect(entries.length).to.equal(2);
-      expect(entries.every(e => e.taskId === 'task-1')).to.be.true;
+      assert.equal(entries.length, 2);
+      assert.ok(entries.every(e => e.taskId === 'task-1'));
     });
 
     it('getByCategory() should filter by category', () => {
       const entries = logger.getByCategory('TASK_TYPE_DETECTION');
-      expect(entries.length).to.equal(2);
-      expect(entries.every(e => e.category === 'TASK_TYPE_DETECTION')).to.be.true;
+      assert.equal(entries.length, 2);
+      assert.ok(entries.every(e => e.category === 'TASK_TYPE_DETECTION'));
     });
 
     it('getRecent() should return last N entries', () => {
       const entries = logger.getRecent(2);
-      expect(entries.length).to.equal(2);
-      expect(entries[0].message).to.equal('Msg 3');
-      expect(entries[1].message).to.equal('Msg 4');
+      assert.equal(entries.length, 2);
+      assert.equal(entries[0].message, 'Msg 3');
+      assert.equal(entries[1].message, 'Msg 4');
     });
 
     it('getSince() should filter by timestamp', () => {
@@ -294,17 +294,17 @@ describe('SupervisorLogger', () => {
       const beforeAllTimestamp = new Date(Date.now() - 1000).toISOString();
       const filtered = logger.getSince(beforeAllTimestamp);
       // All 4 entries should be returned (since they were created after beforeAllTimestamp)
-      expect(filtered.length).to.equal(4);
+      assert.equal(filtered.length, 4);
 
       // Create a timestamp after all entries
       const afterAllTimestamp = new Date(Date.now() + 1000).toISOString();
       const filteredNone = logger.getSince(afterAllTimestamp);
-      expect(filteredNone.length).to.equal(0);
+      assert.equal(filteredNone.length, 0);
     });
 
     it('clear() should remove all entries', () => {
       logger.clear();
-      expect(logger.getAll().length).to.equal(0);
+      assert.equal(logger.getAll().length, 0);
     });
   });
 
@@ -320,8 +320,8 @@ describe('SupervisorLogger', () => {
       logger.subscribe(subscriber);
       logger.log('info', 'TASK_TYPE_DETECTION', 'Test message');
 
-      expect(received.length).to.equal(1);
-      expect(received[0].message).to.equal('Test message');
+      assert.equal(received.length, 1);
+      assert.equal(received[0].message, 'Test message');
     });
 
     it('should support multiple subscribers', () => {
@@ -332,8 +332,8 @@ describe('SupervisorLogger', () => {
       logger.subscribe({ onLog: e => received2.push(e) });
       logger.log('info', 'TASK_TYPE_DETECTION', 'Test message');
 
-      expect(received1.length).to.equal(1);
-      expect(received2.length).to.equal(1);
+      assert.equal(received1.length, 1);
+      assert.equal(received2.length, 1);
     });
 
     it('should allow unsubscription', () => {
@@ -346,7 +346,7 @@ describe('SupervisorLogger', () => {
       unsubscribe();
       logger.log('info', 'TASK_TYPE_DETECTION', 'After unsubscribe');
 
-      expect(received.length).to.equal(1);
+      assert.equal(received.length, 1);
     });
 
     it('should handle subscriber errors gracefully', () => {
@@ -363,18 +363,18 @@ describe('SupervisorLogger', () => {
 
       // Should not throw
       logger.log('info', 'TASK_TYPE_DETECTION', 'Test message');
-      expect(received.length).to.equal(1);
+      assert.equal(received.length, 1);
     });
 
     it('should report subscriber count', () => {
-      expect(logger.getSubscriberCount()).to.equal(0);
+      assert.equal(logger.getSubscriberCount(), 0);
 
       const unsub1 = logger.subscribe({ onLog: () => {} });
       const unsub2 = logger.subscribe({ onLog: () => {} });
-      expect(logger.getSubscriberCount()).to.equal(2);
+      assert.equal(logger.getSubscriberCount(), 2);
 
       unsub1();
-      expect(logger.getSubscriberCount()).to.equal(1);
+      assert.equal(logger.getSubscriberCount(), 1);
     });
   });
 });
@@ -387,7 +387,7 @@ describe('Singleton Logger', () => {
   it('getSupervisorLogger() should return same instance', () => {
     const logger1 = getSupervisorLogger();
     const logger2 = getSupervisorLogger();
-    expect(logger1).to.equal(logger2);
+    assert.equal(logger1, logger2);
   });
 
   it('resetSupervisorLogger() should clear singleton', () => {
@@ -397,7 +397,7 @@ describe('Singleton Logger', () => {
     resetSupervisorLogger();
 
     const logger2 = getSupervisorLogger();
-    expect(logger2).to.not.equal(logger1);
-    expect(logger2.getAll().length).to.equal(0);
+    assert.notEqual(logger2, logger1);
+    assert.equal(logger2.getAll().length, 0);
   });
 });

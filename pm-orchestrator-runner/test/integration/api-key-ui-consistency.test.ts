@@ -8,7 +8,7 @@
 import { spawn, ChildProcess, execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import { expect } from 'chai';
+import assert from 'node:assert/strict';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -227,8 +227,8 @@ describe('API Key UI Consistency Tests', function () {
     log(`Settings API api_key_configured: ${settingsApi.settings?.api_key_configured}`);
 
     // Assertions to identify the issue
-    expect(apiKeyStatus).to.have.property('anthropic');
-    expect(apiKeyStatus).to.have.property('openai');
+    assert.ok('anthropic' in apiKeyStatus);
+    assert.ok('openai' in apiKeyStatus);
   });
 
   it('should test after reload to check for race conditions', async function () {
@@ -254,6 +254,6 @@ describe('API Key UI Consistency Tests', function () {
     log(`  Call 2 anthropic.configured: ${status2.anthropic?.configured}`);
     log(`  Match: ${status1.anthropic?.configured === status2.anthropic?.configured}`);
 
-    expect(status1.anthropic?.configured).to.equal(status2.anthropic?.configured);
+    assert.equal(status1.anthropic?.configured, status2.anthropic?.configured);
   });
 });

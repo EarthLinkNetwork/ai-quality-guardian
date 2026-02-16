@@ -30,6 +30,7 @@ import { createSelfhostRoutes } from './routes/selfhost';
 import { createDevconsoleRoutes } from './routes/devconsole';
 import { createSessionLogsRoutes } from './routes/session-logs';
 import { createRunnerControlsRoutes } from './routes/runner-controls';
+import type { RunnerRestartResult } from './routes/runner-controls';
 import { createSupervisorConfigRoutes } from './routes/supervisor-config';
 import { createSupervisorLogsRoutes } from './routes/supervisor-logs';
 import { createExecutorLogsRoutes } from './routes/executor-logs';
@@ -71,6 +72,8 @@ export interface WebServerConfig {
   stateDir?: string;
   /** Queue store type for health endpoint display */
   queueStoreType?: 'file' | 'dynamodb' | 'memory';
+  /** Optional self-restart handler for Runner Controls */
+  runnerRestartHandler?: () => Promise<RunnerRestartResult>;
 }
 
 /**
@@ -133,7 +136,10 @@ export function createApp(config: WebServerConfig): Express {
     app.use("/api", createSessionLogsRoutes(stateDir));
     // Runner Controls routes (selfhost-runner only)
     // Per AC-OPS-1: Web UI provides Run/Stop/Build/Restart controls
-    app.use("/api/runner", createRunnerControlsRoutes({ projectRoot: projectRoot || process.cwd() }));
+    app.use("/api/runner", createRunnerControlsRoutes({
+      projectRoot: projectRoot || process.cwd(),
+      restartHandler: config.runnerRestartHandler,
+    }));
 
     // Supervisor Config routes (SUP-4, SUP-5)
     // Per docs/spec/SUPERVISOR_SYSTEM.md
@@ -656,17 +662,17 @@ export function createApp(config: WebServerConfig): Express {
    * - AC-OPS-3: Returns build_sha for build tracking
    */
   app.get('/api/health', (_req: Request, res: Response) => {
-    // Read build_sha from environment (set by ProcessSupervisor) or build-meta.json
+    // Read build info from environment (set by ProcessSupervisor/self-restart) or build-meta.json
     let buildSha: string | undefined = process.env.PM_BUILD_SHA;
-    let buildTimestamp: string | undefined;
+    let buildTimestamp: string | undefined = process.env.PM_BUILD_TIMESTAMP;
 
-    if (!buildSha && projectRoot) {
+    if (projectRoot && (!buildSha || !buildTimestamp)) {
       try {
         const buildMetaPath = path.join(projectRoot, 'dist', 'build-meta.json');
         if (fs.existsSync(buildMetaPath)) {
           const buildMeta = JSON.parse(fs.readFileSync(buildMetaPath, 'utf-8'));
-          buildSha = buildMeta.build_sha;
-          buildTimestamp = buildMeta.build_timestamp;
+          buildSha = buildSha || buildMeta.build_sha;
+          buildTimestamp = buildTimestamp || buildMeta.build_timestamp;
         }
       } catch {
         // Ignore errors reading build-meta.json
@@ -945,6 +951,7 @@ export class WebServer {
   private readonly host: string;
   private readonly namespace: string;
   private server: ReturnType<Express['listen']> | null = null;
+  private readonly connections: Set<import('net').Socket> = new Set();
 
   constructor(config: WebServerConfig) {
     this.port = config.port || 5678;
@@ -962,6 +969,12 @@ export class WebServer {
         this.server = this.app.listen(this.port, this.host, () => {
           resolve();
         });
+        this.server.on('connection', (socket) => {
+          this.connections.add(socket);
+          socket.on('close', () => {
+            this.connections.delete(socket);
+          });
+        });
         this.server.on('error', reject);
       } catch (error) {
         reject(error);
@@ -977,6 +990,14 @@ export class WebServer {
       if (!this.server) {
         resolve();
         return;
+      }
+      // Close any open connections to avoid hanging on SSE
+      for (const socket of this.connections) {
+        try {
+          socket.destroy();
+        } catch {
+          // Ignore socket errors on shutdown
+        }
       }
       this.server.close((err) => {
         if (err) {

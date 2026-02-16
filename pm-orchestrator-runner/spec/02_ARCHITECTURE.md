@@ -23,6 +23,39 @@ Configuration Manager reads .claude/settings.json
 Configuration Manager reads .claude/agents  
 Configuration Manager reads .claude/rules  
 
+## System Diagram (Web + Runner + Self-Update)
+
+```mermaid
+flowchart LR
+  User["User (Browser)"] -->|UI| Web["Web UI (Express)"]
+  Web -->|Chat API| Chat["Chat Routes / Conversation DAL"]
+  Chat -->|enqueue| Queue["Queue Store"]
+  Queue --> Poller["Queue Poller"]
+  Poller --> Executor["Task Executor"]
+  Executor --> LLM["LLM Provider"]
+  Executor --> Repo["Repo Files"]
+  Web -->|Runner Controls| RunnerCtrl["Runner Controls API"]
+  RunnerCtrl --> Build["npm run build"]
+  Build --> Dist["dist/"]
+  RunnerCtrl --> Restart["spawn new Web process"]
+  Restart --> Web
+```
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant UI as "Web UI"
+  participant RC as "Runner Controls"
+  participant Build
+  participant NewProc as "New Web Process"
+
+  User->>UI: Click "Build & Restart"
+  UI->>RC: POST /api/runner/restart
+  RC->>Build: npm run build
+  RC->>NewProc: spawn node dist/cli/index.js web
+  NewProc-->>UI: new PID / updated build info
+```
+
 ## Execution Flow
 
 User invokes start command  

@@ -12,7 +12,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import { expect } from 'chai';
+import assert from 'node:assert/strict';
 import { fileURLToPath } from 'url';
 
 // ESM-compatible __dirname replacement
@@ -191,8 +191,8 @@ describe('API Key Persistence E2E Tests', function() {
       log(LOG_FILE, 'Step 1: Checking initial API key status...');
       const initialStatus = await fetchJson(`http://localhost:${PORT}/api/settings/api-key/status`);
       log(LOG_FILE, `Initial status: ${JSON.stringify(initialStatus)}`);
-      expect(initialStatus.anthropic.configured).to.be.false;
-      expect(initialStatus.openai.configured).to.be.false;
+      assert.equal(initialStatus.anthropic.configured, false);
+      assert.equal(initialStatus.openai.configured, false);
       log(LOG_FILE, '[PASS] Initial status: both providers not configured');
 
       // Save an API key
@@ -206,25 +206,25 @@ describe('API Key Persistence E2E Tests', function() {
         })
       });
       log(LOG_FILE, `Save response: ${JSON.stringify(saveResponse)}`);
-      expect(saveResponse.success).to.be.true;
-      expect(saveResponse.masked).to.equal('sk-a****7890');
+      assert.equal(saveResponse.success, true);
+      assert.equal(saveResponse.masked, 'sk-a****7890');
       log(LOG_FILE, '[PASS] API key saved successfully');
 
       // Verify status after save
       log(LOG_FILE, 'Step 3: Verifying API key status after save...');
       const statusAfterSave = await fetchJson(`http://localhost:${PORT}/api/settings/api-key/status`);
       log(LOG_FILE, `Status after save: ${JSON.stringify(statusAfterSave)}`);
-      expect(statusAfterSave.anthropic.configured).to.be.true;
-      expect(statusAfterSave.anthropic.masked).to.equal('sk-a****7890');
+      assert.equal(statusAfterSave.anthropic.configured, true);
+      assert.equal(statusAfterSave.anthropic.masked, 'sk-a****7890');
       log(LOG_FILE, '[PASS] API key status shows configured');
 
       // Verify persistence file exists
       log(LOG_FILE, 'Step 4: Checking persistence file...');
       const persistenceFile = path.join(STATE_DIR, 'api-keys.json');
-      expect(fs.existsSync(persistenceFile)).to.be.true;
+      assert.equal(fs.existsSync(persistenceFile), true);
       const persistedData = JSON.parse(fs.readFileSync(persistenceFile, 'utf-8'));
       log(LOG_FILE, `Persistence file contents: ${JSON.stringify(persistedData)}`);
-      expect(persistedData.anthropic.configured).to.be.true;
+      assert.equal(persistedData.anthropic.configured, true);
       log(LOG_FILE, '[PASS] Persistence file contains correct data');
 
       // Phase 2: Stop server
@@ -249,15 +249,15 @@ describe('API Key Persistence E2E Tests', function() {
       log(LOG_FILE, `Status after restart: ${JSON.stringify(statusAfterRestart)}`);
 
       // Key assertions
-      expect(statusAfterRestart.anthropic.configured).to.be.true;
-      expect(statusAfterRestart.anthropic.masked).to.equal('sk-a****7890');
+      assert.equal(statusAfterRestart.anthropic.configured, true);
+      assert.equal(statusAfterRestart.anthropic.masked, 'sk-a****7890');
       log(LOG_FILE, '[PASS] API key persisted across restart');
 
       // Verify full settings also reflect the key
       log(LOG_FILE, 'Step 6: Verifying full settings endpoint...');
       const fullSettings = await fetchJson(`http://localhost:${PORT}/api/settings`);
       log(LOG_FILE, `Full settings: ${JSON.stringify(fullSettings)}`);
-      expect(fullSettings.settings.api_key_configured).to.be.true;
+      assert.equal(fullSettings.settings.api_key_configured, true);
       log(LOG_FILE, '[PASS] settings.api_key_configured is true');
 
       log(LOG_FILE, '=== TEST RESULT: PASS ===');
@@ -300,8 +300,8 @@ describe('API Key Persistence E2E Tests', function() {
       // Verify both are saved
       const statusBeforeRestart = await fetchJson(`http://localhost:${PORT}/api/settings/api-key/status`);
       log(LOG_FILE, `Status before restart: ${JSON.stringify(statusBeforeRestart)}`);
-      expect(statusBeforeRestart.anthropic.configured).to.be.true;
-      expect(statusBeforeRestart.openai.configured).to.be.true;
+      assert.equal(statusBeforeRestart.anthropic.configured, true);
+      assert.equal(statusBeforeRestart.openai.configured, true);
 
       // Stop and restart
       log(LOG_FILE, 'Stopping and restarting server...');
@@ -315,8 +315,8 @@ describe('API Key Persistence E2E Tests', function() {
       // Verify both persist
       const statusAfterRestart = await fetchJson(`http://localhost:${PORT}/api/settings/api-key/status`);
       log(LOG_FILE, `Status after restart: ${JSON.stringify(statusAfterRestart)}`);
-      expect(statusAfterRestart.anthropic.configured).to.be.true;
-      expect(statusAfterRestart.openai.configured).to.be.true;
+      assert.equal(statusAfterRestart.anthropic.configured, true);
+      assert.equal(statusAfterRestart.openai.configured, true);
       log(LOG_FILE, '[PASS] Both API keys persisted across restart');
     });
 
@@ -343,7 +343,7 @@ describe('API Key Persistence E2E Tests', function() {
 
       // Verify saved
       let status = await fetchJson(`http://localhost:${PORT}/api/settings/api-key/status`);
-      expect(status.anthropic.configured).to.be.true;
+      assert.equal(status.anthropic.configured, true);
 
       // Delete
       log(LOG_FILE, 'Deleting API key...');
@@ -356,7 +356,7 @@ describe('API Key Persistence E2E Tests', function() {
       // Verify deleted
       status = await fetchJson(`http://localhost:${PORT}/api/settings/api-key/status`);
       log(LOG_FILE, `Status after delete: ${JSON.stringify(status)}`);
-      expect(status.anthropic.configured).to.be.false;
+      assert.equal(status.anthropic.configured, false);
 
       // Restart and verify deletion persisted
       log(LOG_FILE, 'Restarting server...');
@@ -368,7 +368,7 @@ describe('API Key Persistence E2E Tests', function() {
 
       status = await fetchJson(`http://localhost:${PORT}/api/settings/api-key/status`);
       log(LOG_FILE, `Status after restart: ${JSON.stringify(status)}`);
-      expect(status.anthropic.configured).to.be.false;
+      assert.equal(status.anthropic.configured, false);
       log(LOG_FILE, '[PASS] API key deletion persisted across restart');
     });
   });

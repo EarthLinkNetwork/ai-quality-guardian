@@ -164,4 +164,58 @@ describe('E2E: Runner Controls (AC-OPS-1)', () => {
     // Note: Build and Restart endpoints exist but require actual npm scripts
     // They are tested via unit tests, not E2E tests that execute real builds
   });
+
+  describe('Restart handler wiring', () => {
+    it('should use restartHandler and invoke postResponse after responding', async () => {
+      let handlerCalled = false;
+      let postResponseCalled = false;
+      let resolvePostResponse: (() => void) | null = null;
+      const postResponsePromise = new Promise<void>((resolve) => {
+        resolvePostResponse = resolve;
+      });
+
+      const appWithRestart = createApp({
+        queueStore,
+        sessionId,
+        namespace,
+        projectRoot: process.cwd(),
+        stateDir: tempStateDir,
+        runnerRestartHandler: async () => {
+          handlerCalled = true;
+          return {
+            success: true,
+            oldPid: 123,
+            newPid: 456,
+            buildMeta: {
+              build_sha: 'test-sha',
+              build_timestamp: new Date().toISOString(),
+            },
+            message: 'Restart scheduled',
+            postResponse: () => {
+              postResponseCalled = true;
+              resolvePostResponse?.();
+            },
+          };
+        },
+      });
+
+      const res = await request(appWithRestart)
+        .post('/api/runner/restart')
+        .expect(200);
+
+      assert.strictEqual(handlerCalled, true);
+      assert.strictEqual(res.body.success, true);
+      assert.strictEqual(res.body.operation, 'restart');
+      assert.strictEqual(res.body.old_pid, 123);
+      assert.strictEqual(res.body.new_pid, 456);
+      assert.strictEqual(res.body.build_sha, 'test-sha');
+
+      await Promise.race([
+        postResponsePromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('postResponse not called')), 200)),
+      ]);
+
+      assert.strictEqual(postResponseCalled, true);
+    });
+  });
 });

@@ -8,7 +8,7 @@
  * - On hard_timeout: Set to AWAITING_RESPONSE with Resume option
  */
 
-import { describe, it, before } from 'mocha';
+import { describe, it, before, after } from 'mocha';
 import { strict as assert } from 'assert';
 import request from 'supertest';
 import { Express } from 'express';
@@ -33,6 +33,8 @@ import {
 
 describe('E2E: Timeout with Progress Awareness (AC-TIMEOUT-1)', () => {
   let app: Express;
+  let server: import('http').Server;
+  let agent: request.Agent;
   let queueStore: IQueueStore;
   const namespace = 'timeout-progress-test';
   const sessionId = 'session-timeout-001';
@@ -43,6 +45,14 @@ describe('E2E: Timeout with Progress Awareness (AC-TIMEOUT-1)', () => {
       queueStore,
       sessionId,
       namespace,
+    });
+    server = app.listen(0, '127.0.0.1');
+    agent = request(server);
+  });
+
+  after(async () => {
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
     });
   });
 
@@ -192,7 +202,7 @@ describe('E2E: Timeout with Progress Awareness (AC-TIMEOUT-1)', () => {
   describe('Integration: Task with timeout behavior', () => {
     it('should create task and track timeout readiness', async () => {
       // Create a task
-      const res = await request(app)
+      const res = await agent
         .post('/api/tasks')
         .send({
           task_group_id: 'timeout-test-group',
@@ -203,7 +213,7 @@ describe('E2E: Timeout with Progress Awareness (AC-TIMEOUT-1)', () => {
       const taskId = res.body.task_id;
 
       // Verify task created
-      const taskRes = await request(app)
+      const taskRes = await agent
         .get(`/api/tasks/${taskId}`)
         .expect(200);
 

@@ -7,7 +7,7 @@
  * 3. Verify script violation detection
  */
 
-import { expect } from 'chai';
+import assert from 'node:assert/strict';
 import { detectQuestions, hasUnansweredQuestions } from '../../../src/utils/question-detector';
 
 describe('P0 Stale Final - AWAITING_RESPONSE prompt reliability', () => {
@@ -25,23 +25,23 @@ describe('P0 Stale Final - AWAITING_RESPONSE prompt reliability', () => {
   it('question detector should fire on "Would you like...?" (weight 0.7 + 0.4 = 1.1)', () => {
     for (const output of EXPECTED_CLAUDE_OUTPUTS) {
       const result = detectQuestions(output);
-      expect(result.hasQuestions, `Failed on: "${output}"`).to.be.true;
-      expect(result.confidence).to.be.at.least(0.6);
-      expect(result.matchedPatterns).to.include('EN: would you like');
+      assert.ok(result.hasQuestions, `Failed on: "${output}"`);
+      assert.ok(result.confidence >= 0.6);
+      assert.ok(result.matchedPatterns.includes('EN: would you like'));
     }
   });
 
   it('"Would you like" alone should have weight 0.7 (above half threshold)', () => {
     const result = detectQuestions('Would you like to proceed');
     // weight 0.7 >= 0.6 threshold
-    expect(result.hasQuestions).to.be.true;
-    expect(result.confidence).to.be.at.least(0.6);
+    assert.ok(result.hasQuestions);
+    assert.ok(result.confidence >= 0.6);
   });
 
   it('"Would you like...?" should have combined weight >= 1.0', () => {
     const result = detectQuestions('Would you like to choose option A or option B?');
     // "would you like" (0.7) + "?" at end (0.4) = 1.1
-    expect(result.confidence).to.be.at.least(1.0);
+    assert.ok(result.confidence >= 1.0);
   });
 
   it('prompt without question patterns should NOT trigger', () => {
@@ -51,7 +51,7 @@ describe('P0 Stale Final - AWAITING_RESPONSE prompt reliability', () => {
       'echo p0-stale-ok',
     ];
     for (const output of safeOutputs) {
-      expect(hasUnansweredQuestions(output), `Should not trigger on: "${output}"`).to.be.false;
+      assert.equal(hasUnansweredQuestions(output), false, `Should not trigger on: "${output}"`);
     }
   });
 
@@ -62,7 +62,7 @@ describe('P0 Stale Final - AWAITING_RESPONSE prompt reliability', () => {
       'src/cli/index.ts\nsrc/executor/auto-resolve-executor.ts\nsrc/executor/claude-code-executor.ts',
     ];
     for (const output of completeOutputs) {
-      expect(hasUnansweredQuestions(output)).to.be.false;
+      assert.equal(hasUnansweredQuestions(output), false);
     }
   });
 });
@@ -132,42 +132,42 @@ describe('P0 Stale Final - verify script contracts', () => {
   it('valid data should produce PASS verdict', () => {
     const data = buildRunnerOutput();
     const violations = validateRunnerData(data);
-    expect(violations).to.have.length(0);
+    assert.equal(violations.length, 0);
   });
 
   it('task A not COMPLETE should produce violation', () => {
     const data = buildRunnerOutput();
     data.tasks.A.finalStatus = 'ERROR';
     const violations = validateRunnerData(data);
-    expect(violations.some((v: string) => v.includes('TASK_STATUS'))).to.be.true;
+    assert.ok(violations.some((v: string) => v.includes('TASK_STATUS')));
   });
 
   it('missing sessionId in chunk should produce violation', () => {
     const data = buildRunnerOutput();
     data.endpoints.logs_taskId_A.chunks[0].sessionId = undefined;
     const violations = validateRunnerData(data);
-    expect(violations.some((v: string) => v.includes('MISSING_SESSION'))).to.be.true;
+    assert.ok(violations.some((v: string) => v.includes('MISSING_SESSION')));
   });
 
   it('session mismatch should produce violation', () => {
     const data = buildRunnerOutput();
     data.endpoints.logs_taskId_A.chunks[0].sessionId = 'session-different';
     const violations = validateRunnerData(data);
-    expect(violations.some((v: string) => v.includes('SESSION_MISMATCH') || v.includes('MULTI_SESSION'))).to.be.true;
+    assert.ok(violations.some((v: string) => v.includes('SESSION_MISMATCH') || v.includes('MULTI_SESSION')));
   });
 
   it('stale text in chunk should produce violation', () => {
     const data = buildRunnerOutput();
     data.endpoints.logs_taskId_A.chunks[0].text = 'This is from the previous session';
     const violations = validateRunnerData(data);
-    expect(violations.some((v: string) => v.includes('STALE_TEXT'))).to.be.true;
+    assert.ok(violations.some((v: string) => v.includes('STALE_TEXT')));
   });
 
   it('stale text in SSE should produce violation', () => {
     const data = buildRunnerOutput();
     data.sse = 'event: message\ndata: output from previous session\n';
     const violations = validateRunnerData(data);
-    expect(violations.some((v: string) => v.includes('SSE_STALE'))).to.be.true;
+    assert.ok(violations.some((v: string) => v.includes('SSE_STALE')));
   });
 
   it('timestamp before task creation should produce violation', () => {
@@ -175,7 +175,7 @@ describe('P0 Stale Final - verify script contracts', () => {
     // Chunk timestamp before task A's created_at
     data.endpoints.logs_taskId_A.chunks[0].timestamp = '2026-02-10T03:59:00.000Z';
     const violations = validateRunnerData(data);
-    expect(violations.some((v: string) => v.includes('TIMESTAMP_STALE'))).to.be.true;
+    assert.ok(violations.some((v: string) => v.includes('TIMESTAMP_STALE')));
   });
 
   it('staleFiltered missing on endpoints should produce violation', () => {
@@ -186,7 +186,7 @@ describe('P0 Stale Final - verify script contracts', () => {
     delete data.endpoints.logs_task_A.staleFiltered;
     delete data.endpoints.logs_task_B.staleFiltered;
     const violations = validateRunnerData(data);
-    expect(violations.some((v: string) => v.includes('STALE_FILTER_MISSING'))).to.be.true;
+    assert.ok(violations.some((v: string) => v.includes('STALE_FILTER_MISSING')));
   });
 
   it('multiple sessions detected should produce violation', () => {
@@ -194,7 +194,7 @@ describe('P0 Stale Final - verify script contracts', () => {
     data.endpoints.logs_taskId_A.sessionId = 'session-1';
     data.endpoints.logs_taskId_B.sessionId = 'session-2';
     const violations = validateRunnerData(data);
-    expect(violations.some((v: string) => v.includes('MULTI_SESSION'))).to.be.true;
+    assert.ok(violations.some((v: string) => v.includes('MULTI_SESSION')));
   });
 });
 

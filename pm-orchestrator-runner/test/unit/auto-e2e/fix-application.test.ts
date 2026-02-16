@@ -4,7 +4,7 @@
  * Tests for the git patch application logic in auto-dev-loop.ts
  */
 
-import { expect } from 'chai';
+import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
@@ -62,11 +62,11 @@ describe('Fix Application', () => {
 This should fix the test.`;
 
       const patch = extractPatch(response);
-      expect(patch).to.not.be.null;
-      expect(patch).to.include('--- a/src/example.ts');
-      expect(patch).to.include('+++ b/src/example.ts');
-      expect(patch).to.include("-  return 'hello';");
-      expect(patch).to.include("+  return 'world';");
+      assert.notEqual(patch, null);
+      assert.ok(patch?.includes('--- a/src/example.ts'));
+      assert.ok(patch?.includes('+++ b/src/example.ts'));
+      assert.ok(patch?.includes("-  return 'hello';"));
+      assert.ok(patch?.includes("+  return 'world';"));
     });
 
     it('should extract patch from ```diff code block', () => {
@@ -84,9 +84,9 @@ This should fix the test.`;
 \`\`\``;
 
       const patch = extractPatch(response);
-      expect(patch).to.not.be.null;
-      expect(patch).to.include('-const c = 3;');
-      expect(patch).to.include('+const c = 4;');
+      assert.notEqual(patch, null);
+      assert.ok(patch?.includes('-const c = 3;'));
+      assert.ok(patch?.includes('+const c = 4;'));
     });
 
     it('should extract patch from raw unified diff', () => {
@@ -104,9 +104,9 @@ This should fix the test.`;
 The validate call was missing.`;
 
       const patch = extractPatch(response);
-      expect(patch).to.not.be.null;
-      expect(patch).to.include('--- a/lib/utils.ts');
-      expect(patch).to.include('+  validate(result);');
+      assert.notEqual(patch, null);
+      assert.ok(patch?.includes('--- a/lib/utils.ts'));
+      assert.ok(patch?.includes('+  validate(result);'));
     });
 
     it('should return null when no patch found', () => {
@@ -117,7 +117,7 @@ The validate call was missing.`;
 3. Save`;
 
       const patch = extractPatch(response);
-      expect(patch).to.be.null;
+      assert.equal(patch, null);
     });
 
     it('should handle multiple file patches', () => {
@@ -136,9 +136,9 @@ The validate call was missing.`;
 \`\`\``;
 
       const patch = extractPatch(response);
-      expect(patch).to.not.be.null;
-      expect(patch).to.include('--- a/src/a.ts');
-      expect(patch).to.include('--- a/src/b.ts');
+      assert.notEqual(patch, null);
+      assert.ok(patch?.includes('--- a/src/a.ts'));
+      assert.ok(patch?.includes('--- a/src/b.ts'));
     });
   });
 
@@ -167,7 +167,7 @@ The validate call was missing.`;
  const x = 1;`;
 
       const files = extractAffectedFiles(patch);
-      expect(files).to.deep.equal(['src/example.ts']);
+      assert.deepEqual(files, ['src/example.ts']);
     });
 
     it('should extract multiple file paths', () => {
@@ -183,7 +183,9 @@ The validate call was missing.`;
 +const B = 2;`;
 
       const files = extractAffectedFiles(patch);
-      expect(files).to.have.members(['src/a.ts', 'src/b.ts']);
+      assert.equal(files.length, 2);
+      assert.ok(files.includes('src/a.ts'));
+      assert.ok(files.includes('src/b.ts'));
     });
 
     it('should handle new file (from /dev/null)', () => {
@@ -193,7 +195,7 @@ The validate call was missing.`;
 +export const NEW = true;`;
 
       const files = extractAffectedFiles(patch);
-      expect(files).to.deep.equal(['src/new-file.ts']);
+      assert.deepEqual(files, ['src/new-file.ts']);
     });
 
     it('should handle deleted file (to /dev/null)', () => {
@@ -203,7 +205,7 @@ The validate call was missing.`;
 -export const OLD = true;`;
 
       const files = extractAffectedFiles(patch);
-      expect(files).to.deep.equal(['src/old-file.ts']);
+      assert.deepEqual(files, ['src/old-file.ts']);
     });
 
     it('should deduplicate file paths', () => {
@@ -214,8 +216,8 @@ The validate call was missing.`;
 +line2`;
 
       const files = extractAffectedFiles(patch);
-      expect(files).to.have.length(1);
-      expect(files).to.deep.equal(['src/same.ts']);
+      assert.equal(files.length, 1);
+      assert.deepEqual(files, ['src/same.ts']);
     });
   });
 
@@ -244,13 +246,13 @@ CRITICAL: Your response MUST include a patch block in this EXACT format:
 
       const prompt = createFixPrompt('Fix login', ['Test 1 failed', 'Test 2 failed'], 1, 3);
 
-      expect(prompt).to.include('Fix login');
-      expect(prompt).to.include('Test 1 failed');
-      expect(prompt).to.include('Test 2 failed');
-      expect(prompt).to.include('iteration 1 of 3');
-      expect(prompt).to.include('```patch');
-      expect(prompt).to.include('--- a/path/to/file.ts');
-      expect(prompt).to.include('+++ b/path/to/file.ts');
+      assert.ok(prompt.includes('Fix login'));
+      assert.ok(prompt.includes('Test 1 failed'));
+      assert.ok(prompt.includes('Test 2 failed'));
+      assert.ok(prompt.includes('iteration 1 of 3'));
+      assert.ok(prompt.includes('```patch'));
+      assert.ok(prompt.includes('--- a/path/to/file.ts'));
+      assert.ok(prompt.includes('+++ b/path/to/file.ts'));
     });
   });
 
@@ -269,9 +271,9 @@ CRITICAL: Your response MUST include a patch block in this EXACT format:
         patch: '--- a/src/a.ts...',
       };
 
-      expect(result.success).to.be.true;
-      expect(result.appliedFiles).to.have.length(2);
-      expect(result.error).to.be.undefined;
+      assert.equal(result.success, true);
+      assert.equal(result.appliedFiles.length, 2);
+      assert.equal(result.error, undefined);
     });
 
     it('should have correct structure for failure', () => {
@@ -289,9 +291,9 @@ CRITICAL: Your response MUST include a patch block in this EXACT format:
         error: 'Patch cannot be applied: conflict in src/a.ts',
       };
 
-      expect(result.success).to.be.false;
-      expect(result.appliedFiles).to.have.length(0);
-      expect(result.error).to.include('conflict');
+      assert.equal(result.success, false);
+      assert.equal(result.appliedFiles.length, 0);
+      assert.ok(result.error?.includes('conflict'));
     });
   });
 });
@@ -314,7 +316,7 @@ describe('AutoFixResult type', () => {
       appliedFiles: ['src/utils.ts'],
     };
 
-    expect(result.patch).to.not.be.undefined;
-    expect(result.appliedFiles).to.deep.equal(['src/utils.ts']);
+    assert.notEqual(result.patch, undefined);
+    assert.deepEqual(result.appliedFiles, ['src/utils.ts']);
   });
 });

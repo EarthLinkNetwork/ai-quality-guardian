@@ -235,17 +235,7 @@ export function checkOpenAIKey(): PreflightResult {
       fatal: true,
       code: 'OPENAI_KEY_MISSING',
       message: 'OpenAI API key not configured.',
-      fix_hint: 'Set OPENAI_API_KEY in your environment:\nexport OPENAI_API_KEY=sk-...',
-    };
-  }
-
-  if (!apiKey.startsWith('sk-')) {
-    return {
-      ok: false,
-      fatal: true,
-      code: 'CONFIG_ERROR',
-      message: 'OpenAI API key appears invalid (should start with sk-)',
-      fix_hint: 'Verify your OPENAI_API_KEY is correct.',
+      fix_hint: 'Set OPENAI_API_KEY in your environment:\nexport OPENAI_API_KEY=<value>',
     };
   }
 
@@ -271,17 +261,7 @@ export function checkAnthropicKey(): PreflightResult {
       fatal: true,
       code: 'ANTHROPIC_KEY_MISSING',
       message: 'Anthropic API key not configured.',
-      fix_hint: 'Set ANTHROPIC_API_KEY in your environment:\nexport ANTHROPIC_API_KEY=sk-ant-...',
-    };
-  }
-
-  if (!apiKey.startsWith('sk-ant-')) {
-    return {
-      ok: false,
-      fatal: true,
-      code: 'CONFIG_ERROR',
-      message: 'Anthropic API key appears invalid (should start with sk-ant-)',
-      fix_hint: 'Verify your ANTHROPIC_API_KEY is correct.',
+      fix_hint: 'Set ANTHROPIC_API_KEY in your environment:\nexport ANTHROPIC_API_KEY=<value>',
     };
   }
 

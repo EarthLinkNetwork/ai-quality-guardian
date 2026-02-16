@@ -4,7 +4,7 @@
  * AC A.2: Executor Live Log - Real-time stdout/stderr streaming for Web UI
  */
 
-import { expect } from 'chai';
+import { strict as assert } from 'assert';
 import {
   ExecutorOutputStream,
   getExecutorOutputStream,
@@ -24,11 +24,11 @@ describe('ExecutorOutputStream', () => {
     it('should create an output chunk with timestamp and sequence', () => {
       const chunk = stream.emit('task-123', 'stdout', 'Hello, World!');
 
-      expect(chunk.timestamp).to.be.a('string');
-      expect(chunk.taskId).to.equal('task-123');
-      expect(chunk.stream).to.equal('stdout');
-      expect(chunk.text).to.equal('Hello, World!');
-      expect(chunk.sequence).to.equal(1);
+      assert.equal(typeof chunk.timestamp, 'string');
+      assert.equal(chunk.taskId, 'task-123');
+      assert.equal(chunk.stream, 'stdout');
+      assert.equal(chunk.text, 'Hello, World!');
+      assert.equal(chunk.sequence, 1);
     });
 
     it('should increment sequence for each chunk', () => {
@@ -36,23 +36,23 @@ describe('ExecutorOutputStream', () => {
       const chunk2 = stream.emit('task-1', 'stdout', 'Second');
       const chunk3 = stream.emit('task-2', 'stderr', 'Third');
 
-      expect(chunk1.sequence).to.equal(1);
-      expect(chunk2.sequence).to.equal(2);
-      expect(chunk3.sequence).to.equal(3);
+      assert.equal(chunk1.sequence, 1);
+      assert.equal(chunk2.sequence, 2);
+      assert.equal(chunk3.sequence, 3);
     });
 
     it('should include projectId when provided', () => {
       const chunk = stream.emit('task-123', 'stdout', 'Hello', 'project-456');
 
-      expect(chunk.projectId).to.equal('project-456');
+      assert.equal(chunk.projectId, 'project-456');
     });
 
     it('should track active tasks', () => {
       stream.emit('task-123', 'stdout', 'Hello');
 
       const activeTasks = stream.getActiveTasks();
-      expect(activeTasks.length).to.equal(1);
-      expect(activeTasks[0].taskId).to.equal('task-123');
+      assert.equal(activeTasks.length, 1);
+      assert.equal(activeTasks[0].taskId, 'task-123');
     });
   });
 
@@ -61,9 +61,9 @@ describe('ExecutorOutputStream', () => {
       stream.startTask('task-123');
 
       const chunks = stream.getByTaskId('task-123');
-      expect(chunks.length).to.equal(1);
-      expect(chunks[0].stream).to.equal('system');
-      expect(chunks[0].text).to.include('started');
+      assert.equal(chunks.length, 1);
+      assert.equal(chunks[0].stream, 'system');
+      assert.ok(chunks[0].text.includes('started'));
     });
 
     it('should emit COMPLETE state on endTask(success=true)', () => {
@@ -71,9 +71,9 @@ describe('ExecutorOutputStream', () => {
       stream.endTask('task-123', true);
 
       const chunks = stream.getByTaskId('task-123');
-      expect(chunks.length).to.equal(2);
-      expect(chunks[1].stream).to.equal('state');
-      expect(chunks[1].text).to.include('COMPLETE');
+      assert.equal(chunks.length, 2);
+      assert.equal(chunks[1].stream, 'state');
+      assert.ok(chunks[1].text.includes('COMPLETE'));
     });
 
     it('should emit ERROR state on endTask(success=false)', () => {
@@ -81,9 +81,9 @@ describe('ExecutorOutputStream', () => {
       stream.endTask('task-123', false);
 
       const chunks = stream.getByTaskId('task-123');
-      expect(chunks.length).to.equal(2);
-      expect(chunks[1].stream).to.equal('error');
-      expect(chunks[1].text).to.include('ERROR');
+      assert.equal(chunks.length, 2);
+      assert.equal(chunks[1].stream, 'error');
+      assert.ok(chunks[1].text.includes('ERROR'));
     });
 
     it('should emit AWAITING_RESPONSE state on endTask with finalStatus', () => {
@@ -91,17 +91,17 @@ describe('ExecutorOutputStream', () => {
       stream.endTask('task-123', false, undefined, 'AWAITING_RESPONSE');
 
       const chunks = stream.getByTaskId('task-123');
-      expect(chunks.length).to.equal(2);
-      expect(chunks[1].stream).to.equal('state');
-      expect(chunks[1].text).to.include('AWAITING_RESPONSE');
+      assert.equal(chunks.length, 2);
+      assert.equal(chunks[1].stream, 'state');
+      assert.ok(chunks[1].text.includes('AWAITING_RESPONSE'));
     });
 
     it('should remove task from active tasks on endTask', () => {
       stream.startTask('task-123');
-      expect(stream.getActiveTasks().length).to.equal(1);
+      assert.equal(stream.getActiveTasks().length, 1);
 
       stream.endTask('task-123', true);
-      expect(stream.getActiveTasks().length).to.equal(0);
+      assert.equal(stream.getActiveTasks().length, 0);
     });
   });
 
@@ -115,27 +115,27 @@ describe('ExecutorOutputStream', () => {
 
     it('getAll() should return all chunks', () => {
       const chunks = stream.getAll();
-      expect(chunks.length).to.equal(4);
+      assert.equal(chunks.length, 4);
     });
 
     it('getByTaskId() should filter by task', () => {
       const chunks = stream.getByTaskId('task-1');
-      expect(chunks.length).to.equal(2);
-      expect(chunks.every(c => c.taskId === 'task-1')).to.be.true;
+      assert.equal(chunks.length, 2);
+      assert.ok(chunks.every(c => c.taskId === 'task-1'));
     });
 
     it('getSince() should filter by sequence', () => {
       const chunks = stream.getSince(2);
-      expect(chunks.length).to.equal(2);
-      expect(chunks[0].sequence).to.equal(3);
-      expect(chunks[1].sequence).to.equal(4);
+      assert.equal(chunks.length, 2);
+      assert.equal(chunks[0].sequence, 3);
+      assert.equal(chunks[1].sequence, 4);
     });
 
     it('getRecent() should return last N chunks', () => {
       const chunks = stream.getRecent(2);
-      expect(chunks.length).to.equal(2);
-      expect(chunks[0].text).to.equal('Msg 3');
-      expect(chunks[1].text).to.equal('Msg 4');
+      assert.equal(chunks.length, 2);
+      assert.equal(chunks[0].text, 'Msg 3');
+      assert.equal(chunks[1].text, 'Msg 4');
     });
 
     it('getRecentForTask() should return last N chunks for task', () => {
@@ -143,21 +143,21 @@ describe('ExecutorOutputStream', () => {
       stream.emit('task-1', 'stdout', 'Msg 6');
 
       const chunks = stream.getRecentForTask('task-1', 2);
-      expect(chunks.length).to.equal(2);
-      expect(chunks[0].text).to.equal('Msg 5');
-      expect(chunks[1].text).to.equal('Msg 6');
+      assert.equal(chunks.length, 2);
+      assert.equal(chunks[0].text, 'Msg 5');
+      assert.equal(chunks[1].text, 'Msg 6');
     });
 
     it('clear() should remove all chunks', () => {
       stream.clear();
-      expect(stream.getAll().length).to.equal(0);
+      assert.equal(stream.getAll().length, 0);
     });
 
     it('clearTask() should remove chunks for a specific task', () => {
       stream.clearTask('task-1');
       const chunks = stream.getAll();
-      expect(chunks.length).to.equal(2);
-      expect(chunks.every(c => c.taskId !== 'task-1')).to.be.true;
+      assert.equal(chunks.length, 2);
+      assert.ok(chunks.every(c => c.taskId !== 'task-1'));
     });
   });
 
@@ -170,8 +170,8 @@ describe('ExecutorOutputStream', () => {
       }
 
       const chunks = smallStream.getAll();
-      expect(chunks.length).to.equal(5);
-      expect(chunks[0].text).to.equal('Message 5'); // First 5 trimmed
+      assert.equal(chunks.length, 5);
+      assert.equal(chunks[0].text, 'Message 5'); // First 5 trimmed
     });
   });
 
@@ -187,8 +187,8 @@ describe('ExecutorOutputStream', () => {
       stream.subscribe(subscriber);
       stream.emit('task-123', 'stdout', 'Test message');
 
-      expect(received.length).to.equal(1);
-      expect(received[0].text).to.equal('Test message');
+      assert.equal(received.length, 1);
+      assert.equal(received[0].text, 'Test message');
     });
 
     it('should support multiple subscribers', () => {
@@ -199,8 +199,8 @@ describe('ExecutorOutputStream', () => {
       stream.subscribe({ onOutput: c => received2.push(c) });
       stream.emit('task-123', 'stdout', 'Test message');
 
-      expect(received1.length).to.equal(1);
-      expect(received2.length).to.equal(1);
+      assert.equal(received1.length, 1);
+      assert.equal(received2.length, 1);
     });
 
     it('should allow unsubscription', () => {
@@ -213,7 +213,7 @@ describe('ExecutorOutputStream', () => {
       unsubscribe();
       stream.emit('task-123', 'stdout', 'After unsubscribe');
 
-      expect(received.length).to.equal(1);
+      assert.equal(received.length, 1);
     });
 
     it('should handle subscriber errors gracefully', () => {
@@ -230,18 +230,18 @@ describe('ExecutorOutputStream', () => {
 
       // Should not throw
       stream.emit('task-123', 'stdout', 'Test message');
-      expect(received.length).to.equal(1);
+      assert.equal(received.length, 1);
     });
 
     it('should report subscriber count', () => {
-      expect(stream.getSubscriberCount()).to.equal(0);
+      assert.equal(stream.getSubscriberCount(), 0);
 
       const unsub1 = stream.subscribe({ onOutput: () => {} });
       const unsub2 = stream.subscribe({ onOutput: () => {} });
-      expect(stream.getSubscriberCount()).to.equal(2);
+      assert.equal(stream.getSubscriberCount(), 2);
 
       unsub1();
-      expect(stream.getSubscriberCount()).to.equal(1);
+      assert.equal(stream.getSubscriberCount(), 1);
     });
   });
 });
@@ -254,7 +254,7 @@ describe('Singleton ExecutorOutputStream', () => {
   it('getExecutorOutputStream() should return same instance', () => {
     const stream1 = getExecutorOutputStream();
     const stream2 = getExecutorOutputStream();
-    expect(stream1).to.equal(stream2);
+    assert.equal(stream1, stream2);
   });
 
   it('resetExecutorOutputStream() should clear singleton', () => {
@@ -264,7 +264,7 @@ describe('Singleton ExecutorOutputStream', () => {
     resetExecutorOutputStream();
 
     const stream2 = getExecutorOutputStream();
-    expect(stream2).to.not.equal(stream1);
-    expect(stream2.getAll().length).to.equal(0);
+    assert.notEqual(stream2, stream1);
+    assert.equal(stream2.getAll().length, 0);
   });
 });

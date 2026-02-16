@@ -14,7 +14,7 @@
 import { spawn, ChildProcess, execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import { expect } from 'chai';
+import assert from 'node:assert/strict';
 
 // Check if playwright is available
 let playwright: typeof import('playwright') | null = null;
@@ -211,13 +211,13 @@ describe('Settings Route Playwright E2E', function () {
     const response = await page.goto(`${BASE_URL}/settings`, { waitUntil: 'networkidle' });
     log(`Page status: ${response?.status()}`);
 
-    expect(response?.status()).to.equal(200);
+    assert.equal(response?.status(), 200);
 
     // Wait for API call
     await page.waitForTimeout(1000);
-    expect(apiResponseCaptured).to.equal(true, 'API response not captured');
-    expect(apiResponseBody?.anthropic?.configured).to.equal(true);
-    expect(apiResponseBody?.openai?.configured).to.equal(true);
+    assert.equal(apiResponseCaptured, true, 'API response not captured');
+    assert.equal(apiResponseBody?.anthropic?.configured, true);
+    assert.equal(apiResponseBody?.openai?.configured, true);
   });
 
   it('DOM shows "Configured" for Anthropic and OpenAI', async function () {
@@ -237,12 +237,12 @@ describe('Settings Route Playwright E2E', function () {
     // Check Anthropic
     const anthropicConfigured = await page.locator('text=Anthropic').locator('..').locator('.provider-status').textContent();
     log(`Anthropic status: ${anthropicConfigured}`);
-    expect(anthropicConfigured?.trim()).to.equal('Configured');
+    assert.equal(anthropicConfigured?.trim(), 'Configured');
 
     // Check OpenAI
     const openaiConfigured = await page.locator('text=OpenAI').locator('..').locator('.provider-status').textContent();
     log(`OpenAI status: ${openaiConfigured}`);
-    expect(openaiConfigured?.trim()).to.equal('Configured');
+    assert.equal(openaiConfigured?.trim(), 'Configured');
   });
 
   it('After page reload, still shows Configured', async function () {
@@ -254,11 +254,11 @@ describe('Settings Route Playwright E2E', function () {
 
     const anthropicConfigured = await page.locator('text=Anthropic').locator('..').locator('.provider-status').textContent();
     log(`Anthropic after reload: ${anthropicConfigured}`);
-    expect(anthropicConfigured?.trim()).to.equal('Configured');
+    assert.equal(anthropicConfigured?.trim(), 'Configured');
 
     const openaiConfigured = await page.locator('text=OpenAI').locator('..').locator('.provider-status').textContent();
     log(`OpenAI after reload: ${openaiConfigured}`);
-    expect(openaiConfigured?.trim()).to.equal('Configured');
+    assert.equal(openaiConfigured?.trim(), 'Configured');
   });
 
   it('After server restart, still shows Configured', async function () {
@@ -279,11 +279,11 @@ describe('Settings Route Playwright E2E', function () {
 
     const anthropicConfigured = await page.locator('text=Anthropic').locator('..').locator('.provider-status').textContent();
     log(`Anthropic after restart: ${anthropicConfigured}`);
-    expect(anthropicConfigured?.trim()).to.equal('Configured');
+    assert.equal(anthropicConfigured?.trim(), 'Configured');
 
     const openaiConfigured = await page.locator('text=OpenAI').locator('..').locator('.provider-status').textContent();
     log(`OpenAI after restart: ${openaiConfigured}`);
-    expect(openaiConfigured?.trim()).to.equal('Configured');
+    assert.equal(openaiConfigured?.trim(), 'Configured');
   });
 
   it('No console errors', async function () {
@@ -293,6 +293,6 @@ describe('Settings Route Playwright E2E', function () {
     if (consoleErrors.length > 0) {
       log(`Errors: ${JSON.stringify(consoleErrors)}`);
     }
-    expect(consoleErrors.length).to.equal(0, `Console errors: ${consoleErrors.join(', ')}`);
+    assert.equal(consoleErrors.length, 0, `Console errors: ${consoleErrors.join(', ')}`);
   });
 });

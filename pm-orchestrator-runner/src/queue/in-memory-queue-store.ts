@@ -16,6 +16,7 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   QueueItem,
   QueueItemStatus,
+  ProgressEvent,
   ClaimResult,
   StatusUpdateResult,
   TaskGroupSummary,
@@ -209,6 +210,27 @@ export class InMemoryQueueStore implements IQueueStore {
         item.output = output;
       }
     }
+  }
+
+  /**
+   * Append a progress event to a task (in-memory)
+   */
+  async appendEvent(taskId: string, event: ProgressEvent): Promise<boolean> {
+    const key = this.getTaskKey(taskId);
+    const item = this.tasks.get(key);
+    if (!item) {
+      return false;
+    }
+
+    const timestamp = event.timestamp || new Date().toISOString();
+    const newEvent: ProgressEvent = { ...event, timestamp };
+    const events = [...(item.events || []), newEvent];
+    const maxEvents = 1000;
+
+    item.events = events.length > maxEvents ? events.slice(-maxEvents) : events;
+    item.updated_at = timestamp;
+    this.tasks.set(key, item);
+    return true;
   }
 
   /**

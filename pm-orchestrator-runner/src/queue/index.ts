@@ -17,6 +17,7 @@ export {
   QueueStoreConfig,
   QueueItem,
   QueueItemStatus,
+  ProgressEvent,
   ClaimResult,
   TaskGroupSummary,
   StatusUpdateResult,

@@ -17,7 +17,7 @@ import * as path from 'path';
 import { CLI, CLIError } from './cli-interface';
 import { REPLInterface, ProjectMode } from '../repl/repl-interface';
 import { WebServer } from '../web/server';
-import { QueueStore, QueuePoller, QueueItem, TaskExecutor, IQueueStore } from '../queue/index';
+import { QueueStore, QueuePoller, QueueItem, TaskExecutor, IQueueStore, ProgressEvent } from '../queue/index';
 import { InMemoryQueueStore } from '../queue/in-memory-queue-store';
 import { FileQueueStore } from '../queue/file-queue-store';
 import { AutoResolvingExecutor } from '../executor/auto-resolve-executor';
@@ -38,6 +38,7 @@ import {
 import { ensureDistFresh, checkPublicFilesCopied } from '../utils/dist-freshness';
 import { runSelftest, SELFTEST_CASES, runSelftestWithAIJudge } from '../selftest/selftest-runner';
 import { hasUnansweredQuestions } from '../utils/question-detector';
+import { estimateTaskSize } from '../utils/task-size-estimator';
 import {
   runPreflightChecks,
   enforcePreflightCheck,
@@ -46,6 +47,7 @@ import {
   ExecutorType,
 } from '../diagnostics/executor-preflight';
 import { getExecutorOutputStream } from '../executor/executor-output-stream';
+import type { ExecutorOutputStream, ExecutorOutputChunk } from '../executor/executor-output-stream';
 
 /**
  * Help text
@@ -528,12 +530,12 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         const isReadInfoOrReport = taskType === 'READ_INFO' || taskType === 'REPORT';
 
         const hasOutput = cleanOutput && cleanOutput.trim().length > 0;
+        const hasQuestions = hasOutput && hasUnansweredQuestions(cleanOutput);
 
         if (result.status === 'COMPLETE') {
-          // Per COMPLETION_JUDGMENT.md: Check for unanswered questions in output
-          // Questions in output -> AWAITING_RESPONSE (not COMPLETE)
-          if (isReadInfoOrReport && hasOutput && hasUnansweredQuestions(cleanOutput)) {
-            console.log(`[Runner] READ_INFO/REPORT COMPLETE but has questions -> AWAITING_RESPONSE`);
+          // Per COMPLETION_JUDGMENT.md: Questions in output -> AWAITING_RESPONSE (not COMPLETE)
+          if (hasQuestions) {
+            console.log(`[Runner] COMPLETE but has questions -> AWAITING_RESPONSE`);
             return {
               status: 'ERROR',
               errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
@@ -548,7 +550,7 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
           // READ_INFO/REPORT: INCOMPLETE / NO_EVIDENCE / BLOCKED -> unified handling
           if (hasOutput) {
             // Per COMPLETION_JUDGMENT.md: Check for questions before marking COMPLETE
-            if (hasUnansweredQuestions(cleanOutput)) {
+            if (hasQuestions) {
               console.log(`[Runner] READ_INFO/REPORT ${result.status} with questions -> AWAITING_RESPONSE`);
               return {
                 status: 'ERROR',
@@ -566,19 +568,41 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
             };
           }
         } else {
-          // IMPLEMENTATION / other: non-COMPLETE -> ERROR
+          // IMPLEMENTATION / other: if output contains questions, request clarification
+          if (hasQuestions) {
+            console.log(`[Runner] ${taskType} ${result.status} with questions -> AWAITING_RESPONSE`);
+            return {
+              status: 'ERROR',
+              errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
+              output: cleanOutput,
+            };
+          }
+          // Otherwise, non-COMPLETE -> ERROR
           return { status: 'ERROR', errorMessage: `Task ended with status: ${result.status}` };
         }
       }
 
       // Use AutoResolvingExecutor to automatically resolve clarification requests
       // When Claude Code asks "where should I save the file?", LLM decides automatically
-      // v3 - AC B: silence=timeout ABOLISHED. Only overall timeout as safety net.
+      // Progress-aware timeout: extend timeout window when output is flowing
+      const sizeEstimate = estimateTaskSize(item.prompt, item.task_type);
+      const timeoutProfile = sizeEstimate.recommendedProfile;
+      const disableOverallTimeout = false; // keep safety net; progress-aware resets on output
+
+      console.log(`[Runner] Timeout profile: ${timeoutProfile.name} (idle=${timeoutProfile.idle_timeout_ms}ms, hard=${timeoutProfile.hard_timeout_ms}ms, progressAware=true, disableOverall=${disableOverallTimeout})`);
+      stateStream.emit(
+        item.task_id,
+        'timeout',
+        `[timeout] profile=${timeoutProfile.name} idle=${timeoutProfile.idle_timeout_ms}ms hard=${timeoutProfile.hard_timeout_ms}ms progressAware=true disableOverall=${disableOverallTimeout}`
+      );
+
       const executor = new AutoResolvingExecutor({
         projectPath,
-        timeout: 10 * 60 * 1000, // 10 minutes (overall safety net)
-        softTimeoutMs: 60 * 1000, // warning only (for logging)
-        silenceLogIntervalMs: 30 * 1000, // silence logging interval (NOT termination)
+        timeout: timeoutProfile.hard_timeout_ms, // overall safety net (progress-aware if enabled)
+        softTimeoutMs: timeoutProfile.idle_timeout_ms, // warning only (for logging)
+        silenceLogIntervalMs: Math.min(timeoutProfile.idle_timeout_ms / 2, 30 * 1000), // silence logging interval (NOT termination)
+        progressAwareTimeout: true,
+        disableOverallTimeout,
         maxRetries: 2, // Allow 2 retry attempts for auto-resolution
       });
 
@@ -599,12 +623,12 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
       const taskType = item.task_type || 'READ_INFO';
       const isReadInfoOrReport = taskType === 'READ_INFO' || taskType === 'REPORT';
       const hasOutput = cleanOutput && cleanOutput.trim().length > 0;
+      const hasQuestions = hasOutput && hasUnansweredQuestions(cleanOutput);
 
       if (result.status === 'COMPLETE') {
-        // Per COMPLETION_JUDGMENT.md: Check for unanswered questions in output
-        // Questions in output -> AWAITING_RESPONSE (not COMPLETE)
-        if (isReadInfoOrReport && hasOutput && hasUnansweredQuestions(cleanOutput)) {
-          console.log(`[Runner] READ_INFO/REPORT COMPLETE but has questions -> AWAITING_RESPONSE`);
+        // Per COMPLETION_JUDGMENT.md: Questions in output -> AWAITING_RESPONSE (not COMPLETE)
+        if (hasQuestions) {
+          console.log(`[Runner] COMPLETE but has questions -> AWAITING_RESPONSE`);
           stateStream.emit(item.task_id, 'state', `[state] AWAITING_RESPONSE (questions detected in COMPLETE output)`);
           return {
             status: 'ERROR',
@@ -623,7 +647,7 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         // INCOMPLETE / NO_EVIDENCE / BLOCKED all route here
         if (hasOutput) {
           // Per COMPLETION_JUDGMENT.md: Check for questions before marking COMPLETE
-          if (hasUnansweredQuestions(cleanOutput)) {
+          if (hasQuestions) {
             console.log(`[Runner] READ_INFO/REPORT ${result.status} with questions -> AWAITING_RESPONSE`);
             stateStream.emit(item.task_id, 'state', `[state] AWAITING_RESPONSE (questions in ${result.status} output)`);
             return {
@@ -649,7 +673,17 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
           };
         }
       } else {
-        // IMPLEMENTATION / other task types: non-COMPLETE -> ERROR, preserve output
+        // IMPLEMENTATION / other task types
+        if (hasQuestions) {
+          console.log(`[Runner] ${taskType} ${result.status} with questions -> AWAITING_RESPONSE`);
+          stateStream.emit(item.task_id, 'state', `[state] AWAITING_RESPONSE (questions in ${taskType} ${result.status})`);
+          return {
+            status: 'ERROR',
+            errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
+            output: cleanOutput,
+          };
+        }
+        // Non-COMPLETE -> ERROR, preserve output
         console.log(`[Runner] ${taskType} ${result.status} -> ERROR (output preserved: ${hasOutput})`);
         stateStream.emit(item.task_id, 'state', `[state] ERROR (${taskType} ${result.status})`);
         return {
@@ -683,6 +717,89 @@ function generateClarificationMessage(prompt: string): string {
     return '分析対象を具体的に指定してください。例: 「src/index.tsのコードを分析してください」';
   }
   return 'リクエストをより具体的にしてください。何を確認または分析すべきか教えてください。';
+}
+
+/**
+ * Persist executor output as progress events in the queue store
+ * This keeps task.updated_at fresh when Cloud Code emits output.
+ */
+function attachQueueProgressPersistence(
+  queueStore: IQueueStore,
+  outputStream: ExecutorOutputStream
+): () => void {
+  const lastEventAt = new Map<string, number>();
+  const warnedTasks = new Set<string>();
+
+  const throttleMs = 2000;
+  const maxTextLength = 200;
+  const maxImportantTextLength = 1000;
+  const importantStreams = new Set<ExecutorOutputChunk['stream']>(['error', 'state', 'timeout']);
+
+  const truncate = (text: string, limit: number): string => {
+    if (!text) return text;
+    if (text.length <= limit) return text;
+    return text.slice(0, limit) + '…';
+  };
+
+  const warnOnce = (taskId: string, message: string, error?: unknown) => {
+    if (warnedTasks.has(taskId)) return;
+    warnedTasks.add(taskId);
+    if (error) {
+      console.warn(message, error);
+    } else {
+      console.warn(message);
+    }
+  };
+
+  const appendEventSafe = (taskId: string, event: ProgressEvent) => {
+    queueStore.appendEvent(taskId, event)
+      .then((ok) => {
+        if (!ok) {
+          warnOnce(taskId, `[Progress] Failed to append event (task not found): ${taskId}`);
+        }
+      })
+      .catch((error) => {
+        warnOnce(taskId, `[Progress] Failed to append event for task: ${taskId}`, error);
+      });
+  };
+
+  const unsubscribe = outputStream.subscribe({
+    onOutput: (chunk) => {
+      const now = Date.now();
+      const last = lastEventAt.get(chunk.taskId) ?? 0;
+      const isImportant = importantStreams.has(chunk.stream);
+
+      if (!isImportant && now - last < throttleMs) {
+        return;
+      }
+
+      lastEventAt.set(chunk.taskId, now);
+
+      const textLimit = isImportant ? maxImportantTextLength : maxTextLength;
+      const trimmedText = truncate(chunk.text, textLimit);
+      const data: Record<string, unknown> = {
+        stream: chunk.stream,
+        sequence: chunk.sequence,
+        projectId: chunk.projectId,
+        sessionId: chunk.sessionId,
+      };
+      if (trimmedText) {
+        data.text = trimmedText;
+      }
+
+      const event: ProgressEvent = {
+        type: 'log_chunk',
+        timestamp: chunk.timestamp,
+        data,
+      };
+
+      appendEventSafe(chunk.taskId, event);
+    },
+  });
+
+  return () => {
+    unsubscribe();
+  };
 }
 
 /**
@@ -860,8 +977,21 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
 
   // Default to 'auto' mode: check what executors are available
   const preflightReport = runPreflightChecks('auto');
+  const allowPreflightFailure =
+    process.env.PM_WEB_ALLOW_PREFLIGHT_FAIL === '1' ||
+    process.env.PM_WEB_ALLOW_PREFLIGHT_FAIL === 'true';
 
   if (!preflightReport.can_proceed) {
+    if (allowPreflightFailure) {
+      console.warn('[Preflight] Executor preflight failed, continuing because PM_WEB_ALLOW_PREFLIGHT_FAIL is set.');
+      for (const err of preflightReport.fatal_errors) {
+        console.warn(`  [${err.code}] ${err.message}`);
+        if (err.fix_hint) {
+          console.warn(`    Fix: ${err.fix_hint}`);
+        }
+      }
+      console.warn('');
+    } else {
     // FATAL: No executor configured
     console.error('');
     console.error('='.repeat(60));
@@ -875,10 +1005,10 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     console.error('    $ claude login');
     console.error('');
     console.error('  Option 2: OpenAI API Key');
-    console.error('    $ export OPENAI_API_KEY=sk-...');
+    console.error('    $ export OPENAI_API_KEY=<value>');
     console.error('');
     console.error('  Option 3: Anthropic API Key');
-    console.error('    $ export ANTHROPIC_API_KEY=sk-ant-...');
+    console.error('    $ export ANTHROPIC_API_KEY=<value>');
     console.error('');
     for (const err of preflightReport.fatal_errors) {
       console.error(`  [${err.code}] ${err.message}`);
@@ -890,16 +1020,22 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     console.error('='.repeat(60));
     console.error('');
     process.exit(1);
-  }
-
-  // Log successful checks
-  for (const check of preflightReport.checks) {
-    if (check.ok) {
-      console.log(`[Preflight] [OK] ${check.message}`);
     }
   }
-  console.log('[Preflight] Executor preflight checks passed');
-  console.log('');
+
+  // Log successful checks only when preflight passes
+  if (preflightReport.can_proceed) {
+    for (const check of preflightReport.checks) {
+      if (check.ok) {
+        console.log(`[Preflight] [OK] ${check.message}`);
+      }
+    }
+    console.log('[Preflight] Executor preflight checks passed');
+    console.log('');
+  } else if (allowPreflightFailure) {
+    console.warn('[Preflight] Executor preflight failed; Web UI running in limited mode.');
+    console.warn('');
+  }
 
   // Create TaskExecutor and QueuePoller
   const taskExecutor = createTaskExecutor(projectPath);
@@ -908,6 +1044,126 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     recoverOnStartup: true,
     projectRoot: projectPath,
   });
+
+  // Self-restart handler for Web UI (Build & Restart)
+  let serverRef: WebServer | null = null;
+  let pollerRef: QueuePoller | null = poller;
+  let detachProgressPersistenceRef: (() => void) | null = null;
+  const runnerRestartHandler = async () => {
+    const oldPid = process.pid;
+
+    const { exec, spawn } = require('child_process');
+    const { promisify } = require('util');
+    const fs = require('fs');
+    const execAsync = promisify(exec);
+
+    try {
+      const { stdout, stderr } = await execAsync('npm run build', {
+        cwd: projectPath,
+        timeout: 300_000,
+      });
+
+      // Ensure public assets are present after build
+      try {
+        const { execSync } = require('child_process');
+        execSync('cp -r src/web/public dist/web/', { cwd: projectPath, stdio: 'pipe' });
+      } catch (e) {
+        // Best-effort copy; log and continue
+        console.warn('[Runner] Warning: could not copy public assets after build:', e);
+      }
+
+      let buildMeta: { build_sha: string; build_timestamp: string; git_sha?: string; git_branch?: string } | undefined;
+      try {
+        const buildMetaPath = path.join(projectPath, 'dist', 'build-meta.json');
+        if (fs.existsSync(buildMetaPath)) {
+          const parsed = JSON.parse(fs.readFileSync(buildMetaPath, 'utf-8'));
+          if (parsed?.build_sha && parsed?.build_timestamp) {
+            buildMeta = parsed;
+          }
+        }
+      } catch (e) {
+        console.warn('[Runner] Warning: could not read build-meta.json:', e);
+      }
+
+      const output = (stdout || '') + (stderr ? '\n' + stderr : '');
+
+      const postResponse = async () => {
+        try {
+          detachProgressPersistenceRef?.();
+        } catch {
+          // ignore
+        }
+
+        try {
+          await pollerRef?.stop();
+        } catch (error) {
+          console.warn('[Runner] Warning: failed to stop poller during restart:', error);
+        }
+
+        try {
+          await serverRef?.stop();
+        } catch (error) {
+          console.warn('[Runner] Warning: failed to stop server during restart:', error);
+        }
+
+        const modulePath = path.join(projectPath, 'dist', 'cli', 'index.js');
+        const args = ['web', '--port', String(port), '--namespace', namespaceConfig.namespace];
+        if (storeMode === 'dynamodb') {
+          args.push('--dynamodb');
+        } else if (storeMode === 'memory') {
+          args.push('--in-memory');
+        }
+
+        const child = spawn(process.execPath, [modulePath, ...args], {
+          cwd: projectPath,
+          detached: true,
+          stdio: 'ignore',
+          env: {
+            ...process.env,
+            PM_BUILD_SHA: buildMeta?.build_sha,
+            PM_BUILD_TIMESTAMP: buildMeta?.build_timestamp,
+            PM_WEB_PORT: String(port),
+          },
+        });
+        child.unref();
+        if (process.env.PM_RUNNER_BACKGROUND === '1' && child.pid) {
+          try {
+            const pidManager = new PidFileManager(projectPath);
+            await pidManager.writePid(namespaceConfig.namespace, child.pid);
+          } catch (error) {
+            console.warn('[Runner] Warning: failed to update PID file after restart:', error);
+          }
+        }
+      };
+
+      return {
+        success: true,
+        oldPid,
+        buildMeta,
+        output,
+        message: 'Restart scheduled',
+        postResponse: () => {
+          setTimeout(() => {
+            postResponse()
+              .catch((error: unknown) => {
+                console.error('[Runner] Self-restart failed:', error);
+              })
+              .finally(() => {
+                process.exit(0);
+              });
+          }, 0);
+        },
+      };
+    } catch (error: unknown) {
+      const err = error as { message?: string; stdout?: string; stderr?: string };
+      return {
+        success: false,
+        oldPid,
+        error: err?.message || 'Build failed',
+        output: (err.stdout || '') + (err.stderr ? '\n' + err.stderr : ''),
+      };
+    }
+  };
 
   // Set up poller event listeners
   poller.on('started', () => {
@@ -931,6 +1187,8 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   // Tag ExecutorOutputStream with current session for stale filtering
   const outputStream = getExecutorOutputStream();
   outputStream.setSessionId(webSessionId);
+  const detachProgressPersistence = attachQueueProgressPersistence(queueStore, outputStream);
+  detachProgressPersistenceRef = detachProgressPersistence;
 
   const server = new WebServer({
     port,
@@ -940,7 +1198,9 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     projectRoot: projectPath,
     stateDir: effectiveStateDir,
     queueStoreType,
+    runnerRestartHandler,
   });
+  serverRef = server;
 
   console.log(`Starting Web UI server on port ${port}...`);
   console.log(`Namespace: ${namespaceConfig.namespace}`);
@@ -960,7 +1220,12 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
 
   // Start both web server and poller
   await server.start();
-  await poller.start();
+  if (!preflightReport.can_proceed && allowPreflightFailure) {
+    console.warn('[Runner] Queue poller not started because preflight failed.');
+    console.warn('[Runner] Configure an executor in Settings, then restart to enable task processing.');
+  } else {
+    await poller.start();
+  }
 
   // Self-test mode: PM_AUTO_SELFTEST=true
   if (process.env.PM_AUTO_SELFTEST === 'true') {
@@ -973,6 +1238,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     );
 
     // Graceful shutdown after selftest
+    detachProgressPersistence();
     await poller.stop();
     await server.stop();
 
@@ -987,6 +1253,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   // Handle graceful shutdown
   const shutdown = async () => {
     console.log('\n[Runner] Shutting down...');
+    detachProgressPersistence();
     await poller.stop();
     await server.stop();
     console.log('[Runner] Shutdown complete');
