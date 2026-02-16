@@ -2,5 +2,3 @@
 _.file = ".env.local"
 PM_RUNNER_DEV_DIR = "{{ config_root }}"
 PM_RUNNER_PROD_DIR = "{{ config_root }}"
-PM_RUNNER_DEV_DIR = ""
-OPENAI_API_KEY = ""
