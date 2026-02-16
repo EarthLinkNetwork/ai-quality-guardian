@@ -1,1 +1,0 @@
-{"version":3,"file":"sessions.js","sourceRoot":"","sources":["../../../src/web/dal/sessions.ts"],"names":[],"mappings":";AAAA;;;GAGG;;AAcH,sDASC;AAED,gCAKC;AAhBM,KAAK,UAAU,qBAAqB,CACzC,MAAc,EACd,YAAoB,EACpB,QAA8B;IAE9B,OAAO;QACL,KAAK,EAAE,EAAE;QACT,MAAM,EAAE,SAAS;KAClB,CAAC;AACJ,CAAC;AAEM,KAAK,UAAU,UAAU,CAC9B,MAAc,EACd,UAAkB;IAElB,OAAO,IAAI,CAAC;AACd,CAAC"}

@@ -1,1 +1,0 @@
-{"version":3,"file":"supervisor-config.d.ts","sourceRoot":"","sources":["../../../src/web/routes/supervisor-config.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;GAWG;AAEH,OAAO,EAAE,MAAM,EAAqB,MAAM,SAAS,CAAC;AAWpD,MAAM,WAAW,6BAA6B;IAC5C,WAAW,EAAE,MAAM,CAAC;CACrB;AAED,wBAAgB,4BAA4B,CAAC,OAAO,EAAE,6BAA6B,GAAG,MAAM,CAiO3F"}

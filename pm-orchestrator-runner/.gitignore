@@ -1,6 +1,9 @@
 .env.local
 .claude/
 node_modules/
+dist/
+playwright-report/
+test-results/
 *.tgz
 .tmp/
 reports/selftest/
