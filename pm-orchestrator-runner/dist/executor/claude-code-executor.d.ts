@@ -33,6 +33,12 @@ export interface ExecutorConfig {
     verbose?: boolean;
     /** Disable overall timeout (for very long tasks) */
     disableOverallTimeout?: boolean;
+    /**
+     * Progress-aware timeout: reset overall timeout on output activity.
+     * When true, output (stdout/stderr) extends the timeout window.
+     * Default: false (preserve v3 "overall safety net" semantics).
+     */
+    progressAwareTimeout?: boolean;
 }
 /**
  * Task to execute
@@ -134,6 +140,7 @@ export declare class ClaudeCodeExecutor implements IExecutor {
     private readonly silenceLogIntervalMs;
     private readonly verbose;
     private readonly disableOverallTimeout;
+    private readonly progressAwareTimeout;
     constructor(config: ExecutorConfig);
     /**
      * Log message if verbose mode is enabled

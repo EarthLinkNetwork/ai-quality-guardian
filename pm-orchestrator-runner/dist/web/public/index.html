@@ -1973,20 +1973,42 @@
       div.setAttribute('data-stream', chunk.stream);
       div.setAttribute('data-sequence', chunk.sequence);
 
-      // Color coding by stream type
+      // Color coding by stream type (all 11 unified trace types)
       const colors = {
         stdout: '#d4d4d4',
         stderr: '#f87171',
         system: '#60a5fa',
         error: '#ef4444',
+        spawn: '#a78bfa',
+        preflight: '#34d399',
+        guard: '#fbbf24',
+        timeout: '#fb923c',
+        state: '#818cf8',
+        heartbeat: '#6b7280',
+        recovery: '#f472b6',
+      };
+      const streamLabels = {
+        stdout: '',
+        stderr: 'ERR',
+        system: 'SYS',
+        error: 'ERR',
+        spawn: 'SPAWN',
+        preflight: 'PRE',
+        guard: 'GUARD',
+        timeout: 'TIMEOUT',
+        state: 'STATE',
+        heartbeat: 'HB',
+        recovery: 'RECOVERY',
       };
       div.style.color = colors[chunk.stream] || '#d4d4d4';
 
-      // Timestamp prefix
+      // Timestamp prefix with stream type label
       const time = new Date(chunk.timestamp).toLocaleTimeString();
+      const label = streamLabels[chunk.stream] || chunk.stream;
+      const labelHtml = label ? `<span style="color: ${colors[chunk.stream] || '#6b7280'}; font-weight: bold;">[${label}]</span> ` : '';
       const prefix = `[${time}] `;
 
-      div.innerHTML = `<span class="executor-time" style="color: #6b7280;">${escapeHtml(prefix)}</span><span class="executor-content">${escapeHtml(chunk.content)}</span>`;
+      div.innerHTML = `<span class="executor-time" style="color: #6b7280;">${escapeHtml(prefix)}</span>${labelHtml}<span class="executor-content">${escapeHtml(chunk.content || chunk.text)}</span>`;
       container.appendChild(div);
     }
 

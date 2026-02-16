@@ -311,6 +311,24 @@ class FileQueueStore {
         }
     }
     /**
+     * Append a progress event to a task (file store)
+     */
+    async appendEvent(taskId, event) {
+        const key = this.getTaskKey(taskId);
+        const item = this.tasks.get(key);
+        if (!item) {
+            return false;
+        }
+        const timestamp = event.timestamp || new Date().toISOString();
+        const newEvent = { ...event, timestamp };
+        const events = [...(item.events || []), newEvent];
+        const maxEvents = 1000;
+        item.events = events.length > maxEvents ? events.slice(-maxEvents) : events;
+        item.updated_at = timestamp;
+        this.saveTasks();
+        return true;
+    }
+    /**
      * Update task status with validation
      */
     async updateStatusWithValidation(taskId, newStatus) {

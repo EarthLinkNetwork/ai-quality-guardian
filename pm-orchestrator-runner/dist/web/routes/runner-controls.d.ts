@@ -13,7 +13,7 @@
  */
 import { Router } from 'express';
 import { ChildProcess } from 'child_process';
-import { ProcessSupervisor } from '../../supervisor/index';
+import { ProcessSupervisor, BuildMeta } from '../../supervisor/index';
 /**
  * Runner control operation result
  */
@@ -59,6 +59,25 @@ export interface RunnerControlsConfig {
     stopTimeoutMs?: number;
     /** ProcessSupervisor instance for real restart (AC-OPS-2) */
     processSupervisor?: ProcessSupervisor;
+    /** Optional self-restart handler (for in-process restart) */
+    restartHandler?: () => Promise<RunnerRestartResult>;
+}
+/**
+ * Restart handler result (used for self-restart flows)
+ */
+export interface RunnerRestartResult {
+    success: boolean;
+    oldPid?: number;
+    newPid?: number;
+    buildMeta?: BuildMeta;
+    output?: string;
+    error?: string;
+    message?: string;
+    /**
+     * Optional callback to execute after HTTP response is sent.
+     * Useful for self-restart that would terminate this process.
+     */
+    postResponse?: () => void;
 }
 /**
  * Creates router for runner control endpoints

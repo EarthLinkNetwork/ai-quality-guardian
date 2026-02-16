@@ -70,6 +70,15 @@ export interface ClarificationRequest {
     resolution_reasoning?: string;
 }
 /**
+ * Progress event emitted during task execution
+ * Used for restart detection and live progress visibility
+ */
+export interface ProgressEvent {
+    type: 'heartbeat' | 'tool_progress' | 'log_chunk';
+    timestamp: string;
+    data?: unknown;
+}
+/**
  * Task type for execution handling
  * - READ_INFO: Information requests, no file changes expected
  * - REPORT: Report/summary generation, no file changes expected
@@ -105,6 +114,8 @@ export interface QueueItem {
     conversation_history?: ConversationEntry[];
     /** Task output/response for READ_INFO/REPORT tasks */
     output?: string;
+    /** Progress events emitted by executor (for restart detection) */
+    events?: ProgressEvent[];
 }
 /**
  * Runner status for heartbeat tracking
@@ -190,6 +201,7 @@ export interface IQueueStore {
     getItem(taskId: string, targetNamespace?: string): Promise<QueueItem | null>;
     claim(): Promise<ClaimResult>;
     updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string, output?: string): Promise<void>;
+    appendEvent(taskId: string, event: ProgressEvent): Promise<boolean>;
     updateStatusWithValidation(taskId: string, newStatus: QueueItemStatus): Promise<StatusUpdateResult>;
     setAwaitingResponse(taskId: string, clarification: ClarificationRequest, conversationHistory?: ConversationEntry[], output?: string): Promise<StatusUpdateResult>;
     resumeWithResponse(taskId: string, userResponse: string): Promise<StatusUpdateResult>;
@@ -285,6 +297,10 @@ export declare class QueueStore implements IQueueStore {
      * Update task status
      */
     updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string, output?: string): Promise<void>;
+    /**
+     * Append a progress event to a task (best-effort)
+     */
+    appendEvent(taskId: string, event: ProgressEvent): Promise<boolean>;
     /**
      * Update task status with validation
      */

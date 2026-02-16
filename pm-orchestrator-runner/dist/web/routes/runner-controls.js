@@ -248,6 +248,50 @@ function createRunnerControlsRoutes(config) {
         const startTime = Date.now();
         const steps = [];
         try {
+            // Use custom restart handler if provided (self-restart flow)
+            if (settings.restartHandler) {
+                const result = await settings.restartHandler();
+                if (result.success) {
+                    res.json({
+                        success: true,
+                        operation: 'restart',
+                        message: result.message || 'Restart completed successfully',
+                        duration_ms: Date.now() - startTime,
+                        output: result.output,
+                        old_pid: result.oldPid,
+                        new_pid: result.newPid,
+                        build_sha: result.buildMeta?.build_sha,
+                        build_timestamp: result.buildMeta?.build_timestamp,
+                    });
+                    if (result.postResponse) {
+                        setTimeout(() => {
+                            try {
+                                result.postResponse?.();
+                            }
+                            catch (error) {
+                                // Best-effort; can't report after response
+                                console.warn('[RunnerControls] postResponse failed:', error);
+                            }
+                        }, 0);
+                    }
+                }
+                else {
+                    res.status(500).json({
+                        success: false,
+                        operation: 'restart',
+                        message: result.message || 'Restart failed',
+                        error: result.error,
+                        duration_ms: Date.now() - startTime,
+                        output: result.output,
+                        nextActions: [
+                            { label: 'Retry', action: 'retry' },
+                            { label: 'View Logs', action: 'view_logs' },
+                            { label: 'Back', action: 'back' },
+                        ],
+                    });
+                }
+                return;
+            }
             // Use ProcessSupervisor if available (AC-OPS-2, AC-SUP-2)
             if (processSupervisor) {
                 const result = await processSupervisor.restart({ build: true });

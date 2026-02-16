@@ -11,7 +11,7 @@
  * - Data is lost on server restart (by design)
  * - Suitable for development/testing without Docker
  */
-import { QueueItem, QueueItemStatus, ClaimResult, StatusUpdateResult, TaskGroupSummary, NamespaceSummary, RunnerRecord, ClarificationRequest, ConversationEntry, IQueueStore, TaskTypeValue } from './queue-store';
+import { QueueItem, QueueItemStatus, ProgressEvent, ClaimResult, StatusUpdateResult, TaskGroupSummary, NamespaceSummary, RunnerRecord, ClarificationRequest, ConversationEntry, IQueueStore, TaskTypeValue } from './queue-store';
 /**
  * In-Memory Queue Store configuration
  */
@@ -89,6 +89,10 @@ export declare class InMemoryQueueStore implements IQueueStore {
      * Update task status
      */
     updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string, output?: string): Promise<void>;
+    /**
+     * Append a progress event to a task (in-memory)
+     */
+    appendEvent(taskId: string, event: ProgressEvent): Promise<boolean>;
     /**
      * Update task status with validation
      */

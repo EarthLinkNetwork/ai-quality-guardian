@@ -91,7 +91,10 @@ function createApp(config) {
         app.use("/api", (0, session_logs_1.createSessionLogsRoutes)(stateDir));
         // Runner Controls routes (selfhost-runner only)
         // Per AC-OPS-1: Web UI provides Run/Stop/Build/Restart controls
-        app.use("/api/runner", (0, runner_controls_1.createRunnerControlsRoutes)({ projectRoot: projectRoot || process.cwd() }));
+        app.use("/api/runner", (0, runner_controls_1.createRunnerControlsRoutes)({
+            projectRoot: projectRoot || process.cwd(),
+            restartHandler: config.runnerRestartHandler,
+        }));
         // Supervisor Config routes (SUP-4, SUP-5)
         // Per docs/spec/SUPERVISOR_SYSTEM.md
         app.use("/api/supervisor", (0, supervisor_config_1.createSupervisorConfigRoutes)({ projectRoot: projectRoot || process.cwd() }));
@@ -568,16 +571,16 @@ function createApp(config) {
      * - AC-OPS-3: Returns build_sha for build tracking
      */
     app.get('/api/health', (_req, res) => {
-        // Read build_sha from environment (set by ProcessSupervisor) or build-meta.json
+        // Read build info from environment (set by ProcessSupervisor/self-restart) or build-meta.json
         let buildSha = process.env.PM_BUILD_SHA;
-        let buildTimestamp;
-        if (!buildSha && projectRoot) {
+        let buildTimestamp = process.env.PM_BUILD_TIMESTAMP;
+        if (projectRoot && (!buildSha || !buildTimestamp)) {
             try {
                 const buildMetaPath = path_1.default.join(projectRoot, 'dist', 'build-meta.json');
                 if (fs_1.default.existsSync(buildMetaPath)) {
                     const buildMeta = JSON.parse(fs_1.default.readFileSync(buildMetaPath, 'utf-8'));
-                    buildSha = buildMeta.build_sha;
-                    buildTimestamp = buildMeta.build_timestamp;
+                    buildSha = buildSha || buildMeta.build_sha;
+                    buildTimestamp = buildTimestamp || buildMeta.build_timestamp;
                 }
             }
             catch {
@@ -835,6 +838,7 @@ class WebServer {
     host;
     namespace;
     server = null;
+    connections = new Set();
     constructor(config) {
         this.port = config.port || 5678;
         this.host = config.host || 'localhost';
@@ -849,6 +853,12 @@ class WebServer {
             try {
                 this.server = this.app.listen(this.port, this.host, () => {
                     resolve();
+                });
+                this.server.on('connection', (socket) => {
+                    this.connections.add(socket);
+                    socket.on('close', () => {
+                        this.connections.delete(socket);
+                    });
                 });
                 this.server.on('error', reject);
             }
@@ -865,6 +875,15 @@ class WebServer {
             if (!this.server) {
                 resolve();
                 return;
+            }
+            // Close any open connections to avoid hanging on SSE
+            for (const socket of this.connections) {
+                try {
+                    socket.destroy();
+                }
+                catch {
+                    // Ignore socket errors on shutdown
+                }
             }
             this.server.close((err) => {
                 if (err) {

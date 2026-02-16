@@ -17,6 +17,7 @@
  */
 import { Express } from 'express';
 import { IQueueStore } from '../queue/index';
+import type { RunnerRestartResult } from './routes/runner-controls';
 /**
  * Web Server configuration
  */
@@ -37,6 +38,8 @@ export interface WebServerConfig {
     stateDir?: string;
     /** Queue store type for health endpoint display */
     queueStoreType?: 'file' | 'dynamodb' | 'memory';
+    /** Optional self-restart handler for Runner Controls */
+    runnerRestartHandler?: () => Promise<RunnerRestartResult>;
 }
 /**
  * Web Server state
@@ -61,6 +64,7 @@ export declare class WebServer {
     private readonly host;
     private readonly namespace;
     private server;
+    private readonly connections;
     constructor(config: WebServerConfig);
     /**
      * Start the server

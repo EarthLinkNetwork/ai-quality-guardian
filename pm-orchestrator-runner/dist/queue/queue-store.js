@@ -387,6 +387,42 @@ class QueueStore {
         }));
     }
     /**
+     * Append a progress event to a task (best-effort)
+     */
+    async appendEvent(taskId, event) {
+        const timestamp = event.timestamp || new Date().toISOString();
+        const newEvent = { ...event, timestamp };
+        try {
+            await this.docClient.send(new lib_dynamodb_1.UpdateCommand({
+                TableName: exports.QUEUE_TABLE_NAME,
+                Key: {
+                    namespace: this.namespace,
+                    task_id: taskId,
+                },
+                UpdateExpression: 'SET updated_at = :now, #events = list_append(if_not_exists(#events, :empty), :event)',
+                ExpressionAttributeNames: {
+                    '#events': 'events',
+                },
+                ExpressionAttributeValues: {
+                    ':now': timestamp,
+                    ':empty': [],
+                    ':event': [newEvent],
+                },
+                ConditionExpression: 'attribute_exists(task_id)',
+            }));
+            return true;
+        }
+        catch (error) {
+            if (error &&
+                typeof error === 'object' &&
+                'name' in error &&
+                error.name === 'ConditionalCheckFailedException') {
+                return false;
+            }
+            throw error;
+        }
+    }
+    /**
      * Update task status with validation
      */
     async updateStatusWithValidation(taskId, newStatus) {

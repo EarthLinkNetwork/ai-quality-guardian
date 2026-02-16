@@ -85,6 +85,7 @@ class DynamicTimeoutExecutor {
             silenceLogIntervalMs: Math.min(profile.idle_timeout_ms / 2, 30000), // Half of idle timeout, max 30s
             verbose: this.config.verbose,
             disableOverallTimeout: this.shouldDisableOverallTimeout(estimate.category),
+            progressAwareTimeout: true,
         };
         if (this.logProfileSelection) {
             console.log(`[DynamicTimeoutExecutor] Task analysis:
