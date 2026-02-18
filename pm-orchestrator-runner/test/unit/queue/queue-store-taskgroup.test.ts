@@ -139,7 +139,7 @@ class MockQueueStore {
       });
     }
 
-    groups.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    groups.sort((a, b) => b.latest_updated_at.localeCompare(a.latest_updated_at));
     return groups;
   }
 
@@ -247,7 +247,7 @@ describe('QueueStore Task Group Methods', () => {
       assert.equal(groupC.task_count, 1);
     });
 
-    it('should return groups sorted by created_at (oldest first)', async () => {
+    it('should return groups sorted by latest_updated_at (newest first)', async () => {
       // Add delays to ensure different timestamps
       await store.enqueue('s1', 'oldest-group', 'prompt 1');
       await new Promise(resolve => setTimeout(resolve, 5));
@@ -258,9 +258,9 @@ describe('QueueStore Task Group Methods', () => {
       const groups = await store.getAllTaskGroups();
 
       assert.equal(groups.length, 3);
-      assert.equal(groups[0].task_group_id, 'oldest-group');
+      assert.equal(groups[0].task_group_id, 'newest-group');
       assert.equal(groups[1].task_group_id, 'middle-group');
-      assert.equal(groups[2].task_group_id, 'newest-group');
+      assert.equal(groups[2].task_group_id, 'oldest-group');
     });
 
     it('should track latest_updated_at correctly', async () => {

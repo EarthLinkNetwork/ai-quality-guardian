@@ -359,6 +359,8 @@ export interface ScanJob {
 // Activity event types
 export type ActivityEventType =
   | "task_started"
+  | "task_queued"
+  | "task_updated"
   | "task_completed"
   | "task_failed"
   | "task_awaiting"
@@ -383,6 +385,7 @@ export interface ActivityEvent {
   projectAlias?: string;
   sessionId?: string;
   taskId?: string;
+  taskGroupId?: string;
   summary: string;
   importance: ActivityEventImportance;
   details: Record<string, unknown>;
@@ -397,6 +400,7 @@ export interface CreateActivityEventInput {
   projectAlias?: string;
   sessionId?: string;
   taskId?: string;
+  taskGroupId?: string;
   summary: string;
   importance?: ActivityEventImportance;
   details?: Record<string, unknown>;
@@ -576,6 +580,15 @@ export type ConversationMessageStatus =
 /**
  * Conversation message entity
  */
+/**
+ * Image attachment for chat messages
+ */
+export interface ChatImageAttachment {
+  name: string;
+  type: string;   // MIME type e.g. "image/png"
+  data: string;   // base64 data URL
+}
+
 export interface ConversationMessage {
   messageId: string;            // msg_<uuid>
   projectId: string;
@@ -590,6 +603,7 @@ export interface ConversationMessage {
     gateResult?: boolean;
     error?: string;
     clarificationQuestion?: string;  // Question that needs response
+    images?: ChatImageAttachment[];  // Attached images
   };
 }
 

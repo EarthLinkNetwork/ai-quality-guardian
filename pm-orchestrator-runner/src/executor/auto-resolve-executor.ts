@@ -198,6 +198,13 @@ const CLARIFICATION_PATTERNS = [
   /保存先.*(?:を|は)/i,
 ];
 
+function truncateForLog(input: string | undefined, maxLen: number): string {
+  if (!input) return '';
+  const cleaned = input.replace(/\s+/g, ' ').trim();
+  if (cleaned.length <= maxLen) return cleaned;
+  return cleaned.slice(0, maxLen - 3) + '...';
+}
+
 /**
  * Auto-Resolving Executor with Decision Classification
  *
@@ -211,28 +218,34 @@ export class AutoResolvingExecutor implements IExecutor {
   private readonly classifier: DecisionClassifier | null;
   private readonly preferenceStore: UserPreferenceStore;
   private readonly userResponseHandler?: UserResponseHandler;
+  private readonly llmProvider: 'openai' | 'anthropic';
+  private llmUnavailableReason?: string;
+  private activeTaskId?: string;
 
   constructor(config: AutoResolveConfig) {
     this.innerExecutor = new ClaudeCodeExecutor(config);
     this.projectPath = config.projectPath;
     this.maxRetries = config.maxRetries ?? 2;
     this.userResponseHandler = config.userResponseHandler;
+    this.llmProvider = config.llmProvider ?? 'openai';
 
     // Initialize LLM client for auto-resolution (optional - tasks work without it)
     let llmClient: LLMClient | null = null;
     let classifier: DecisionClassifier | null = null;
     try {
       llmClient = LLMClient.fromEnv(
-        config.llmProvider ?? 'openai',
+        this.llmProvider,
         undefined,
         { temperature: 0.3 }
       );
       classifier = new DecisionClassifier(
         config.customRules,
-        llmClient
+        llmClient,
+        (message: string) => this.emitLLMLog(message)
       );
     } catch (e) {
-      console.log(`[AutoResolvingExecutor] LLM client not available (auto-resolution disabled): ${(e as Error).message}`);
+      this.llmUnavailableReason = (e as Error).message;
+      console.log(`[AutoResolvingExecutor] LLM client not available (auto-resolution disabled): ${this.llmUnavailableReason}`);
     }
     this.llmClient = llmClient;
     this.classifier = classifier;
@@ -268,6 +281,7 @@ export class AutoResolvingExecutor implements IExecutor {
     let attempts = 0;
     let currentTask = task;
     let lastResult: ExecutorResult | undefined;
+    this.activeTaskId = task.id;
 
     // Guard trace: log task type and guard decision
     const guardStream = getExecutorOutputStream();
@@ -334,6 +348,9 @@ export class AutoResolvingExecutor implements IExecutor {
       }
 
       console.log(`[AutoResolvingExecutor] Clarification detected: ${clarification.type}`);
+      this.emitLLMLog(
+        `clarification detected type=${clarification.type} question="${truncateForLog(clarification.question, 140)}"`
+      );
 
       // Smart resolution with classification
       const resolution = await this.smartResolve(clarification, currentTask.prompt);
@@ -344,8 +361,12 @@ export class AutoResolvingExecutor implements IExecutor {
       }
 
       console.log(`[AutoResolvingExecutor] Resolved via ${resolution.resolutionMethod}: ${resolution.reasoning}`);
+      this.emitLLMLog(
+        `resolved via ${resolution.resolutionMethod || 'unknown'} value="${truncateForLog(resolution.resolvedValue, 120)}"`
+      );
 
       // Update task with explicit prompt
+      this.emitLLMLog('retrying with explicit prompt (auto-resolve)');
       currentTask = {
         ...task,
         prompt: resolution.explicitPrompt,
@@ -371,6 +392,7 @@ export class AutoResolvingExecutor implements IExecutor {
     
     if (preferenceMatch && this.preferenceStore.canAutoApply(preferenceMatch)) {
       console.log(`[AutoResolvingExecutor] Found high-confidence preference: ${preferenceMatch.preference.choice}`);
+      this.emitLLMLog(`preference applied choice="${truncateForLog(preferenceMatch.preference.choice, 120)}"`);
       
       return this.applyPreference(preferenceMatch, originalPrompt, clarification);
     }
@@ -378,10 +400,14 @@ export class AutoResolvingExecutor implements IExecutor {
     // Step 2: Classify the clarification (requires LLM client)
     if (!this.classifier) {
       console.log('[AutoResolvingExecutor] No classifier available, cannot auto-resolve');
+      this.emitLLMLog(`auto-resolve unavailable: ${this.llmUnavailableReason || 'classifier not initialized'}`);
       return { resolved: false };
     }
     const classification = await this.classifier.classifyFull(question, clarification.context);
     console.log(`[AutoResolvingExecutor] Classification: ${classification.category} (confidence: ${classification.confidence})`);
+    this.emitLLMLog(
+      `classification ${classification.category} confidence=${classification.confidence.toFixed(2)} reason="${truncateForLog(classification.reasoning, 140)}"`
+    );
 
     // Step 3: Route based on classification
     switch (classification.category) {
@@ -440,6 +466,8 @@ export class AutoResolvingExecutor implements IExecutor {
       return this.autoResolve(clarification, originalPrompt);
     }
 
+    this.emitLLMLog(`best_practice resolution="${truncateForLog(resolution, 120)}"`);
+
     const explicitPrompt = this.buildExplicitPrompt(
       originalPrompt,
       clarification,
@@ -470,6 +498,7 @@ export class AutoResolvingExecutor implements IExecutor {
     // Check if we have a user response handler
     if (!this.userResponseHandler) {
       console.log('[AutoResolvingExecutor] No user response handler, falling back to LLM');
+      this.emitLLMLog('case_by_case -> fallback to LLM inference (no user handler)');
       return this.autoResolve(clarification, originalPrompt);
     }
 
@@ -483,6 +512,8 @@ export class AutoResolvingExecutor implements IExecutor {
         undefined, // Options could be extracted from context
         `Context: ${contextStr}`
       );
+
+      this.emitLLMLog(`case_by_case user choice="${truncateForLog(userChoice, 120)}"`);
 
       // Record the preference for future use
       this.preferenceStore.recordPreference(
@@ -509,6 +540,7 @@ export class AutoResolvingExecutor implements IExecutor {
       };
     } catch (error) {
       console.error('[AutoResolvingExecutor] User response error:', error);
+      this.emitLLMLog(`user response error: ${truncateForLog((error as Error).message, 160)}`);
       // Fallback to LLM inference
       return this.autoResolve(clarification, originalPrompt);
     }
@@ -651,6 +683,7 @@ Do not ask for further clarification. Proceed with the above.`;
     clarification: ParsedClarification,
     originalPrompt: string
   ): Promise<AutoResolution> {
+    this.emitLLMLog(`auto-resolve via LLM inference type=${clarification.type}`);
     try {
       switch (clarification.type) {
         case 'target_file_ambiguous':
@@ -678,10 +711,14 @@ Do not ask for further clarification. Proceed with the above.`;
     originalPrompt: string,
     clarification: ParsedClarification
   ): Promise<AutoResolution> {
-    if (!this.llmClient) return { resolved: false };
+    if (!this.llmClient) {
+      this.emitLLMLog(`LLM unavailable for resolveFilePath: ${this.llmUnavailableReason || 'missing client'}`);
+      return { resolved: false };
+    }
     const projectStructure = this.scanProjectStructure();
     const questionStr = clarification.question || 'Where should the file be saved?';
 
+    this.emitLLMLog(`resolveFilePath request question="${truncateForLog(questionStr, 120)}"`);
     const response = await this.llmClient.chat([
       {
         role: 'system',
@@ -710,6 +747,8 @@ Determine the appropriate file path.`,
       },
     ]);
 
+    this.emitLLMLog(`resolveFilePath response="${truncateForLog(response.content, 200)}"`);
+
     try {
       const jsonMatch = response.content.match(/\{[^}]+\}/);
       if (!jsonMatch) {
@@ -717,6 +756,7 @@ Determine the appropriate file path.`,
       }
 
       const parsed = JSON.parse(jsonMatch[0]) as { file_path: string; reasoning: string };
+      this.emitLLMLog(`resolveFilePath resolved file_path="${truncateForLog(parsed.file_path, 140)}"`);
 
       return {
         resolved: true,
@@ -742,9 +782,13 @@ Determine the appropriate file path.`,
     originalPrompt: string,
     clarification: ParsedClarification
   ): Promise<AutoResolution> {
-    if (!this.llmClient) return { resolved: false };
+    if (!this.llmClient) {
+      this.emitLLMLog(`LLM unavailable for resolveScope: ${this.llmUnavailableReason || 'missing client'}`);
+      return { resolved: false };
+    }
     const questionStr = clarification.question || 'What is the scope?';
 
+    this.emitLLMLog(`resolveScope request question="${truncateForLog(questionStr, 120)}"`);
     const response = await this.llmClient.chat([
       {
         role: 'system',
@@ -762,6 +806,8 @@ Question: ${questionStr}
 Clarify the scope.`,
       },
     ]);
+
+    this.emitLLMLog(`resolveScope response="${truncateForLog(response.content, 200)}"`);
 
     try {
       const jsonMatch = response.content.match(/\{[^}]+\}/);
@@ -798,9 +844,13 @@ Clarify the scope.`,
     originalPrompt: string,
     clarification: ParsedClarification
   ): Promise<AutoResolution> {
-    if (!this.llmClient) return { resolved: false };
+    if (!this.llmClient) {
+      this.emitLLMLog(`LLM unavailable for resolveAction: ${this.llmUnavailableReason || 'missing client'}`);
+      return { resolved: false };
+    }
     const questionStr = clarification.question || 'What action should be taken?';
 
+    this.emitLLMLog(`resolveAction request question="${truncateForLog(questionStr, 120)}"`);
     const response = await this.llmClient.chat([
       {
         role: 'system',
@@ -818,6 +868,8 @@ Question: ${questionStr}
 Clarify the action.`,
       },
     ]);
+
+    this.emitLLMLog(`resolveAction response="${truncateForLog(response.content, 200)}"`);
 
     try {
       const jsonMatch = response.content.match(/\{[^}]+\}/);
@@ -845,6 +897,14 @@ Clarify the action.`,
     } catch {
       return { resolved: false };
     }
+  }
+
+  private emitLLMLog(message: string): void {
+    if (!this.activeTaskId) {
+      return;
+    }
+    const text = message.startsWith('[llm]') ? message : `[llm] ${message}`;
+    getExecutorOutputStream().emit(this.activeTaskId, 'system', text);
   }
 
   /**

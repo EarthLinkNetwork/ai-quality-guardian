@@ -48,73 +48,6 @@
       cursor: pointer;
     }
 
-    .namespace-badge {
-      background: rgba(255, 255, 255, 0.2);
-      color: rgba(255, 255, 255, 0.9);
-      font-size: 0.75rem;
-      padding: 4px 10px;
-      border-radius: 12px;
-      font-family: monospace;
-    }
-
-    .namespace-badge.auto-derived {
-      background: rgba(34, 197, 94, 0.3);
-    }
-
-    .namespace-selector {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .namespace-selector select {
-      background: rgba(255, 255, 255, 0.15);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      color: white;
-      padding: 6px 10px;
-      border-radius: 6px;
-      font-size: 0.85rem;
-      font-family: monospace;
-      cursor: pointer;
-    }
-
-    .namespace-selector select:focus {
-      outline: none;
-      border-color: rgba(255, 255, 255, 0.5);
-    }
-
-    .namespace-selector select option {
-      background: #2563eb;
-      color: white;
-    }
-
-    .runner-status {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 0.75rem;
-      color: rgba(255, 255, 255, 0.8);
-    }
-
-    .runner-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-    }
-
-    .runner-dot.alive {
-      background: #22c55e;
-      box-shadow: 0 0 4px #22c55e;
-    }
-
-    .runner-dot.dead {
-      background: #ef4444;
-    }
-
-    .runner-count {
-      margin-left: 4px;
-    }
-
     nav {
       display: flex;
       gap: 16px;
@@ -256,6 +189,12 @@
     .badge-cancelled {
       background: #e5e7eb;
       color: #4b5563;
+    }
+
+    .badge-awaiting {
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #f59e0b;
     }
 
     .form-group {
@@ -477,6 +416,59 @@
       background: #f3f4f6;
     }
 
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 12px 16px;
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .filter-bar select,
+    .filter-bar input {
+      padding: 6px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      background: white;
+      color: #374151;
+    }
+
+    .filter-bar select:focus,
+    .filter-bar input:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+    }
+
+    .filter-bar label {
+      font-size: 0.8rem;
+      color: #6b7280;
+      font-weight: 500;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .filter-bar .reset-btn {
+      background: none;
+      border: none;
+      color: #6b7280;
+      cursor: pointer;
+      font-size: 0.8rem;
+      padding: 4px 8px;
+      text-decoration: underline;
+    }
+
+    .filter-bar .reset-btn:hover {
+      color: #2563eb;
+    }
+
     .action-bar {
       display: flex;
       gap: 12px;
@@ -612,9 +604,66 @@
       background: #f9fafb;
     }
 
+    .chat-input-area {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .chat-attachments {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chat-attachment-item {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      background: #e5e7eb;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      color: #374151;
+    }
+
+    .chat-attachment-item img {
+      width: 48px;
+      height: 48px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+
+    .chat-attachment-remove {
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 18px;
+      height: 18px;
+      font-size: 12px;
+      line-height: 18px;
+      text-align: center;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .chat-attachment-remove:hover {
+      background: #dc2626;
+    }
+
     .chat-input-wrapper {
       display: flex;
       gap: 12px;
+      align-items: flex-end;
+    }
+
+    .chat-input-left {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
     }
 
     .chat-input {
@@ -623,9 +672,12 @@
       border: 1px solid #d1d5db;
       border-radius: 8px;
       font-size: 1rem;
-      resize: none;
-      min-height: 44px;
-      max-height: 150px;
+      font-family: inherit;
+      line-height: 1.5;
+      resize: vertical;
+      min-height: 80px;
+      max-height: 300px;
+      overflow-y: auto;
     }
 
     .chat-input:focus {
@@ -639,6 +691,18 @@
       background: #fffbeb;
     }
 
+    .chat-input-hint {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      text-align: right;
+    }
+
+    .chat-input-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
     .chat-send-btn {
       padding: 12px 24px;
       background: #2563eb;
@@ -648,6 +712,7 @@
       font-weight: 500;
       cursor: pointer;
       transition: background 0.2s;
+      white-space: nowrap;
     }
 
     .chat-send-btn:hover {
@@ -665,6 +730,45 @@
 
     .chat-send-btn.respond-mode:hover {
       background: #d97706;
+    }
+
+    .chat-attach-btn {
+      padding: 8px 12px;
+      background: #e5e7eb;
+      color: #374151;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+
+    .chat-attach-btn:hover {
+      background: #d1d5db;
+    }
+
+    .chat-drop-overlay {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(37, 99, 235, 0.1);
+      border: 2px dashed #2563eb;
+      border-radius: 8px;
+      z-index: 10;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      color: #2563eb;
+      font-weight: 500;
+      pointer-events: none;
+    }
+
+    .chat-drop-overlay.active {
+      display: flex;
     }
 
     .chat-status {
@@ -1815,21 +1919,11 @@
   <header>
     <div class="header-content">
       <h1 onclick="navigate('/')">PM Orchestrator Runner</h1>
-      <div class="namespace-selector" id="namespace-selector" style="display: none;">
-        <select id="namespace-select" onchange="onNamespaceChange(this.value)">
-          <!-- Populated by JavaScript -->
-        </select>
-        <div class="runner-status" id="runner-status">
-          <span class="runner-dot" id="runner-dot"></span>
-          <span id="runner-text">-</span>
-        </div>
-      </div>
       <nav id="main-nav">
         <a href="/dashboard" data-nav="dashboard">Dashboard</a>
+        <a href="/projects" data-nav="projects">Projects</a>
         <a href="/" data-nav="home">Task Groups</a>
         <a href="/activity" data-nav="activity">Activity</a>
-        <a href="/new" data-nav="new">+ New</a>
-        <a href="/agent" data-nav="agent">Agent</a>
         <a href="/settings" data-nav="settings">Settings</a>
       </nav>
     </div>
@@ -1845,14 +1939,9 @@
     const app = document.getElementById('app');
     let currentPath = '/';
 
-    // API helper with namespace support
+    // API helper
     async function api(path, options = {}) {
-      // Add namespace query parameter if currentNamespace is set
-      let url = `/api${path}`;
-      if (typeof currentNamespace !== 'undefined' && currentNamespace) {
-        const separator = path.includes('?') ? '&' : '?';
-        url = `${url}${separator}namespace=${encodeURIComponent(currentNamespace)}`;
-      }
+      const url = `/api${path}`;
       const response = await fetch(url, {
         headers: { 'Content-Type': 'application/json' },
         ...options,
@@ -1898,6 +1987,7 @@
         'COMPLETE': 'badge-complete',
         'ERROR': 'badge-error',
         'CANCELLED': 'badge-cancelled',
+        'AWAITING_RESPONSE': 'badge-awaiting',
       };
       return map[status] || 'badge-queued';
     }
@@ -2073,6 +2163,171 @@
       }
     }
 
+    // =========================================================================
+    // Conversation Trace Visualization (LLM ↔ Claude Code) - #7
+    // =========================================================================
+    async function loadConversationTrace(taskId) {
+      const container = document.getElementById('conversation-trace-container');
+      const statusBadge = document.getElementById('trace-status');
+      if (!container) return;
+
+      try {
+        const response = await fetch('/api/tasks/' + encodeURIComponent(taskId) + '/trace?raw=true');
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          if (response.status === 404) {
+            container.innerHTML = '<div style="color: #6b7280; font-style: italic;">No conversation trace available for this task.</div>';
+            if (statusBadge) { statusBadge.textContent = 'none'; statusBadge.className = 'badge badge-secondary'; }
+            return;
+          }
+          throw new Error(errData.message || 'Failed to load trace');
+        }
+
+        const data = await response.json();
+        const entries = data.entries || [];
+        const summary = data.summary || {};
+
+        if (entries.length === 0) {
+          container.innerHTML = '<div style="color: #6b7280; font-style: italic;">Conversation trace is empty.</div>';
+          if (statusBadge) { statusBadge.textContent = '0 entries'; statusBadge.className = 'badge badge-secondary'; }
+          return;
+        }
+
+        if (statusBadge) {
+          statusBadge.textContent = summary.total_iterations + ' iteration(s), ' + entries.length + ' events';
+          statusBadge.className = 'badge badge-success';
+        }
+
+        // Group entries by iteration
+        var iterations = {};
+        var noIterationEntries = [];
+        entries.forEach(function(e) {
+          if (e.iteration_index !== undefined && e.iteration_index !== null) {
+            if (!iterations[e.iteration_index]) iterations[e.iteration_index] = [];
+            iterations[e.iteration_index].push(e);
+          } else {
+            noIterationEntries.push(e);
+          }
+        });
+
+        var html = '';
+
+        // Render summary card
+        if (summary.final_status) {
+          var summaryColor = summary.final_status === 'accepted' ? '#22c55e' : summary.final_status === 'max_iterations' ? '#f59e0b' : '#6b7280';
+          html += '<div style="padding:12px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; margin-bottom:12px;">' +
+            '<strong>Summary:</strong> ' +
+            '<span style="color:' + summaryColor + '; font-weight:600;">' + escapeHtml(summary.final_status) + '</span>' +
+            ' | ' + summary.total_iterations + ' iteration(s)' +
+            (summary.judgments && summary.judgments.length > 0 ? ' | ' + summary.judgments.filter(function(j) { return j.passed; }).length + '/' + summary.judgments.length + ' passed' : '') +
+          '</div>';
+        }
+
+        // Render each iteration
+        var iterKeys = Object.keys(iterations).sort(function(a, b) { return Number(a) - Number(b); });
+        iterKeys.forEach(function(iterIdx) {
+          var iterEntries = iterations[iterIdx];
+          var isLast = iterIdx === iterKeys[iterKeys.length - 1];
+          html += '<details ' + (isLast ? 'open' : '') + ' style="margin-bottom:8px; border:1px solid #e5e7eb; border-radius:6px; overflow:hidden;">' +
+            '<summary style="padding:10px 14px; cursor:pointer; background:#f9fafb; font-weight:600; font-size:0.9rem; display:flex; align-items:center; gap:8px;">' +
+              'Iteration ' + iterIdx;
+
+          // Show judgment result in summary
+          var judgment = iterEntries.find(function(e) { return e.event === 'QUALITY_JUDGMENT'; });
+          if (judgment && judgment.data) {
+            html += judgment.data.passed
+              ? ' <span class="badge badge-complete" style="font-size:0.7rem;">PASSED</span>'
+              : ' <span class="badge badge-error" style="font-size:0.7rem;">REJECTED</span>';
+            if (judgment.data.reason) html += ' <span style="font-size:0.8rem; color:#6b7280;">— ' + escapeHtml(judgment.data.reason.substring(0, 80)) + '</span>';
+          }
+          html += '</summary>';
+
+          // Render entries within this iteration
+          html += '<div style="padding:0;">';
+          iterEntries.forEach(function(entry) {
+            html += renderTraceEntry(entry);
+          });
+          html += '</div></details>';
+        });
+
+        // Non-iteration entries (FINAL_SUMMARY, etc.)
+        if (noIterationEntries.length > 0) {
+          noIterationEntries.forEach(function(entry) {
+            html += renderTraceEntry(entry);
+          });
+        }
+
+        container.innerHTML = html;
+
+      } catch (error) {
+        container.innerHTML = '<div style="color: #ef4444;">Error loading trace: ' + escapeHtml(error.message) + '</div>';
+        if (statusBadge) { statusBadge.textContent = 'error'; statusBadge.className = 'badge badge-error'; }
+      }
+    }
+
+    function renderTraceEntry(entry) {
+      var eventColors = {
+        'LLM_REQUEST': { bg: '#eff6ff', border: '#3b82f6', label: 'LLM Request', icon: '→' },
+        'LLM_RESPONSE': { bg: '#f0fdf4', border: '#22c55e', label: 'LLM Response', icon: '←' },
+        'QUALITY_JUDGMENT': { bg: '#fefce8', border: '#eab308', label: 'Quality Check', icon: '⚖' },
+        'ITERATION_START': { bg: '#f9fafb', border: '#9ca3af', label: 'Iteration Start', icon: '▶' },
+        'ITERATION_END': { bg: '#f9fafb', border: '#9ca3af', label: 'Iteration End', icon: '■' },
+        'FINAL_SUMMARY': { bg: '#faf5ff', border: '#a855f7', label: 'Final Summary', icon: '★' },
+        'REJECTION_DETAIL': { bg: '#fef2f2', border: '#ef4444', label: 'Rejection', icon: '✗' },
+        'SUBTASK_PLAN': { bg: '#ecfeff', border: '#06b6d4', label: 'Subtask Plan', icon: '📋' },
+      };
+      var config = eventColors[entry.event] || { bg: '#f9fafb', border: '#9ca3af', label: entry.event, icon: '·' };
+      var time = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString('ja-JP') : '';
+      var dataContent = '';
+
+      if (entry.data) {
+        // Show key fields based on event type
+        if (entry.event === 'LLM_REQUEST' && entry.data.prompt) {
+          var prompt = entry.data.prompt;
+          if (typeof prompt === 'object') prompt = JSON.stringify(prompt, null, 2);
+          dataContent = '<details style="margin-top:6px;"><summary style="cursor:pointer; color:#6b7280; font-size:0.8rem;">Show prompt (' + prompt.length + ' chars)</summary>' +
+            '<pre style="background:#1e1e1e; color:#d4d4d4; padding:8px; border-radius:4px; font-size:0.75rem; max-height:300px; overflow:auto; white-space:pre-wrap; word-break:break-all; margin-top:4px;">' + escapeHtml(prompt) + '</pre></details>';
+        } else if (entry.event === 'LLM_RESPONSE' && entry.data.response) {
+          var resp = entry.data.response;
+          if (typeof resp === 'object') resp = JSON.stringify(resp, null, 2);
+          dataContent = '<details style="margin-top:6px;"><summary style="cursor:pointer; color:#6b7280; font-size:0.8rem;">Show response (' + resp.length + ' chars)</summary>' +
+            '<pre style="background:#1e1e1e; color:#d4d4d4; padding:8px; border-radius:4px; font-size:0.75rem; max-height:300px; overflow:auto; white-space:pre-wrap; word-break:break-all; margin-top:4px;">' + escapeHtml(resp) + '</pre></details>';
+        } else if (entry.event === 'QUALITY_JUDGMENT') {
+          dataContent = '<div style="margin-top:6px; font-size:0.85rem;">' +
+            '<strong>Passed:</strong> ' + (entry.data.passed ? '<span style="color:#22c55e;">Yes</span>' : '<span style="color:#ef4444;">No</span>') +
+            (entry.data.reason ? '<br><strong>Reason:</strong> ' + escapeHtml(entry.data.reason) : '') +
+            (entry.data.criteria ? '<br><strong>Criteria:</strong> ' + escapeHtml(JSON.stringify(entry.data.criteria)) : '') +
+          '</div>';
+        } else if (entry.event === 'FINAL_SUMMARY') {
+          dataContent = '<div style="margin-top:6px; font-size:0.85rem;">' +
+            '<strong>Status:</strong> ' + escapeHtml(entry.data.status || 'unknown') +
+            (entry.data.total_iterations !== undefined ? '<br><strong>Iterations:</strong> ' + entry.data.total_iterations : '') +
+            (entry.data.accepted_at_iteration !== undefined ? '<br><strong>Accepted at:</strong> iteration ' + entry.data.accepted_at_iteration : '') +
+          '</div>';
+        } else if (entry.event === 'REJECTION_DETAIL') {
+          dataContent = '<div style="margin-top:6px; font-size:0.85rem; color:#dc2626;">' +
+            (entry.data.reason ? '<strong>Reason:</strong> ' + escapeHtml(entry.data.reason) : '') +
+          '</div>';
+        } else {
+          // Generic data display
+          var dataStr = JSON.stringify(entry.data, null, 2);
+          if (dataStr && dataStr.length > 2) {
+            dataContent = '<details style="margin-top:6px;"><summary style="cursor:pointer; color:#6b7280; font-size:0.8rem;">Show data</summary>' +
+              '<pre style="background:#f9fafb; padding:8px; border-radius:4px; font-size:0.75rem; max-height:200px; overflow:auto; margin-top:4px;">' + escapeHtml(dataStr) + '</pre></details>';
+          }
+        }
+      }
+
+      return '<div style="padding:8px 14px; border-left:3px solid ' + config.border + '; background:' + config.bg + '; margin:0; border-bottom:1px solid #e5e7eb;">' +
+        '<div style="display:flex; align-items:center; gap:8px;">' +
+          '<span style="font-size:1rem;">' + config.icon + '</span>' +
+          '<span style="font-weight:600; font-size:0.85rem;">' + escapeHtml(config.label) + '</span>' +
+          (time ? '<span style="color:#6b7280; font-size:0.8rem; margin-left:auto;">' + time + '</span>' : '') +
+        '</div>' +
+        dataContent +
+      '</div>';
+    }
+
     // Update nav active state
     function updateNav(path) {
       document.querySelectorAll('#main-nav a').forEach(link => {
@@ -2089,12 +2344,221 @@
           link.classList.add('active');
         } else if (path === '/settings' && link.dataset.nav === 'settings') {
           link.classList.add('active');
-        } else if (path.startsWith('/projects/')) {
+        } else if ((path === '/projects' || path.startsWith('/projects/')) && link.dataset.nav === 'projects') {
           link.classList.add('active');
         } else if (path.startsWith('/runs/')) {
           link.classList.add('active');
         }
       });
+    }
+
+    // =========================================================================
+    // Shared Task Group Panel (reusable component - Atomic Design)
+    // Used by: Task Groups page, Project Detail, Projects list
+    // =========================================================================
+    var taskGroupFilterState = {
+      sortBy: 'updated_desc',
+      statusFilter: '',
+      searchQuery: '',
+    };
+
+    function applyTaskGroupFilters(groups, filterState) {
+      var state = filterState || taskGroupFilterState;
+      var filtered = groups.slice();
+
+      if (state.statusFilter) {
+        filtered = filtered.filter(function(g) {
+          var sc = g.status_counts || {};
+          return sc[state.statusFilter] > 0;
+        });
+      }
+
+      if (state.searchQuery) {
+        var q = state.searchQuery.toLowerCase();
+        filtered = filtered.filter(function(g) {
+          var groupId = (g.task_group_id || '').toLowerCase();
+          var alias = (g.project_alias || '').toLowerCase();
+          var path = (g.project_path || '').toLowerCase();
+          return groupId.indexOf(q) !== -1 || alias.indexOf(q) !== -1 || path.indexOf(q) !== -1;
+        });
+      }
+
+      var sortBy = state.sortBy;
+      filtered.sort(function(a, b) {
+        switch (sortBy) {
+          case 'updated_desc': return (b.latest_updated_at || '').localeCompare(a.latest_updated_at || '');
+          case 'updated_asc': return (a.latest_updated_at || '').localeCompare(b.latest_updated_at || '');
+          case 'created_desc': return (b.created_at || '').localeCompare(a.created_at || '');
+          case 'created_asc': return (a.created_at || '').localeCompare(b.created_at || '');
+          case 'tasks_desc': return (b.task_count || 0) - (a.task_count || 0);
+          case 'tasks_asc': return (a.task_count || 0) - (b.task_count || 0);
+          case 'name_asc': return (a.task_group_id || '').localeCompare(b.task_group_id || '');
+          case 'name_desc': return (b.task_group_id || '').localeCompare(a.task_group_id || '');
+          default: return (b.latest_updated_at || '').localeCompare(a.latest_updated_at || '');
+        }
+      });
+
+      return filtered;
+    }
+
+    // Render a single task group item (shared between all views)
+    function renderTaskGroupItem(g) {
+      const sc = g.status_counts || {};
+      const statusParts = [];
+      if (sc.COMPLETE) statusParts.push('<span class="badge badge-complete" style="font-size:0.7rem;">' + sc.COMPLETE + ' done</span>');
+      if (sc.RUNNING) statusParts.push('<span class="badge badge-running" style="font-size:0.7rem;">' + sc.RUNNING + ' running</span>');
+      if (sc.AWAITING_RESPONSE) statusParts.push('<span class="badge" style="font-size:0.7rem; background:#f59e0b; color:white;">' + sc.AWAITING_RESPONSE + ' awaiting</span>');
+      if (sc.ERROR) statusParts.push('<span class="badge badge-error" style="font-size:0.7rem;">' + sc.ERROR + ' error</span>');
+      if (sc.QUEUED) statusParts.push('<span class="badge badge-queued" style="font-size:0.7rem;">' + sc.QUEUED + ' queued</span>');
+      const statusSummary = statusParts.length > 0 ? statusParts.join(' ') : '';
+      const latestBadge = g.latest_status ? '<span class="badge badge-' + (g.latest_status === 'RUNNING' ? 'running' : g.latest_status === 'COMPLETE' ? 'complete' : g.latest_status === 'ERROR' ? 'error' : g.latest_status === 'AWAITING_RESPONSE' ? 'awaiting' : 'queued') + '" style="font-size:0.75rem;">' + g.latest_status + '</span>' : '';
+      const hasProject = g.project_id && g.project_id !== 'N/A';
+      const projectLabel = g.project_alias && g.project_alias !== 'N/A' ? g.project_alias : (g.project_path && g.project_path !== 'N/A' ? g.project_path : '');
+      const projectLink = hasProject
+        ? '<a href="#" onclick="event.preventDefault(); event.stopPropagation(); navigate(\'/projects/' + encodeURIComponent(g.project_id) + '\')" style="color: #2563eb; font-size: 0.8rem;">' + escapeHtml(projectLabel || g.project_id) + '</a>'
+        : '<span style="color: #9ca3af; font-size: 0.8rem;">N/A</span>';
+      return `
+        <div class="list-item" onclick="navigate('/task-groups/${encodeURIComponent(g.task_group_id)}')">
+          <div class="list-item-main">
+            <div class="list-item-title" style="display:flex; align-items:center; gap:8px;">
+              ${escapeHtml(g.task_group_id)}
+              ${latestBadge}
+            </div>
+            <div class="list-item-meta">
+              ${g.task_count} task(s) | Project: ${projectLink} | Created: ${formatDate(g.created_at)} | Updated: ${formatDate(g.latest_updated_at)}
+            </div>
+            ${statusSummary ? '<div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">' + statusSummary + '</div>' : ''}
+          </div>
+          <span class="list-item-arrow">›</span>
+        </div>`;
+    }
+
+    // Render a complete task group panel with filter/sort bar
+    // containerId: unique ID for the panel container
+    // allGroups: full array of task groups
+    // options: { filterState, onRerender, showProjectColumn, maxItems }
+    function renderTaskGroupPanel(containerId, allGroups, options) {
+      options = options || {};
+      var filterState = options.filterState || taskGroupFilterState;
+      var onRerender = options.onRerender || function() { renderTaskGroupPanel(containerId, allGroups, options); };
+      var maxItems = options.maxItems || 0;
+
+      var groups = applyTaskGroupFilters(allGroups, filterState);
+      if (maxItems > 0) groups = groups.slice(0, maxItems);
+
+      var items = groups.map(renderTaskGroupItem).join('');
+      var hasFilters = filterState.statusFilter || filterState.searchQuery || filterState.sortBy !== 'updated_desc';
+
+      return `
+        <div class="card" style="padding:0; overflow:hidden;" id="${containerId}">
+          <div class="filter-bar">
+            <div class="filter-group">
+              <label for="${containerId}-sort">Sort:</label>
+              <select id="${containerId}-sort" onchange="taskGroupFilterState.sortBy = this.value; ${options.rerenderCall || 'renderTaskGroupListUI(window._taskGroupListData)'};">
+                <option value="updated_desc" ${filterState.sortBy === 'updated_desc' ? 'selected' : ''}>Updated (newest)</option>
+                <option value="updated_asc" ${filterState.sortBy === 'updated_asc' ? 'selected' : ''}>Updated (oldest)</option>
+                <option value="created_desc" ${filterState.sortBy === 'created_desc' ? 'selected' : ''}>Created (newest)</option>
+                <option value="created_asc" ${filterState.sortBy === 'created_asc' ? 'selected' : ''}>Created (oldest)</option>
+                <option value="tasks_desc" ${filterState.sortBy === 'tasks_desc' ? 'selected' : ''}>Tasks (most)</option>
+                <option value="tasks_asc" ${filterState.sortBy === 'tasks_asc' ? 'selected' : ''}>Tasks (fewest)</option>
+                <option value="name_asc" ${filterState.sortBy === 'name_asc' ? 'selected' : ''}>Name (A-Z)</option>
+                <option value="name_desc" ${filterState.sortBy === 'name_desc' ? 'selected' : ''}>Name (Z-A)</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label for="${containerId}-status">Status:</label>
+              <select id="${containerId}-status" onchange="taskGroupFilterState.statusFilter = this.value; ${options.rerenderCall || 'renderTaskGroupListUI(window._taskGroupListData)'};">
+                <option value="" ${filterState.statusFilter === '' ? 'selected' : ''}>All</option>
+                <option value="RUNNING" ${filterState.statusFilter === 'RUNNING' ? 'selected' : ''}>Running</option>
+                <option value="AWAITING_RESPONSE" ${filterState.statusFilter === 'AWAITING_RESPONSE' ? 'selected' : ''}>Awaiting</option>
+                <option value="QUEUED" ${filterState.statusFilter === 'QUEUED' ? 'selected' : ''}>Queued</option>
+                <option value="COMPLETE" ${filterState.statusFilter === 'COMPLETE' ? 'selected' : ''}>Complete</option>
+                <option value="ERROR" ${filterState.statusFilter === 'ERROR' ? 'selected' : ''}>Error</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label for="${containerId}-search">Search:</label>
+              <input id="${containerId}-search" type="text" placeholder="Group ID, project..." value="${escapeHtml(filterState.searchQuery)}"
+                oninput="taskGroupFilterState.searchQuery = this.value; ${options.rerenderCall || 'renderTaskGroupListUI(window._taskGroupListData)'};" style="width:180px;" />
+            </div>
+            ${hasFilters ? '<button class="reset-btn" onclick="taskGroupFilterState = { sortBy: \'updated_desc\', statusFilter: \'\', searchQuery: \'\' }; ' + (options.rerenderCall || 'renderTaskGroupListUI(window._taskGroupListData)') + ';">Reset</button>' : ''}
+          </div>
+          <div style="padding:0;">
+            ${groups.length > 0 ? items : '<div class="empty-state" style="padding:24px;"><p>No groups match the current filters.</p></div>'}
+          </div>
+          <div style="padding:8px 16px; background:#f9fafb; border-top:1px solid #e5e7eb; font-size:0.8rem; color:#6b7280;">
+            Showing ${groups.length} of ${allGroups.length} group(s)
+          </div>
+        </div>`;
+    }
+
+    // =========================================================================
+    // Projects List page (#2, #3)
+    // =========================================================================
+    async function renderProjectList() {
+      app.innerHTML = '<div class="loading">Loading Projects</div>';
+      try {
+        const data = await fetch('/api/dashboard').then(r => r.json());
+        const projects = data.projects || [];
+
+        if (projects.length === 0) {
+          app.innerHTML = '<div class="page-header"><h2>Projects</h2></div><div class="card"><div class="empty-state"><p>No projects yet.</p></div></div>';
+          return;
+        }
+
+        // Fetch task group counts per project
+        const tgData = await api('/task-groups');
+        const allGroups = tgData.task_groups || [];
+        const projectGroupCounts = {};
+        const projectStatusCounts = {};
+        allGroups.forEach(function(g) {
+          var pid = g.project_id || 'N/A';
+          projectGroupCounts[pid] = (projectGroupCounts[pid] || 0) + 1;
+          if (!projectStatusCounts[pid]) projectStatusCounts[pid] = {};
+          var sc = g.status_counts || {};
+          Object.keys(sc).forEach(function(s) {
+            projectStatusCounts[pid][s] = (projectStatusCounts[pid][s] || 0) + sc[s];
+          });
+        });
+
+        const projectCards = projects.map(function(p) {
+          var gc = projectGroupCounts[p.projectId] || 0;
+          var sc = projectStatusCounts[p.projectId] || {};
+          var statusParts = [];
+          if (sc.RUNNING) statusParts.push('<span class="badge badge-running" style="font-size:0.7rem;">' + sc.RUNNING + ' running</span>');
+          if (sc.AWAITING_RESPONSE) statusParts.push('<span class="badge" style="font-size:0.7rem; background:#f59e0b; color:white;">' + sc.AWAITING_RESPONSE + ' awaiting</span>');
+          if (sc.ERROR) statusParts.push('<span class="badge badge-error" style="font-size:0.7rem;">' + sc.ERROR + ' error</span>');
+          if (sc.COMPLETE) statusParts.push('<span class="badge badge-complete" style="font-size:0.7rem;">' + sc.COMPLETE + ' done</span>');
+          if (sc.QUEUED) statusParts.push('<span class="badge badge-queued" style="font-size:0.7rem;">' + sc.QUEUED + ' queued</span>');
+          var statusSummary = statusParts.length > 0 ? '<div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">' + statusParts.join(' ') + '</div>' : '';
+          return '<div class="list-item" onclick="navigate(\'/projects/' + encodeURIComponent(p.projectId) + '\')">' +
+            '<div class="list-item-main">' +
+              '<div class="list-item-title">' +
+                (p.favorite ? '<span style="color: #f59e0b;">&#9733;</span> ' : '') +
+                escapeHtml(p.alias || p.projectPath) +
+                ' <span class="badge badge-' + (p.status === 'running' ? 'running' : p.status === 'error' ? 'error' : 'queued') + '" style="font-size:0.7rem;">' + p.status + '</span>' +
+              '</div>' +
+              '<div class="list-item-meta">' +
+                escapeHtml(p.projectPath) +
+                ' | ' + gc + ' task group(s)' +
+                ' | ' + p.sessionCount + ' session(s)' +
+                ' | Updated: ' + formatDate(p.updatedAt) +
+              '</div>' +
+              statusSummary +
+            '</div>' +
+            '<span class="list-item-arrow">&#8250;</span>' +
+          '</div>';
+        }).join('');
+
+        app.innerHTML =
+          '<div class="page-header">' +
+            '<h2>Projects (' + projects.length + ')</h2>' +
+            '<button class="refresh-btn" onclick="renderProjectList()">Refresh</button>' +
+          '</div>' +
+          '<div class="card" style="padding:0; overflow:hidden;">' + projectCards + '</div>';
+      } catch (error) {
+        app.innerHTML = '<div class="card"><div class="error-message">Error: ' + escapeHtml(error.message) + '</div><button class="btn btn-secondary" onclick="renderProjectList()">Retry</button></div>';
+      }
     }
 
     // Render task group list (Home)
@@ -2103,9 +2567,9 @@
 
       try {
         const data = await api('/task-groups');
-        const groups = data.task_groups || [];
+        const allGroups = data.task_groups || [];
 
-        if (groups.length === 0) {
+        if (allGroups.length === 0) {
           app.innerHTML = `
             <div class="page-header">
               <h2>Task Groups</h2>
@@ -2121,27 +2585,10 @@
           return;
         }
 
-        const items = groups.map(g => `
-          <div class="list-item" onclick="navigate('/task-groups/${encodeURIComponent(g.task_group_id)}')">
-            <div class="list-item-main">
-              <div class="list-item-title">${escapeHtml(g.task_group_id)}</div>
-              <div class="list-item-meta">
-                ${g.task_count} task(s) | Created: ${formatDate(g.created_at)}
-              </div>
-            </div>
-            <span class="list-item-arrow">›</span>
-          </div>
-        `).join('');
+        // Store groups for re-render without re-fetch
+        window._taskGroupListData = allGroups;
 
-        app.innerHTML = `
-          <div class="page-header">
-            <h2>Task Groups</h2>
-            <button class="refresh-btn" onclick="renderTaskGroupList()">Refresh</button>
-          </div>
-          <div class="card">
-            ${items}
-          </div>
-        `;
+        renderTaskGroupListUI(allGroups);
       } catch (error) {
         app.innerHTML = `
           <div class="page-header">
@@ -2155,15 +2602,36 @@
       }
     }
 
+    function renderTaskGroupListUI(allGroups) {
+      // Uses shared renderTaskGroupPanel for consistent filter/sort/display
+      app.innerHTML = `
+        <div class="page-header">
+          <h2>Task Groups</h2>
+          <button class="refresh-btn" onclick="renderTaskGroupList()">Refresh</button>
+        </div>
+        ${renderTaskGroupPanel('tg-main', allGroups, { rerenderCall: 'renderTaskGroupListUI(window._taskGroupListData)' })}
+      `;
+    }
+
     // Render task list for a task group
     async function renderTaskList(taskGroupId) {
       app.innerHTML = '<div class="loading">Loading</div>';
 
       try {
-        const data = await api(`/task-groups/${encodeURIComponent(taskGroupId)}/tasks`);
+        // Fetch tasks and task group metadata in parallel
+        const [data, tgData] = await Promise.all([
+          api(`/task-groups/${encodeURIComponent(taskGroupId)}/tasks`),
+          api('/task-groups').catch(() => ({ task_groups: [] })),
+        ]);
         const tasks = data.tasks || [];
+        const allGroups = tgData.task_groups || [];
+        const thisGroup = allGroups.find(g => g.task_group_id === taskGroupId);
+        const projectId = thisGroup?.project_id && thisGroup.project_id !== 'N/A' ? thisGroup.project_id : null;
 
         const backBtn = `<a href="/" class="back-btn" onclick="event.preventDefault(); navigate('/')">← Back to Groups</a>`;
+        const chatBtn = projectId
+          ? `<button class="btn btn-primary" onclick="navigate('/chat/${encodeURIComponent(projectId)}')">Chat</button>`
+          : '';
 
         if (tasks.length === 0) {
           app.innerHTML = `
@@ -2172,6 +2640,7 @@
               <div class="action-bar">
                 ${backBtn}
                 <button class="refresh-btn" onclick="renderTaskList('${escapeHtml(taskGroupId)}')">Refresh</button>
+                ${chatBtn}
               </div>
             </div>
             <div class="card">
@@ -2206,14 +2675,12 @@
             <div class="action-bar">
               ${backBtn}
               <button class="refresh-btn" onclick="renderTaskList('${escapeHtml(taskGroupId)}')">Refresh</button>
+              ${chatBtn}
             </div>
           </div>
           <div class="card">
             <h3>Tasks (${tasks.length})</h3>
             ${items}
-          </div>
-          <div style="text-align: center; margin-top: 16px;">
-            <button class="btn btn-primary" onclick="navigate('/new?group=${encodeURIComponent(taskGroupId)}')">+ Add Task to This Group</button>
           </div>
         `;
       } catch (error) {
@@ -2235,18 +2702,65 @@
       app.innerHTML = '<div class="loading">Loading</div>';
 
       try {
-        const task = await api(`/tasks/${encodeURIComponent(taskId)}`);
+        // Fetch task and task groups in parallel for project_id lookup
+        const [task, tgData] = await Promise.all([
+          api(`/tasks/${encodeURIComponent(taskId)}`),
+          api('/task-groups').catch(() => ({ task_groups: [] })),
+        ]);
+        const allGroups = tgData.task_groups || [];
+        const thisGroup = allGroups.find(g => g.task_group_id === task.task_group_id);
+        const taskProjectId = thisGroup?.project_id && thisGroup.project_id !== 'N/A' ? thisGroup.project_id : null;
 
         const backBtn = `<a href="/task-groups/${encodeURIComponent(task.task_group_id)}" class="back-btn" onclick="event.preventDefault(); navigate('/task-groups/${encodeURIComponent(task.task_group_id)}')">← Back to Tasks</a>`;
+        const chatBtn = taskProjectId
+          ? `<button class="btn btn-primary" onclick="navigate('/chat/${encodeURIComponent(taskProjectId)}')">Chat</button>`
+          : '';
 
         let errorSection = '';
         if (task.error_message) {
+          // Build failure classification badge if available
+          const failureBadge = task.failure_category
+            ? `<span class="badge" style="background: #dc2626; color: white; font-size: 0.75rem; padding: 2px 8px; margin-left: 8px;">${escapeHtml(task.failure_category)}</span>`
+            : '';
+          const failureSummaryLine = task.failure_summary
+            ? `<div style="margin-bottom: 8px; font-weight: 600; color: #991b1b;">${escapeHtml(task.failure_summary)}</div>`
+            : '';
+
+          // Build next actions buttons
+          let nextActionsHtml = '';
+          if (task.failure_next_actions && task.failure_next_actions.length > 0) {
+            const buttons = task.failure_next_actions.map(a => {
+              if (a.actionType === 'navigate' && a.target) {
+                return `<a href="${escapeHtml(a.target)}" onclick="event.preventDefault(); navigate('${escapeHtml(a.target)}')" class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 12px;">${escapeHtml(a.label)}</a>`;
+              }
+              if (a.actionType === 'open_logs' && a.target) {
+                return `<a href="${escapeHtml(a.target)}" onclick="event.preventDefault(); navigate('${escapeHtml(a.target)}')" class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 12px;">${escapeHtml(a.label)}</a>`;
+              }
+              return `<button class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 12px;" disabled>${escapeHtml(a.label)}</button>`;
+            }).join(' ');
+            nextActionsHtml = `<div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">${buttons}</div>`;
+          }
+
+          // Command preview if available
+          const commandPreviewHtml = task.command_preview
+            ? `<div style="margin-top: 12px;">
+                <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 4px;">Command executed:</div>
+                <pre style="background: #1e1e1e; color: #d4d4d4; padding: 8px 12px; border-radius: 4px; font-size: 0.8rem; overflow-x: auto; cursor: pointer;" onclick="navigator.clipboard.writeText(this.textContent).then(() => { this.style.outline='2px solid #22c55e'; setTimeout(()=>this.style.outline='', 800); })" title="Click to copy">${escapeHtml(task.command_preview.length > 200 ? task.command_preview.substring(0, 200) + '...' : task.command_preview)}</pre>
+              </div>`
+            : '';
+
           errorSection = `
-            <div class="card">
-              <h3>Error</h3>
-              <div class="log-entry error">
-                <div class="log-content">${escapeHtml(task.error_message)}</div>
-              </div>
+            <div class="card" style="${task.failure_category ? 'border-left: 4px solid #dc2626;' : ''}">
+              <h3>Error ${failureBadge}</h3>
+              ${failureSummaryLine}
+              <details ${!task.failure_category ? 'open' : ''}>
+                <summary style="cursor: pointer; color: #6b7280; font-size: 0.85rem;">Error detail</summary>
+                <div class="log-entry error" style="margin-top: 8px;">
+                  <div class="log-content">${escapeHtml(task.error_message)}</div>
+                </div>
+              </details>
+              ${commandPreviewHtml}
+              ${nextActionsHtml}
             </div>
           `;
         }
@@ -2297,9 +2811,13 @@
         // P0-1: Real Executor Logs Section (stdout/stderr from Claude Code)
         const executorLogsSection = `
           <div class="card" data-testid="executor-logs-section">
-            <h3>Executor Output <span id="executor-logs-status" class="badge badge-secondary" style="font-size: 0.8rem; margin-left: 8px;">loading...</span></h3>
+            <h3 style="display:flex; align-items:center; gap:8px;">
+              Executor Output (Claude Code)
+              <span id="executor-logs-status" class="badge badge-secondary" style="font-size: 0.8rem;">loading...</span>
+              ${task.status === 'RUNNING' ? '<span style="display:inline-flex; align-items:center; gap:4px; font-size:0.8rem; color:#22c55e;"><span style="width:8px; height:8px; background:#22c55e; border-radius:50%; animation:pulse 1.5s infinite;"></span> Live</span>' : ''}
+            </h3>
             <div id="executor-logs-container" data-testid="executor-logs-container" style="
-              max-height: 400px;
+              max-height: 500px;
               overflow-y: auto;
               background: #1e1e1e;
               color: #d4d4d4;
@@ -2312,12 +2830,6 @@
             ">
               <div class="executor-loading">Fetching executor logs...</div>
             </div>
-            ${task.status === 'RUNNING' ? `
-            <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
-              <span id="executor-stream-indicator" style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%; animation: pulse 1.5s infinite;"></span>
-              <span style="font-size: 12px; color: #6b7280;">Live streaming</span>
-            </div>
-            ` : ''}
           </div>
         `;
 
@@ -2327,6 +2839,7 @@
             <div class="action-bar">
               ${backBtn}
               <button class="refresh-btn" onclick="renderTaskDetail('${escapeHtml(taskId)}')">Refresh</button>
+              ${chatBtn}
             </div>
           </div>
 
@@ -2334,7 +2847,7 @@
             <h3>Status</h3>
             <div style="display: flex; align-items: center; gap: 16px;">
               <span class="badge ${getStatusBadgeClass(task.status)}" style="font-size: 1rem; padding: 8px 16px;">${task.status}</span>
-              ${(task.status === 'QUEUED' || task.status === 'RUNNING') ? `
+              ${(task.status === 'QUEUED' || task.status === 'RUNNING' || task.status === 'AWAITING_RESPONSE') ? `
                 <button class="btn btn-secondary" onclick="cancelTask('${escapeHtml(task.task_id)}')" style="padding: 8px 16px;">Cancel Task</button>
               ` : ''}
             </div>
@@ -2411,10 +2924,23 @@
           ${errorSection}
           ${logEntries}
           ${executorLogsSection}
+
+          <div class="card" data-testid="conversation-trace-section">
+            <h3 style="display:flex; align-items:center; gap:8px;">
+              Conversation Trace (LLM ↔ Claude Code)
+              <span id="trace-status" class="badge badge-secondary" style="font-size: 0.8rem;">loading...</span>
+            </h3>
+            <div id="conversation-trace-container" style="margin-top: 12px;">
+              <div style="color: #6b7280; font-style: italic;">Loading conversation trace...</div>
+            </div>
+          </div>
         `;
 
         // P0-1: Load executor logs and set up SSE streaming
         await loadExecutorLogs(task.task_id, task.status);
+
+        // Load conversation trace (LLM ↔ Claude Code)
+        await loadConversationTrace(task.task_id);
 
         // AC-CHAT-3, AC-INPUT-1: Setup reply form if present
         const replyForm = document.getElementById('reply-form');
@@ -3468,22 +3994,64 @@
       app.innerHTML = '<div class="loading">Loading Dashboard</div>';
 
       try {
-        const data = await fetch('/api/dashboard').then(r => r.json());
+        const [data, actionsData] = await Promise.all([
+          fetch('/api/dashboard').then(r => r.json()),
+          fetch('/api/required-actions').then(r => r.json()).catch(() => ({ actions: [], count: 0 })),
+        ]);
         const projects = data.projects || [];
         const recentActivity = data.recentActivity || [];
         const stats = data.stats || {};
+        const requiredActions = actionsData.actions || [];
+
+        // Required Actions section (includes AWAITING_RESPONSE + ERROR with failure classification)
+        const requiredActionsHtml = requiredActions.length > 0
+          ? `<div class="card" style="border-left: 4px solid #f59e0b; margin-bottom: 20px;">
+              <h3 style="color: #b45309;">Required Actions (${requiredActions.length})</h3>
+              ${requiredActions.map(a => {
+                const isError = a.status === 'ERROR';
+                const bgColor = isError ? '#fef2f2' : '#fffbeb';
+                const borderColor = isError ? '#fecaca' : '#fef3c7';
+                const badgeBg = isError ? '#dc2626' : '#f59e0b';
+                const badgeLabel = isError ? (a.failure_category || 'ERROR') : 'AWAITING';
+                const arrowColor = isError ? '#dc2626' : '#f59e0b';
+                const description = isError
+                  ? escapeHtml(a.failure_summary || a.prompt_preview || 'Script execution failed')
+                  : escapeHtml(a.clarification_preview || a.prompt_preview || 'Response needed');
+                const projectInfo = a.project_alias || a.project_path || '';
+                const projectLink = a.project_id
+                  ? '<a href="#" onclick="event.preventDefault(); event.stopPropagation(); navigate(\'/projects/' + encodeURIComponent(a.project_id) + '\')" style="color: #2563eb; font-size: 0.8rem;">' + escapeHtml(projectInfo || a.project_id) + '</a>'
+                  : '';
+                return `
+                <div class="list-item" onclick="navigate('/tasks/${encodeURIComponent(a.task_id)}')" style="border-color: ${borderColor}; background: ${bgColor};">
+                  <div class="list-item-main">
+                    <div class="list-item-title" style="display: flex; align-items: center; gap: 8px;">
+                      <span class="badge" style="background: ${badgeBg}; color: white; font-size: 0.7rem;">${badgeLabel}</span>
+                      ${description}
+                    </div>
+                    <div class="list-item-meta">
+                      <span style="color: #92400e;">Waiting: ${escapeHtml(a.waiting_display)}</span>
+                      ${projectLink ? '| Project: ' + projectLink : ''}
+                      | <a href="#" onclick="event.preventDefault(); event.stopPropagation(); navigate('/task-groups/${encodeURIComponent(a.task_group_id)}')" style="color: #2563eb; font-size: 0.8rem;">Group: <code style="font-size: 0.8rem;">${escapeHtml(a.task_group_id.substring(0, 24))}</code></a>
+                      | Task: <code style="font-size: 0.8rem;">${escapeHtml(a.task_id.substring(0, 12))}...</code>
+                    </div>
+                  </div>
+                  <span class="list-item-arrow" style="color: ${arrowColor};">&#8250;</span>
+                </div>
+              `}).join('')}
+            </div>`
+          : '';
 
         const projectCards = projects.length > 0
           ? projects.map(p => `
               <div class="list-item" onclick="navigate('/projects/${encodeURIComponent(p.projectId)}')">
                 <div class="list-item-main">
-                  <div class="list-item-title">
+                  <div class="list-item-title" style="display:flex; align-items:center; gap:8px;">
                     ${p.favorite ? '<span style="color: #f59e0b;">&#9733;</span> ' : ''}
                     ${escapeHtml(p.alias || p.projectPath)}
+                    <span class="badge badge-${p.status === 'running' ? 'running' : p.status === 'error' ? 'error' : 'queued'}" style="font-size:0.7rem;">${p.status}</span>
                   </div>
                   <div class="list-item-meta">
-                    <span class="badge badge-${p.status === 'running' ? 'running' : p.status === 'error' ? 'error' : 'queued'}">${p.status}</span>
-                    ${p.sessionCount} sessions | Updated: ${formatDate(p.updatedAt)}
+                    ${escapeHtml(p.projectPath)} | ${p.sessionCount} session(s) | ${p.taskGroupCount || 0} group(s) | Updated: ${formatDate(p.updatedAt)}
                   </div>
                 </div>
                 <span class="list-item-arrow">&#8250;</span>
@@ -3497,6 +4065,7 @@
                 <div class="log-time">${formatDate(e.timestamp)}</div>
                 <div class="log-type">${escapeHtml(e.type)}</div>
                 <div class="log-content">${escapeHtml(e.summary || '')}</div>
+                ${e.projectId ? '<a href="#" onclick="event.preventDefault(); event.stopPropagation(); navigate(\'/projects/' + encodeURIComponent(e.projectId) + '\')" style="font-size: 0.8rem; color: #2563eb;">' + escapeHtml(e.projectAlias || e.projectId) + '</a>' : ''}
               </div>
             `).join('')
           : '<p style="color: #6b7280;">No recent activity</p>';
@@ -3506,6 +4075,8 @@
             <h2>Dashboard</h2>
             <button class="refresh-btn" onclick="renderDashboard()">Refresh</button>
           </div>
+
+          ${requiredActionsHtml}
 
           <div class="detail-grid" style="margin-bottom: 20px;">
             <div class="card" style="text-align: center;">
@@ -3537,7 +4108,7 @@
           <div class="card">
             <h3>Recent Activity</h3>
             ${activityItems}
-            ${recentActivity.length > 5 ? '<a href="/activity" onclick="event.preventDefault(); navigate(\'\'/activity\'\')" style="display: block; text-align: center; margin-top: 12px;">View All Activity</a>' : ''}
+            ${recentActivity.length > 5 ? '<a href="/activity" onclick="event.preventDefault(); navigate(\'/activity\')" style="display: block; text-align: center; margin-top: 12px;">View All Activity</a>' : ''}
           </div>
         `;
       } catch (error) {
@@ -3582,14 +4153,34 @@
         const events = data.events || [];
 
         const eventItems = events.length > 0
-          ? events.map(e => `
+          ? events.map(e => {
+              const links = [];
+              // Always show projectId (navigable link or N/A)
+              if (e.projectId && e.projectId !== 'N/A') {
+                links.push('<a href="#" onclick="event.preventDefault(); event.stopPropagation(); navigate(\'/projects/' + encodeURIComponent(e.projectId) + '\')" style="color: #2563eb; font-size: 0.8rem;">Project: ' + escapeHtml(e.projectAlias || e.projectId) + '</a>');
+              } else {
+                links.push('<span style="color: #9ca3af; font-size: 0.8rem;">Project: N/A</span>');
+              }
+              // Always show taskGroupId (navigable link or N/A)
+              if (e.taskGroupId && e.taskGroupId !== 'N/A') {
+                links.push('<a href="#" onclick="event.preventDefault(); event.stopPropagation(); navigate(\'/task-groups/' + encodeURIComponent(e.taskGroupId) + '\')" style="color: #2563eb; font-size: 0.8rem;">Group: ' + escapeHtml(e.taskGroupId.substring(0, 24)) + '</a>');
+              } else {
+                links.push('<span style="color: #9ca3af; font-size: 0.8rem;">Group: N/A</span>');
+              }
+              // Always show taskId (navigable link or N/A)
+              if (e.taskId && e.taskId !== 'N/A') {
+                links.push('<a href="#" onclick="event.preventDefault(); event.stopPropagation(); navigate(\'/tasks/' + encodeURIComponent(e.taskId) + '\')" style="color: #2563eb; font-size: 0.8rem;">Task: ' + escapeHtml(e.taskId.substring(0, 12)) + '...</a>');
+              } else {
+                links.push('<span style="color: #9ca3af; font-size: 0.8rem;">Task: N/A</span>');
+              }
+              return `
               <div class="log-entry ${e.importance === 'high' ? 'error' : ''}">
                 <div class="log-time">${formatFullDate(e.timestamp)}</div>
                 <div class="log-type">${escapeHtml(e.type)}</div>
                 <div class="log-content">${escapeHtml(e.summary || '')}</div>
-                ${e.projectAlias ? '<div style="font-size: 0.85rem; color: #6b7280;">Project: ' + escapeHtml(e.projectAlias) + '</div>' : ''}
-              </div>
-            `).join('')
+                <div style="font-size: 0.85rem; display: flex; gap: 12px; flex-wrap: wrap; margin-top: 2px;">${links.join('')}</div>
+              </div>`;
+            }).join('')
           : '<div class="empty-state"><p>No activity events yet.</p></div>';
 
         app.innerHTML = `
@@ -3614,15 +4205,49 @@
     }
 
     // Render Project Detail page
+    // Re-render project task groups using shared panel (called by filter/sort controls)
+    function rerenderProjectTaskGroups() {
+      var wrapper = document.getElementById('project-tg-wrapper');
+      if (wrapper && window._projectTaskGroupData) {
+        wrapper.innerHTML = renderTaskGroupPanel('project-tg', window._projectTaskGroupData, { rerenderCall: 'rerenderProjectTaskGroups()' });
+      }
+    }
+
     async function renderProjectDetail(projectId, resumeId) {
       app.innerHTML = '<div class="loading">Loading Project</div>';
 
       try {
-        const data = await fetch('/api/projects/' + encodeURIComponent(projectId)).then(r => r.json());
+        const [data, taskGroupsData, actionsData] = await Promise.all([
+          fetch('/api/projects/' + encodeURIComponent(projectId)).then(r => r.json()),
+          fetch('/api/task-groups').then(r => r.json()).catch(() => ({ task_groups: [] })),
+          fetch('/api/required-actions').then(r => r.json()).catch(() => ({ actions: [] })),
+        ]);
         if (data.error) throw new Error(data.message);
 
         const project = data.project;
         const sessions = data.sessions || [];
+        const projectTaskGroupIds = new Set(data.taskGroupIds || []);
+        const recentActivity = data.recentActivity || [];
+        const projectRuns = data.runs || [];
+        const recentTaskGroups = data.recentTaskGroups || [];
+        const recentTasks = data.recentTasks || [];
+        const allTaskGroups = taskGroupsData.task_groups || [];
+        const requiredActions = (actionsData.actions || []);
+
+        // Filter task groups to those associated with this project
+        // Use both activity-event-based mapping and API enrichment
+        const filteredTaskGroups = allTaskGroups.filter(g =>
+          projectTaskGroupIds.has(g.task_group_id) ||
+          g.project_id === projectId
+        );
+        // Use filtered groups if any found, otherwise fall back to showing all
+        const projectTaskGroups = filteredTaskGroups.length > 0 ? filteredTaskGroups : allTaskGroups;
+
+        // Filter required actions to this project
+        const projectActions = requiredActions.filter(a =>
+          a.project_id === projectId ||
+          projectTaskGroupIds.has(a.task_group_id)
+        );
 
         // Fetch resume info if resumeId is provided
         var resumeInfo = null;
@@ -3638,6 +4263,33 @@
         }
 
         const backBtn = '<a href="/dashboard" class="back-btn" onclick="event.preventDefault(); navigate(\'/dashboard\')">Back to Dashboard</a>';
+
+        // Required Actions for this project
+        const projectActionsHtml = projectActions.length > 0
+          ? `<div class="card" style="border-left: 4px solid #f59e0b;">
+              <h3 style="color: #b45309;">Awaiting Response (${projectActions.length})</h3>
+              ${projectActions.map(a => `
+                <div class="list-item" onclick="navigate('/tasks/${encodeURIComponent(a.task_id)}')" style="border-color: #fef3c7; background: #fffbeb;">
+                  <div class="list-item-main">
+                    <div class="list-item-title" style="display:flex; align-items:center; gap:8px;">
+                      <span class="badge" style="background:#f59e0b; color:white; font-size:0.7rem;">AWAITING</span>
+                      ${escapeHtml(a.clarification_preview || a.prompt_preview || 'Response needed')}
+                    </div>
+                    <div class="list-item-meta">
+                      Waiting: ${escapeHtml(a.waiting_display)} | Group: <code style="font-size:0.8rem;">${escapeHtml(a.task_group_id)}</code>
+                    </div>
+                  </div>
+                  <span class="list-item-arrow" style="color:#f59e0b;">&#8250;</span>
+                </div>
+              `).join('')}
+            </div>`
+          : '';
+
+        // Task Groups section - uses shared renderTaskGroupPanel
+        window._projectTaskGroupData = projectTaskGroups;
+        const taskGroupItems = projectTaskGroups.length > 0
+          ? renderTaskGroupPanel('project-tg', projectTaskGroups, { rerenderCall: 'rerenderProjectTaskGroups()' })
+          : '<div class="empty-state"><p>No task groups yet.</p></div>';
 
         const sessionItems = sessions.length > 0
           ? sessions.map(s => `
@@ -3660,7 +4312,7 @@
             <div class="action-bar">
               ${backBtn}
               <button class="refresh-btn" onclick="renderProjectDetail('${escapeHtml(projectId)}')">Refresh</button>
-              <button class="btn btn-primary" onclick="navigate('/chat/' + encodeURIComponent('${escapeHtml(projectId)}'))">Open Chat</button>
+              <button class="btn btn-primary" onclick="navigate('/chat/' + encodeURIComponent('${escapeHtml(projectId)}'))">New Chat</button>
               <button class="btn btn-secondary" onclick="openProjectSettings('${escapeHtml(projectId)}')">Settings</button>
             </div>
           </div>
@@ -3690,6 +4342,85 @@
               </div>
             </div>
           </div>
+
+          ${projectActionsHtml}
+
+          <div>
+            <h3 style="margin-bottom:12px;">Task Groups (${projectTaskGroups.length})</h3>
+            <div id="project-tg-wrapper">${taskGroupItems}</div>
+          </div>
+
+          ${recentTaskGroups.length > 0 ? `
+          <div class="card">
+            <h3>Recent Task Groups (${recentTaskGroups.length})</h3>
+            ${recentTaskGroups.map(tg => `
+              <div class="list-item" onclick="navigate('/task-groups/${encodeURIComponent(tg.task_group_id)}')">
+                <div class="list-item-main">
+                  <div class="list-item-title" style="display:flex; align-items:center; gap:8px;">
+                    ${escapeHtml(tg.task_group_id)}
+                  </div>
+                  <div class="list-item-meta">
+                    ${tg.task_count} task(s) | Latest: ${escapeHtml(tg.latest_activity_type)} | ${formatDate(tg.latest_activity_at)}
+                  </div>
+                </div>
+                <span class="list-item-arrow">&#8250;</span>
+              </div>
+            `).join('')}
+          </div>` : ''}
+
+          ${recentTasks.length > 0 ? `
+          <div class="card">
+            <h3>Recent Tasks (${recentTasks.length})</h3>
+            ${recentTasks.map(t => {
+              const isAwaiting = t.status === 'AWAITING_RESPONSE';
+              const replyBtn = isAwaiting
+                ? '<button class="btn btn-primary" style="font-size:0.7rem; padding:2px 8px; margin-left:8px;" onclick="event.stopPropagation(); navigate(\'/tasks/' + encodeURIComponent(t.task_id) + '\')">Reply</button>'
+                : '';
+              return `
+              <div class="list-item" onclick="navigate('/tasks/${encodeURIComponent(t.task_id)}')" ${isAwaiting ? 'style="border-color: #fef3c7; background: #fffbeb;"' : ''}>
+                <div class="list-item-main">
+                  <div class="list-item-title" style="display:flex; align-items:center; gap:8px;">
+                    <span class="badge badge-${t.status === 'COMPLETE' ? 'complete' : t.status === 'ERROR' ? 'error' : t.status === 'RUNNING' ? 'running' : t.status === 'AWAITING_RESPONSE' ? 'awaiting' : 'queued'}" style="font-size:0.7rem;">${escapeHtml(t.status)}</span>
+                    ${escapeHtml(t.summary || t.task_id)}
+                    ${replyBtn}
+                  </div>
+                  <div class="list-item-meta">
+                    Task: <code style="font-size:0.8rem;">${escapeHtml(t.task_id.substring(0, 16))}</code>
+                    | Group: <a href="#" onclick="event.preventDefault(); event.stopPropagation(); navigate('/task-groups/${encodeURIComponent(t.task_group_id)}')" style="color: #2563eb; font-size: 0.8rem;">${t.task_group_id !== 'N/A' ? escapeHtml(t.task_group_id.substring(0, 20)) : 'N/A'}</a>
+                    | Updated: ${formatDate(t.updated_at)}
+                    ${t.ended_at ? '| Ended: ' + formatDate(t.ended_at) : ''}
+                  </div>
+                </div>
+                <span class="list-item-arrow" ${isAwaiting ? 'style="color:#f59e0b;"' : ''}>&#8250;</span>
+              </div>`;
+            }).join('')}
+          </div>` : ''}
+
+          ${recentActivity.length > 0 ? `
+          <div class="card">
+            <h3>Recent Activity</h3>
+            ${recentActivity.slice(0, 10).map(e => {
+              const actLinks = [];
+              // Always show taskGroupId
+              if (e.taskGroupId && e.taskGroupId !== 'N/A') {
+                actLinks.push('<a href="#" onclick="event.preventDefault(); event.stopPropagation(); navigate(\'/task-groups/' + encodeURIComponent(e.taskGroupId) + '\')" style="color: #2563eb; font-size: 0.8rem;">Group: ' + escapeHtml(e.taskGroupId.substring(0, 20)) + '</a>');
+              } else {
+                actLinks.push('<span style="color: #9ca3af; font-size: 0.8rem;">Group: N/A</span>');
+              }
+              // Always show taskId
+              if (e.taskId && e.taskId !== 'N/A') {
+                actLinks.push('<a href="#" onclick="event.preventDefault(); event.stopPropagation(); navigate(\'/tasks/' + encodeURIComponent(e.taskId) + '\')" style="color: #2563eb; font-size: 0.8rem;">Task: ' + escapeHtml(e.taskId.substring(0, 12)) + '...</a>');
+              } else {
+                actLinks.push('<span style="color: #9ca3af; font-size: 0.8rem;">Task: N/A</span>');
+              }
+              return '<div class="log-entry ' + (e.importance === 'high' ? 'error' : '') + '">' +
+                '<div class="log-time">' + formatDate(e.timestamp) + '</div>' +
+                '<div class="log-type">' + escapeHtml(e.type) + '</div>' +
+                '<div class="log-content">' + escapeHtml(e.summary || '') + '</div>' +
+                '<div style="font-size:0.85rem; display:flex; gap:12px; margin-top:2px;">' + actLinks.join('') + '</div>' +
+              '</div>';
+            }).join('')}
+          </div>` : ''}
 
           <div class="card">
             <h3>Sessions (${sessions.length})</h3>
@@ -3934,8 +4665,17 @@
                 statusBadge = '<span class="badge badge-error">Error</span>';
               }
               var meta = '<div class="chat-bubble-meta">' + formatDate(m.timestamp) + ' ' + statusBadge + '</div>';
+              // Render attached images if present in metadata
+              var imagesHtml = '';
+              if (m.metadata && m.metadata.images && m.metadata.images.length > 0) {
+                imagesHtml = '<div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px;">' +
+                  m.metadata.images.map(function(img) {
+                    return '<img src="' + img.data + '" alt="' + escapeHtml(img.name || 'attachment') + '" style="max-width: 200px; max-height: 200px; border-radius: 4px; cursor: pointer;" onclick="window.open(this.src)">';
+                  }).join('') +
+                '</div>';
+              }
               return '<div class="chat-message ' + roleClass + '">' +
-                '<div class="chat-bubble">' + escapeHtml(m.content) + meta + '</div>' +
+                '<div class="chat-bubble">' + escapeHtml(m.content) + imagesHtml + meta + '</div>' +
               '</div>';
             }).join('')
           : '<div class="empty-state" style="padding: 40px; text-align: center;"><p>No messages yet. Start a conversation!</p></div>';
@@ -3971,10 +4711,23 @@
           '<div class="card chat-container">' +
             '<div class="chat-messages" id="chat-messages">' + messageItems + '</div>' +
             statusBar +
-            '<div class="chat-input-container">' +
-              '<div class="chat-input-wrapper">' +
-                '<textarea class="' + inputClass + '" id="chat-input" placeholder="' + inputPlaceholder + '" rows="1" onkeydown="handleChatKeydown(event, \'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')"></textarea>' +
-                '<button class="' + sendBtnClass + '" id="chat-send-btn" onclick="sendChatMessage(\'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')">' + sendBtnText + '</button>' +
+            '<div class="chat-input-container" style="position:relative;" id="chat-input-container">' +
+              '<div class="chat-drop-overlay" id="chat-drop-overlay">Drop files here to attach</div>' +
+              '<div class="chat-input-area">' +
+                '<div class="chat-attachments" id="chat-attachments"></div>' +
+                '<div class="chat-input-wrapper">' +
+                  '<div class="chat-input-left">' +
+                    '<textarea class="' + inputClass + '" id="chat-input" placeholder="' + inputPlaceholder + '" rows="3" onkeydown="handleChatKeydown(event, \'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')"></textarea>' +
+                    '<div class="chat-input-hint">' +
+                      (navigator.platform.indexOf("Mac") > -1 ? 'Cmd' : 'Ctrl') + '+Enter to send' +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="chat-input-actions">' +
+                    '<button class="' + sendBtnClass + '" id="chat-send-btn" onclick="sendChatMessage(\'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')">' + sendBtnText + '</button>' +
+                    '<button class="chat-attach-btn" id="chat-attach-btn" onclick="document.getElementById(\'chat-file-input\').click()" title="Attach files">&#128206;</button>' +
+                    '<input type="file" id="chat-file-input" multiple accept="image/*" style="display:none" onchange="handleFileSelect(event)">' +
+                  '</div>' +
+                '</div>' +
               '</div>' +
             '</div>' +
           '</div>';
@@ -3985,9 +4738,11 @@
           chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
-        // Focus input
+        // Focus input and setup drag-drop
         var chatInput = document.getElementById('chat-input');
         if (chatInput) chatInput.focus();
+        setupChatDragDrop();
+        chatAttachments = []; // Reset on re-render
 
       } catch (error) {
         app.innerHTML = 
@@ -3998,21 +4753,138 @@
       }
     }
 
-    // Handle chat input keydown (Enter to send)
+    // Pending file attachments (base64 encoded)
+    var chatAttachments = [];
+
+    // Handle chat input keydown: Enter = newline, Ctrl/Cmd+Enter = send
     function handleChatKeydown(event, projectId, isRespond) {
-      if (event.key === 'Enter' && !event.shiftKey) {
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         sendChatMessage(projectId, isRespond);
       }
+      // Plain Enter = newline (default textarea behavior, no preventDefault)
     }
 
-    // Send chat message
+    // Handle file selection from file input
+    function handleFileSelect(event) {
+      var files = event.target.files;
+      if (!files || files.length === 0) return;
+      for (var i = 0; i < files.length; i++) {
+        addAttachment(files[i]);
+      }
+      // Reset the input so the same file can be re-selected
+      event.target.value = '';
+    }
+
+    // Add a file as attachment (convert to base64)
+    function addAttachment(file) {
+      // Only accept image files
+      if (!file.type.startsWith('image/')) {
+        alert('Only image files are supported. Got: ' + file.type);
+        return;
+      }
+      // Limit file size to 20MB
+      if (file.size > 20 * 1024 * 1024) {
+        alert('File too large (max 20MB): ' + file.name);
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var base64 = e.target.result; // data:image/png;base64,...
+        var attachment = {
+          id: 'att_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8),
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          data: base64
+        };
+        chatAttachments.push(attachment);
+        renderAttachments();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Render attachment previews
+    function renderAttachments() {
+      var container = document.getElementById('chat-attachments');
+      if (!container) return;
+      if (chatAttachments.length === 0) {
+        container.innerHTML = '';
+        return;
+      }
+      container.innerHTML = chatAttachments.map(function(att) {
+        return '<div class="chat-attachment-item" data-att-id="' + att.id + '">' +
+          '<img src="' + att.data + '" alt="' + escapeHtml(att.name) + '">' +
+          '<span>' + escapeHtml(att.name) + ' (' + formatFileSize(att.size) + ')</span>' +
+          '<button class="chat-attachment-remove" onclick="removeAttachment(\'' + att.id + '\')" title="Remove">&times;</button>' +
+        '</div>';
+      }).join('');
+    }
+
+    // Remove an attachment
+    function removeAttachment(attId) {
+      chatAttachments = chatAttachments.filter(function(a) { return a.id !== attId; });
+      renderAttachments();
+    }
+
+    // Format file size
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    // Setup drag-and-drop for chat input container
+    function setupChatDragDrop() {
+      var container = document.getElementById('chat-input-container');
+      var overlay = document.getElementById('chat-drop-overlay');
+      if (!container || !overlay) return;
+
+      var dragCounter = 0;
+
+      container.addEventListener('dragenter', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter++;
+        overlay.classList.add('active');
+      });
+
+      container.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter--;
+        if (dragCounter <= 0) {
+          dragCounter = 0;
+          overlay.classList.remove('active');
+        }
+      });
+
+      container.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+
+      container.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter = 0;
+        overlay.classList.remove('active');
+        var files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+          for (var i = 0; i < files.length; i++) {
+            addAttachment(files[i]);
+          }
+        }
+      });
+    }
+
+    // Send chat message (with optional attachments)
     async function sendChatMessage(projectId, isRespond) {
       var input = document.getElementById('chat-input');
       var sendBtn = document.getElementById('chat-send-btn');
       var content = input.value.trim();
 
-      if (!content) return;
+      if (!content && chatAttachments.length === 0) return;
 
       // Disable input while sending
       input.disabled = true;
@@ -4020,18 +4892,33 @@
       sendBtn.textContent = 'Sending...';
 
       try {
-        var endpoint = isRespond 
+        var endpoint = isRespond
           ? '/api/projects/' + encodeURIComponent(projectId) + '/respond'
           : '/api/projects/' + encodeURIComponent(projectId) + '/chat';
+
+        // Build request body with optional images
+        var body = { content: content || '(image attached)' };
+        if (chatAttachments.length > 0) {
+          body.images = chatAttachments.map(function(att) {
+            return {
+              name: att.name,
+              type: att.type,
+              data: att.data
+            };
+          });
+        }
 
         var response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: content })
+          body: JSON.stringify(body)
         });
 
         var data = await response.json();
         if (data.error) throw new Error(data.message);
+
+        // Clear attachments on success
+        chatAttachments = [];
 
         // Refresh chat
         renderChat(projectId);
@@ -4314,6 +5201,8 @@
 
       if (path === '/dashboard') {
         renderDashboard();
+      } else if (path === '/projects') {
+        renderProjectList();
       } else if (path === '/' || path === '') {
         renderTaskGroupList();
       } else if (path === '/activity') {
@@ -4375,110 +5264,7 @@
     });
 
     // Current namespace state
-    let currentNamespace = '';
-    let runnerRefreshInterval = null;
-
-    // Load namespaces and populate selector
-    async function loadNamespaces() {
-      try {
-        // Don't pass namespace param to /namespaces - it returns all namespaces
-        const response = await fetch('/api/namespaces');
-        const data = await response.json();
-
-        const selector = document.getElementById('namespace-selector');
-        const select = document.getElementById('namespace-select');
-
-        if (!selector || !select) return;
-
-        // Set current namespace only if not already set by user selection
-        if (!currentNamespace) {
-          currentNamespace = data.current_namespace;
-        }
-        const namespaces = data.namespaces || [];
-
-        // Build options
-        let options = '';
-        if (namespaces.length === 0) {
-          // No namespaces from scan, just show current
-          options = `<option value="${escapeHtml(currentNamespace)}">${escapeHtml(currentNamespace)}</option>`;
-        } else {
-          options = namespaces.map(ns => {
-            const selected = ns.namespace === currentNamespace ? 'selected' : '';
-            const counts = `(${ns.queued_count}Q/${ns.running_count}R/${ns.task_count}T)`;
-            return `<option value="${escapeHtml(ns.namespace)}" ${selected}>${escapeHtml(ns.namespace)} ${counts}</option>`;
-          }).join('');
-        }
-
-        select.innerHTML = options;
-        selector.style.display = 'flex';
-
-        // Load runners for current namespace
-        loadRunnerStatus();
-      } catch (e) {
-        console.warn('Failed to load namespaces:', e);
-      }
-    }
-
-    // Handle namespace change
-    function onNamespaceChange(namespace) {
-      if (namespace === currentNamespace) return;
-
-      // Update current namespace and reload data
-      currentNamespace = namespace;
-
-      // Reload runner status for new namespace
-      loadRunnerStatus();
-
-      // Re-navigate to refresh current page data with new namespace
-      navigate(currentPath);
-    }
-
-    // Load runner status
-    async function loadRunnerStatus() {
-      try {
-        const data = await api('/runners');
-        const runners = data.runners || [];
-
-        const dot = document.getElementById('runner-dot');
-        const text = document.getElementById('runner-text');
-
-        if (!dot || !text) return;
-
-        const aliveCount = runners.filter(r => r.is_alive).length;
-        const totalCount = runners.length;
-
-        if (aliveCount > 0) {
-          dot.className = 'runner-dot alive';
-          text.textContent = aliveCount + ' runner' + (aliveCount > 1 ? 's' : '') + ' active';
-        } else if (totalCount > 0) {
-          dot.className = 'runner-dot dead';
-          text.textContent = 'No active runners';
-        } else {
-          dot.className = 'runner-dot dead';
-          text.textContent = 'No runners';
-        }
-      } catch (e) {
-        console.warn('Failed to load runner status:', e);
-        const dot = document.getElementById('runner-dot');
-        const text = document.getElementById('runner-text');
-        if (dot) dot.className = 'runner-dot dead';
-        if (text) text.textContent = 'Error';
-      }
-    }
-
-    // Start periodic runner status refresh
-    function startRunnerRefresh() {
-      // Refresh every 30 seconds
-      runnerRefreshInterval = setInterval(loadRunnerStatus, 30000);
-    }
-
-    // Stop runner refresh
-    function stopRunnerRefresh() {
-      if (runnerRefreshInterval) {
-        clearInterval(runnerRefreshInterval);
-        runnerRefreshInterval = null;
-      }
-    }
+    // (Namespace/runner selector removed - single project per web instance)
 
     // =========================================================================
     // Web Dev Mode Functions
@@ -5555,8 +6341,6 @@
     // =========================================================================
 
     // Initial load
-    loadNamespaces();
-    startRunnerRefresh();
     router();
   </script>
 </body>

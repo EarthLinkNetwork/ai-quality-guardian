@@ -569,7 +569,14 @@ export class FileQueueStore implements IQueueStore {
    */
   async getAllTaskGroups(targetNamespace?: string): Promise<TaskGroupSummary[]> {
     const items = await this.getAllItems(targetNamespace);
-    const groupMap = new Map<string, { count: number; createdAt: string; latestUpdatedAt: string }>();
+    const groupMap = new Map<string, {
+      count: number;
+      createdAt: string;
+      latestUpdatedAt: string;
+      statusCounts: Record<QueueItemStatus, number>;
+      latestStatus: QueueItemStatus;
+      latestStatusTime: string;
+    }>();
 
     for (const item of items) {
       const existing = groupMap.get(item.task_group_id);
@@ -581,11 +588,21 @@ export class FileQueueStore implements IQueueStore {
         if (item.updated_at > existing.latestUpdatedAt) {
           existing.latestUpdatedAt = item.updated_at;
         }
+        existing.statusCounts[item.status] = (existing.statusCounts[item.status] || 0) + 1;
+        if (item.updated_at > existing.latestStatusTime) {
+          existing.latestStatus = item.status;
+          existing.latestStatusTime = item.updated_at;
+        }
       } else {
+        const statusCounts = { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 } as Record<QueueItemStatus, number>;
+        statusCounts[item.status] = 1;
         groupMap.set(item.task_group_id, {
           count: 1,
           createdAt: item.created_at,
           latestUpdatedAt: item.updated_at,
+          statusCounts,
+          latestStatus: item.status,
+          latestStatusTime: item.updated_at,
         });
       }
     }
@@ -597,10 +614,12 @@ export class FileQueueStore implements IQueueStore {
         task_count: data.count,
         created_at: data.createdAt,
         latest_updated_at: data.latestUpdatedAt,
+        status_counts: data.statusCounts,
+        latest_status: data.latestStatus,
       });
     }
 
-    groups.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    groups.sort((a, b) => b.latest_updated_at.localeCompare(a.latest_updated_at));
     return groups;
   }
 
@@ -646,6 +665,29 @@ export class FileQueueStore implements IQueueStore {
 
     summaries.sort((a, b) => a.namespace.localeCompare(b.namespace));
     return summaries;
+  }
+
+  /**
+   * Set failure classification info on a task
+   */
+  async setFailureInfo(taskId: string, failureInfo: {
+    failure_category: string;
+    failure_summary: string;
+    failure_next_actions: Array<{ label: string; actionType: string; target?: string }>;
+    command_preview?: string;
+  }): Promise<void> {
+    const key = this.getTaskKey(taskId);
+    const item = this.tasks.get(key);
+    if (item) {
+      item.failure_category = failureInfo.failure_category;
+      item.failure_summary = failureInfo.failure_summary;
+      item.failure_next_actions = failureInfo.failure_next_actions;
+      if (failureInfo.command_preview) {
+        item.command_preview = failureInfo.command_preview;
+      }
+      item.updated_at = new Date().toISOString();
+      this.saveTasks();
+    }
   }
 
   /**

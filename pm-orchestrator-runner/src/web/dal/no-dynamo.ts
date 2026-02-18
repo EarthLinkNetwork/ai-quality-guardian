@@ -698,6 +698,7 @@ export class NoDynamoDAL {
       projectAlias: input.projectAlias,
       sessionId: input.sessionId,
       taskId: input.taskId,
+      taskGroupId: input.taskGroupId,
       summary: input.summary,
       importance: input.importance || "normal",
       details: input.details || {},

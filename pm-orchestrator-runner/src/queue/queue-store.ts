@@ -163,6 +163,18 @@ export interface QueueItem {
   output?: string;
   /** Progress events emitted by executor (for restart detection) */
   events?: ProgressEvent[];
+  /** Failure classification category (QUOTE_ERROR, PATH_NOT_FOUND, etc.) */
+  failure_category?: string;
+  /** Failure summary (1-line description) */
+  failure_summary?: string;
+  /** Suggested next actions for the user */
+  failure_next_actions?: Array<{
+    label: string;
+    actionType: string;
+    target?: string;
+  }>;
+  /** Command preview (the final command that was or will be executed) */
+  command_preview?: string;
 }
 
 /**
@@ -226,6 +238,17 @@ export interface TaskGroupSummary {
   task_count: number;
   created_at: string;
   latest_updated_at: string;
+  /** Status breakdown counts */
+  status_counts?: {
+    QUEUED: number;
+    RUNNING: number;
+    AWAITING_RESPONSE: number;
+    COMPLETE: number;
+    ERROR: number;
+    CANCELLED: number;
+  };
+  /** Latest task status in this group */
+  latest_status?: QueueItemStatus;
 }
 
 /**
@@ -273,6 +296,12 @@ export interface IQueueStore {
   getRunnersWithStatus(heartbeatTimeoutMs?: number, targetNamespace?: string): Promise<Array<RunnerRecord & { isAlive: boolean }>>;
   markRunnerStopped(runnerId: string): Promise<void>;
   deleteRunner(runnerId: string): Promise<void>;
+  setFailureInfo(taskId: string, failureInfo: {
+    failure_category: string;
+    failure_summary: string;
+    failure_next_actions: Array<{ label: string; actionType: string; target?: string }>;
+    command_preview?: string;
+  }): Promise<void>;
   destroy(): void;
 }
 
@@ -967,7 +996,14 @@ export class QueueStore implements IQueueStore {
   async getAllTaskGroups(targetNamespace?: string): Promise<TaskGroupSummary[]> {
     const items = await this.getAllItems(targetNamespace);
 
-    const groupMap = new Map<string, { count: number; createdAt: string; latestUpdatedAt: string }>();
+    const groupMap = new Map<string, {
+      count: number;
+      createdAt: string;
+      latestUpdatedAt: string;
+      statusCounts: Record<QueueItemStatus, number>;
+      latestStatus: QueueItemStatus;
+      latestStatusTime: string;
+    }>();
 
     for (const item of items) {
       const existing = groupMap.get(item.task_group_id);
@@ -979,11 +1015,21 @@ export class QueueStore implements IQueueStore {
         if (item.updated_at > existing.latestUpdatedAt) {
           existing.latestUpdatedAt = item.updated_at;
         }
+        existing.statusCounts[item.status] = (existing.statusCounts[item.status] || 0) + 1;
+        if (item.updated_at > existing.latestStatusTime) {
+          existing.latestStatus = item.status;
+          existing.latestStatusTime = item.updated_at;
+        }
       } else {
+        const statusCounts = { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 } as Record<QueueItemStatus, number>;
+        statusCounts[item.status] = 1;
         groupMap.set(item.task_group_id, {
           count: 1,
           createdAt: item.created_at,
           latestUpdatedAt: item.updated_at,
+          statusCounts,
+          latestStatus: item.status,
+          latestStatusTime: item.updated_at,
         });
       }
     }
@@ -995,6 +1041,8 @@ export class QueueStore implements IQueueStore {
         task_count: data.count,
         created_at: data.createdAt,
         latest_updated_at: data.latestUpdatedAt,
+        status_counts: data.statusCounts,
+        latest_status: data.latestStatus,
       });
     }
 
@@ -1069,6 +1117,42 @@ export class QueueStore implements IQueueStore {
     summaries.sort((a, b) => a.namespace.localeCompare(b.namespace));
 
     return summaries;
+  }
+
+  /**
+   * Set failure classification info on a task
+   */
+  async setFailureInfo(taskId: string, failureInfo: {
+    failure_category: string;
+    failure_summary: string;
+    failure_next_actions: Array<{ label: string; actionType: string; target?: string }>;
+    command_preview?: string;
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    let updateExpression = 'SET updated_at = :now, failure_category = :cat, failure_summary = :summary, failure_next_actions = :actions';
+    const expressionValues: Record<string, unknown> = {
+      ':now': now,
+      ':cat': failureInfo.failure_category,
+      ':summary': failureInfo.failure_summary,
+      ':actions': failureInfo.failure_next_actions,
+    };
+
+    if (failureInfo.command_preview) {
+      updateExpression += ', command_preview = :preview';
+      expressionValues[':preview'] = failureInfo.command_preview;
+    }
+
+    await this.docClient.send(
+      new UpdateCommand({
+        TableName: QUEUE_TABLE_NAME,
+        Key: {
+          namespace: this.namespace,
+          task_id: taskId,
+        },
+        UpdateExpression: updateExpression,
+        ExpressionAttributeValues: expressionValues,
+      })
+    );
   }
 
   /**

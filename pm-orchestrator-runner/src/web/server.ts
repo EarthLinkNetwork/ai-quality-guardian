@@ -35,6 +35,7 @@ import { createSupervisorConfigRoutes } from './routes/supervisor-config';
 import { createSupervisorLogsRoutes } from './routes/supervisor-logs';
 import { createExecutorLogsRoutes } from './routes/executor-logs';
 import { detectTaskType } from '../utils/task-type-detector';
+import { isNoDynamoInitialized, getNoDynamo } from './dal/no-dynamo';
 
 /**
  * Derive namespace from folder path (same logic as CLI)
@@ -101,9 +102,9 @@ export function createApp(config: WebServerConfig): Express {
   const app = express();
   const { queueStore, sessionId, namespace, projectRoot, stateDir, queueStoreType } = config;
 
-  // Middleware
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  // Middleware (50mb limit for base64 image attachments)
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Static files
   app.use(express.static(path.join(__dirname, 'public')));
@@ -202,6 +203,100 @@ export function createApp(config: WebServerConfig): Express {
   });
 
   /**
+   * GET /api/required-actions
+   * List tasks that need user attention (AWAITING_RESPONSE)
+   * Returns tasks with their task_group context
+   */
+  app.get('/api/required-actions', async (_req: Request, res: Response) => {
+    try {
+      const [awaitingTasks, errorTasks] = await Promise.all([
+        queueStore.getByStatus('AWAITING_RESPONSE'),
+        queueStore.getByStatus('ERROR'),
+      ]);
+
+      // Build project lookup from activity events if NoDynamo is available
+      let projectLookup: Map<string, { projectId: string; projectAlias?: string; projectPath?: string }> = new Map();
+      if (isNoDynamoInitialized()) {
+        try {
+          const dal = getNoDynamo();
+          const activityResult = await dal.listActivityEvents({ limit: 200 });
+          for (const evt of activityResult.items) {
+            if (evt.taskGroupId && evt.projectId) {
+              projectLookup.set(evt.taskGroupId, {
+                projectId: evt.projectId,
+                projectAlias: evt.projectAlias,
+                projectPath: evt.projectPath,
+              });
+            }
+          }
+        } catch {
+          // Ignore - project lookup is best-effort
+        }
+      }
+
+      // AWAITING_RESPONSE actions
+      const awaitingActions = awaitingTasks.map(t => {
+        const waitingSince = t.updated_at;
+        const waitingMs = Date.now() - new Date(waitingSince).getTime();
+        const waitingMinutes = Math.floor(waitingMs / 60000);
+        const proj = projectLookup.get(t.task_group_id);
+        return {
+          task_id: t.task_id,
+          task_group_id: t.task_group_id,
+          namespace: t.namespace,
+          status: t.status,
+          prompt_preview: (t.prompt || '').substring(0, 100),
+          clarification_preview: t.clarification?.question?.substring(0, 120) || '',
+          updated_at: t.updated_at,
+          waiting_minutes: waitingMinutes,
+          waiting_display: waitingMinutes < 60
+            ? waitingMinutes + 'm'
+            : Math.floor(waitingMinutes / 60) + 'h ' + (waitingMinutes % 60) + 'm',
+          project_id: proj?.projectId,
+          project_alias: proj?.projectAlias,
+          project_path: proj?.projectPath,
+        };
+      });
+
+      // ERROR tasks with failure classification
+      const errorActions = errorTasks
+        .filter(t => t.failure_category)
+        .map(t => {
+          const waitingSince = t.updated_at;
+          const waitingMs = Date.now() - new Date(waitingSince).getTime();
+          const waitingMinutes = Math.floor(waitingMs / 60000);
+          const proj = projectLookup.get(t.task_group_id);
+          return {
+            task_id: t.task_id,
+            task_group_id: t.task_group_id,
+            namespace: t.namespace,
+            status: t.status,
+            prompt_preview: (t.prompt || '').substring(0, 100),
+            failure_category: t.failure_category,
+            failure_summary: t.failure_summary || '',
+            failure_next_actions: t.failure_next_actions || [],
+            updated_at: t.updated_at,
+            waiting_minutes: waitingMinutes,
+            waiting_display: waitingMinutes < 60
+              ? waitingMinutes + 'm'
+              : Math.floor(waitingMinutes / 60) + 'h ' + (waitingMinutes % 60) + 'm',
+            project_id: proj?.projectId,
+            project_alias: proj?.projectAlias,
+            project_path: proj?.projectPath,
+          };
+        });
+
+      const actions = [...awaitingActions, ...errorActions];
+      // Sort by oldest first (longest waiting)
+      actions.sort((a, b) => a.updated_at.localeCompare(b.updated_at));
+      res.json({ actions, count: actions.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
    * GET /api/task-groups
    * List all task groups with summary for specified namespace (or current)
    * Query: ?namespace=xxx (optional)
@@ -210,9 +305,40 @@ export function createApp(config: WebServerConfig): Express {
     try {
       const targetNamespace = (req.query.namespace as string) || namespace;
       const groups = await queueStore.getAllTaskGroups(targetNamespace);
+
+      // Enrich with project info from activity events
+      let projectLookup: Map<string, { projectId: string; projectAlias?: string; projectPath?: string }> = new Map();
+      if (isNoDynamoInitialized()) {
+        try {
+          const dal = getNoDynamo();
+          const activityResult = await dal.listActivityEvents({ limit: 200 });
+          for (const evt of activityResult.items) {
+            if (evt.taskGroupId && evt.projectId) {
+              projectLookup.set(evt.taskGroupId, {
+                projectId: evt.projectId,
+                projectAlias: evt.projectAlias,
+                projectPath: evt.projectPath,
+              });
+            }
+          }
+        } catch {
+          // Best-effort
+        }
+      }
+
+      const enrichedGroups = groups.map(g => {
+        const proj = projectLookup.get(g.task_group_id);
+        return {
+          ...g,
+          project_id: proj?.projectId || 'N/A',
+          project_alias: proj?.projectAlias || 'N/A',
+          project_path: proj?.projectPath || 'N/A',
+        };
+      });
+
       res.json({
         namespace: targetNamespace,
-        task_groups: groups,
+        task_groups: enrichedGroups,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -330,6 +456,10 @@ export function createApp(config: WebServerConfig): Express {
         task_type: task.task_type,
         clarification: task.clarification,  // Clarification details for AWAITING_RESPONSE (AC-CHAT-005)
         show_reply_ui: showReplyUI,  // AC-CHAT-3: Reply UI required for AWAITING_RESPONSE
+        failure_category: task.failure_category,
+        failure_summary: task.failure_summary,
+        failure_next_actions: task.failure_next_actions,
+        command_preview: task.command_preview,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -507,6 +637,9 @@ export function createApp(config: WebServerConfig): Express {
         return;
       }
 
+      // Get task item first to capture taskGroupId for activity event
+      const taskItem = await queueStore.getItem(task_id);
+
       const result = await queueStore.updateStatusWithValidation(task_id, status as QueueItemStatus);
 
       if (!result.success) {
@@ -523,6 +656,58 @@ export function createApp(config: WebServerConfig): Express {
           });
         }
         return;
+      }
+
+      // Emit task_updated activity event on meaningful state transitions
+      const meaningfulStatuses: QueueItemStatus[] = ['COMPLETE', 'ERROR', 'AWAITING_RESPONSE', 'CANCELLED'];
+      if (meaningfulStatuses.includes(status as QueueItemStatus) && isNoDynamoInitialized()) {
+        try {
+          const dal = getNoDynamo();
+          // Determine activity event type based on new status
+          const activityType = status === 'COMPLETE' ? 'task_completed' as const
+            : status === 'ERROR' ? 'task_failed' as const
+            : status === 'AWAITING_RESPONSE' ? 'task_awaiting' as const
+            : 'task_updated' as const;
+          const importance = (status === 'ERROR' || status === 'AWAITING_RESPONSE') ? 'high' as const : 'normal' as const;
+
+          // Recover project info from activity events for the taskGroupId
+          let projectId: string | undefined;
+          let projectPath: string | undefined;
+          let projectAlias: string | undefined;
+          const taskGroupId = taskItem?.task_group_id;
+
+          if (taskGroupId) {
+            const activityResult = await dal.listActivityEvents({ limit: 50 });
+            for (const evt of activityResult.items) {
+              if (evt.taskGroupId === taskGroupId && evt.projectId) {
+                projectId = evt.projectId;
+                projectPath = evt.projectPath;
+                projectAlias = evt.projectAlias;
+                break;
+              }
+            }
+          }
+
+          await dal.createActivityEvent({
+            orgId: 'default',
+            type: activityType,
+            projectId,
+            projectPath,
+            projectAlias,
+            taskGroupId,
+            taskId: task_id,
+            summary: `Task ${status.toLowerCase()}: ${task_id.substring(0, 12)}...`,
+            importance,
+            details: {
+              taskId: task_id,
+              taskGroupId,
+              oldStatus: result.old_status,
+              newStatus: result.new_status,
+            },
+          });
+        } catch {
+          // Best effort - don't fail the status update
+        }
       }
 
       res.json({
@@ -592,6 +777,50 @@ export function createApp(config: WebServerConfig): Express {
           message: result.message || 'Failed to resume task with reply',
         });
         return;
+      }
+
+      // Emit task_updated activity event for reply (AWAITING_RESPONSE -> QUEUED)
+      if (isNoDynamoInitialized()) {
+        try {
+          const dal = getNoDynamo();
+          let projectId: string | undefined;
+          let projectPath: string | undefined;
+          let projectAlias: string | undefined;
+          const taskGroupId = task.task_group_id;
+
+          if (taskGroupId) {
+            const activityResult = await dal.listActivityEvents({ limit: 50 });
+            for (const evt of activityResult.items) {
+              if (evt.taskGroupId === taskGroupId && evt.projectId) {
+                projectId = evt.projectId;
+                projectPath = evt.projectPath;
+                projectAlias = evt.projectAlias;
+                break;
+              }
+            }
+          }
+
+          await dal.createActivityEvent({
+            orgId: 'default',
+            type: 'task_updated' as const,
+            projectId,
+            projectPath,
+            projectAlias,
+            taskGroupId,
+            taskId: task_id,
+            summary: `Task reply received: ${task_id.substring(0, 12)}...`,
+            importance: 'normal' as const,
+            details: {
+              taskId: task_id,
+              taskGroupId,
+              oldStatus: result.old_status,
+              newStatus: result.new_status,
+              replyLength: reply.trim().length,
+            },
+          });
+        } catch {
+          // Best effort
+        }
       }
 
       res.json({
@@ -862,6 +1091,7 @@ export function createApp(config: WebServerConfig): Express {
       'POST /api/tasks',
       'PATCH /api/tasks/:task_id/status',
       'POST /api/tasks/:task_id/reply',
+      'GET /api/required-actions',
       'GET /api/health',
       'GET /api/namespace',
       'GET /api/agents',

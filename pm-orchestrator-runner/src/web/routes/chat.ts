@@ -19,6 +19,7 @@ import {
   NoDynamoDALWithConversations,
 } from "../dal/no-dynamo";
 import {
+  ChatImageAttachment,
   ConversationMessage,
   ConversationMessageStatus,
   CreateConversationMessageInput,
@@ -145,27 +146,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
       let taskGroupId: string | undefined;
 
       try {
-        const { content } = req.body;
-
-        // Record chat_received Activity at handler start (always)
-        try {
-          const activity = await dal.createActivityEvent({
-            orgId,
-            type: "chat_received",
-            projectId,
-            sessionId: sessionId || "sess_" + projectId,
-            summary: "Chat message received: " + (content?.substring(0, 50) || "(empty)") + (content?.length > 50 ? "..." : ""),
-            importance: "normal",
-            details: {
-              contentLength: content?.length || 0,
-              timestamp: new Date().toISOString(),
-            },
-          });
-          activityId = activity.id;
-        } catch (actError) {
-          // Log but don't fail the request if Activity creation fails
-          console.error("[chat] Failed to create activity event:", actError);
-        }
+        const { content, images } = req.body;
 
         if (!content || typeof content !== "string" || content.trim() === "") {
           // Record error Activity
@@ -176,7 +157,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
             sessionId: sessionId || "sess_" + projectId,
             summary: "Chat validation failed: empty content",
             importance: "high",
-            details: { error: "INVALID_INPUT", activityId },
+            details: { error: "INVALID_INPUT" },
           }).catch(() => {}); // Best effort
 
           res.status(400).json({
@@ -184,6 +165,20 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
             message: "content is required and must be a non-empty string",
           } as ErrorResponse);
           return;
+        }
+
+        // Validate images if provided
+        const validatedImages: ChatImageAttachment[] = [];
+        if (images && Array.isArray(images)) {
+          for (const img of images) {
+            if (img && typeof img.data === "string" && typeof img.type === "string") {
+              validatedImages.push({
+                name: typeof img.name === "string" ? img.name : "image",
+                type: img.type,
+                data: img.data,
+              });
+            }
+          }
         }
 
         // Get project to check for bootstrapPrompt
@@ -197,7 +192,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
             sessionId: sessionId || "sess_" + projectId,
             summary: "Chat failed: project not found",
             importance: "high",
-            details: { error: "NOT_FOUND", projectId, activityId },
+            details: { error: "NOT_FOUND", projectId },
           }).catch(() => {}); // Best effort
 
           res.status(404).json({
@@ -214,20 +209,25 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
           ? bootstrapPrompt + "\n\n---\n\n" + content.trim()
           : content.trim();
 
-        // Create user message
+        // Create user message (with optional image attachments in metadata)
         const userMessage = await dal.createConversationMessage({
           projectId,
           role: "user",
           content: content.trim(), // Store original content for display
           status: "pending",
+          metadata: validatedImages.length > 0 ? { images: validatedImages } : undefined,
         });
 
         // Create a new run for this message
         const runId = "run_" + uuidv4();
         const taskRunId = "task_" + uuidv4();
 
+        // Derive taskGroupId early so it can be saved in activity and run
+        const effectiveSessionId = sessionId || "sess_" + projectId;
+        taskGroupId = effectiveSessionId; // 1 Session = 1 TaskGroup per SESSION_MODEL.md
+
         await dal.createRun({
-          sessionId: sessionId || "sess_" + projectId,
+          sessionId: effectiveSessionId,
           projectId,
           taskRunId,
           prompt: finalContent, // Include bootstrapPrompt in run
@@ -235,26 +235,93 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
 
         // Create TaskGroup via queueStore if available (connects to execution pipeline)
         // Per spec SESSION_MODEL.md: 1 Session = 1 TaskGroup (1:1 mapping)
-        // session_id and task_group_id should be the same to prevent TaskGroup proliferation
         if (queueStore) {
           try {
-            // Use sessionId as taskGroupId (1:1 mapping per spec)
-            const effectiveSessionId = sessionId || "sess_" + projectId;
-            taskGroupId = effectiveSessionId; // 1 Session = 1 TaskGroup
             // Detect task type from prompt content for proper execution handling
-            // READ_INFO/REPORT tasks don't require file evidence
             const taskType = detectTaskType(finalContent);
             await queueStore.enqueue(
               effectiveSessionId,
-              taskGroupId, // Same as sessionId per SESSION_MODEL.md spec
+              taskGroupId,
               finalContent,
               taskRunId,
               taskType
             );
+            // Emit task_queued activity event with full identifier chain
+            try {
+              await dal.createActivityEvent({
+                orgId,
+                type: "task_queued",
+                projectId,
+                projectPath: project.projectPath,
+                projectAlias: project.alias,
+                sessionId: effectiveSessionId,
+                taskGroupId,
+                taskId: taskRunId,
+                summary: "Task queued: " + content.substring(0, 50) + (content.length > 50 ? "..." : ""),
+                importance: "normal",
+                details: {
+                  runId,
+                  taskRunId,
+                  taskGroupId,
+                },
+              });
+            } catch {
+              // Best effort
+            }
           } catch (queueError) {
             // Log but don't fail the request if TaskGroup creation fails
             console.error("[chat] Failed to create TaskGroup:", queueError);
           }
+        }
+
+        // Record chat_received + task_started activities WITH full identifier chain
+        // This ensures activity events link projectId <-> taskGroupId <-> taskId
+        try {
+          const activity = await dal.createActivityEvent({
+            orgId,
+            type: "chat_received",
+            projectId,
+            projectPath: project.projectPath,
+            projectAlias: project.alias,
+            sessionId: effectiveSessionId,
+            taskGroupId,
+            taskId: taskRunId,
+            summary: "Chat message received: " + content.substring(0, 50) + (content.length > 50 ? "..." : ""),
+            importance: "normal",
+            details: {
+              contentLength: content.length,
+              runId,
+              taskRunId,
+              taskGroupId,
+              timestamp: new Date().toISOString(),
+            },
+          });
+          activityId = activity.id;
+        } catch (actError) {
+          console.error("[chat] Failed to create activity event:", actError);
+        }
+
+        // Also emit a task_started event for project detail resolution
+        try {
+          await dal.createActivityEvent({
+            orgId,
+            type: "task_started",
+            projectId,
+            projectPath: project.projectPath,
+            projectAlias: project.alias,
+            sessionId: effectiveSessionId,
+            taskGroupId,
+            taskId: taskRunId,
+            summary: "Task started: " + content.substring(0, 50) + (content.length > 50 ? "..." : ""),
+            importance: "normal",
+            details: {
+              runId,
+              taskRunId,
+              taskGroupId,
+            },
+          });
+        } catch {
+          // Best effort
         }
 
         // Create assistant placeholder message

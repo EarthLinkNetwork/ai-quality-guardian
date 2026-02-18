@@ -472,6 +472,13 @@ export function stripPmOrchestratorBlocks(output: string): string {
   return cleaned;
 }
 
+function truncateForLog(input: string | undefined, maxLen: number): string {
+  if (!input) return '';
+  const cleaned = input.replace(/\s+/g, ' ').trim();
+  if (cleaned.length <= maxLen) return cleaned;
+  return cleaned.slice(0, maxLen - 3) + '...';
+}
+
 /**
  * Create a TaskExecutor that uses AutoResolvingExecutor
  *
@@ -501,6 +508,12 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
 
     // Inject TaskContext and OutputRules into the prompt for all Web Chat tasks
     const enrichedPrompt = injectTaskContext(effectivePrompt, item);
+    const promptPreview = truncateForLog(effectivePrompt, 300);
+    stateStream.emit(
+      item.task_id,
+      'system',
+      `[llm] prompt->claude_code len=${enrichedPrompt.length} history=${item.conversation_history?.length ?? 0} preview="${promptPreview}"`
+    );
 
     try {
       // Check for test executor mode (for E2E testing of INCOMPLETE handling)

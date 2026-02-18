@@ -2,6 +2,7 @@
 .claude/
 node_modules/
 dist/
+demo-projects/
 playwright-report/
 test-results/
 *.tgz

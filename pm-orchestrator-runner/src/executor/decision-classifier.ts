@@ -18,6 +18,11 @@ import { LLMClient } from '../mediation/llm-client';
 export type DecisionCategory = 'best_practice' | 'case_by_case' | 'unknown';
 
 /**
+ * Optional logger for classification decisions (used for executor logs)
+ */
+export type DecisionClassifierLogger = (message: string) => void;
+
+/**
  * Best practice rules that can be auto-resolved
  * These are industry conventions that are generally accepted
  */
@@ -155,13 +160,22 @@ const CASE_BY_CASE_INDICATORS = [
 export class DecisionClassifier {
   private readonly rules: BestPracticeRule[];
   private readonly llmClient?: LLMClient;
+  private readonly logger?: DecisionClassifierLogger;
 
   constructor(
     customRules?: BestPracticeRule[],
-    llmClient?: LLMClient
+    llmClient?: LLMClient,
+    logger?: DecisionClassifierLogger
   ) {
     this.rules = [...DEFAULT_BEST_PRACTICE_RULES, ...(customRules || [])];
     this.llmClient = llmClient;
+    this.logger = logger;
+  }
+
+  private log(message: string): void {
+    if (this.logger) {
+      this.logger(message);
+    }
   }
 
   /**
@@ -250,10 +264,14 @@ Respond with ONLY a JSON object:
         ? `Question: ${question}\nContext: ${context}\n\nClassify this question.`
         : `Question: ${question}\n\nClassify this question.`;
 
+      this.log(`classifier request: ${truncateForLog(userPrompt, 240)}`);
+
       const response = await this.llmClient.chat([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ]);
+
+      this.log(`classifier response: ${truncateForLog(response.content, 240)}`);
 
       const jsonMatch = response.content.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
@@ -275,6 +293,7 @@ Respond with ONLY a JSON object:
       };
     } catch (error) {
       console.error('[DecisionClassifier] LLM classification failed:', error);
+      this.log(`classifier error: ${truncateForLog((error as Error).message, 200)}`);
       return {
         category: 'case_by_case', // Fail-safe
         confidence: 0.3,
@@ -319,4 +338,11 @@ Respond with ONLY a JSON object:
   getRules(): BestPracticeRule[] {
     return [...this.rules];
   }
+}
+
+function truncateForLog(input: string | undefined, maxLen: number): string {
+  if (!input) return '';
+  const cleaned = input.replace(/\s+/g, ' ').trim();
+  if (cleaned.length <= maxLen) return cleaned;
+  return cleaned.slice(0, maxLen - 3) + '...';
 }
