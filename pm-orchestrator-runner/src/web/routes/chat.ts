@@ -146,7 +146,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
       let taskGroupId: string | undefined;
 
       try {
-        const { content, images } = req.body;
+        const { content, images, taskGroupId: requestedTaskGroupId } = req.body;
 
         if (!content || typeof content !== "string" || content.trim() === "") {
           // Record error Activity
@@ -219,19 +219,22 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
         });
 
         // Create a new run for this message
-        const runId = "run_" + uuidv4();
         const taskRunId = "task_" + uuidv4();
 
         // Derive taskGroupId early so it can be saved in activity and run
+        // If client provides a taskGroupId, reuse it to keep tasks in the same group
         const effectiveSessionId = sessionId || "sess_" + projectId;
-        taskGroupId = effectiveSessionId; // 1 Session = 1 TaskGroup per SESSION_MODEL.md
+        taskGroupId = (typeof requestedTaskGroupId === "string" && requestedTaskGroupId.trim())
+          ? requestedTaskGroupId.trim()
+          : effectiveSessionId;
 
-        await dal.createRun({
+        const run = await dal.createRun({
           sessionId: effectiveSessionId,
           projectId,
           taskRunId,
           prompt: finalContent, // Include bootstrapPrompt in run
         });
+        const runId = run.runId; // Use the same runId as the run record
 
         // Create TaskGroup via queueStore if available (connects to execution pipeline)
         // Per spec SESSION_MODEL.md: 1 Session = 1 TaskGroup (1:1 mapping)
@@ -244,7 +247,8 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
               taskGroupId,
               finalContent,
               taskRunId,
-              taskType
+              taskType,
+              project.projectPath
             );
             // Emit task_queued activity event with full identifier chain
             try {

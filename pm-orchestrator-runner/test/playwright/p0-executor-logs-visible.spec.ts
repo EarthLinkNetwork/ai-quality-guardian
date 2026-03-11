@@ -158,9 +158,9 @@ test.describe('P0-1: Executor Logs Visible in Task Detail', () => {
     const executorLogsContainer = page.locator('[data-testid="executor-logs-container"]');
     await expect(executorLogsContainer, 'P0-1: Executor logs container must be visible').toBeVisible();
 
-    // Verify the section has a heading
-    const heading = executorLogsSection.locator('h3');
-    await expect(heading).toContainText('Executor Output');
+    // Verify the section has a heading (summary element in details)
+    const heading = executorLogsSection.locator('summary');
+    await expect(heading).toContainText('System Log');
   });
 
   test('P0-1-SSE: Executor logs stream endpoint exists and returns SSE', async ({ page }) => {

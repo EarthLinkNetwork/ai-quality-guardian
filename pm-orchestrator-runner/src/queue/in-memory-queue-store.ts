@@ -127,7 +127,8 @@ export class InMemoryQueueStore implements IQueueStore {
     taskGroupId: string,
     prompt: string,
     taskId?: string,
-    taskType?: TaskTypeValue
+    taskType?: TaskTypeValue,
+    projectPath?: string
   ): Promise<QueueItem> {
     const now = new Date().toISOString();
     const item: QueueItem = {
@@ -140,6 +141,7 @@ export class InMemoryQueueStore implements IQueueStore {
       created_at: now,
       updated_at: now,
       task_type: taskType,
+      ...(projectPath ? { project_path: projectPath } : {}),
     };
 
     this.tasks.set(this.getTaskKey(item.task_id), item);
@@ -441,6 +443,7 @@ export class InMemoryQueueStore implements IQueueStore {
       statusCounts: Record<QueueItemStatus, number>;
       latestStatus: QueueItemStatus;
       latestStatusTime: string;
+      firstPrompt: string;
     }>();
 
     for (const item of items) {
@@ -449,6 +452,7 @@ export class InMemoryQueueStore implements IQueueStore {
         existing.count++;
         if (item.created_at < existing.createdAt) {
           existing.createdAt = item.created_at;
+          existing.firstPrompt = item.prompt?.substring(0, 120) || '';
         }
         if (item.updated_at > existing.latestUpdatedAt) {
           existing.latestUpdatedAt = item.updated_at;
@@ -468,6 +472,7 @@ export class InMemoryQueueStore implements IQueueStore {
           statusCounts,
           latestStatus: item.status,
           latestStatusTime: item.updated_at,
+          firstPrompt: item.prompt?.substring(0, 120) || '',
         });
       }
     }
@@ -481,6 +486,7 @@ export class InMemoryQueueStore implements IQueueStore {
         latest_updated_at: data.latestUpdatedAt,
         status_counts: data.statusCounts,
         latest_status: data.latestStatus,
+        first_prompt: data.firstPrompt,
       });
     }
 

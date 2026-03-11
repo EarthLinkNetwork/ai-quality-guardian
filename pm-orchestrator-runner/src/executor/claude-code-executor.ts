@@ -20,9 +20,10 @@
  * 3. Process dies naturally
  */
 
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, execFileSync, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import type { BlockedReason, TerminatedBy } from '../models/enums';
 import { getExecutorOutputStream } from './executor-output-stream';
 
@@ -102,6 +103,11 @@ export interface ExecutorResult {
   timeout_ms?: number;
   /** How the executor was terminated */
   terminated_by?: TerminatedBy;
+  /**
+   * Human-readable assistant text output (without tool_results or raw JSON).
+   * Preferred over `output` for user-facing display.
+   */
+  assistantOutput?: string;
 }
 
 /**
@@ -126,42 +132,6 @@ export interface IExecutor {
 }
 
 /**
- * Interactive prompt patterns for blocking detection
- * Per spec 10_REPL_UX.md Section 10.1.1: Property 34 detection patterns
- *
- * Extended patterns for Claude Code CLI (v2):
- * - Question marks at end of line
- * - Yes/No confirmations
- * - Press enter prompts
- * - Waiting for input indicators
- * - Permission prompts
- * - API key prompts
- */
-const INTERACTIVE_PROMPT_PATTERNS = [
-  /\?\s*$/m,                    // "? " at end of line
-  /\[Y\/n\]/i,                  // [Y/n] confirmation
-  /\(yes\/no\)/i,               // (yes/no) confirmation
-  /\[y\/N\]/i,                  // [y/N] confirmation
-  /continue\?\s*$/mi,           // "continue?" prompt
-  /press enter/i,               // Press enter prompt
-  /waiting for input/i,         // Waiting for input
-  /\(y\/n\)/i,                  // (y/n) confirmation
-  /\[yes\/no\]/i,               // [yes/no] confirmation
-  /enter your/i,                // Enter your... prompt
-  /provide.*key/i,              // API key prompts
-  /paste.*key/i,                // Paste key prompts
-  /permission.*required/i,      // Permission prompts
-  /authorize/i,                 // Authorization prompts
-  /approve\?/i,                 // Approval prompts
-  /confirm\?/i,                 // Confirmation prompts
-  /select.*option/i,            // Selection prompts
-  /choose.*:/i,                 // Choice prompts
-  /which.*\?/i,                 // Which... prompts
-  /would you like/i,            // "Would you like..." prompts
-  /do you want/i,               // "Do you want..." prompts
-];
-
-/**
  * Timeout configuration (v3 - AC B: Abolish silence=timeout)
  *
  * SOFT_TIMEOUT: Log warning but continue (Claude might be thinking)
@@ -172,7 +142,8 @@ const INTERACTIVE_PROMPT_PATTERNS = [
  * - Silence is NOT a reason to terminate
  * - LLM may be processing complex tasks internally
  * - Only overall timeout provides a safety net (default: very long)
- * - Interactive prompt detection still works (Property 34-36)
+ * - No regex-based interactive prompt detection (causes false positives)
+ * - Post-hoc LLM analysis determines actual state after process exits
  */
 const DEFAULT_SOFT_TIMEOUT_MS = 60000;    // 60s - warning only (for logging)
 const DEFAULT_SILENCE_LOG_INTERVAL_MS = 30000; // 30s - log silence (not terminate)
@@ -182,6 +153,54 @@ const DEFAULT_OVERALL_TIMEOUT_MS = 600000; // 10 min total (increased safety net
  * Grace period before force kill after SIGTERM
  */
 const SIGTERM_GRACE_MS = 5000;
+
+/**
+ * Resolve CLI command to absolute path at startup.
+ * Background processes (launchd, detached) may have a limited PATH
+ * that doesn't include ~/.local/bin where claude is typically installed.
+ * By resolving to an absolute path once at startup, we avoid ENOENT errors.
+ */
+function resolveCliPath(command: string): string {
+  // If already an absolute path, use it directly
+  if (path.isAbsolute(command)) {
+    return command;
+  }
+
+  // Try `which` to resolve the command
+  try {
+    const resolved = execFileSync('which', [command], {
+      encoding: 'utf-8',
+      timeout: 3000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    if (resolved) {
+      return resolved;
+    }
+  } catch {
+    // which failed - try common locations
+  }
+
+  // Check common installation paths
+  const home = process.env.HOME || os.homedir();
+  const commonPaths = [
+    path.join(home, '.local', 'bin', command),
+    path.join(home, '.npm-global', 'bin', command),
+    `/usr/local/bin/${command}`,
+    `/opt/homebrew/bin/${command}`,
+  ];
+
+  for (const p of commonPaths) {
+    try {
+      fs.accessSync(p, fs.constants.X_OK);
+      return p;
+    } catch {
+      // Not found at this location
+    }
+  }
+
+  // Fallback to command name (will fail at spawn time if not in PATH)
+  return command;
+}
 
 /**
  * ALLOWLIST of environment variables to pass to child process
@@ -230,13 +249,6 @@ export function buildSanitizedEnv(): Record<string, string> {
 const PROCESS_CHECK_INTERVAL_MS = 1000;
 
 /**
- * Check if output contains interactive prompt patterns
- */
-function containsInteractivePrompt(output: string): boolean {
-  return INTERACTIVE_PROMPT_PATTERNS.some(pattern => pattern.test(output));
-}
-
-/**
  * Claude Code Executor class
  *
  * Spawns Claude Code CLI to execute natural language tasks.
@@ -260,7 +272,7 @@ export class ClaudeCodeExecutor implements IExecutor {
 
   constructor(config: ExecutorConfig) {
     this.config = config;
-    this.cliPath = config.cliPath || 'claude';
+    this.cliPath = config.cliPath || resolveCliPath('claude');
     // Allow environment variable override for testing
     const envSoft = parseInt(process.env.SOFT_TIMEOUT_MS || '', 10);
     const envSilenceLog = parseInt(process.env.SILENCE_LOG_INTERVAL_MS || '', 10);
@@ -672,6 +684,8 @@ export class ClaudeCodeExecutor implements IExecutor {
 
       const cliArgs = [
         '--print',
+        '--verbose',
+        '--output-format', 'stream-json',
         '--dangerously-skip-permissions',
         '--tools', 'Write,Edit,Read,Bash',
         '--no-session-persistence',
@@ -803,23 +817,99 @@ export class ClaudeCodeExecutor implements IExecutor {
         childProcess.stdin.end();
       }
 
-      // Collect stdout and check for interactive prompts (Property 34)
+      // stream-json trace file for persistence (append mode to preserve history across resumes)
+      const tracesDir = path.join(cwd, '.claude', 'state', 'traces');
+      const traceFilePath = path.join(tracesDir, `stream-${task.id}.jsonl`);
+      let traceStream: fs.WriteStream | null = null;
+      try {
+        fs.mkdirSync(tracesDir, { recursive: true });
+        const isResume = fs.existsSync(traceFilePath) && fs.statSync(traceFilePath).size > 0;
+        traceStream = fs.createWriteStream(traceFilePath, { flags: 'a' });
+
+        if (isResume) {
+          // Write separator to mark task resumption
+          const separatorEvent = JSON.stringify({
+            type: 'separator',
+            message: '--- Task Resumed ---',
+            timestamp: new Date().toISOString(),
+          });
+          traceStream.write(separatorEvent + '\n');
+          outputStream.emit(task.id, 'claude_message', separatorEvent);
+        } else {
+          // Write user's original prompt as first event in the trace
+          const userPromptEvent = JSON.stringify({
+            type: 'user_message',
+            content: task.prompt.substring(0, 2000),
+            timestamp: new Date().toISOString(),
+          });
+          traceStream.write(userPromptEvent + '\n');
+          outputStream.emit(task.id, 'claude_message', userPromptEvent);
+        }
+      } catch (e) {
+        this.log(`[ClaudeCodeExecutor] Failed to create trace file: ${(e as Error).message}`);
+      }
+
+      // Buffer for incomplete NDJSON lines from stdout
+      let stdoutBuffer = '';
+
+      // Track only assistant text messages (NOT tool_results or thinking)
+      // Used for accurate status detection without false positives from source code in tool results
+      let assistantTextOutput = '';
+
+      // Collect stdout: parse NDJSON stream-json events
       childProcess.stdout?.on('data', (data: Buffer) => {
         const chunk = data.toString();
-        output += chunk;
 
-        // AC A.2: Stream to subscribers
-        outputStream.emit(task.id, 'stdout', chunk);
-
-        // Reset hard timeout on any output
+        // Reset timeout on any output
         updateLastOutputTime();
 
-        // Check for interactive prompt patterns (Property 34)
-        if (!blocked && containsInteractivePrompt(chunk)) {
-          this.log('[ClaudeCodeExecutor] Interactive prompt detected in chunk - terminating');
-          this.log(`[ClaudeCodeExecutor] Detected chunk: ${chunk.substring(0, 200)}`);
-          terminateWithBlocking('INTERACTIVE_PROMPT', 'REPL_FAIL_CLOSED');
+        // Accumulate into line buffer and process complete lines
+        stdoutBuffer += chunk;
+        const lines = stdoutBuffer.split('\n');
+        // Keep the last (potentially incomplete) line in buffer
+        stdoutBuffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          try {
+            const event = JSON.parse(trimmed);
+
+            // Write to trace file
+            if (traceStream) {
+              traceStream.write(trimmed + '\n');
+            }
+
+            // Emit structured event as claude_message
+            outputStream.emit(task.id, 'claude_message', trimmed);
+
+            // Extract final result text for output variable (completion logic compatibility)
+            if (event.type === 'result' && event.result) {
+              output = event.result;
+            }
+
+            // Track assistant text messages only (for accurate status detection)
+            // This excludes tool_results, thinking, and other non-text content
+            if (event.type === 'assistant' && event.message?.content) {
+              for (const block of event.message.content) {
+                if (block.type === 'text' && block.text) {
+                  assistantTextOutput += block.text + '\n';
+                }
+              }
+            }
+          } catch {
+            // Not valid JSON - treat as plain text stdout (fallback)
+            output += trimmed + '\n';
+            outputStream.emit(task.id, 'stdout', trimmed);
+          }
         }
+
+        // Interactive prompt detection for stream-json mode:
+        // In stream-json mode, stdout contains JSON events. DO NOT pattern-match
+        // against raw JSON strings — assistant text like "Would you like me to..."
+        // would false-positive. Only check non-JSON fallback lines.
+        // (stderr check below still applies for actual CLI prompts)
       });
 
       // Collect stderr
@@ -830,19 +920,39 @@ export class ClaudeCodeExecutor implements IExecutor {
         // AC A.2: Stream to subscribers
         outputStream.emit(task.id, 'stderr', chunk);
 
-        // Also reset hard timeout on stderr output (CLI is still producing output)
+        // Reset timeout on stderr output (CLI is still producing output)
         updateLastOutputTime();
 
-        // Also check stderr for interactive prompts
-        if (!blocked && containsInteractivePrompt(chunk)) {
-          this.log('[ClaudeCodeExecutor] Interactive prompt detected in stderr - terminating');
-          terminateWithBlocking('INTERACTIVE_PROMPT', 'REPL_FAIL_CLOSED');
-        }
+        // No regex-based interactive prompt detection here.
+        // With --print + --dangerously-skip-permissions, CLI won't produce interactive prompts.
+        // If the process hangs, overall timeout is the safety net.
+        // Post-hoc LLM analysis determines the actual state after process exits.
       });
 
       // Handle completion
       childProcess.on('close', async (code: number | null) => {
         const duration_ms = Date.now() - startTime;
+
+        // Flush remaining stdout buffer
+        if (stdoutBuffer.trim()) {
+          try {
+            const event = JSON.parse(stdoutBuffer.trim());
+            if (traceStream) traceStream.write(stdoutBuffer.trim() + '\n');
+            outputStream.emit(task.id, 'claude_message', stdoutBuffer.trim());
+            if (event.type === 'result' && event.result) {
+              output = event.result;
+            }
+          } catch {
+            output += stdoutBuffer;
+            outputStream.emit(task.id, 'stdout', stdoutBuffer.trim());
+          }
+        }
+
+        // Close trace stream
+        if (traceStream) {
+          traceStream.end();
+          traceStream = null;
+        }
 
         this.log(`[ClaudeCodeExecutor] Process closed: code=${code}, duration=${duration_ms}ms, blocked=${blocked}, timedOut=${timedOut}`);
 
@@ -1012,15 +1122,24 @@ export class ClaudeCodeExecutor implements IExecutor {
               this.log(`[ClaudeCodeExecutor] Failed to generate evidence file: ${(evidenceError as Error).message}`);
               status = 'NO_EVIDENCE';
             }
-          } else if (output.includes('Created') || output.includes('Updated') || output.includes('Modified')) {
-            status = 'INCOMPLETE'; // Claimed success but no file evidence
           } else {
-            status = 'NO_EVIDENCE';
+            // LLM-based file change claim detection (with regex fallback)
+            // Uses the same multi-provider LLM infrastructure as question detection
+            const { detectFileChangeClaimsWithLlm } = await import('../utils/question-detector');
+            const claimResult = await detectFileChangeClaimsWithLlm(assistantTextOutput);
+
+            if (claimResult.hasClaims) {
+              this.log(`[ClaudeCodeExecutor] INCOMPLETE: ${claimResult.reasoning}. provider=${claimResult.usedProvider || 'regex'}. assistantText=${assistantTextOutput.substring(0, 200)}`);
+              status = 'INCOMPLETE';
+            } else {
+              this.log(`[ClaudeCodeExecutor] NO_EVIDENCE: ${claimResult.reasoning}. provider=${claimResult.usedProvider || 'regex'}. outputLen=${output.length}, assistantTextLen=${assistantTextOutput.length}`);
+              status = 'NO_EVIDENCE';
+            }
           }
         }
 
 
-        this.log(`[ClaudeCodeExecutor] Result: status=${status}, verified=${verified_files.length}, unverified=${unverified_files.length}`);
+        this.log(`[ClaudeCodeExecutor] Result: status=${status}, code=${code}, verified=${verified_files.length}, unverified=${unverified_files.length}, outputLen=${output.length}, assistantTextLen=${assistantTextOutput.length}, duration=${duration_ms}ms`);
 
         safeResolve({
           executed: code === 0,
@@ -1032,6 +1151,7 @@ export class ClaudeCodeExecutor implements IExecutor {
           cwd,
           verified_files,
           unverified_files,
+          assistantOutput: assistantTextOutput || undefined,
         });
       });
 

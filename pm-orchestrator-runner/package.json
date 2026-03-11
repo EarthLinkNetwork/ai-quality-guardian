@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "postbuild": "node scripts/generate-build-meta.js",
+    "postbuild": "rm -rf dist/web/public && cp -r src/web/public dist/web/public && cp src/web/routes/golden-set.json dist/web/routes/golden-set.json 2>/dev/null; node scripts/generate-build-meta.js && node scripts/verify-dist.js",
     "test": "mocha --require ts-node/register 'test/**/*.test.ts'",
     "test:unit": "mocha --require ts-node/register 'test/unit/**/*.test.ts'",
     "test:property": "mocha --require ts-node/register 'test/property/**/*.test.ts'",
@@ -84,13 +84,16 @@
     "typescript": "^5.3.2"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.76.0",
     "@aws-sdk/client-dynamodb": "^3.971.0",
+    "@aws-sdk/credential-providers": "^3.995.0",
     "@aws-sdk/lib-dynamodb": "^3.971.0",
     "@types/js-yaml": "^4.0.9",
     "commander": "^12.0.0",
     "express": "^5.2.1",
     "js-yaml": "^4.1.1",
     "minimatch": "^9.0.0",
+    "openai": "^6.22.0",
     "uuid": "^10.0.0",
     "yaml": "^2.8.2"
   },

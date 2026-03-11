@@ -51,6 +51,7 @@ import { PromptAssembler, TaskGroupPreludeInput } from '../prompt/prompt-assembl
 import { TaskGroupContext } from '../models/task-group';
 import { ConversationTracer } from '../trace/conversation-tracer';
 import { getVerboseExecutor } from '../config/global-config';
+import { detectQuestions } from '../utils/question-detector';
 import { Template } from '../template';
 
 /**
@@ -958,6 +959,55 @@ export class RunnerCore extends EventEmitter {
             // READ_INFO and REPORT tasks don't require file evidence
             // They succeed if there's output from the executor
             if ((task.taskType === 'READ_INFO' || task.taskType === 'REPORT') && executorResult.output) {
+              // Check for unanswered questions before marking as COMPLETED
+              const questionResult = detectQuestions(executorResult.output);
+              if (questionResult.hasQuestions) {
+                executionLog.push(`[${new Date().toISOString()}] READ_INFO/REPORT output contains questions (confidence=${questionResult.confidence}) → AWAITING_RESPONSE`);
+
+                result.status = TaskStatus.INCOMPLETE;
+                result.clarification_needed = true;
+                result.clarification_reason = 'QUESTION_IN_OUTPUT' as ClarificationReason;
+                result.original_prompt = task.naturalLanguageTask;
+                result.evidence = {
+                  task_id: task.id,
+                  completed: false,
+                  started_at: startedAt,
+                  response_output: executorResult.output,
+                  clarification_message: executorResult.output,
+                  task_type: task.taskType,
+                  question_detection: questionResult,
+                  execution_log: executionLog,
+                };
+
+                if (taskLog && this.taskLogManager && this.session) {
+                  await this.taskLogManager.completeTaskWithSession(
+                    taskLog.task_id,
+                    this.session.session_id,
+                    'INCOMPLETE',
+                    filesCreated,
+                    undefined,
+                    `clarification_required:QUESTION_IN_OUTPUT`,
+                    executorBlockingInfo.executor_blocked !== undefined ? {
+                      executorBlocked: executorBlockingInfo.executor_blocked,
+                      blockedReason: executorBlockingInfo.blocked_reason,
+                      timeoutMs: executorBlockingInfo.timeout_ms,
+                      terminatedBy: executorBlockingInfo.terminated_by,
+                    } : undefined
+                  );
+                }
+                this.taskResults.push(result);
+                this.emit('task_incomplete', {
+                  task_id: task.id,
+                  status: result.status,
+                  clarification_message: executorResult.output,
+                  clarification_needed: true,
+                });
+                this.lastExecutorOutput = executorResult.output;
+                this.lastFilesModified = executorResult.files_modified || [];
+                this.lastExecutionDurationMs = executorResult.duration_ms || 0;
+                return;
+              }
+
               executionLog.push(`[${new Date().toISOString()}] READ_INFO/REPORT task completed with response output (no file evidence required)`);
 
               // Mark as COMPLETED - the output itself is the deliverable

@@ -8,7 +8,7 @@
 import { describe, it } from 'mocha';
 import { strict as assert } from 'assert';
 import { deriveLifecycleState } from "../../../src/web/dal/project-index-dal";
-import { ProjectIndex, ProjectLifecycleState } from "../../../src/web/dal/types";
+import { ProjectIndex, ProjectLifecycleState, ProjectUserStatus, ProjectSortField, SortDirection } from "../../../src/web/dal/types";
 
 /**
  * Pure function to filter projects based on filter criteria
@@ -21,7 +21,9 @@ export function filterProjects(
     favoriteOnly?: boolean;
     tags?: string[];
     status?: string;
+    projectStatus?: ProjectUserStatus;
     lifecycle?: ProjectLifecycleState;
+    search?: string;
   }
 ): ProjectIndex[] {
   let result = [...projects];
@@ -48,11 +50,62 @@ export function filterProjects(
     result = result.filter(p => p.status === filter.status);
   }
 
+  // Filter by user-managed project status (default: "active")
+  if (filter.projectStatus) {
+    result = result.filter(p => (p.projectStatus || 'active') === filter.projectStatus);
+  }
+
   // Filter by lifecycle state (computed)
   if (filter.lifecycle) {
     result = result.filter(p => deriveLifecycleState(p) === filter.lifecycle);
   }
 
+  // Filter by search query
+  if (filter.search) {
+    const q = filter.search.toLowerCase();
+    result = result.filter(p => {
+      const name = (p.alias || p.projectPath || '').toLowerCase();
+      const pathStr = (p.projectPath || '').toLowerCase();
+      const tagStr = (p.tags || []).join(' ').toLowerCase();
+      return name.includes(q) || pathStr.includes(q) || tagStr.includes(q);
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Pure function to sort projects
+ */
+export function sortProjects(
+  projects: ProjectIndex[],
+  sortBy: ProjectSortField = 'updatedAt',
+  sortDirection: SortDirection = 'desc'
+): ProjectIndex[] {
+  const result = [...projects];
+  result.sort((a, b) => {
+    // Favorites always first
+    if (a.favorite && !b.favorite) return -1;
+    if (!a.favorite && b.favorite) return 1;
+
+    let cmp = 0;
+    switch (sortBy) {
+      case 'name':
+        cmp = (a.alias || a.projectPath).localeCompare(b.alias || b.projectPath);
+        break;
+      case 'createdAt':
+        cmp = a.createdAt.localeCompare(b.createdAt);
+        break;
+      case 'lastActivityAt':
+        cmp = a.lastActivityAt.localeCompare(b.lastActivityAt);
+        break;
+      case 'updatedAt':
+      default:
+        cmp = a.updatedAt.localeCompare(b.updatedAt);
+        break;
+    }
+    return sortDirection === 'asc' ? cmp : -cmp;
+  });
   return result;
 }
 
@@ -327,5 +380,213 @@ describe("countProjectsByCategory - AC-3: Count accuracy", () => {
 
     assert.equal(counts.active, 1);
     assert.equal(counts.error, 1);
+  });
+});
+
+describe("filterProjects - projectStatus filter", () => {
+  const now = new Date();
+  const recentDate = new Date(now);
+  recentDate.setDate(recentDate.getDate() - 1);
+
+  const createProject = (
+    id: string,
+    overrides?: Partial<ProjectIndex>
+  ): ProjectIndex => ({
+    PK: `ORG#org_1`,
+    SK: `PIDX#${id}`,
+    projectId: id,
+    orgId: "org_1",
+    projectPath: `/test/${id}`,
+    tags: [],
+    favorite: false,
+    archived: false,
+    status: "idle",
+    lastActivityAt: recentDate.toISOString(),
+    sessionCount: 0,
+    taskStats: { total: 0, completed: 0, failed: 0, running: 0, awaiting: 0 },
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+    ...overrides,
+  });
+
+  const projectsWithStatus: ProjectIndex[] = [
+    createProject("active_1", { projectStatus: "active" }),
+    createProject("active_2"),  // no projectStatus = defaults to "active"
+    createProject("paused_1", { projectStatus: "paused" }),
+    createProject("completed_1", { projectStatus: "completed" }),
+    createProject("on_hold_1", { projectStatus: "on_hold" }),
+  ];
+
+  it("filters to active projects by default (including those without projectStatus)", () => {
+    const filtered = filterProjects(projectsWithStatus, { projectStatus: "active" });
+    assert.equal(filtered.length, 2);
+    assert.ok(filtered.some(p => p.projectId === "active_1"));
+    assert.ok(filtered.some(p => p.projectId === "active_2"));
+  });
+
+  it("filters to paused projects", () => {
+    const filtered = filterProjects(projectsWithStatus, { projectStatus: "paused" });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].projectId, "paused_1");
+  });
+
+  it("filters to completed projects", () => {
+    const filtered = filterProjects(projectsWithStatus, { projectStatus: "completed" });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].projectId, "completed_1");
+  });
+
+  it("filters to on_hold projects", () => {
+    const filtered = filterProjects(projectsWithStatus, { projectStatus: "on_hold" });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].projectId, "on_hold_1");
+  });
+
+  it("returns all projects when no projectStatus filter", () => {
+    const filtered = filterProjects(projectsWithStatus, {});
+    assert.equal(filtered.length, 5);
+  });
+});
+
+describe("filterProjects - search filter", () => {
+  const now = new Date();
+  const recentDate = new Date(now);
+  recentDate.setDate(recentDate.getDate() - 1);
+
+  const createProject = (
+    id: string,
+    overrides?: Partial<ProjectIndex>
+  ): ProjectIndex => ({
+    PK: `ORG#org_1`,
+    SK: `PIDX#${id}`,
+    projectId: id,
+    orgId: "org_1",
+    projectPath: `/test/${id}`,
+    tags: [],
+    favorite: false,
+    archived: false,
+    status: "idle",
+    lastActivityAt: recentDate.toISOString(),
+    sessionCount: 0,
+    taskStats: { total: 0, completed: 0, failed: 0, running: 0, awaiting: 0 },
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+    ...overrides,
+  });
+
+  const searchProjects: ProjectIndex[] = [
+    createProject("proj_1", { alias: "My Frontend App", projectPath: "/home/user/frontend", tags: ["react", "web"] }),
+    createProject("proj_2", { alias: "Backend API", projectPath: "/home/user/backend", tags: ["node", "api"] }),
+    createProject("proj_3", { projectPath: "/home/user/scripts/deploy" }),
+  ];
+
+  it("matches by alias", () => {
+    const filtered = filterProjects(searchProjects, { search: "frontend" });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].projectId, "proj_1");
+  });
+
+  it("matches by projectPath", () => {
+    const filtered = filterProjects(searchProjects, { search: "deploy" });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].projectId, "proj_3");
+  });
+
+  it("matches by tag", () => {
+    const filtered = filterProjects(searchProjects, { search: "react" });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].projectId, "proj_1");
+  });
+
+  it("is case insensitive", () => {
+    const filtered = filterProjects(searchProjects, { search: "BACKEND" });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].projectId, "proj_2");
+  });
+
+  it("returns nothing for no match", () => {
+    const filtered = filterProjects(searchProjects, { search: "nonexistent" });
+    assert.equal(filtered.length, 0);
+  });
+});
+
+describe("sortProjects", () => {
+  const now = new Date();
+
+  const createProject = (
+    id: string,
+    overrides?: Partial<ProjectIndex>
+  ): ProjectIndex => ({
+    PK: `ORG#org_1`,
+    SK: `PIDX#${id}`,
+    projectId: id,
+    orgId: "org_1",
+    projectPath: `/test/${id}`,
+    tags: [],
+    favorite: false,
+    archived: false,
+    status: "idle",
+    lastActivityAt: now.toISOString(),
+    sessionCount: 0,
+    taskStats: { total: 0, completed: 0, failed: 0, running: 0, awaiting: 0 },
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+    ...overrides,
+  });
+
+  it("sorts by name ascending", () => {
+    const projects = [
+      createProject("p1", { alias: "Zebra" }),
+      createProject("p2", { alias: "Apple" }),
+      createProject("p3", { alias: "Mango" }),
+    ];
+    const sorted = sortProjects(projects, "name", "asc");
+    assert.equal(sorted[0].alias, "Apple");
+    assert.equal(sorted[1].alias, "Mango");
+    assert.equal(sorted[2].alias, "Zebra");
+  });
+
+  it("sorts by name descending", () => {
+    const projects = [
+      createProject("p1", { alias: "Apple" }),
+      createProject("p2", { alias: "Zebra" }),
+    ];
+    const sorted = sortProjects(projects, "name", "desc");
+    assert.equal(sorted[0].alias, "Zebra");
+    assert.equal(sorted[1].alias, "Apple");
+  });
+
+  it("sorts by updatedAt descending (default)", () => {
+    const old = new Date(now.getTime() - 100000).toISOString();
+    const recent = new Date(now.getTime() + 100000).toISOString();
+    const projects = [
+      createProject("p1", { updatedAt: old }),
+      createProject("p2", { updatedAt: recent }),
+    ];
+    const sorted = sortProjects(projects);
+    assert.equal(sorted[0].projectId, "p2");
+    assert.equal(sorted[1].projectId, "p1");
+  });
+
+  it("sorts by createdAt descending", () => {
+    const old = new Date(now.getTime() - 100000).toISOString();
+    const recent = new Date(now.getTime() + 100000).toISOString();
+    const projects = [
+      createProject("p1", { createdAt: old }),
+      createProject("p2", { createdAt: recent }),
+    ];
+    const sorted = sortProjects(projects, "createdAt", "desc");
+    assert.equal(sorted[0].projectId, "p2");
+    assert.equal(sorted[1].projectId, "p1");
+  });
+
+  it("favorites always come first regardless of sort", () => {
+    const projects = [
+      createProject("p1", { alias: "Zebra", favorite: false }),
+      createProject("p2", { alias: "Apple", favorite: true }),
+    ];
+    const sorted = sortProjects(projects, "name", "asc");
+    assert.equal(sorted[0].projectId, "p2");  // favorite comes first
+    assert.equal(sorted[1].projectId, "p1");
   });
 });

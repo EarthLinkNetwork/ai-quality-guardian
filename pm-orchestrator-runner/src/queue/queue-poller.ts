@@ -85,6 +85,7 @@ export class QueuePoller extends EventEmitter {
   private lastPollAt: string | null = null;
   private tasksProcessed: number = 0;
   private errors: number = 0;
+  private heartbeatFailCount: number = 0;
 
   constructor(
     store: IQueueStore,
@@ -192,10 +193,15 @@ export class QueuePoller extends EventEmitter {
     // Update heartbeat (v2) - register this runner as alive
     try {
       await this.store.updateRunnerHeartbeat(this.runnerId, this.projectRoot);
+      this.heartbeatFailCount = 0;
     } catch (error) {
       // Log but don't fail poll - heartbeat is best-effort
-      // eslint-disable-next-line no-console
-      console.error('[QueuePoller] Heartbeat update failed:', error);
+      // Only log first failure and then every 10th to avoid log spam
+      this.heartbeatFailCount = (this.heartbeatFailCount || 0) + 1;
+      if (this.heartbeatFailCount === 1 || this.heartbeatFailCount % 10 === 0) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.warn(`[QueuePoller] Heartbeat update failed (${this.heartbeatFailCount}x): ${msg.substring(0, 150)}`);
+      }
     }
 
     // In-flight limit: 1

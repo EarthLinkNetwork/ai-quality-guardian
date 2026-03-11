@@ -35,11 +35,12 @@ export function createDashboardRoutes(stateDir: string): Router {
    * GET /api/dashboard
    * Dashboard summary: projects, activity, stats
    */
-  router.get('/', async (_req: Request, res: Response) => {
+  router.get('/', async (req: Request, res: Response) => {
     try {
       const dal = getNoDynamo();
+      const projectStatus = (req.query.projectStatus as string) || 'active';
       const [projectsResult, activityResult, stats] = await Promise.all([
-        dal.listProjectIndexes({ limit: 10 }),
+        dal.listProjectIndexes({ limit: 10, projectStatus: projectStatus === 'all' ? undefined : projectStatus as any }),
         dal.listActivityEvents({ limit: 20 }),
         dal.getStats(),
       ]);
@@ -65,12 +66,20 @@ export function createDashboardRoutes(stateDir: string): Router {
       const dal = getNoDynamo();
       const includeArchived = req.query.includeArchived === 'true';
       const status = req.query.status as string | undefined;
+      const projectStatus = req.query.projectStatus as string | undefined;
       const favoriteOnly = req.query.favoriteOnly === 'true';
+      const search = req.query.search as string | undefined;
+      const sortBy = req.query.sortBy as string | undefined;
+      const sortDirection = req.query.sortDirection as string | undefined;
 
       const result = await dal.listProjectIndexes({
         includeArchived,
         status: status as any,
+        projectStatus: projectStatus as any,
         favoriteOnly,
+        search,
+        sortBy: sortBy as any,
+        sortDirection: sortDirection as any,
         limit: 50,
       });
 
@@ -239,7 +248,7 @@ export function createDashboardRoutes(stateDir: string): Router {
           task_group_id: resolvedGroupId,
           projectId,
           status: r.status,
-          summary: r.summary || r.prompt?.substring(0, 60) || r.taskRunId,
+          summary: r.summary || r.prompt?.substring(0, 120) || r.taskRunId,
           started_at: r.startedAt,
           updated_at: r.updatedAt,
           ended_at: r.endedAt || null,
@@ -268,7 +277,7 @@ export function createDashboardRoutes(stateDir: string): Router {
   router.patch('/projects/:projectId', async (req: Request, res: Response) => {
     try {
       const dal = getNoDynamo();
-      const { favorite, alias, tags, bootstrapPrompt, projectType } = req.body;
+      const { favorite, alias, tags, bootstrapPrompt, projectType, projectStatus } = req.body;
 
       const project = await dal.updateProjectIndex(req.params.projectId as string, {
         favorite,
@@ -276,6 +285,7 @@ export function createDashboardRoutes(stateDir: string): Router {
         tags,
         bootstrapPrompt,
         projectType,
+        projectStatus,
       });
 
       if (!project) {

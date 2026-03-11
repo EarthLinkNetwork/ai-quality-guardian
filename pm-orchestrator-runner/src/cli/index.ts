@@ -14,6 +14,7 @@
  */
 
 import * as path from 'path';
+import * as fs from 'fs';
 import { CLI, CLIError } from './cli-interface';
 import { REPLInterface, ProjectMode } from '../repl/repl-interface';
 import { WebServer } from '../web/server';
@@ -28,6 +29,18 @@ import {
   buildNamespaceConfig,
 } from '../config/namespace';
 import { getApiKey } from '../config/global-config';
+import { getAwsProfile } from '../config/aws-config';
+import { ApiKeyManager, initApiKeyManager } from '../auth/api-key-manager';
+import type { AuthConfig } from '../web/middleware/auth';
+import {
+  installDaemon,
+  uninstallDaemon,
+  getDaemonStatus,
+  getRecentLogs,
+  getPlistPath,
+  getLogPath,
+} from '../daemon/launchd';
+import { startAutoUpdateLoop } from '../daemon/auto-updater';
 import { runApiKeyOnboarding, isOnboardingRequired } from '../keys/api-key-onboarding';
 import {
   PidFileManager,
@@ -37,7 +50,7 @@ import {
 } from '../web/background';
 import { ensureDistFresh, checkPublicFilesCopied } from '../utils/dist-freshness';
 import { runSelftest, SELFTEST_CASES, runSelftestWithAIJudge } from '../selftest/selftest-runner';
-import { hasUnansweredQuestions } from '../utils/question-detector';
+import { hasUnansweredQuestions, extractQuestionSummary, detectQuestionsWithLlm, tryAutoAnswerQuestion, generateMetaPrompt, evaluateOutputQuality } from '../utils/question-detector';
 import { estimateTaskSize } from '../utils/task-size-estimator';
 import {
   runPreflightChecks,
@@ -48,6 +61,11 @@ import {
 } from '../diagnostics/executor-preflight';
 import { getExecutorOutputStream } from '../executor/executor-output-stream';
 import type { ExecutorOutputStream, ExecutorOutputChunk } from '../executor/executor-output-stream';
+import {
+  getNoDynamoExtended,
+  initNoDynamoExtended,
+  isNoDynamoExtendedInitialized,
+} from '../web/dal/no-dynamo';
 
 /**
  * Help text
@@ -63,6 +81,9 @@ Commands:
   repl                   Start interactive REPL mode (default if no command)
   web                    Start Web UI server for task queue management
   web-stop               Stop background Web UI server
+  agent                  Start agent-only mode (QueuePoller + executor, no Web UI)
+  daemon                 Daemon management (install, uninstall, status, logs)
+  key                    API key management (generate, list, revoke)
   selftest               Run selftest mode with AI judge
   start <path>           Start a new session on a project
   continue <session-id>  Continue a paused session
@@ -92,6 +113,19 @@ Web Options:
   --port <number>        Web UI port (default: 5678)
   --namespace <name>     Namespace for state separation
   --background           Start server in background (detached) mode
+  --local-dynamodb       Use DynamoDB Local (localhost:8000) instead of AWS
+  --file                 Use file-based persistent store instead of DynamoDB
+  --api-key <key>        API key for authenticated mode (multi-user)
+
+Agent Options:
+  --namespace <name>     Namespace for state separation
+  --local-dynamodb       Use DynamoDB Local instead of AWS
+  --api-key <key>        API key for authenticated mode
+
+Key Options:
+  pm key generate --user <userId> --device <name>  Generate API key
+  pm key list --user <userId>                      List API keys
+  pm key revoke <pmr_xxxxx>                        Revoke API key
 
 Web-Stop Options:
   --namespace <name>     Namespace of server to stop
@@ -322,8 +356,12 @@ interface WebArguments {
   namespace?: string;
   background?: boolean;
   noDynamodb?: boolean;
-  /** Queue store mode: file (default), dynamodb, or memory */
+  /** Queue store mode: dynamodb (default), file, or memory */
   storeMode?: QueueStoreMode;
+  /** Use DynamoDB Local (localhost:8000) instead of AWS */
+  localDynamodb?: boolean;
+  /** API key for authenticated mode */
+  apiKey?: string;
 }
 
 /**
@@ -364,13 +402,26 @@ function parseWebArgs(args: string[]): WebArguments {
       result.noDynamodb = true;
       result.storeMode = 'memory';
     }
-    // DynamoDB mode - use DynamoDB queue store
+    // DynamoDB mode - use DynamoDB queue store (default)
     else if (arg === '--dynamodb') {
       result.storeMode = 'dynamodb';
+    }
+    // File mode - use file-based persistent store
+    else if (arg === '--file') {
+      result.storeMode = 'file';
     }
     // In-memory mode - use non-persistent in-memory store
     else if (arg === '--in-memory') {
       result.storeMode = 'memory';
+    }
+    // Local DynamoDB mode - use localhost:8000
+    else if (arg === '--local-dynamodb') {
+      result.localDynamodb = true;
+      result.storeMode = 'dynamodb';
+    }
+    // API key for authenticated mode
+    else if (arg === '--api-key' && args[i + 1]) {
+      result.apiKey = args[++i];
     }
   }
 
@@ -498,21 +549,109 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
     // Build prompt including conversation history for re-execution after reply
     let effectivePrompt = item.prompt;
     if (item.conversation_history && item.conversation_history.length > 0) {
-      const historyLines = item.conversation_history.map(entry =>
-        `[${entry.role}]: ${entry.content}`
-      ).join('\n');
-      effectivePrompt = `${item.prompt}\n\n[Conversation History]\n${historyLines}\n[/Conversation History]\n\nPlease continue based on the conversation above. The user has already replied.`;
-      console.log(`[Runner] Re-executing with ${item.conversation_history.length} conversation history entries`);
+      // Build a structured context block so Claude Code understands the full conversation flow
+      const contextParts: string[] = [];
+      contextParts.push('=== Previous Conversation Context ===');
+      contextParts.push('');
+      contextParts.push(`Original task: ${item.prompt}`);
+
+      // Include previous output summary if available
+      if (item.output) {
+        const outputSummary = item.output.length > 1500
+          ? item.output.substring(0, 1500) + '\n... (truncated)'
+          : item.output;
+        contextParts.push('');
+        contextParts.push(`Previous assistant output:\n${outputSummary}`);
+      }
+
+      // Include the clarification question if available
+      if (item.clarification?.question) {
+        contextParts.push('');
+        contextParts.push(`Question asked to user: ${item.clarification.question}`);
+      }
+
+      // Include conversation history entries (user replies)
+      contextParts.push('');
+      for (const entry of item.conversation_history) {
+        contextParts.push(`${entry.role === 'user' ? 'User reply' : entry.role}: ${entry.content}`);
+      }
+
+      contextParts.push('');
+      contextParts.push('=== End of Previous Context ===');
+      contextParts.push('');
+      contextParts.push('Continue from where you left off. The user has responded to your question above. Use the previous context to understand what was done before and what the user wants next.');
+
+      effectivePrompt = contextParts.join('\n');
+      console.log(`[Runner] Re-executing with ${item.conversation_history.length} conversation history entries, output=${!!item.output}, clarification=${!!item.clarification?.question}`);
       stateStream.emit(item.task_id, 'recovery', `[resume] re-executing with ${item.conversation_history.length} history entries`);
+
+      // Write conversation_history entries to trace file for Conversation Thread display
+      try {
+        const tracesDir = path.join(projectPath, '.claude', 'state', 'traces');
+        const traceFilePath = path.join(tracesDir, `stream-${item.task_id}.jsonl`);
+        fs.mkdirSync(tracesDir, { recursive: true });
+        for (const entry of item.conversation_history) {
+          if (entry.role === 'user') {
+            const userEvent = JSON.stringify({
+              type: 'user_message',
+              content: entry.content.substring(0, 2000),
+              timestamp: entry.timestamp || new Date().toISOString(),
+            });
+            fs.appendFileSync(traceFilePath, userEvent + '\n');
+          }
+        }
+      } catch (traceErr) {
+        console.log(`[Runner] Failed to write conversation history to trace: ${(traceErr as Error).message}`);
+      }
+    }
+
+    // Helper: write LLM layer events to trace file for Conversation Thread display
+    const writeLlmTraceEvent = (event: Record<string, unknown>) => {
+      try {
+        const tracesDir = path.join(item.project_path || projectPath, '.claude', 'state', 'traces');
+        const traceFilePath = path.join(tracesDir, `stream-${item.task_id}.jsonl`);
+        fs.mkdirSync(tracesDir, { recursive: true });
+        fs.appendFileSync(traceFilePath, JSON.stringify({ ...event, timestamp: new Date().toISOString() }) + '\n');
+        // Also emit for live SSE streaming
+        stateStream.emit(item.task_id, 'claude_message', JSON.stringify({ ...event, timestamp: new Date().toISOString() }));
+      } catch { /* ignore trace write errors */ }
+    };
+
+    // ── LLM Relay Step 1: Meta Prompt Generation ──
+    // Transform the user's raw prompt into structured instructions for Claude Code.
+    // This is the PRE-PROCESSING step of the LLM relay loop.
+    let metaPromptUsed = false;
+    let promptForClaude = effectivePrompt;
+    if (!item.conversation_history || item.conversation_history.length === 0) {
+      // Only generate meta prompt for initial execution (not re-runs after reply)
+      try {
+        stateStream.emit(item.task_id, 'system', `[llm-relay] Generating meta prompt from user input...`);
+        writeLlmTraceEvent({ type: 'llm_processing', action: 'meta_prompt_start', content: 'Generating meta prompt from user input...' });
+        const metaResult = await generateMetaPrompt(effectivePrompt, undefined, undefined, undefined);
+        if (metaResult.usedProvider && metaResult.metaPrompt !== effectivePrompt) {
+          promptForClaude = metaResult.metaPrompt;
+          metaPromptUsed = true;
+          console.log(`[Runner] Meta prompt generated by ${metaResult.usedProvider}: ${metaResult.enhancements}`);
+          stateStream.emit(item.task_id, 'system', `[llm-relay] Meta prompt generated (${metaResult.usedProvider}): ${metaResult.enhancements}`);
+          writeLlmTraceEvent({ type: 'llm_processing', action: 'meta_prompt_done', provider: metaResult.usedProvider, enhancements: metaResult.enhancements });
+        } else {
+          writeLlmTraceEvent({ type: 'llm_processing', action: 'meta_prompt_skipped', content: 'No enhancement needed, using raw prompt' });
+        }
+      } catch (metaErr) {
+        console.warn('[Runner] Meta prompt generation failed, using raw prompt:', metaErr);
+        writeLlmTraceEvent({ type: 'llm_processing', action: 'meta_prompt_failed', content: 'Meta prompt generation failed, using raw prompt' });
+      }
     }
 
     // Inject TaskContext and OutputRules into the prompt for all Web Chat tasks
-    const enrichedPrompt = injectTaskContext(effectivePrompt, item);
-    const promptPreview = truncateForLog(effectivePrompt, 300);
+    const enrichedPrompt = injectTaskContext(promptForClaude, item);
+    const promptPreview = truncateForLog(promptForClaude, 300);
+    // Resolve effective working directory: prefer project_path from queue item, fallback to runner's projectPath
+    const effectiveWorkingDir = item.project_path || projectPath;
     stateStream.emit(
       item.task_id,
       'system',
-      `[llm] prompt->claude_code len=${enrichedPrompt.length} history=${item.conversation_history?.length ?? 0} preview="${promptPreview}"`
+      `[llm] prompt->claude_code len=${enrichedPrompt.length} history=${item.conversation_history?.length ?? 0} cwd=${effectiveWorkingDir} metaPrompt=${metaPromptUsed} preview="${promptPreview}"`
     );
 
     try {
@@ -528,14 +667,15 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         const result = await testExecutor.execute({
           id: item.task_id,
           prompt: enrichedPrompt,
-          workingDir: projectPath,
+          workingDir: effectiveWorkingDir,
           taskType: item.task_type || 'READ_INFO', // Default to READ_INFO for chat messages
         });
 
         console.log(`[Runner] Test executor returned status: ${result.status}`);
 
-        // Post-process: strip PM Orchestrator blocks from output
-        const cleanOutput = stripPmOrchestratorBlocks(result.output || '');
+        // Post-process: prefer human-readable assistantOutput over raw output
+        const rawOutput = result.assistantOutput || result.output || '';
+        const cleanOutput = stripPmOrchestratorBlocks(rawOutput);
 
         // Handle test executor results
         // For READ_INFO/REPORT tasks with INCOMPLETE + output, treat as COMPLETE
@@ -543,7 +683,19 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         const isReadInfoOrReport = taskType === 'READ_INFO' || taskType === 'REPORT';
 
         const hasOutput = cleanOutput && cleanOutput.trim().length > 0;
-        const hasQuestions = hasOutput && hasUnansweredQuestions(cleanOutput);
+
+        // Use LLM-based question detection for higher accuracy
+        let llmResult: { hasQuestions: boolean; questionSummary: string } | undefined;
+        if (hasOutput) {
+          try {
+            llmResult = await detectQuestionsWithLlm(cleanOutput, item.prompt, undefined, undefined);
+            console.log(`[Runner] LLM question detection: hasQuestions=${llmResult.hasQuestions}, summary="${llmResult.questionSummary}"`);
+          } catch (e) {
+            console.warn('[Runner] LLM detection failed, using regex fallback');
+          }
+        }
+        const hasQuestions = llmResult ? llmResult.hasQuestions : (hasOutput && hasUnansweredQuestions(cleanOutput));
+        const questionSummary = llmResult?.questionSummary || (hasQuestions ? extractQuestionSummary(cleanOutput) : '');
 
         if (result.status === 'COMPLETE') {
           // Per COMPLETION_JUDGMENT.md: Questions in output -> AWAITING_RESPONSE (not COMPLETE)
@@ -551,7 +703,7 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
             console.log(`[Runner] COMPLETE but has questions -> AWAITING_RESPONSE`);
             return {
               status: 'ERROR',
-              errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
+              errorMessage: 'AWAITING_CLARIFICATION:' + questionSummary,
               output: cleanOutput,
             };
           }
@@ -562,12 +714,11 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         } else if (isReadInfoOrReport) {
           // READ_INFO/REPORT: INCOMPLETE / NO_EVIDENCE / BLOCKED -> unified handling
           if (hasOutput) {
-            // Per COMPLETION_JUDGMENT.md: Check for questions before marking COMPLETE
             if (hasQuestions) {
               console.log(`[Runner] READ_INFO/REPORT ${result.status} with questions -> AWAITING_RESPONSE`);
               return {
                 status: 'ERROR',
-                errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
+                errorMessage: 'AWAITING_CLARIFICATION:' + questionSummary,
                 output: cleanOutput,
               };
             }
@@ -586,7 +737,7 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
             console.log(`[Runner] ${taskType} ${result.status} with questions -> AWAITING_RESPONSE`);
             return {
               status: 'ERROR',
-              errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
+              errorMessage: 'AWAITING_CLARIFICATION:' + questionSummary,
               output: cleanOutput,
             };
           }
@@ -610,7 +761,7 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
       );
 
       const executor = new AutoResolvingExecutor({
-        projectPath,
+        projectPath: effectiveWorkingDir,
         timeout: timeoutProfile.hard_timeout_ms, // overall safety net (progress-aware if enabled)
         softTimeoutMs: timeoutProfile.idle_timeout_ms, // warning only (for logging)
         silenceLogIntervalMs: Math.min(timeoutProfile.idle_timeout_ms / 2, 30 * 1000), // silence logging interval (NOT termination)
@@ -622,21 +773,171 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
       const result = await executor.execute({
         id: item.task_id,
         prompt: enrichedPrompt,
-        workingDir: projectPath,
+        workingDir: effectiveWorkingDir,
         taskType: item.task_type, // Propagate task type for READ_INFO/REPORT handling
       });
 
       console.log(`[Runner] Task ${item.task_id} completed with status: ${result.status}`);
 
-      // Post-process: strip PM Orchestrator blocks from output
-      const cleanOutput = stripPmOrchestratorBlocks(result.output || '');
+      // Post-process: prefer human-readable assistantOutput over raw output
+      let rawOutput = result.assistantOutput || result.output || '';
+      let cleanOutput = stripPmOrchestratorBlocks(rawOutput);
+
+      // ── LLM Relay Step 2: Output QA Evaluation + Rework Loop ──
+      // Evaluate if Claude Code's output satisfactorily completes the user's request.
+      // If QA fails, generate rework instructions and re-execute (max 1 rework).
+      if (cleanOutput && cleanOutput.trim().length > 0 && result.status !== 'ERROR') {
+        try {
+          stateStream.emit(item.task_id, 'system', `[llm-relay] Evaluating output quality...`);
+          writeLlmTraceEvent({ type: 'llm_processing', action: 'qa_start', content: 'Evaluating output quality...' });
+          let qaResult = await evaluateOutputQuality(cleanOutput, item.prompt, undefined, undefined);
+
+
+          if (!qaResult.passed && qaResult.reworkInstructions) {
+            console.log(`[Runner] QA failed (${qaResult.issues.join(', ')}), re-executing with rework instructions`);
+            stateStream.emit(item.task_id, 'system', `[llm-relay] QA FAILED: ${qaResult.issues.join('; ')}. Sending rework instructions...`);
+            writeLlmTraceEvent({ type: 'llm_processing', action: 'qa_failed', issues: qaResult.issues, content: 'QA failed. Sending rework instructions to Claude Code...' });
+
+            // Build rework prompt
+            const reworkPrompt = `${promptForClaude}\n\n[QA Review - Rework Required]\nThe previous attempt had the following issues:\n${qaResult.issues.map(i => `- ${i}`).join('\n')}\n\nRework instructions:\n${qaResult.reworkInstructions}\n\nPrevious output summary:\n${cleanOutput.substring(0, 1500)}\n\nPlease fix the issues above and complete the task properly.`;
+            const reworkEnriched = injectTaskContext(reworkPrompt, item);
+
+            const reworkExecutor = new AutoResolvingExecutor({
+              projectPath: effectiveWorkingDir,
+              timeout: timeoutProfile.hard_timeout_ms,
+              softTimeoutMs: timeoutProfile.idle_timeout_ms,
+              silenceLogIntervalMs: Math.min(timeoutProfile.idle_timeout_ms / 2, 30 * 1000),
+              progressAwareTimeout: true,
+              disableOverallTimeout: false,
+              maxRetries: 1,
+            });
+
+            const reworkResult = await reworkExecutor.execute({
+              id: item.task_id,
+              prompt: reworkEnriched,
+              workingDir: effectiveWorkingDir,
+              taskType: item.task_type,
+            });
+
+            const reworkRaw = reworkResult.assistantOutput || reworkResult.output || '';
+            const reworkClean = stripPmOrchestratorBlocks(reworkRaw);
+
+            if (reworkClean && reworkClean.trim().length > 0) {
+              console.log(`[Runner] Rework produced output (${reworkClean.length} chars)`);
+              stateStream.emit(item.task_id, 'system', `[llm-relay] Rework completed (${reworkClean.length} chars)`);
+              // Use rework output as the final output
+              rawOutput = reworkRaw;
+              cleanOutput = reworkClean;
+            } else {
+              console.log(`[Runner] Rework produced no output, keeping original`);
+              stateStream.emit(item.task_id, 'system', `[llm-relay] Rework produced no output, keeping original`);
+            }
+          } else if (qaResult.passed) {
+            console.log(`[Runner] QA passed`);
+            stateStream.emit(item.task_id, 'system', `[llm-relay] QA PASSED`);
+            writeLlmTraceEvent({ type: 'llm_processing', action: 'qa_passed', content: 'Output quality check passed' });
+          }
+        } catch (qaErr) {
+          console.warn('[Runner] QA evaluation failed, skipping:', qaErr instanceof Error ? qaErr.message : String(qaErr));
+        }
+      }
 
       // Unified READ_INFO/REPORT handling for non-COMPLETE/non-ERROR statuses
       // (INCOMPLETE, NO_EVIDENCE, BLOCKED all follow the same logic)
       const taskType = item.task_type || 'READ_INFO';
       const isReadInfoOrReport = taskType === 'READ_INFO' || taskType === 'REPORT';
       const hasOutput = cleanOutput && cleanOutput.trim().length > 0;
-      const hasQuestions = hasOutput && hasUnansweredQuestions(cleanOutput);
+
+      // Use LLM-based question detection for higher accuracy
+      let llmResult: { hasQuestions: boolean; questionSummary: string } | undefined;
+      if (hasOutput) {
+        try {
+          writeLlmTraceEvent({ type: 'llm_processing', action: 'question_detection_start', content: 'Detecting questions in output...' });
+          llmResult = await detectQuestionsWithLlm(cleanOutput, item.prompt, undefined, undefined);
+          console.log(`[Runner] LLM question detection: hasQuestions=${llmResult.hasQuestions}, summary="${llmResult.questionSummary}"`);
+          writeLlmTraceEvent({ type: 'llm_processing', action: 'question_detection_done', hasQuestions: llmResult.hasQuestions, summary: llmResult.questionSummary || '' });
+        } catch (e) {
+          console.warn('[Runner] LLM detection failed, using regex fallback');
+        }
+      }
+      const hasQuestions = llmResult ? llmResult.hasQuestions : (hasOutput && hasUnansweredQuestions(cleanOutput));
+      const questionSummary = llmResult?.questionSummary || (hasQuestions ? extractQuestionSummary(cleanOutput) : '');
+
+      // ── Auto-answer: resolve questions via LLM before escalating to user ──
+      // If questions detected, try to answer them automatically using the LLM mediator.
+      // On success, re-execute with the clarification injected. Max 1 attempt.
+      if (hasQuestions && questionSummary) {
+        try {
+          console.log(`[Runner] Questions detected, attempting auto-answer...`);
+          stateStream.emit(item.task_id, 'system', `[auto-answer] Attempting to resolve: "${questionSummary.substring(0, 120)}"`);
+
+          const autoAnswer = await tryAutoAnswerQuestion(questionSummary, item.prompt, cleanOutput);
+
+          if (autoAnswer.canAnswer && autoAnswer.answer) {
+            console.log(`[Runner] Auto-answer succeeded: "${autoAnswer.answer.substring(0, 100)}..."`);
+            stateStream.emit(item.task_id, 'system', `[auto-answer] Resolved: "${autoAnswer.answer.substring(0, 150)}"`);
+
+            // Build enhanced prompt with clarification
+            const rePrompt = `${effectivePrompt}\n\n[Clarification provided by AI mediator]\nQuestion: ${questionSummary}\nAnswer: ${autoAnswer.answer}\n\nProceed with the task using this clarification. Do not ask further questions about the above topic.`;
+            const reEnriched = injectTaskContext(rePrompt, item);
+
+            const reExecutor = new AutoResolvingExecutor({
+              projectPath: effectiveWorkingDir,
+              timeout: timeoutProfile.hard_timeout_ms,
+              softTimeoutMs: timeoutProfile.idle_timeout_ms,
+              silenceLogIntervalMs: Math.min(timeoutProfile.idle_timeout_ms / 2, 30 * 1000),
+              progressAwareTimeout: true,
+              disableOverallTimeout: false,
+              maxRetries: 1,
+            });
+
+            const reResult = await reExecutor.execute({
+              id: item.task_id,
+              prompt: reEnriched,
+              workingDir: effectiveWorkingDir,
+              taskType: item.task_type,
+            });
+
+            const reRaw = reResult.assistantOutput || reResult.output || '';
+            const reClean = stripPmOrchestratorBlocks(reRaw);
+
+            if (reClean && reClean.trim().length > 0) {
+              // Check if retry output also has questions (escalate to user if so)
+              let retryHasQuestions = false;
+              let retryQuestionSummary = '';
+              try {
+                const reLlm = await detectQuestionsWithLlm(reClean, item.prompt, undefined, undefined);
+                retryHasQuestions = reLlm.hasQuestions;
+                retryQuestionSummary = reLlm.questionSummary || extractQuestionSummary(reClean);
+              } catch {
+                retryHasQuestions = hasUnansweredQuestions(reClean);
+                retryQuestionSummary = retryHasQuestions ? extractQuestionSummary(reClean) : '';
+              }
+
+              if (retryHasQuestions) {
+                console.log(`[Runner] Auto-answer retry still has questions -> AWAITING_RESPONSE`);
+                stateStream.emit(item.task_id, 'state', `[state] AWAITING_RESPONSE (questions persist after auto-answer)`);
+                return {
+                  status: 'ERROR',
+                  errorMessage: 'AWAITING_CLARIFICATION:' + retryQuestionSummary,
+                  output: reClean,
+                };
+              }
+
+              console.log(`[Runner] Auto-answer retry succeeded -> COMPLETE`);
+              stateStream.emit(item.task_id, 'state', `[state] COMPLETE (auto-answer resolved)`);
+              return { status: 'COMPLETE', output: reClean };
+            } else {
+              // Retry produced no output — fall through to normal status handling
+              console.log(`[Runner] Auto-answer retry produced no output, falling through`);
+            }
+          } else {
+            console.log(`[Runner] Auto-answer cannot resolve (${autoAnswer.reasoning}), escalating to user`);
+          }
+        } catch (autoErr) {
+          console.warn('[Runner] Auto-answer attempt failed:', autoErr instanceof Error ? autoErr.message : String(autoErr));
+        }
+      }
 
       if (result.status === 'COMPLETE') {
         // Per COMPLETION_JUDGMENT.md: Questions in output -> AWAITING_RESPONSE (not COMPLETE)
@@ -645,7 +946,7 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
           stateStream.emit(item.task_id, 'state', `[state] AWAITING_RESPONSE (questions detected in COMPLETE output)`);
           return {
             status: 'ERROR',
-            errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
+            errorMessage: 'AWAITING_CLARIFICATION:' + questionSummary,
             output: cleanOutput,
           };
         }
@@ -659,13 +960,12 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
         // READ_INFO/REPORT: output is the deliverable, not file evidence
         // INCOMPLETE / NO_EVIDENCE / BLOCKED all route here
         if (hasOutput) {
-          // Per COMPLETION_JUDGMENT.md: Check for questions before marking COMPLETE
           if (hasQuestions) {
             console.log(`[Runner] READ_INFO/REPORT ${result.status} with questions -> AWAITING_RESPONSE`);
             stateStream.emit(item.task_id, 'state', `[state] AWAITING_RESPONSE (questions in ${result.status} output)`);
             return {
               status: 'ERROR',
-              errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
+              errorMessage: 'AWAITING_CLARIFICATION:' + questionSummary,
               output: cleanOutput,
             };
           }
@@ -692,16 +992,24 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
           stateStream.emit(item.task_id, 'state', `[state] AWAITING_RESPONSE (questions in ${taskType} ${result.status})`);
           return {
             status: 'ERROR',
-            errorMessage: 'AWAITING_CLARIFICATION:' + cleanOutput,
+            errorMessage: 'AWAITING_CLARIFICATION:' + questionSummary,
             output: cleanOutput,
           };
         }
-        // Non-COMPLETE -> ERROR, preserve output
-        console.log(`[Runner] ${taskType} ${result.status} -> ERROR (output preserved: ${hasOutput})`);
-        stateStream.emit(item.task_id, 'state', `[state] ERROR (${taskType} ${result.status})`);
+        // Exit code 0 + has output → treat as COMPLETE (file verification false-negative)
+        // The executor's disk scan may miss files when cwd differs from actual work directory
+        if (result.executed && hasOutput) {
+          console.log(`[Runner] ${taskType} ${result.status} but exit=0 + output -> COMPLETE (file verification override)`);
+          stateStream.emit(item.task_id, 'state', `[state] COMPLETE (${taskType} ${result.status}, exit=0 override)`);
+          return { status: 'COMPLETE', output: cleanOutput };
+        }
+        // Non-COMPLETE with no output or non-zero exit -> ERROR
+        const outputPreview = cleanOutput ? cleanOutput.substring(0, 150) : '(no output)';
+        console.log(`[Runner] ${taskType} ${result.status} -> ERROR (output preserved: ${hasOutput}, outputLen=${cleanOutput?.length ?? 0}, preview="${outputPreview}")`);
+        stateStream.emit(item.task_id, 'state', `[state] ERROR (${taskType} ${result.status}, outputLen=${cleanOutput?.length ?? 0})`);
         return {
           status: 'ERROR',
-          errorMessage: `Task ended with status: ${result.status}`,
+          errorMessage: `Task ended with status: ${result.status}. Executor exit code: ${result.executed ? '0' : 'non-zero'}. Output length: ${cleanOutput?.length ?? 0}`,
           output: cleanOutput || undefined,
         };
       }
@@ -915,8 +1223,8 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   const effectiveStateDir = process.env.PM_E2E_STATE_DIR || namespaceConfig.stateDir;
   const isE2eMode = !!process.env.PM_E2E_STATE_DIR;
 
-  // Determine queue store mode (priority: CLI flag > env var > default 'file')
-  let storeMode: QueueStoreMode = 'file'; // Default to file-based persistent store
+  // Determine queue store mode (priority: CLI flag > env var > default 'dynamodb')
+  let storeMode: QueueStoreMode = 'dynamodb'; // Default to AWS DynamoDB (Berry profile)
 
   if (webArgs.storeMode) {
     storeMode = webArgs.storeMode;
@@ -945,19 +1253,25 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     queueStoreType = 'memory';
   } else if (storeMode === 'dynamodb') {
     // Try to create DynamoDB-based store with fallback to file on connection error
+    const useLocalDynamodb = webArgs.localDynamodb || process.env.PM_LOCAL_DYNAMODB === '1';
     try {
       const dynamoStore = new QueueStore({
         namespace: namespaceConfig.namespace,
+        localDynamodb: useLocalDynamodb,
       });
       await dynamoStore.ensureTable();
       queueStore = dynamoStore;
       queueStoreType = 'dynamodb';
-      console.log(`[QueueStore] Using DynamoDB: ${dynamoStore.getEndpoint()}`);
+      if (useLocalDynamodb) {
+        console.log(`[QueueStore] Using DynamoDB Local: ${dynamoStore.getEndpoint()}`);
+      } else {
+        console.log(`[QueueStore] Using AWS DynamoDB (profile: ${getAwsProfile()}): ${dynamoStore.getEndpoint()}`);
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('connect')) {
-        console.warn('[QueueStore] DynamoDB connection failed, falling back to file store');
-        console.warn('[QueueStore] To use DynamoDB, start DynamoDB Local: docker-compose up -d dynamodb');
+      if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('connect') || errorMessage.includes('credential') || errorMessage.includes('Could not load')) {
+        console.warn(`[QueueStore] DynamoDB connection failed: ${errorMessage.substring(0, 120)}`);
+        console.warn('[QueueStore] Falling back to file store');
         const fileStore = new FileQueueStore({
           namespace: namespaceConfig.namespace,
           stateDir: effectiveStateDir,
@@ -1126,6 +1440,12 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
         } else if (storeMode === 'memory') {
           args.push('--in-memory');
         }
+        if (webArgs.localDynamodb) {
+          args.push('--local-dynamodb');
+        }
+        if (webArgs.apiKey) {
+          args.push('--api-key', webArgs.apiKey);
+        }
 
         const child = spawn(process.execPath, [modulePath, ...args], {
           cwd: projectPath,
@@ -1178,6 +1498,60 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     }
   };
 
+  // Ensure NoDynamo DAL is initialized for conversation updates
+  if (!isNoDynamoExtendedInitialized()) {
+    initNoDynamoExtended(effectiveStateDir);
+  }
+
+  /**
+   * Update conversation message after task completion/error.
+   * Links queue task_id → run (by taskRunId) → conversation message (by runId).
+   */
+  const updateConversationFromTask = async (item: QueueItem, status: 'complete' | 'error', errorMessage?: string) => {
+    try {
+      const dal = getNoDynamoExtended();
+      // Extract raw taskRunId from namespaced task_id (e.g. "ns:task_abc" → "task_abc")
+      const rawTaskRunId = item.task_id.includes(':')
+        ? item.task_id.split(':').slice(1).join(':')
+        : item.task_id;
+
+      // Find the run that links taskRunId to runId and projectId
+      const run = await dal.findRunByTaskRunId(rawTaskRunId);
+      if (!run) {
+        console.warn(`[Runner] No run found for taskRunId=${rawTaskRunId}, skipping conversation update`);
+        return;
+      }
+
+      // Find the assistant message for this run
+      const messages = await dal.listConversationMessages(run.projectId);
+      const assistantMsg = messages.find(
+        (m) => m.runId === run.runId && m.role === 'assistant'
+      );
+      if (!assistantMsg) {
+        console.warn(`[Runner] No assistant message found for runId=${run.runId}, skipping conversation update`);
+        return;
+      }
+
+      // Get task output from queue store
+      const taskItem = await queueStore.getItem(item.task_id);
+      const output = taskItem?.output || (status === 'error' ? (errorMessage || 'Task failed') : 'Task completed');
+
+      await dal.updateConversationMessage(run.projectId, assistantMsg.messageId, {
+        content: output,
+        status,
+      });
+
+      // Also update the run status
+      await dal.updateRun(run.runId, {
+        status: status === 'complete' ? 'COMPLETE' : 'ERROR',
+      });
+
+      console.log(`[Runner] Updated conversation message for runId=${run.runId} → ${status}`);
+    } catch (err) {
+      console.error('[Runner] Failed to update conversation message:', err);
+    }
+  };
+
   // Set up poller event listeners
   poller.on('started', () => {
     console.log('[Runner] Queue poller started');
@@ -1187,9 +1561,11 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   });
   poller.on('completed', (item: QueueItem) => {
     console.log(`[Runner] Completed task: ${item.task_id}`);
+    updateConversationFromTask(item, 'complete').catch(() => {});
   });
   poller.on('error', (item: QueueItem, error: Error) => {
     console.error(`[Runner] Task ${item.task_id} error:`, error.message);
+    updateConversationFromTask(item, 'error', error.message).catch(() => {});
   });
   poller.on('stale-recovered', (count: number) => {
     console.log(`[Runner] Recovered ${count} stale tasks`);
@@ -1203,6 +1579,27 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   const detachProgressPersistence = attachQueueProgressPersistence(queueStore, outputStream);
   detachProgressPersistenceRef = detachProgressPersistence;
 
+  // Set up API key authentication if --api-key is provided
+  let authConfig: AuthConfig | undefined;
+  if (webArgs.apiKey) {
+    const useLocalDynamodb = webArgs.localDynamodb || process.env.PM_LOCAL_DYNAMODB === '1';
+    const apiKeyManager = initApiKeyManager({ localDynamodb: useLocalDynamodb });
+    try {
+      await apiKeyManager.ensureTable();
+      const keyData = await apiKeyManager.validateApiKey(webArgs.apiKey);
+      if (!keyData) {
+        console.error(`[Auth] Invalid API key: ${webArgs.apiKey.substring(0, 8)}...`);
+        process.exit(1);
+      }
+      console.log(`[Auth] Authenticated as userId="${keyData.userId}", device="${keyData.deviceName}"`);
+      authConfig = { enabled: true, apiKeyManager };
+    } catch (error) {
+      console.warn(`[Auth] API key validation failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn('[Auth] Running without authentication (local dev mode)');
+      authConfig = { enabled: false };
+    }
+  }
+
   const server = new WebServer({
     port,
     queueStore,
@@ -1212,6 +1609,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     stateDir: effectiveStateDir,
     queueStoreType,
     runnerRestartHandler,
+    authConfig,
   });
   serverRef = server;
 
@@ -1361,6 +1759,341 @@ function isOption(arg: string): boolean {
 }
 
 /**
+ * Handle `pm daemon` sub-commands
+ * pm daemon install [--namespace <name>] [--local-dynamodb] [--api-key <key>]
+ * pm daemon uninstall
+ * pm daemon status
+ * pm daemon logs [--lines <n>]
+ */
+function handleDaemonCommand(args: string[]): void {
+  const subCommand = args[0];
+
+  if (!subCommand || subCommand === '--help') {
+    console.log(`
+Daemon Management (macOS launchd)
+
+Commands:
+  pm daemon install    Install and start daemon (launchd agent)
+  pm daemon uninstall  Stop and uninstall daemon
+  pm daemon status     Show daemon status
+  pm daemon logs       Show recent daemon logs
+
+Install Options:
+  --namespace <name>   Namespace for state separation
+  --local-dynamodb     Use DynamoDB Local instead of AWS
+  --api-key <key>      API key for authenticated mode
+
+Logs Options:
+  --lines <n>          Number of log lines to show (default: 50)
+`);
+    process.exit(0);
+  }
+
+  switch (subCommand) {
+    case 'install': {
+      let namespace: string | undefined;
+      let localDynamodb = false;
+      let apiKeyVal: string | undefined;
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === '--namespace' && args[i + 1]) namespace = args[++i];
+        else if (args[i] === '--local-dynamodb') localDynamodb = true;
+        else if (args[i] === '--api-key' && args[i + 1]) apiKeyVal = args[++i];
+      }
+      const result = installDaemon({
+        projectPath: process.cwd(),
+        namespace,
+        localDynamodb,
+        apiKey: apiKeyVal,
+      });
+      if (result.success) {
+        console.log(result.message);
+        console.log('');
+        console.log('Verify: pm daemon status');
+        console.log('Logs:   pm daemon logs');
+      } else {
+        console.error(result.message);
+        process.exit(1);
+      }
+      break;
+    }
+
+    case 'uninstall': {
+      const result = uninstallDaemon();
+      console.log(result.message);
+      if (!result.success) process.exit(1);
+      break;
+    }
+
+    case 'status': {
+      const status = getDaemonStatus();
+      console.log(`Label:     ${status.label}`);
+      console.log(`Installed: ${status.installed ? 'yes' : 'no'}`);
+      console.log(`Running:   ${status.running ? 'yes' : 'no'}`);
+      if (status.pid) console.log(`PID:       ${status.pid}`);
+      console.log(`Plist:     ${getPlistPath()}`);
+      console.log(`Log:       ${getLogPath()}`);
+      break;
+    }
+
+    case 'logs': {
+      let lines = 50;
+      for (let i = 1; i < args.length; i++) {
+        if (args[i] === '--lines' && args[i + 1]) {
+          lines = parseInt(args[++i], 10) || 50;
+        }
+      }
+      console.log(getRecentLogs(lines));
+      break;
+    }
+
+    default:
+      console.error(`Unknown daemon sub-command: ${subCommand}`);
+      console.error('Use: pm daemon install | uninstall | status | logs');
+      process.exit(1);
+  }
+
+  process.exit(0);
+}
+
+/**
+ * Agent-only arguments
+ */
+interface AgentArguments {
+  namespace?: string;
+  localDynamodb?: boolean;
+  apiKey?: string;
+  autoUpdate?: boolean;
+}
+
+/**
+ * Parse agent-specific arguments
+ */
+function parseAgentArgs(args: string[]): AgentArguments {
+  const result: AgentArguments = {};
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--namespace' && args[i + 1]) {
+      const ns = args[++i];
+      const error = validateNamespace(ns);
+      if (error) { console.error(`Invalid namespace: ${error}`); process.exit(1); }
+      result.namespace = ns;
+    } else if (arg === '--local-dynamodb') {
+      result.localDynamodb = true;
+    } else if (arg === '--api-key' && args[i + 1]) {
+      result.apiKey = args[++i];
+    } else if (arg === '--auto-update') {
+      result.autoUpdate = true;
+    }
+  }
+  return result;
+}
+
+/**
+ * Start agent-only mode: QueuePoller + TaskExecutor, no Web server
+ */
+async function startAgentOnly(agentArgs: AgentArguments): Promise<void> {
+  const projectPath = process.cwd();
+
+  const namespaceConfig = buildNamespaceConfig({
+    autoDerive: true,
+    namespace: agentArgs.namespace,
+    projectRoot: projectPath,
+  });
+
+  const useLocalDynamodb = agentArgs.localDynamodb || process.env.PM_LOCAL_DYNAMODB === '1';
+
+  // Create DynamoDB queue store (agent mode always uses DynamoDB)
+  let queueStore: IQueueStore;
+  try {
+    const dynamoStore = new QueueStore({
+      namespace: namespaceConfig.namespace,
+      localDynamodb: useLocalDynamodb,
+    });
+    await dynamoStore.ensureTable();
+    queueStore = dynamoStore;
+    if (useLocalDynamodb) {
+      console.log(`[Agent] Using DynamoDB Local: ${dynamoStore.getEndpoint()}`);
+    } else {
+      console.log(`[Agent] Using AWS DynamoDB (profile: ${getAwsProfile()}): ${dynamoStore.getEndpoint()}`);
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[Agent] Failed to connect to DynamoDB: ${errorMessage}`);
+    console.error('[Agent] Agent mode requires DynamoDB. Use --local-dynamodb for local development.');
+    process.exit(1);
+  }
+
+  // Validate API key if provided
+  if (agentArgs.apiKey) {
+    const apiKeyManager = initApiKeyManager({ localDynamodb: useLocalDynamodb });
+    try {
+      await apiKeyManager.ensureTable();
+      const keyData = await apiKeyManager.validateApiKey(agentArgs.apiKey);
+      if (!keyData) {
+        console.error(`[Agent] Invalid API key: ${agentArgs.apiKey.substring(0, 8)}...`);
+        process.exit(1);
+      }
+      console.log(`[Agent] Authenticated as userId="${keyData.userId}", device="${keyData.deviceName}"`);
+    } catch (error) {
+      console.warn(`[Agent] API key validation failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // Preflight checks
+  const preflightReport = runPreflightChecks('auto');
+  if (!preflightReport.can_proceed) {
+    console.error('[Agent] Executor preflight failed. No executor available.');
+    for (const err of preflightReport.fatal_errors) {
+      console.error(`  [${err.code}] ${err.message}`);
+    }
+    process.exit(1);
+  }
+
+  // Create TaskExecutor and QueuePoller
+  const taskExecutor = createTaskExecutor(projectPath);
+  const outputStream = getExecutorOutputStream();
+  const detachPersistence = attachQueueProgressPersistence(queueStore, outputStream);
+
+  const poller = new QueuePoller(queueStore, taskExecutor, {
+    pollIntervalMs: 1000,
+    recoverOnStartup: true,
+    projectRoot: projectPath,
+  });
+
+  poller.on('started', () => console.log('[Agent] Queue poller started'));
+  poller.on('claimed', (item: QueueItem) => console.log(`[Agent] Claimed task: ${item.task_id}`));
+  poller.on('completed', (item: QueueItem) => console.log(`[Agent] Completed task: ${item.task_id}`));
+  poller.on('error', (item: QueueItem, error: Error) => console.error(`[Agent] Task ${item.task_id} error:`, error.message));
+
+  console.log(`[Agent] Starting agent-only mode`);
+  console.log(`[Agent] Namespace: ${namespaceConfig.namespace}`);
+  console.log(`[Agent] Project: ${projectPath}`);
+  console.log(`[Agent] Auto-update: ${agentArgs.autoUpdate ? 'enabled' : 'disabled'}`);
+  console.log('[Agent] Press Ctrl+C to stop');
+  console.log('');
+
+  await poller.start();
+
+  // Start auto-update if enabled
+  let stopAutoUpdate: (() => void) | undefined;
+  if (agentArgs.autoUpdate) {
+    stopAutoUpdate = startAutoUpdateLoop(projectPath);
+  }
+
+  // Graceful shutdown
+  const shutdown = async () => {
+    console.log('\n[Agent] Shutting down...');
+    stopAutoUpdate?.();
+    detachPersistence();
+    await poller.stop();
+    console.log('[Agent] Shutdown complete');
+    process.exit(0);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
+/**
+ * Handle `pm key` sub-commands
+ * pm key generate --user <userId> --device <deviceName> [--local-dynamodb]
+ * pm key list --user <userId> [--local-dynamodb]
+ * pm key revoke <key> [--local-dynamodb]
+ */
+async function handleKeyCommand(args: string[]): Promise<void> {
+  const subCommand = args[0];
+  const useLocalDynamodb = args.includes('--local-dynamodb');
+
+  if (!subCommand || subCommand === '--help') {
+    console.log(`
+API Key Management
+
+Commands:
+  pm key generate --user <userId> --device <deviceName>  Generate a new API key
+  pm key list --user <userId>                            List API keys for a user
+  pm key revoke <key>                                    Revoke an API key
+
+Options:
+  --local-dynamodb  Use DynamoDB Local (localhost:8000) instead of AWS
+`);
+    process.exit(0);
+  }
+
+  const manager = new ApiKeyManager({ localDynamodb: useLocalDynamodb });
+
+  try {
+    await manager.ensureTable();
+
+    switch (subCommand) {
+      case 'generate': {
+        let userId = '';
+        let deviceName = '';
+        for (let i = 1; i < args.length; i++) {
+          if (args[i] === '--user' && args[i + 1]) userId = args[++i];
+          else if (args[i] === '--device' && args[i + 1]) deviceName = args[++i];
+        }
+        if (!userId || !deviceName) {
+          console.error('Usage: pm key generate --user <userId> --device <deviceName>');
+          process.exit(1);
+        }
+        const apiKey = await manager.generateApiKey(userId, deviceName);
+        console.log('API Key generated:');
+        console.log(`  Key:    ${apiKey.key}`);
+        console.log(`  User:   ${apiKey.userId}`);
+        console.log(`  Device: ${apiKey.deviceName}`);
+        console.log('');
+        console.log('Save this key - it cannot be retrieved later.');
+        console.log(`Usage: pm web --api-key ${apiKey.key}`);
+        break;
+      }
+
+      case 'list': {
+        let userId = '';
+        for (let i = 1; i < args.length; i++) {
+          if (args[i] === '--user' && args[i + 1]) userId = args[++i];
+        }
+        if (!userId) {
+          console.error('Usage: pm key list --user <userId>');
+          process.exit(1);
+        }
+        const keys = await manager.listApiKeys(userId);
+        if (keys.length === 0) {
+          console.log(`No API keys found for user "${userId}"`);
+        } else {
+          console.log(`API Keys for user "${userId}":`);
+          for (const key of keys) {
+            const status = key.isActive ? 'active' : 'revoked';
+            const keyPreview = key.key.substring(0, 12) + '...';
+            console.log(`  ${keyPreview}  device=${key.deviceName}  status=${status}  lastUsed=${key.lastUsedAt}`);
+          }
+        }
+        break;
+      }
+
+      case 'revoke': {
+        const keyToRevoke = args.find(a => a.startsWith('pmr_'));
+        if (!keyToRevoke) {
+          console.error('Usage: pm key revoke <pmr_xxxxx>');
+          process.exit(1);
+        }
+        await manager.revokeApiKey(keyToRevoke);
+        console.log(`API key revoked: ${keyToRevoke.substring(0, 12)}...`);
+        break;
+      }
+
+      default:
+        console.error(`Unknown key sub-command: ${subCommand}`);
+        console.error('Use: pm key generate | list | revoke');
+        process.exit(1);
+    }
+  } finally {
+    manager.destroy();
+  }
+
+  process.exit(0);
+}
+
+/**
  * Main entry point
  */
 async function main(): Promise<void> {
@@ -1464,6 +2197,25 @@ async function main(): Promise<void> {
           console.error(`[selftest] Error: ${(error as Error).message}`);
           process.exit(1);
         }
+        break;
+      }
+
+      case 'agent': {
+        // Agent-only mode: QueuePoller + TaskExecutor, no Web server
+        const agentArgs = parseAgentArgs(restArgs);
+        await startAgentOnly(agentArgs);
+        break;
+      }
+
+      case 'daemon': {
+        // Daemon management (macOS launchd)
+        handleDaemonCommand(restArgs);
+        break;
+      }
+
+      case 'key': {
+        // API Key management commands
+        await handleKeyCommand(restArgs);
         break;
       }
 

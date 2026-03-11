@@ -25,6 +25,18 @@ export interface GlobalConfig {
     openai?: string;
     anthropic?: string;
   };
+  /** Internal LLM settings (used for question detection, file change claim detection, etc.) */
+  internalLlm?: {
+    /** Provider to use (openai, anthropic). Auto-detect if not set. */
+    provider?: string;
+    /** Model to use. Uses a sensible default if not set. */
+    model?: string;
+  };
+  /** @deprecated Use internalLlm instead. Kept for backward compatibility. */
+  questionDetection?: {
+    provider?: string;
+    model?: string;
+  };
   /** Show verbose executor logs in REPL (default: false) */
   verboseExecutor?: boolean;
   /** Single-line input mode (Enter once to send, default: true) */

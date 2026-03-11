@@ -22,7 +22,9 @@ export type ClarificationReason =
   | 'target_file_exists'      // File already exists, need overwrite/new decision
   | 'target_file_ambiguous'   // Cannot determine target file from prompt
   | 'target_action_ambiguous' // Cannot determine what action to take
-  | 'missing_required_info';  // Missing required information to proceed
+  | 'missing_required_info'   // Missing required information to proceed
+  | 'SCOPE_UNCLEAR'           // Task scope is unclear
+  | 'QUESTION_IN_OUTPUT';     // Output contains unanswered questions
 
 /**
  * Structured signal from Runner Core (facts only)

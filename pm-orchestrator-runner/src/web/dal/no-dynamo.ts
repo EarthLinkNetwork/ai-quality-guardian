@@ -48,6 +48,7 @@ import {
   PlanTask,
   CreatePlanInput,
   UpdatePlanInput,
+  PluginDefinition,
 } from "./types";
 
 /**
@@ -305,6 +306,9 @@ export class NoDynamoDAL {
     if (options.status) {
       projects = projects.filter((p) => p.status === options.status);
     }
+    if (options.projectStatus) {
+      projects = projects.filter((p) => (p.projectStatus || 'active') === options.projectStatus);
+    }
     if (options.favoriteOnly) {
       projects = projects.filter((p) => p.favorite);
     }
@@ -313,12 +317,41 @@ export class NoDynamoDAL {
         options.tags!.some((tag) => p.tags.includes(tag))
       );
     }
+    if (options.search) {
+      const q = options.search.toLowerCase();
+      projects = projects.filter((p) => {
+        const name = (p.alias || p.projectPath || '').toLowerCase();
+        const pathStr = (p.projectPath || '').toLowerCase();
+        const tagStr = (p.tags || []).join(' ').toLowerCase();
+        return name.includes(q) || pathStr.includes(q) || tagStr.includes(q);
+      });
+    }
 
-    // Sort: favorites first, then by updatedAt
+    // Sort
+    const sortField = options.sortBy || 'updatedAt';
+    const sortDir = options.sortDirection || 'desc';
     projects.sort((a, b) => {
+      // Favorites always first regardless of sort
       if (a.favorite && !b.favorite) return -1;
       if (!a.favorite && b.favorite) return 1;
-      return b.updatedAt.localeCompare(a.updatedAt);
+
+      let cmp = 0;
+      switch (sortField) {
+        case 'name':
+          cmp = (a.alias || a.projectPath).localeCompare(b.alias || b.projectPath);
+          break;
+        case 'createdAt':
+          cmp = a.createdAt.localeCompare(b.createdAt);
+          break;
+        case 'lastActivityAt':
+          cmp = a.lastActivityAt.localeCompare(b.lastActivityAt);
+          break;
+        case 'updatedAt':
+        default:
+          cmp = a.updatedAt.localeCompare(b.updatedAt);
+          break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
     });
 
     // Pagination
@@ -571,6 +604,14 @@ export class NoDynamoDAL {
     runs.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 
     return runs;
+  }
+
+  /**
+   * Find run by taskRunId
+   */
+  async findRunByTaskRunId(taskRunId: string): Promise<NoDynamoRun | null> {
+    const runs = await this.listRuns();
+    return runs.find((r) => r.taskRunId === taskRunId) || null;
   }
 
   /**
@@ -1205,9 +1246,11 @@ export function resetNoDynamo(): void {
  */
 export class NoDynamoDALWithConversations extends NoDynamoDAL {
   private readonly conversationsDir: string;
+  private readonly extStateDir: string;
 
   constructor(config: NoDynamoConfig) {
     super(config);
+    this.extStateDir = config.stateDir;
     this.conversationsDir = path.join(config.stateDir, "conversations");
     if (!fs.existsSync(this.conversationsDir)) {
       fs.mkdirSync(this.conversationsDir, { recursive: true });
@@ -1365,6 +1408,86 @@ export class NoDynamoDALWithConversations extends NoDynamoDAL {
     const filePath = path.join(this.conversationsDir, projectId + ".jsonl");
     if (fs.existsSync(filePath)) {
       await fs.promises.unlink(filePath);
+    }
+  }
+
+  // ==================== Plugin CRUD ====================
+
+  private get pluginsDir(): string {
+    return path.join(this.extStateDir, "plugins");
+  }
+
+  /**
+   * Create a new plugin
+   */
+  async createPlugin(plugin: PluginDefinition): Promise<PluginDefinition> {
+    const pluginsDir = this.pluginsDir;
+    if (!fs.existsSync(pluginsDir)) {
+      fs.mkdirSync(pluginsDir, { recursive: true });
+    }
+    const filePath = path.join(pluginsDir, `${plugin.pluginId}.json`);
+    await fs.promises.writeFile(filePath, JSON.stringify(plugin, null, 2));
+    return plugin;
+  }
+
+  /**
+   * Get a plugin by ID
+   */
+  async getPlugin(pluginId: string): Promise<PluginDefinition | null> {
+    const filePath = path.join(this.pluginsDir, `${pluginId}.json`);
+    try {
+      const data = await fs.promises.readFile(filePath, "utf-8");
+      return JSON.parse(data) as PluginDefinition;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * List all plugins
+   */
+  async listPlugins(): Promise<PluginDefinition[]> {
+    const pluginsDir = this.pluginsDir;
+    try {
+      if (!fs.existsSync(pluginsDir)) {
+        return [];
+      }
+      const files = fs.readdirSync(pluginsDir);
+      const plugins: PluginDefinition[] = [];
+      for (const file of files) {
+        if (file.endsWith(".json")) {
+          const data = await fs.promises.readFile(path.join(pluginsDir, file), "utf-8");
+          plugins.push(JSON.parse(data));
+        }
+      }
+      return plugins.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Update a plugin
+   */
+  async updatePlugin(pluginId: string, updates: Partial<PluginDefinition>): Promise<PluginDefinition | null> {
+    const existing = await this.getPlugin(pluginId);
+    if (!existing) return null;
+    const updated = { ...existing, ...updates, updatedAt: new Date().toISOString() };
+    const filePath = path.join(this.pluginsDir, `${pluginId}.json`);
+    await fs.promises.writeFile(filePath, JSON.stringify(updated, null, 2));
+    return updated;
+  }
+
+  /**
+   * Delete a plugin
+   */
+  async deletePlugin(pluginId: string): Promise<boolean> {
+    const filePath = path.join(this.pluginsDir, `${pluginId}.json`);
+    try {
+      await fs.promises.unlink(filePath);
+      return true;
+    } catch {
+      return false;
     }
   }
 }

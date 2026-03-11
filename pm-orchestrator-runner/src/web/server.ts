@@ -22,6 +22,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { IQueueStore, QueueItemStatus } from '../queue/index';
 import { ConversationTracer } from '../trace/conversation-tracer';
+import { createApiKeyAuth, createPublicPathBypass, type AuthConfig, type AuthenticatedRequest } from './middleware/auth';
 import { createSettingsRoutes } from './routes/settings';
 import { createDashboardRoutes } from './routes/dashboard';
 import { createInspectionRoutes } from './routes/inspection';
@@ -34,7 +35,13 @@ import type { RunnerRestartResult } from './routes/runner-controls';
 import { createSupervisorConfigRoutes } from './routes/supervisor-config';
 import { createSupervisorLogsRoutes } from './routes/supervisor-logs';
 import { createExecutorLogsRoutes } from './routes/executor-logs';
+import { createClaudeSettingsRoutes } from './routes/claude-settings';
+import { createClaudeFilesRoutes } from './routes/claude-files';
+import { createClaudeHooksRoutes } from './routes/claude-hooks';
+import { createAssistantRoutes } from './routes/assistant';
+import { createRepoProfileRoutes } from './routes/repo-profile';
 import { detectTaskType } from '../utils/task-type-detector';
+import { detectQuestionsWithLlm } from '../utils/question-detector';
 import { isNoDynamoInitialized, getNoDynamo } from './dal/no-dynamo';
 
 /**
@@ -75,6 +82,10 @@ export interface WebServerConfig {
   queueStoreType?: 'file' | 'dynamodb' | 'memory';
   /** Optional self-restart handler for Runner Controls */
   runnerRestartHandler?: () => Promise<RunnerRestartResult>;
+  /** Auth configuration for API key authentication */
+  authConfig?: AuthConfig;
+  /** Override global ~/.claude directory (for testing) */
+  globalClaudeDir?: string;
 }
 
 /**
@@ -106,16 +117,27 @@ export function createApp(config: WebServerConfig): Express {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-  // Static files
-  app.use(express.static(path.join(__dirname, 'public')));
+  // Static files (no-cache for development)
+  app.use(express.static(path.join(__dirname, 'public'), {
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    },
+  }));
 
   // CORS headers for local development
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
     next();
   });
+
+  // API Key authentication middleware
+  if (config.authConfig) {
+    const authMiddleware = createApiKeyAuth(config.authConfig);
+    const bypassMiddleware = createPublicPathBypass(authMiddleware);
+    app.use('/api', bypassMiddleware);
+  }
 
   // ===================
   // Settings Routes (API Key persistence)
@@ -153,6 +175,35 @@ export function createApp(config: WebServerConfig): Express {
     // Executor Logs routes (AC A.2 - Real-time stdout/stderr streaming)
     // Per docs/spec/RUNNER_CONTROLS_SELF_UPDATE.md - Executor Live Log
     app.use("/api/executor", createExecutorLogsRoutes());
+
+    // Claude Settings routes (settings.json + CLAUDE.md editor)
+    app.use("/api/claude-settings", createClaudeSettingsRoutes({
+      projectRoot: projectRoot || process.cwd(),
+    }));
+
+    // Claude Files routes (commands, agents, skills CRUD)
+    app.use("/api/claude-files", createClaudeFilesRoutes({
+      projectRoot: projectRoot || process.cwd(),
+      ...(config.globalClaudeDir ? { globalClaudeDir: config.globalClaudeDir } : {}),
+    }));
+
+    // Claude Hooks routes (hooks CRUD, scripts, inconsistency detection)
+    app.use("/api/claude-hooks", createClaudeHooksRoutes({
+      projectRoot: projectRoot || process.cwd(),
+      ...(config.globalClaudeDir ? { globalClaudeDir: config.globalClaudeDir } : {}),
+    }));
+
+    // Assistant routes (LLM propose, apply engine, plugin CRUD, golden eval)
+    app.use("/api/assistant", createAssistantRoutes({
+      projectRoot: projectRoot || process.cwd(),
+      stateDir,
+      ...(config.globalClaudeDir ? { globalClaudeDir: config.globalClaudeDir } : {}),
+    }));
+
+    // Repo Profile routes (project scanner)
+    app.use("/api/repo", createRepoProfileRoutes({
+      projectRoot: projectRoot || process.cwd(),
+    }));
   }
 
   // ===================
@@ -478,6 +529,7 @@ export function createApp(config: WebServerConfig): Express {
       const task_id = req.params.task_id as string;
       const latest = req.query.latest === 'true';
       const raw = req.query.raw === 'true';
+      const format = req.query.format as string; // 'stream' for stream-json trace
 
       // Check if stateDir is configured
       if (!stateDir) {
@@ -488,10 +540,93 @@ export function createApp(config: WebServerConfig): Express {
         return;
       }
 
-      // Find trace file for the task
+      // stream-json trace: return JSONL events from stream trace file
+      if (format === 'stream') {
+        // Check stateDir first, then project root fallback, then task's project_path
+        // (executor saves to cwd/.claude/state/traces/)
+        let streamTraceFile = path.join(stateDir, 'traces', `stream-${task_id}.jsonl`);
+        if (!fs.existsSync(streamTraceFile) && projectRoot) {
+          const fallback = path.join(projectRoot, '.claude', 'state', 'traces', `stream-${task_id}.jsonl`);
+          if (fs.existsSync(fallback)) {
+            streamTraceFile = fallback;
+          }
+        }
+        // Also check task's project_path (executor cwd may differ from runner's projectRoot)
+        if (!fs.existsSync(streamTraceFile)) {
+          try {
+            const taskItem = await queueStore.getItem(task_id);
+            if (taskItem?.project_path) {
+              const projectFallback = path.join(taskItem.project_path, '.claude', 'state', 'traces', `stream-${task_id}.jsonl`);
+              if (fs.existsSync(projectFallback)) {
+                streamTraceFile = projectFallback;
+              }
+            }
+          } catch { /* ignore lookup errors */ }
+        }
+        // Final fallback: check common subdirectories (e.g. self-update/)
+        if (!fs.existsSync(streamTraceFile) && projectRoot) {
+          const traceFileName = `stream-${task_id}.jsonl`;
+          const candidates = ['self-update', 'worktree'];
+          for (const sub of candidates) {
+            const subPath = path.join(projectRoot, sub, '.claude', 'state', 'traces', traceFileName);
+            if (fs.existsSync(subPath)) {
+              streamTraceFile = subPath;
+              break;
+            }
+          }
+        }
+        if (!fs.existsSync(streamTraceFile)) {
+          res.status(404).json({
+            error: 'NOT_FOUND',
+            message: 'No stream trace found for task: ' + task_id,
+          } as ErrorResponse);
+          return;
+        }
+        const content = fs.readFileSync(streamTraceFile, 'utf-8');
+        const events = content.split('\n').filter(l => l.trim()).map(l => {
+          try { return JSON.parse(l); } catch { return null; }
+        }).filter(Boolean);
+        res.json({ task_id, format: 'stream', events });
+        return;
+      }
+
+      // Find trace file for the task (ConversationTracer format)
       const traceFile = ConversationTracer.getLatestTraceFile(stateDir, task_id);
 
-      if (!traceFile) {
+      // Also check for stream trace file as fallback (check stateDir, project root, task's project_path)
+      let streamTraceFile = path.join(stateDir, 'traces', `stream-${task_id}.jsonl`);
+      if (!fs.existsSync(streamTraceFile) && projectRoot) {
+        const fallback = path.join(projectRoot, '.claude', 'state', 'traces', `stream-${task_id}.jsonl`);
+        if (fs.existsSync(fallback)) {
+          streamTraceFile = fallback;
+        }
+      }
+      if (!fs.existsSync(streamTraceFile)) {
+        try {
+          const taskItem = await queueStore.getItem(task_id);
+          if (taskItem?.project_path) {
+            const projectFallback = path.join(taskItem.project_path, '.claude', 'state', 'traces', `stream-${task_id}.jsonl`);
+            if (fs.existsSync(projectFallback)) {
+              streamTraceFile = projectFallback;
+            }
+          }
+        } catch { /* ignore lookup errors */ }
+      }
+      // Final fallback: check common subdirectories (e.g. self-update/)
+      if (!fs.existsSync(streamTraceFile) && projectRoot) {
+        const traceFileName = `stream-${task_id}.jsonl`;
+        const candidates = ['self-update', 'worktree'];
+        for (const sub of candidates) {
+          const subPath = path.join(projectRoot, sub, '.claude', 'state', 'traces', traceFileName);
+          if (fs.existsSync(subPath)) {
+            streamTraceFile = subPath;
+            break;
+          }
+        }
+      }
+      const hasStreamTrace = fs.existsSync(streamTraceFile);
+
+      if (!traceFile && !hasStreamTrace) {
         res.status(404).json({
           error: 'NOT_FOUND',
           message: 'No conversation trace found for task: ' + task_id,
@@ -499,10 +634,29 @@ export function createApp(config: WebServerConfig): Express {
         return;
       }
 
-      // Read trace entries
-      const entries = ConversationTracer.readTrace(traceFile);
+      // If only stream trace exists, return it
+      if (!traceFile && hasStreamTrace) {
+        const content = fs.readFileSync(streamTraceFile, 'utf-8');
+        const events = content.split('\n').filter(l => l.trim()).map(l => {
+          try { return JSON.parse(l); } catch { return null; }
+        }).filter(Boolean);
+        res.json({ task_id, format: 'stream', events, has_stream_trace: true });
+        return;
+      }
+
+      // Read trace entries (ConversationTracer format)
+      const entries = ConversationTracer.readTrace(traceFile!);
 
       if (entries.length === 0) {
+        // Fallback to stream trace if conversation trace is empty
+        if (hasStreamTrace) {
+          const content = fs.readFileSync(streamTraceFile, 'utf-8');
+          const events = content.split('\n').filter(l => l.trim()).map(l => {
+            try { return JSON.parse(l); } catch { return null; }
+          }).filter(Boolean);
+          res.json({ task_id, format: 'stream', events, has_stream_trace: true });
+          return;
+        }
         res.status(404).json({
           error: 'NOT_FOUND',
           message: 'Conversation trace is empty for task: ' + task_id,
@@ -527,15 +681,14 @@ export function createApp(config: WebServerConfig): Express {
 
       // Format output based on options
       if (raw) {
-        // Return raw JSONL entries
         res.json({
           task_id,
           trace_file: traceFile,
           entries,
           summary,
+          has_stream_trace: hasStreamTrace,
         });
       } else if (latest) {
-        // Return only latest iteration entries
         const latestIteration = Math.max(
           ...entries
             .filter(e => e.iteration_index !== undefined)
@@ -550,15 +703,16 @@ export function createApp(config: WebServerConfig): Express {
           trace_file: traceFile,
           entries: latestEntries,
           summary,
+          has_stream_trace: hasStreamTrace,
         });
       } else {
-        // Return formatted entries (default)
         const formatted = ConversationTracer.formatTraceForDisplay(entries, { latestOnly: false, raw: false });
         res.json({
           task_id,
           trace_file: traceFile,
           formatted,
           summary,
+          has_stream_trace: hasStreamTrace,
         });
       }
     } catch (error) {
@@ -723,6 +877,71 @@ export function createApp(config: WebServerConfig): Express {
   });
 
   /**
+   * POST /api/tasks/:task_id/rejudge
+   * Re-run question detection on stored output using LLM
+   * Updates status based on result (AWAITING_RESPONSE <-> COMPLETE)
+   */
+  app.post('/api/tasks/:task_id/rejudge', async (req: Request, res: Response) => {
+    try {
+      const task_id = req.params.task_id as string;
+      const taskItem = await queueStore.getItem(task_id);
+
+      if (!taskItem) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Task not found' });
+        return;
+      }
+
+      const output = taskItem.output || '';
+      if (!output.trim()) {
+        res.status(400).json({ error: 'NO_OUTPUT', message: 'Task has no output to analyze' });
+        return;
+      }
+
+      // Run LLM question detection (multi-provider: uses stateDir + global config for key resolution)
+      const llmResult = await detectQuestionsWithLlm(output, taskItem.prompt, undefined, stateDir);
+
+      let newStatus: QueueItemStatus;
+      if (llmResult.hasQuestions) {
+        newStatus = 'AWAITING_RESPONSE';
+        // Update clarification with LLM-extracted question
+        const awResult = await queueStore.setAwaitingResponse(task_id, {
+          type: 'unknown',
+          question: llmResult.questionSummary || 'Question detected by LLM',
+          context: taskItem.prompt,
+        }, undefined, output);
+        if (!awResult.success) {
+          console.warn(`[rejudge] setAwaitingResponse failed: ${awResult.message}`);
+        }
+      } else {
+        newStatus = 'COMPLETE';
+        const upResult = await queueStore.updateStatusWithValidation(task_id, 'COMPLETE');
+        if (!upResult.success) {
+          console.warn(`[rejudge] updateStatus failed: ${upResult.message}`);
+          res.status(400).json({ error: 'STATUS_UPDATE_FAILED', message: upResult.message });
+          return;
+        }
+      }
+
+      res.json({
+        success: true,
+        task_id,
+        old_status: taskItem.status,
+        new_status: newStatus,
+        llm_result: {
+          hasQuestions: llmResult.hasQuestions,
+          questionSummary: llmResult.questionSummary,
+          reasoning: llmResult.reasoning,
+          usedProvider: llmResult.usedProvider,
+          usedModel: llmResult.usedModel,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message });
+    }
+  });
+
+  /**
    * POST /api/tasks/:task_id/reply
    * Reply to an AWAITING_RESPONSE task with free-form text
    * Per spec REPLY_PROTOCOL.md
@@ -759,16 +978,26 @@ export function createApp(config: WebServerConfig): Express {
         return;
       }
 
-      // Verify task is in AWAITING_RESPONSE status
-      if (task.status !== 'AWAITING_RESPONSE') {
+      // Allow reply from AWAITING_RESPONSE, ERROR, or CANCELLED status
+      const replyableStatuses = ['AWAITING_RESPONSE', 'ERROR', 'CANCELLED'];
+      if (!replyableStatuses.includes(task.status)) {
         res.status(409).json({
           error: 'INVALID_STATUS',
-          message: 'Task is not awaiting response. Current status: ' + task.status,
+          message: 'Task cannot be continued. Current status: ' + task.status + '. Allowed: ' + replyableStatuses.join(', '),
         } as ErrorResponse);
         return;
       }
 
-      // Resume task with user reply (changes to RUNNING -> will be picked up by executor)
+      // For ERROR/CANCELLED tasks: first transition to AWAITING_RESPONSE so resumeWithResponse works
+      if (task.status === 'ERROR' || task.status === 'CANCELLED') {
+        await queueStore.setAwaitingResponse(task_id, {
+          type: 'unknown',
+          question: 'Task ended with ' + task.status + '. User requested continuation.',
+          context: task.prompt,
+        }, undefined, task.output || undefined);
+      }
+
+      // Resume task with user reply (changes to QUEUED -> will be picked up by executor)
       const result = await queueStore.resumeWithResponse(task_id, reply.trim());
 
       if (!result.success) {
@@ -876,6 +1105,46 @@ export function createApp(config: WebServerConfig): Express {
    * Serve settings page
    */
   app.get('/settings', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  app.get('/commands', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  app.get('/agents', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  app.get('/hooks', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  app.get('/mcp-servers', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  app.get('/backup', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  app.get('/plugins', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  app.get('/assistant', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  app.get('/dashboard', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  app.get('/activity', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  app.get('/projects', (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
   });
 
@@ -1090,6 +1359,7 @@ export function createApp(config: WebServerConfig): Express {
       'GET /api/tasks/:task_id/trace',
       'POST /api/tasks',
       'PATCH /api/tasks/:task_id/status',
+      'POST /api/tasks/:task_id/rejudge',
       'POST /api/tasks/:task_id/reply',
       'GET /api/required-actions',
       'GET /api/health',
@@ -1164,6 +1434,16 @@ export function createApp(config: WebServerConfig): Express {
       'GET /api/supervisor/logs/categories',
       'GET /api/supervisor/logs/summary',
       'DELETE /api/supervisor/logs',
+      // Claude Hooks routes
+      'GET /api/claude-hooks/:scope',
+      'GET /api/claude-hooks/:scope/scripts',
+      'GET /api/claude-hooks/:scope/scripts/:filename',
+      'PUT /api/claude-hooks/:scope/scripts/:filename',
+      'DELETE /api/claude-hooks/:scope/scripts/:filename',
+      'GET /api/claude-hooks/:scope/inconsistencies',
+      'GET /api/claude-hooks/:scope/:event',
+      'PUT /api/claude-hooks/:scope/:event',
+      'DELETE /api/claude-hooks/:scope/:event',
     ];
     res.json({ routes });
   });
@@ -1230,10 +1510,13 @@ export class WebServer {
         }
       }
       this.server.close((err) => {
-        if (err) {
+        this.server = null;
+        if (err && (err as NodeJS.ErrnoException).code === 'ERR_SERVER_NOT_RUNNING') {
+          // Server already closed - not an error
+          resolve();
+        } else if (err) {
           reject(err);
         } else {
-          this.server = null;
           resolve();
         }
       });

@@ -304,5 +304,68 @@ export function createSettingsRoutes(stateDir: string): Router {
     });
   });
 
+  /**
+   * GET /api/settings/internal-llm
+   * Get internal LLM settings from global config
+   * (Used for question detection, file change claim detection, etc.)
+   */
+  router.get("/internal-llm", (_req: Request, res: Response) => {
+    try {
+      const { loadGlobalConfig } = require('../../config/global-config');
+      const gc = loadGlobalConfig();
+      // Prefer internalLlm, fall back to deprecated questionDetection
+      const provider = gc.internalLlm?.provider || gc.questionDetection?.provider || null;
+      const model = gc.internalLlm?.model || gc.questionDetection?.model || null;
+      res.json({
+        provider,
+        model,
+        defaults: {
+          openai: 'gpt-4o-mini',
+          anthropic: 'claude-haiku-4-5-20251001',
+        },
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to load global config' });
+    }
+  });
+
+  /**
+   * PUT /api/settings/internal-llm
+   * Update internal LLM settings in global config
+   * Body: { provider?: string, model?: string }
+   */
+  router.put("/internal-llm", (req: Request, res: Response) => {
+    try {
+      const { provider, model } = req.body;
+      const { loadGlobalConfig, saveGlobalConfig } = require('../../config/global-config');
+      const gc = loadGlobalConfig();
+
+      gc.internalLlm = {
+        ...gc.internalLlm,
+        ...(provider !== undefined ? { provider: provider || undefined } : {}),
+        ...(model !== undefined ? { model: model || undefined } : {}),
+      };
+
+      // Clean up: remove the key entirely if both values are empty
+      if (!gc.internalLlm.provider && !gc.internalLlm.model) {
+        delete gc.internalLlm;
+      }
+
+      // Migrate: remove deprecated questionDetection if present
+      if (gc.questionDetection) {
+        delete gc.questionDetection;
+      }
+
+      saveGlobalConfig(gc);
+
+      res.json({
+        success: true,
+        internalLlm: gc.internalLlm || { provider: null, model: null },
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to save global config' });
+    }
+  });
+
   return router;
 }

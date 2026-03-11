@@ -46,6 +46,7 @@ const QUESTION_PATTERNS: QuestionPattern[] = [
   { pattern: /いかがでしょうか/, weight: 0.7, description: 'JP: いかがでしょうか' },
   { pattern: /ご希望/, weight: 0.6, description: 'JP: ご希望' },
   { pattern: /しますか[？?]?/, weight: 0.7, description: 'JP: 〜しますか' },
+  { pattern: /ますか[？?]?/, weight: 0.4, description: 'JP: 〜ますか (general polite question)' },
 
   // English patterns
   { pattern: /please (let me know|confirm|clarify)/i, weight: 0.7, description: 'EN: please let me know' },
@@ -85,8 +86,8 @@ const AWAITING_INDICATORS: QuestionPattern[] = [
  * Question mark patterns (less reliable alone)
  */
 const QUESTION_MARK_PATTERNS: QuestionPattern[] = [
-  { pattern: /\?[\s\n]*$/m, weight: 0.4, description: 'Ends with question mark' },
-  { pattern: /\?[\s]*\n/m, weight: 0.3, description: 'Question mark at line end' },
+  { pattern: /[?？][\s\n]*$/m, weight: 0.4, description: 'Ends with question mark' },
+  { pattern: /[?？][\s]*\n/m, weight: 0.3, description: 'Question mark at line end' },
 ];
 
 /**
@@ -98,7 +99,11 @@ const CODE_BLOCK_PATTERN = /```[\s\S]*?```/g;
  * Remove code blocks from text to avoid false positives
  */
 function removeCodeBlocks(text: string): string {
-  return text.replace(CODE_BLOCK_PATTERN, '');
+  // Remove fenced code blocks (```...```)
+  let cleaned = text.replace(CODE_BLOCK_PATTERN, '');
+  // Remove inline code (`...`) to avoid false positives from technical descriptions
+  cleaned = cleaned.replace(/`[^`\n]+`/g, '');
+  return cleaned;
 }
 
 /**
@@ -179,6 +184,56 @@ export function hasUnansweredQuestions(output: string): boolean {
 }
 
 /**
+ * Extract a concise question summary from output text.
+ * Instead of using the entire output as the "question", this extracts
+ * only the lines that contain actual questions.
+ *
+ * @param output - Full task output
+ * @returns Concise question summary (max ~300 chars)
+ */
+export function extractQuestionSummary(output: string): string {
+  if (!output || typeof output !== 'string') return '';
+
+  const cleanOutput = removeCodeBlocks(output);
+  const lines = cleanOutput.split('\n');
+  const questionLines: string[] = [];
+
+  // All patterns that indicate a question line
+  const allPatterns = [
+    ...QUESTION_PATTERNS.map(p => p.pattern),
+    ...QUESTION_MARK_PATTERNS.map(p => p.pattern),
+  ];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Check if this line contains a question pattern
+    for (const pattern of allPatterns) {
+      // Reset lastIndex for regex with global flag
+      pattern.lastIndex = 0;
+      if (pattern.test(trimmed)) {
+        questionLines.push(trimmed);
+        break;
+      }
+    }
+  }
+
+  if (questionLines.length === 0) {
+    // Fallback: first 200 chars of output
+    const first = output.trim().substring(0, 200);
+    return first + (output.length > 200 ? '...' : '');
+  }
+
+  // Join question lines, cap at 300 chars
+  const summary = questionLines.join('\n');
+  if (summary.length > 300) {
+    return summary.substring(0, 300) + '...';
+  }
+  return summary;
+}
+
+/**
  * Determine the appropriate status for a READ_INFO/REPORT task based on output
  * Per spec COMPLETION_JUDGMENT.md L149-157
  *
@@ -200,4 +255,726 @@ export function determineCompletionStatus(
 
   // Has output, no questions = COMPLETE
   return 'COMPLETE';
+}
+
+/**
+ * File change claim detection result
+ */
+export interface FileChangeClaimResult {
+  /** Whether the assistant text claims to have created/modified files */
+  hasClaims: boolean;
+  /** LLM's reasoning */
+  reasoning: string;
+  /** Which provider/model was used */
+  usedProvider?: string;
+  usedModel?: string;
+}
+
+/**
+ * LLM-based question detection result
+ */
+export interface LlmQuestionDetectionResult {
+  /** Whether the output contains unanswered questions directed at the user */
+  hasQuestions: boolean;
+  /** Extracted question summary (empty if no questions) */
+  questionSummary: string;
+  /** LLM's reasoning */
+  reasoning: string;
+  /** Which provider/model was used */
+  usedProvider?: string;
+  usedModel?: string;
+}
+
+/**
+ * LLM provider configuration for question detection
+ */
+export interface LlmProviderConfig {
+  provider?: string;  // 'openai' | 'anthropic' | auto-detect
+  model?: string;     // specific model or default for provider
+  apiKey?: string;    // direct API key override
+}
+
+/** Default models per provider (cheapest/fastest for classification) */
+const DEFAULT_MODELS: Record<string, string> = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-haiku-4-5-20251001',
+};
+
+/** The shared prompt for question detection */
+function buildDetectionPrompt(output: string, taskPrompt?: string): string {
+  const truncated = output.length > 3000 ? output.substring(0, 3000) + '...' : output;
+  return `You are analyzing the output of an AI coding assistant (Claude Code) that was given a task. Determine if the assistant is BLOCKED and genuinely needs the user to answer a question before it can proceed.
+
+${taskPrompt ? `Original task prompt: "${taskPrompt}"` : ''}
+
+Task output:
+"""
+${truncated}
+"""
+
+CRITICAL: Default to hasQuestions=false. Only flag true when the assistant is EXPLICITLY asking the user to make a choice or provide missing information WITHOUT which it CANNOT proceed.
+
+These are NOT questions (hasQuestions=false):
+- Code review observations: "this edge case might be intentional", "consider handling X"
+- Suggestions or recommendations: "you might want to...", "it would be better to..."
+- Rhetorical questions in explanations: "why does this work? because..."
+- Technical analysis: "is this intentional?" when discussing code behavior
+- Status reports with notes: "completed, but note that..."
+- Completed work with follow-up suggestions: "done. you could also..."
+- Questions the assistant answered itself in the output
+
+These ARE questions (hasQuestions=true):
+- "Which database should I use? Please choose: 1) PostgreSQL 2) MySQL"
+- "I need your API key to proceed. What is it?"
+- "The task is ambiguous. Do you want A or B?"
+- The assistant explicitly says it cannot continue without user input
+
+Respond in this exact JSON format (no markdown):
+{"hasQuestions":true/false,"questionSummary":"concise question text or empty","reasoning":"brief explanation"}`;
+}
+
+/**
+ * Resolve which provider and API key to use.
+ * Priority: explicit config > global internalLlm setting > auto-detect from available keys
+ */
+async function resolveProvider(
+  config?: LlmProviderConfig,
+  stateDir?: string,
+): Promise<{ provider: string; model: string; apiKey: string } | null> {
+  // 1. Load global config for internalLlm settings (with questionDetection fallback)
+  let globalProvider: string | undefined;
+  let globalModel: string | undefined;
+  try {
+    const { loadGlobalConfig } = await import('../config/global-config');
+    const gc = loadGlobalConfig();
+    // Prefer internalLlm, fall back to deprecated questionDetection
+    globalProvider = gc.internalLlm?.provider || gc.questionDetection?.provider;
+    globalModel = gc.internalLlm?.model || gc.questionDetection?.model;
+  } catch { /* ignore */ }
+
+  // 2. Determine target provider
+  const targetProvider = config?.provider || globalProvider; // may be undefined = auto-detect
+
+  // 3. Collect available API keys
+  const keys: Record<string, string> = {};
+
+  // From stateDir api-keys.json (Web UI settings)
+  // Skip keys that look like test dummies (too short to be real API keys)
+  const isRealKey = (k: string) => k && k.length > 20 && !k.includes('test');
+  if (stateDir) {
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const keysPath = path.join(stateDir, 'api-keys.json');
+      if (fs.existsSync(keysPath)) {
+        const data = JSON.parse(fs.readFileSync(keysPath, 'utf-8'));
+        if (data?.openai?.key && isRealKey(data.openai.key)) keys.openai = data.openai.key;
+        if (data?.anthropic?.key && isRealKey(data.anthropic.key)) keys.anthropic = data.anthropic.key;
+      }
+    } catch { /* ignore */ }
+  }
+
+  // From global config
+  try {
+    const { getApiKey } = await import('../config/global-config');
+    if (!keys.openai) { const k = getApiKey('openai'); if (k) keys.openai = k; }
+    if (!keys.anthropic) { const k = getApiKey('anthropic'); if (k) keys.anthropic = k; }
+  } catch { /* ignore */ }
+
+  // From env vars
+  if (!keys.openai && process.env.OPENAI_API_KEY) keys.openai = process.env.OPENAI_API_KEY;
+  if (!keys.anthropic && process.env.ANTHROPIC_API_KEY) keys.anthropic = process.env.ANTHROPIC_API_KEY;
+
+  // Explicit API key override
+  if (config?.apiKey && targetProvider) {
+    keys[targetProvider] = config.apiKey;
+  }
+
+  // 4. Select provider
+  let provider: string;
+  if (targetProvider && keys[targetProvider]) {
+    provider = targetProvider;
+  } else if (targetProvider) {
+    // Requested provider has no key
+    return null;
+  } else {
+    // Auto-detect: prefer openai (cheaper), then anthropic
+    if (keys.openai) provider = 'openai';
+    else if (keys.anthropic) provider = 'anthropic';
+    else return null;
+  }
+
+  const model = config?.model || globalModel || DEFAULT_MODELS[provider] || DEFAULT_MODELS.openai;
+  return { provider, model, apiKey: keys[provider] };
+}
+
+/**
+ * Call OpenAI API for question detection
+ */
+async function callOpenAI(apiKey: string, model: string, prompt: string): Promise<LlmQuestionDetectionResult> {
+  const { default: OpenAI } = await import('openai');
+  const client = new OpenAI({ apiKey });
+
+  const response = await client.chat.completions.create({
+    model,
+    max_tokens: 300,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const text = response.choices[0]?.message?.content || '';
+  const parsed = JSON.parse(text);
+  return {
+    hasQuestions: parsed.hasQuestions === true,
+    questionSummary: parsed.questionSummary || '',
+    reasoning: parsed.reasoning || '',
+    usedProvider: 'openai',
+    usedModel: model,
+  };
+}
+
+/**
+ * Call Anthropic API for question detection
+ */
+async function callAnthropic(apiKey: string, model: string, prompt: string): Promise<LlmQuestionDetectionResult> {
+  const { default: Anthropic } = await import('@anthropic-ai/sdk');
+  const client = new Anthropic({ apiKey });
+
+  const response = await client.messages.create({
+    model,
+    max_tokens: 300,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const text = response.content[0].type === 'text' ? response.content[0].text : '';
+  const parsed = JSON.parse(text);
+  return {
+    hasQuestions: parsed.hasQuestions === true,
+    questionSummary: parsed.questionSummary || '',
+    reasoning: parsed.reasoning || '',
+    usedProvider: 'anthropic',
+    usedModel: model,
+  };
+}
+
+/**
+ * Detect questions using LLM for higher accuracy.
+ * Supports multiple providers (OpenAI, Anthropic).
+ * Falls back to regex-based detection if LLM call fails or no API key is available.
+ *
+ * Provider resolution order:
+ * 1. Explicit config parameter
+ * 2. Global config internalLlm.provider setting
+ * 3. Auto-detect from available API keys (prefers OpenAI for cost)
+ *
+ * @param output - Task output to analyze
+ * @param taskPrompt - Original task prompt for context
+ * @param config - Optional provider/model/apiKey override
+ * @param stateDir - Optional stateDir for reading api-keys.json
+ * @returns Detection result with question summary
+ */
+export async function detectQuestionsWithLlm(
+  output: string,
+  taskPrompt?: string,
+  config?: string | LlmProviderConfig,  // string for backward compat (apiKey)
+  stateDir?: string,
+): Promise<LlmQuestionDetectionResult> {
+  if (!output || typeof output !== 'string' || output.trim() === '') {
+    return { hasQuestions: false, questionSummary: '', reasoning: 'Empty output' };
+  }
+
+  // Backward compat: if config is a string, treat as apiKey
+  const providerConfig: LlmProviderConfig | undefined =
+    typeof config === 'string' ? { apiKey: config } : config;
+
+  try {
+    const resolved = await resolveProvider(providerConfig, stateDir);
+    if (!resolved) {
+      throw new Error('No LLM provider available (no API key configured)');
+    }
+
+    const prompt = buildDetectionPrompt(output, taskPrompt);
+    console.log(`[question-detector] Using ${resolved.provider}/${resolved.model} for question detection`);
+
+    if (resolved.provider === 'openai') {
+      return await callOpenAI(resolved.apiKey, resolved.model, prompt);
+    } else if (resolved.provider === 'anthropic') {
+      return await callAnthropic(resolved.apiKey, resolved.model, prompt);
+    } else {
+      throw new Error(`Unsupported provider: ${resolved.provider}`);
+    }
+  } catch (error) {
+    // Fallback to regex-based detection
+    console.warn('[question-detector] LLM detection failed, falling back to regex:', error instanceof Error ? error.message : String(error));
+    const regexResult = detectQuestions(output);
+    return {
+      hasQuestions: regexResult.hasQuestions,
+      questionSummary: regexResult.hasQuestions ? extractQuestionSummary(output) : '',
+      reasoning: `Regex fallback (confidence: ${regexResult.confidence}, patterns: ${regexResult.matchedPatterns.join(', ')})`,
+    };
+  }
+}
+
+// ============================================================
+// File Change Claim Detection (LLM-based with regex fallback)
+// ============================================================
+
+/** Prompt for file change claim detection */
+function buildFileChangeClaimPrompt(assistantText: string): string {
+  const truncated = assistantText.length > 3000 ? assistantText.substring(0, 3000) + '...' : assistantText;
+  return `Analyze this AI assistant's output and determine if the assistant CLAIMS to have successfully created, modified, updated, or written any files.
+
+Assistant output:
+"""
+${truncated}
+"""
+
+Rules:
+- Only flag TRUE if the assistant explicitly states it has created/modified/written files
+- Mentioning file names in discussion or planning is NOT a claim
+- Reading or analyzing files is NOT a claim
+- Proposing changes without executing them is NOT a claim
+- Statements like "I created file X", "I updated Y", "The file has been modified" ARE claims
+- Statements like "Let me create X", "I'll update Y" (future tense/planning) are NOT claims
+
+Respond in this exact JSON format (no markdown):
+{"hasClaims":true/false,"reasoning":"brief explanation"}`;
+}
+
+/**
+ * Regex-based fallback for file change claim detection.
+ * Used when LLM is not available.
+ */
+function detectFileChangeClaimsRegex(assistantText: string): FileChangeClaimResult {
+  const patterns = [
+    /(?:I |I've |I have )(?:created|updated|modified|written|added|edited)/i,
+    /(?:file|files) (?:has|have) been (?:created|updated|modified|written)/i,
+    /(?:作成|更新|修正|変更|編集)(?:しました|済み|完了)/,
+    /Successfully (?:created|updated|modified|wrote)/i,
+  ];
+
+  const matched = patterns.filter(p => p.test(assistantText));
+
+  return {
+    hasClaims: matched.length > 0,
+    reasoning: matched.length > 0
+      ? `Regex fallback: matched ${matched.length} pattern(s)`
+      : 'Regex fallback: no file change claim patterns matched',
+  };
+}
+
+/**
+ * Detect file change claims using LLM for higher accuracy.
+ * Supports multiple providers (OpenAI, Anthropic).
+ * Falls back to regex-based detection if LLM call fails or no API key is available.
+ *
+ * @param assistantText - Assistant's text output (NOT raw stream JSON)
+ * @param config - Optional provider/model/apiKey override
+ * @param stateDir - Optional stateDir for reading api-keys.json
+ * @returns Detection result
+ */
+export async function detectFileChangeClaimsWithLlm(
+  assistantText: string,
+  config?: LlmProviderConfig,
+  stateDir?: string,
+): Promise<FileChangeClaimResult> {
+  if (!assistantText || typeof assistantText !== 'string' || assistantText.trim() === '') {
+    return { hasClaims: false, reasoning: 'Empty assistant text' };
+  }
+
+  try {
+    const resolved = await resolveProvider(config, stateDir);
+    if (!resolved) {
+      throw new Error('No LLM provider available (no API key configured)');
+    }
+
+    const prompt = buildFileChangeClaimPrompt(assistantText);
+    console.log(`[completion-detector] Using ${resolved.provider}/${resolved.model} for file change claim detection`);
+
+    let parsed: { hasClaims: boolean; reasoning: string };
+
+    if (resolved.provider === 'openai') {
+      const { default: OpenAI } = await import('openai');
+      const client = new OpenAI({ apiKey: resolved.apiKey });
+      const response = await client.chat.completions.create({
+        model: resolved.model,
+        max_tokens: 200,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = response.choices[0]?.message?.content || '';
+      parsed = JSON.parse(text);
+    } else if (resolved.provider === 'anthropic') {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: resolved.apiKey });
+      const response = await client.messages.create({
+        model: resolved.model,
+        max_tokens: 200,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = response.content[0].type === 'text' ? response.content[0].text : '';
+      parsed = JSON.parse(text);
+    } else {
+      throw new Error(`Unsupported provider: ${resolved.provider}`);
+    }
+
+    return {
+      hasClaims: parsed.hasClaims === true,
+      reasoning: parsed.reasoning || '',
+      usedProvider: resolved.provider,
+      usedModel: resolved.model,
+    };
+  } catch (error) {
+    console.warn('[completion-detector] LLM detection failed, falling back to regex:', error instanceof Error ? error.message : String(error));
+    return detectFileChangeClaimsRegex(assistantText);
+  }
+}
+
+
+// ============================================================
+// Auto-Answer: LLM evaluates if it can answer Claude Code's question
+// ============================================================
+
+/**
+ * Result of auto-answer evaluation
+ */
+export interface AutoAnswerResult {
+  /** Whether the LLM can answer the question from context */
+  canAnswer: boolean;
+  /** The constructed answer/clarification to inject into prompt */
+  answer?: string;
+  /** Reasoning for the decision */
+  reasoning: string;
+  /** Provider used */
+  usedProvider?: string;
+}
+
+/**
+ * Build prompt for auto-answer evaluation
+ */
+function buildAutoAnswerPrompt(
+  questionSummary: string,
+  originalPrompt: string,
+  claudeOutput: string,
+): string {
+  const truncatedOutput = claudeOutput.length > 2000
+    ? claudeOutput.substring(0, 2000) + '...'
+    : claudeOutput;
+
+  return `You are a meta-AI mediator. Claude Code (an AI coding assistant) was given a task by a user, but instead of completing it, Claude Code asked a clarification question. Your job is to decide whether YOU can answer that question based on the user's original prompt context, so the task can proceed without bothering the user.
+
+User's original prompt:
+"""
+${originalPrompt}
+"""
+
+Claude Code's output (which contains the question):
+"""
+${truncatedOutput}
+"""
+
+Claude Code's question summary: "${questionSummary}"
+
+Rules:
+1. If the user's prompt provides enough context to answer the question, answer it yourself
+2. If the question is about specific technical details the user MUST decide (e.g., API keys, credentials, specific business logic), you CANNOT answer
+3. For vague prompts like "make a demo" or "show it works", YOU should decide the specifics (file names, approach, etc.) — that's the whole point of having an AI mediator
+4. Always err on the side of answering — only escalate to user when truly necessary
+5. Your answer should be a concrete, actionable response that Claude Code can use to proceed
+
+Respond in this exact JSON format (no markdown):
+{"canAnswer":true/false,"answer":"your concrete answer to the question, or empty if canAnswer is false","reasoning":"brief explanation of why you can or cannot answer"}`;
+}
+
+/**
+ * Try to auto-answer a question from Claude Code using LLM
+ *
+ * When Claude Code returns a question instead of completing the task,
+ * this function uses the LLM to evaluate if the question can be answered
+ * from the original prompt context, avoiding unnecessary AWAITING_RESPONSE.
+ *
+ * @param questionSummary - The detected question summary
+ * @param originalPrompt - The user's original prompt
+ * @param claudeOutput - Claude Code's full output text
+ * @param config - Optional provider config
+ * @param stateDir - Optional state directory
+ * @returns Auto-answer result
+ */
+export async function tryAutoAnswerQuestion(
+  questionSummary: string,
+  originalPrompt: string,
+  claudeOutput: string,
+  config?: LlmProviderConfig,
+  stateDir?: string,
+): Promise<AutoAnswerResult> {
+  if (!questionSummary || !originalPrompt) {
+    return { canAnswer: false, reasoning: 'Missing question or prompt' };
+  }
+
+  try {
+    const resolved = await resolveProvider(config, stateDir);
+    if (!resolved) {
+      return { canAnswer: false, reasoning: 'No LLM provider available' };
+    }
+
+    const prompt = buildAutoAnswerPrompt(questionSummary, originalPrompt, claudeOutput);
+    console.log(`[auto-answer] Using ${resolved.provider}/${resolved.model} to evaluate question auto-answer`);
+
+    let parsed: { canAnswer: boolean; answer: string; reasoning: string };
+
+    if (resolved.provider === 'openai') {
+      const { default: OpenAI } = await import('openai');
+      const client = new OpenAI({ apiKey: resolved.apiKey });
+      const response = await client.chat.completions.create({
+        model: resolved.model,
+        max_tokens: 500,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = response.choices[0]?.message?.content || '';
+      parsed = JSON.parse(text);
+    } else if (resolved.provider === 'anthropic') {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: resolved.apiKey });
+      const response = await client.messages.create({
+        model: resolved.model,
+        max_tokens: 500,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = response.content[0].type === 'text' ? response.content[0].text : '';
+      parsed = JSON.parse(text);
+    } else {
+      throw new Error(`Unsupported provider: ${resolved.provider}`);
+    }
+
+    console.log(`[auto-answer] Result: canAnswer=${parsed.canAnswer}, reasoning=${parsed.reasoning}`);
+
+    return {
+      canAnswer: parsed.canAnswer === true,
+      answer: parsed.answer || undefined,
+      reasoning: parsed.reasoning || '',
+      usedProvider: resolved.provider,
+    };
+  } catch (error) {
+    console.warn('[auto-answer] LLM auto-answer failed:', error instanceof Error ? error.message : String(error));
+    return { canAnswer: false, reasoning: `LLM error: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+
+// ============================================================
+// LLM Relay: Meta Prompt Generation + Output QA Evaluation
+// ============================================================
+
+/**
+ * Result of meta prompt generation
+ */
+export interface MetaPromptResult {
+  /** The enhanced prompt for Claude Code */
+  metaPrompt: string;
+  /** What the LLM added/clarified */
+  enhancements: string;
+  /** Provider used */
+  usedProvider?: string;
+}
+
+/**
+ * Result of output QA evaluation
+ */
+export interface OutputQAResult {
+  /** Whether the output passes QA */
+  passed: boolean;
+  /** Issues found (empty if passed) */
+  issues: string[];
+  /** Rework instructions for Claude Code (if failed) */
+  reworkInstructions?: string;
+  /** Provider used */
+  usedProvider?: string;
+}
+
+/**
+ * Generate a meta prompt from user's raw input.
+ * The LLM transforms a vague user request into structured, actionable instructions
+ * for Claude Code.
+ *
+ * This is the PRE-PROCESSING step of the LLM relay loop.
+ */
+export async function generateMetaPrompt(
+  userPrompt: string,
+  projectContext?: string,
+  config?: LlmProviderConfig,
+  stateDir?: string,
+): Promise<MetaPromptResult> {
+  if (!userPrompt || userPrompt.trim() === '') {
+    return { metaPrompt: userPrompt, enhancements: 'Empty prompt, no enhancement' };
+  }
+
+  try {
+    const resolved = await resolveProvider(config, stateDir);
+    if (!resolved) {
+      console.warn('[meta-prompt] No LLM provider available, using raw prompt');
+      return { metaPrompt: userPrompt, enhancements: 'No LLM provider, passed through' };
+    }
+
+    const prompt = `You are an AI project manager. A user has submitted a task for an AI coding assistant (Claude Code). Your job is to transform the user's raw request into a clear, structured, actionable prompt that Claude Code can execute precisely.
+
+User's raw request:
+"""
+${userPrompt}
+"""
+
+${projectContext ? `Project context:\n${projectContext}\n` : ''}
+Instructions:
+1. Preserve the user's INTENT exactly — do not add features they didn't ask for
+2. Clarify ambiguities by making reasonable decisions (file paths, naming, structure)
+3. Add concrete acceptance criteria so Claude Code knows when it's "done"
+4. Specify that tests must pass after implementation
+5. Keep it concise — do not write an essay
+
+Respond in this exact JSON format (no markdown):
+{"metaPrompt":"the enhanced prompt for Claude Code","enhancements":"brief list of what you clarified/added"}`;
+
+    console.log(`[meta-prompt] Using ${resolved.provider}/${resolved.model} to generate meta prompt`);
+
+    let parsed: { metaPrompt: string; enhancements: string };
+
+    if (resolved.provider === 'openai') {
+      const { default: OpenAI } = await import('openai');
+      const client = new OpenAI({ apiKey: resolved.apiKey });
+      const response = await client.chat.completions.create({
+        model: resolved.model,
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = response.choices[0]?.message?.content || '';
+      parsed = JSON.parse(text);
+    } else if (resolved.provider === 'anthropic') {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: resolved.apiKey });
+      const response = await client.messages.create({
+        model: resolved.model,
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = response.content[0].type === 'text' ? response.content[0].text : '';
+      parsed = JSON.parse(text);
+    } else {
+      throw new Error(`Unsupported provider: ${resolved.provider}`);
+    }
+
+    console.log(`[meta-prompt] Enhancements: ${parsed.enhancements}`);
+
+    return {
+      metaPrompt: parsed.metaPrompt || userPrompt,
+      enhancements: parsed.enhancements || '',
+      usedProvider: resolved.provider,
+    };
+  } catch (error) {
+    console.warn('[meta-prompt] Meta prompt generation failed, using raw prompt:', error instanceof Error ? error.message : String(error));
+    return { metaPrompt: userPrompt, enhancements: `Failed: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+/**
+ * Evaluate Claude Code's output quality using LLM.
+ * Determines if the output satisfactorily completes the user's request,
+ * and generates rework instructions if not.
+ *
+ * This is the POST-PROCESSING QA step of the LLM relay loop.
+ */
+export async function evaluateOutputQuality(
+  claudeOutput: string,
+  userPrompt: string,
+  config?: LlmProviderConfig,
+  stateDir?: string,
+): Promise<OutputQAResult> {
+  if (!claudeOutput || claudeOutput.trim() === '') {
+    return { passed: false, issues: ['No output produced'], reworkInstructions: 'The task produced no output. Please complete the task.' };
+  }
+
+  try {
+    const resolved = await resolveProvider(config, stateDir);
+    if (!resolved) {
+      // No LLM → skip QA, assume passed
+      return { passed: true, issues: [] };
+    }
+
+    const truncatedOutput = claudeOutput.length > 3000
+      ? claudeOutput.substring(0, 3000) + '...'
+      : claudeOutput;
+
+    const prompt = `You are a strict but fair QA reviewer. An AI coding assistant (Claude Code) was given a task and produced the following output. Evaluate whether the task was completed FULLY and CORRECTLY.
+
+User's original request:
+"""
+${userPrompt}
+"""
+
+Claude Code's output:
+"""
+${truncatedOutput}
+"""
+
+Evaluation criteria (check ALL):
+1. COMPLETENESS: Were ALL items in the user's request addressed? If the user asked for 3 things, all 3 must be done.
+2. CODE CREATION: If code was requested, was it actually created (not just planned or described)?
+3. TESTS: If tests were requested, were they created AND do they pass? Look for "passing" or "✓" in output.
+4. FILE LOCATIONS: If specific file paths were requested, were files created at those exact paths?
+5. FUNCTIONALITY: Does the implementation cover all requested functionality, not just a subset?
+6. ERRORS: Did Claude Code report any errors, warnings, or issues?
+7. EXECUTION: Did Claude Code actually execute (run tests, create files) or just describe what to do?
+
+Mark as FAILED (passed=false) if ANY of these are true:
+- Not all requested items were implemented
+- Tests were requested but no test results shown in output
+- Code was only described/planned but not created
+- Specific requirements from the user were missed
+- Errors were reported and not resolved
+- Output ends with "I'll do X next" without actually doing it
+
+Mark as PASSED (passed=true) only when:
+- ALL requested items are verifiably completed
+- Tests (if requested) show passing results
+- No unresolved errors
+
+Respond in this exact JSON format (no markdown):
+{"passed":true/false,"issues":["issue1","issue2"],"reworkInstructions":"concrete instructions for what to fix, or empty if passed"}`;
+
+    console.log(`[output-qa] Using ${resolved.provider}/${resolved.model} to evaluate output quality`);
+
+    let parsed: { passed: boolean; issues: string[]; reworkInstructions: string };
+
+    if (resolved.provider === 'openai') {
+      const { default: OpenAI } = await import('openai');
+      const client = new OpenAI({ apiKey: resolved.apiKey });
+      const response = await client.chat.completions.create({
+        model: resolved.model,
+        max_tokens: 500,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = response.choices[0]?.message?.content || '';
+      parsed = JSON.parse(text);
+    } else if (resolved.provider === 'anthropic') {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: resolved.apiKey });
+      const response = await client.messages.create({
+        model: resolved.model,
+        max_tokens: 500,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = response.content[0].type === 'text' ? response.content[0].text : '';
+      parsed = JSON.parse(text);
+    } else {
+      throw new Error(`Unsupported provider: ${resolved.provider}`);
+    }
+
+    console.log(`[output-qa] Result: passed=${parsed.passed}, issues=${JSON.stringify(parsed.issues)}`);
+
+    return {
+      passed: parsed.passed === true,
+      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+      reworkInstructions: parsed.reworkInstructions || undefined,
+      usedProvider: resolved.provider,
+    };
+  } catch (error) {
+    console.warn('[output-qa] QA evaluation failed, assuming passed:', error instanceof Error ? error.message : String(error));
+    return { passed: true, issues: [] };
+  }
 }

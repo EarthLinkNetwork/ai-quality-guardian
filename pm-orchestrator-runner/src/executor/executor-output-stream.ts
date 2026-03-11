@@ -18,7 +18,7 @@ export interface ExecutorOutputChunk {
   taskId: string;
   projectId?: string;
   sessionId?: string;
-  stream: 'stdout' | 'stderr' | 'system' | 'error' | 'spawn' | 'preflight' | 'guard' | 'timeout' | 'state' | 'heartbeat' | 'recovery';
+  stream: 'stdout' | 'stderr' | 'system' | 'error' | 'spawn' | 'preflight' | 'guard' | 'timeout' | 'state' | 'heartbeat' | 'recovery' | 'claude_message';
   text: string;
   sequence: number;
 }

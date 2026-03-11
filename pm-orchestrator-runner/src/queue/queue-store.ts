@@ -36,6 +36,7 @@ import {
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { v4 as uuidv4 } from 'uuid';
+import { getAwsCredentials, getAwsRegion } from '../config/aws-config';
 
 /**
  * Fixed table name (v2: single table for all namespaces)
@@ -62,10 +63,10 @@ export type QueueItemStatus = 'QUEUED' | 'RUNNING' | 'AWAITING_RESPONSE' | 'COMP
 export const VALID_STATUS_TRANSITIONS: Record<QueueItemStatus, QueueItemStatus[]> = {
   QUEUED: ['RUNNING', 'CANCELLED'],
   RUNNING: ['COMPLETE', 'ERROR', 'CANCELLED', 'AWAITING_RESPONSE'],
-  AWAITING_RESPONSE: ['QUEUED', 'RUNNING', 'CANCELLED', 'ERROR'], // User response re-queues for executor pickup
+  AWAITING_RESPONSE: ['QUEUED', 'RUNNING', 'CANCELLED', 'ERROR', 'COMPLETE'], // User response re-queues, or rejudge/manual -> COMPLETE
   COMPLETE: [], // Terminal state
-  ERROR: [], // Terminal state
-  CANCELLED: [], // Terminal state
+  ERROR: ['AWAITING_RESPONSE', 'QUEUED', 'COMPLETE'], // Allow recovery: user can continue, retry, or rejudge to COMPLETE
+  CANCELLED: ['AWAITING_RESPONSE', 'QUEUED'], // Allow recovery: user can continue or retry
 };
 
 /**
@@ -175,6 +176,8 @@ export interface QueueItem {
   }>;
   /** Command preview (the final command that was or will be executed) */
   command_preview?: string;
+  /** Project working directory (absolute path). When set, executor uses this as cwd instead of runner's own directory. */
+  project_path?: string;
 }
 
 /**
@@ -199,12 +202,14 @@ export interface RunnerRecord {
  * Queue Store configuration
  */
 export interface QueueStoreConfig {
-  /** DynamoDB endpoint (default: http://localhost:8000) */
+  /** DynamoDB endpoint (default: AWS DynamoDB; set for local override) */
   endpoint?: string;
-  /** AWS region (default: local) */
+  /** AWS region (default: from aws-config) */
   region?: string;
   /** Namespace for this store instance */
   namespace: string;
+  /** Use local DynamoDB mode (localhost:8000 with dummy credentials) */
+  localDynamodb?: boolean;
 }
 
 /**
@@ -249,6 +254,8 @@ export interface TaskGroupSummary {
   };
   /** Latest task status in this group */
   latest_status?: QueueItemStatus;
+  /** Preview of the first task's prompt (for display instead of raw group ID) */
+  first_prompt?: string;
 }
 
 /**
@@ -275,7 +282,7 @@ export interface IQueueStore {
   runnersTableExists(): Promise<boolean>;
   ensureTable(): Promise<void>;
   deleteTable(): Promise<void>;
-  enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string, taskType?: TaskTypeValue): Promise<QueueItem>;
+  enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string, taskType?: TaskTypeValue, projectPath?: string): Promise<QueueItem>;
   getItem(taskId: string, targetNamespace?: string): Promise<QueueItem | null>;
   claim(): Promise<ClaimResult>;
   updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string, output?: string): Promise<void>;
@@ -317,18 +324,35 @@ export class QueueStore implements IQueueStore {
   private readonly endpoint: string;
 
   constructor(config: QueueStoreConfig) {
-    this.endpoint = config.endpoint || 'http://localhost:8000';
     this.namespace = config.namespace;
-    const region = config.region || 'local';
 
-    this.client = new DynamoDBClient({
-      endpoint: this.endpoint,
-      region: region,
-      credentials: {
-        accessKeyId: 'local',
-        secretAccessKey: 'local',
-      },
-    });
+    if (config.localDynamodb) {
+      // Local DynamoDB mode: localhost:8000 with dummy credentials
+      this.endpoint = config.endpoint || 'http://localhost:8000';
+      const region = config.region || 'local';
+      this.client = new DynamoDBClient({
+        endpoint: this.endpoint,
+        region: region,
+        credentials: {
+          accessKeyId: 'local',
+          secretAccessKey: 'local',
+        },
+      });
+    } else {
+      // AWS DynamoDB mode: Berry profile credentials + us-east-1
+      const region = config.region || getAwsRegion();
+      const credentials = getAwsCredentials();
+      this.endpoint = config.endpoint || `https://dynamodb.${region}.amazonaws.com`;
+
+      const clientConfig: ConstructorParameters<typeof DynamoDBClient>[0] = { region };
+      if (config.endpoint) {
+        clientConfig.endpoint = config.endpoint;
+      }
+      if (credentials) {
+        clientConfig.credentials = credentials;
+      }
+      this.client = new DynamoDBClient(clientConfig);
+    }
 
     this.docClient = DynamoDBDocumentClient.from(this.client, {
       marshallOptions: {
@@ -418,10 +442,6 @@ export class QueueStore implements IQueueStore {
             { AttributeName: 'created_at', KeyType: 'RANGE' },
           ],
           Projection: { ProjectionType: 'ALL' },
-          ProvisionedThroughput: {
-            ReadCapacityUnits: 5,
-            WriteCapacityUnits: 5,
-          },
         },
         {
           IndexName: 'task-group-index',
@@ -430,16 +450,9 @@ export class QueueStore implements IQueueStore {
             { AttributeName: 'created_at', KeyType: 'RANGE' },
           ],
           Projection: { ProjectionType: 'ALL' },
-          ProvisionedThroughput: {
-            ReadCapacityUnits: 5,
-            WriteCapacityUnits: 5,
-          },
         },
       ],
-      ProvisionedThroughput: {
-        ReadCapacityUnits: 5,
-        WriteCapacityUnits: 5,
-      },
+      BillingMode: 'PAY_PER_REQUEST',
     });
 
     await this.client.send(command);
@@ -460,10 +473,7 @@ export class QueueStore implements IQueueStore {
         { AttributeName: 'namespace', AttributeType: 'S' },
         { AttributeName: 'runner_id', AttributeType: 'S' },
       ],
-      ProvisionedThroughput: {
-        ReadCapacityUnits: 5,
-        WriteCapacityUnits: 5,
-      },
+      BillingMode: 'PAY_PER_REQUEST',
     });
 
     await this.client.send(command);
@@ -540,7 +550,8 @@ export class QueueStore implements IQueueStore {
     taskGroupId: string,
     prompt: string,
     taskId?: string,
-    taskType?: TaskTypeValue
+    taskType?: TaskTypeValue,
+    projectPath?: string
   ): Promise<QueueItem> {
     const now = new Date().toISOString();
     const item: QueueItem = {
@@ -553,6 +564,7 @@ export class QueueStore implements IQueueStore {
       created_at: now,
       updated_at: now,
       task_type: taskType,
+      ...(projectPath ? { project_path: projectPath } : {}),
     };
 
     await this.docClient.send(
@@ -1003,6 +1015,7 @@ export class QueueStore implements IQueueStore {
       statusCounts: Record<QueueItemStatus, number>;
       latestStatus: QueueItemStatus;
       latestStatusTime: string;
+      firstPrompt: string;
     }>();
 
     for (const item of items) {
@@ -1011,6 +1024,7 @@ export class QueueStore implements IQueueStore {
         existing.count++;
         if (item.created_at < existing.createdAt) {
           existing.createdAt = item.created_at;
+          existing.firstPrompt = item.prompt?.substring(0, 120) || '';
         }
         if (item.updated_at > existing.latestUpdatedAt) {
           existing.latestUpdatedAt = item.updated_at;
@@ -1030,6 +1044,7 @@ export class QueueStore implements IQueueStore {
           statusCounts,
           latestStatus: item.status,
           latestStatusTime: item.updated_at,
+          firstPrompt: item.prompt?.substring(0, 120) || '',
         });
       }
     }
@@ -1043,6 +1058,7 @@ export class QueueStore implements IQueueStore {
         latest_updated_at: data.latestUpdatedAt,
         status_counts: data.statusCounts,
         latest_status: data.latestStatus,
+        first_prompt: data.firstPrompt,
       });
     }
 

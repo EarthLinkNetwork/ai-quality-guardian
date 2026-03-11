@@ -493,6 +493,13 @@ export interface ProjectLogSummary {
 // Project Index types for dashboard
 export type ProjectIndexStatus = "needs_response" | "error" | "running" | "idle";
 
+// User-managed project status (distinct from auto-derived ProjectIndexStatus)
+export type ProjectUserStatus = "active" | "paused" | "completed" | "on_hold";
+
+// Sort options for project listing
+export type ProjectSortField = "updatedAt" | "createdAt" | "name" | "lastActivityAt";
+export type SortDirection = "asc" | "desc";
+
 export interface ProjectIndex {
   PK: string;                   // ORG#<orgId>
   SK: string;                   // PIDX#<projectId>
@@ -505,6 +512,7 @@ export interface ProjectIndex {
   archived: boolean;
   archivedAt?: string;
   status: ProjectIndexStatus;
+  projectStatus?: ProjectUserStatus;  // User-managed status (default: "active")
   lastActivityAt: string;       // Alias for lastMeaningfulWorkAt - used for lifecycle
   lastSeenAt?: string;          // When user last viewed in UI (NOT used for lifecycle)
   sessionCount: number;
@@ -533,6 +541,7 @@ export interface UpdateProjectIndexInput {
   tags?: string[];
   favorite?: boolean;
   status?: ProjectIndexStatus;
+  projectStatus?: ProjectUserStatus;
   lastActivityAt?: string;
   lastSeenAt?: string;
   sessionCount?: number;
@@ -549,10 +558,14 @@ export interface UpdateProjectIndexInput {
 
 export interface ListProjectIndexOptions {
   status?: ProjectIndexStatus;
+  projectStatus?: ProjectUserStatus;
   lifecycle?: ProjectLifecycleState;
   tags?: string[];
   favoriteOnly?: boolean;
   includeArchived?: boolean;
+  search?: string;
+  sortBy?: ProjectSortField;
+  sortDirection?: SortDirection;
   limit?: number;
   cursor?: string;
 }
@@ -725,5 +738,98 @@ export interface UpdatePlanInput {
   executedAt?: string;
   completedAt?: string;
   verifiedAt?: string;
+}
+
+// === Assistant & Plugin Types ===
+
+export interface ProposalArtifact {
+  kind: 'hook' | 'command' | 'agent' | 'skill' | 'script' | 'claudeMdPatch' | 'settingsJsonPatch';
+  name: string;
+  targetPathHint: string;
+  content?: string;
+  patch?: Record<string, unknown>;
+  dependsOn?: string[];
+}
+
+export interface ProposalChoice {
+  choiceId: string;
+  title: string;
+  summary: string;
+  scope: 'global' | 'project' | 'local';
+  artifacts: ProposalArtifact[];
+  applySteps: string[];
+  rollbackSteps: string[];
+  riskNotes: string[];
+  questions: string[];
+}
+
+export interface ProposalPlanSet {
+  planSetId: string;
+  createdAt: string;
+  userPrompt: string;
+  choices: ProposalChoice[];
+}
+
+export interface ApplyResult {
+  success: boolean;
+  created: string[];
+  updated: string[];
+  deleted: string[];
+  errors: string[];
+}
+
+export interface PluginDefinition {
+  pluginId: string;
+  name: string;
+  version: string;
+  description: string;
+  scope: 'global' | 'project';
+  artifacts: ProposalArtifact[];
+  installPlan: string[];
+  uninstallPlan: string[];
+  createdAt: string;
+  updatedAt: string;
+  installed: boolean;
+  sourcePrompt?: string;
+  sourcePlanSetId?: string;
+  sourceChoiceId?: string;
+  // Marketplace metadata (Phase 8C)
+  tags?: string[];
+  category?: string;
+  compatibility?: string[];
+  author?: string;
+}
+
+// === Golden Set Evaluation Types (Phase 8B) ===
+
+export interface GoldenCase {
+  id: string;
+  prompt: string;
+  expectedArtifacts: Array<{
+    kind: string;
+    namePattern: string; // regex or exact
+  }>;
+  tags?: string[];
+}
+
+export interface GoldenEvalResult {
+  caseId: string;
+  prompt: string;
+  pass: boolean;
+  matchedArtifacts: number;
+  expectedArtifacts: number;
+  details: string[];
+  durationMs: number;
+}
+
+export interface GoldenEvalReport {
+  reportId: string;
+  runAt: string;
+  totalCases: number;
+  passed: number;
+  failed: number;
+  passRate: number;
+  results: GoldenEvalResult[];
+  durationMs: number;
 }
 
