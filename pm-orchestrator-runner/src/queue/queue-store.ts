@@ -828,7 +828,7 @@ export class QueueStore implements IQueueStore {
     const now = new Date().toISOString();
 
     const updateExpression = output
-      ? 'SET #status = :status, updated_at = :now, clarification = :clarification, conversation_history = :history, output = :output'
+      ? 'SET #status = :status, updated_at = :now, clarification = :clarification, conversation_history = :history, #output = :output'
       : 'SET #status = :status, updated_at = :now, clarification = :clarification, conversation_history = :history';
 
     const expressionValues: Record<string, unknown> = {
@@ -852,6 +852,7 @@ export class QueueStore implements IQueueStore {
         UpdateExpression: updateExpression,
         ExpressionAttributeNames: {
           '#status': 'status',
+          '#output': 'output',
         },
         ExpressionAttributeValues: expressionValues,
       })

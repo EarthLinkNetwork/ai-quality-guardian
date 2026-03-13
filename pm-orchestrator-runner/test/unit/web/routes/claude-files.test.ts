@@ -9,7 +9,8 @@
  * Uses temp directories to avoid writing to real ~/.claude.
  */
 
-import { describe, it, beforeEach, afterEach, expect } from 'vitest';
+import { describe, it, beforeEach, afterEach } from 'mocha';
+import assert from 'node:assert/strict';
 import request from 'supertest';
 import express from 'express';
 import * as fs from 'fs';
@@ -45,8 +46,8 @@ describe('Claude Files Routes', () => {
   describe('Commands', () => {
     it('should list empty commands when directory does not exist', async () => {
       const res = await request(app).get('/api/claude-files/commands/project');
-      expect(res.status).toBe(200);
-      expect(res.body.files).toEqual([]);
+      assert.equal(res.status, 200);
+      assert.deepEqual(res.body.files, []);
     });
 
     it('should create a command, list it, read it, then delete it', async () => {
@@ -54,40 +55,40 @@ describe('Claude Files Routes', () => {
       const createRes = await request(app)
         .put('/api/claude-files/commands/project/my-command')
         .send({ content: '# My Command\n\nDo something.\n\n$ARGUMENTS' });
-      expect(createRes.status).toBe(200);
-      expect(createRes.body.success).toBe(true);
+      assert.equal(createRes.status, 200);
+      assert.equal(createRes.body.success, true);
 
       // List
       const listRes = await request(app).get('/api/claude-files/commands/project');
-      expect(listRes.status).toBe(200);
-      expect(listRes.body.files.length).toBe(1);
-      expect(listRes.body.files[0].name).toBe('my-command');
+      assert.equal(listRes.status, 200);
+      assert.equal(listRes.body.files.length, 1);
+      assert.equal(listRes.body.files[0].name, 'my-command');
 
       // Read
       const readRes = await request(app).get('/api/claude-files/commands/project/my-command');
-      expect(readRes.status).toBe(200);
-      expect(readRes.body.exists).toBe(true);
-      expect(readRes.body.content).toContain('# My Command');
+      assert.equal(readRes.status, 200);
+      assert.equal(readRes.body.exists, true);
+      assert.ok(readRes.body.content.includes('# My Command'));
 
       // Update
       const updateRes = await request(app)
         .put('/api/claude-files/commands/project/my-command')
         .send({ content: '# Updated Command\n\nNew content.' });
-      expect(updateRes.status).toBe(200);
-      expect(updateRes.body.success).toBe(true);
+      assert.equal(updateRes.status, 200);
+      assert.equal(updateRes.body.success, true);
 
       // Verify update
       const readRes2 = await request(app).get('/api/claude-files/commands/project/my-command');
-      expect(readRes2.body.content).toContain('# Updated Command');
+      assert.ok(readRes2.body.content.includes('# Updated Command'));
 
       // Delete
       const delRes = await request(app).delete('/api/claude-files/commands/project/my-command');
-      expect(delRes.status).toBe(200);
-      expect(delRes.body.success).toBe(true);
+      assert.equal(delRes.status, 200);
+      assert.equal(delRes.body.success, true);
 
       // Verify deleted
       const listRes2 = await request(app).get('/api/claude-files/commands/project');
-      expect(listRes2.body.files.length).toBe(0);
+      assert.equal(listRes2.body.files.length, 0);
     });
 
     it('should scope switch: project and global are independent', async () => {
@@ -103,32 +104,32 @@ describe('Claude Files Routes', () => {
 
       // Project list should only have proj-cmd
       const projList = await request(app).get('/api/claude-files/commands/project');
-      expect(projList.body.files.length).toBe(1);
-      expect(projList.body.files[0].name).toBe('proj-cmd');
+      assert.equal(projList.body.files.length, 1);
+      assert.equal(projList.body.files[0].name, 'proj-cmd');
 
       // Global list should only have global-cmd
       const globalList = await request(app).get('/api/claude-files/commands/global');
-      expect(globalList.body.files.length).toBe(1);
-      expect(globalList.body.files[0].name).toBe('global-cmd');
+      assert.equal(globalList.body.files.length, 1);
+      assert.equal(globalList.body.files[0].name, 'global-cmd');
     });
 
     it('should reject invalid scope', async () => {
       const res = await request(app).get('/api/claude-files/commands/invalid');
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('INVALID_SCOPE');
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error, 'INVALID_SCOPE');
     });
 
     it('should reject invalid filename', async () => {
       const res = await request(app)
         .put('/api/claude-files/commands/project/.hidden')
         .send({ content: 'bad' });
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('INVALID_NAME');
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error, 'INVALID_NAME');
     });
 
     it('should return 404 when deleting non-existent command', async () => {
       const res = await request(app).delete('/api/claude-files/commands/project/nonexistent');
-      expect(res.status).toBe(404);
+      assert.equal(res.status, 404);
     });
   });
 
@@ -138,8 +139,8 @@ describe('Claude Files Routes', () => {
   describe('Agents and Skills', () => {
     it('should list empty agents when directories do not exist', async () => {
       const res = await request(app).get('/api/claude-files/agents/project');
-      expect(res.status).toBe(200);
-      expect(res.body.files).toEqual([]);
+      assert.equal(res.status, 200);
+      assert.deepEqual(res.body.files, []);
     });
 
     it('should create an agent, list it, read it, update it, delete it', async () => {
@@ -149,40 +150,41 @@ describe('Claude Files Routes', () => {
       const createRes = await request(app)
         .put('/api/claude-files/agents/project/agent/test-agent')
         .send({ content });
-      expect(createRes.status).toBe(200);
-      expect(createRes.body.success).toBe(true);
+      assert.equal(createRes.status, 200);
+      assert.equal(createRes.body.success, true);
 
       // List
       const listRes = await request(app).get('/api/claude-files/agents/project');
-      expect(listRes.status).toBe(200);
+      assert.equal(listRes.status, 200);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const agents = listRes.body.files.filter((f: any) => f.type === 'agent');
-      expect(agents.length).toBe(1);
-      expect(agents[0].name).toBe('test-agent');
+      assert.equal(agents.length, 1);
+      assert.equal(agents[0].name, 'test-agent');
 
       // Read
       const readRes = await request(app).get('/api/claude-files/agents/project/agent/test-agent');
-      expect(readRes.status).toBe(200);
-      expect(readRes.body.exists).toBe(true);
-      expect(readRes.body.content).toContain('# Test Agent');
+      assert.equal(readRes.status, 200);
+      assert.equal(readRes.body.exists, true);
+      assert.ok(readRes.body.content.includes('# Test Agent'));
 
       // Update
       const updateRes = await request(app)
         .put('/api/claude-files/agents/project/agent/test-agent')
         .send({ content: '# Updated Agent\n\nNew content.' });
-      expect(updateRes.status).toBe(200);
+      assert.equal(updateRes.status, 200);
 
       // Verify update
       const readRes2 = await request(app).get('/api/claude-files/agents/project/agent/test-agent');
-      expect(readRes2.body.content).toContain('# Updated Agent');
+      assert.ok(readRes2.body.content.includes('# Updated Agent'));
 
       // Delete
       const delRes = await request(app).delete('/api/claude-files/agents/project/agent/test-agent');
-      expect(delRes.status).toBe(200);
-      expect(delRes.body.success).toBe(true);
+      assert.equal(delRes.status, 200);
+      assert.equal(delRes.body.success, true);
 
       // Verify deleted
       const listRes2 = await request(app).get('/api/claude-files/agents/project');
-      expect(listRes2.body.files.length).toBe(0);
+      assert.equal(listRes2.body.files.length, 0);
     });
 
     it('should create a skill and list it separately from agents', async () => {
@@ -198,14 +200,16 @@ describe('Claude Files Routes', () => {
 
       // List should show both
       const listRes = await request(app).get('/api/claude-files/agents/project');
-      expect(listRes.body.files.length).toBe(2);
+      assert.equal(listRes.body.files.length, 2);
 
-      const agents = listRes.body.files.filter((f: any) => f.type === 'agent');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const agentsList = listRes.body.files.filter((f: any) => f.type === 'agent');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const skills = listRes.body.files.filter((f: any) => f.type === 'skill');
-      expect(agents.length).toBe(1);
-      expect(agents[0].name).toBe('my-agent');
-      expect(skills.length).toBe(1);
-      expect(skills[0].name).toBe('my-skill');
+      assert.equal(agentsList.length, 1);
+      assert.equal(agentsList[0].name, 'my-agent');
+      assert.equal(skills.length, 1);
+      assert.equal(skills[0].name, 'my-skill');
     });
 
     it('should scope switch: project and global are independent', async () => {
@@ -218,26 +222,26 @@ describe('Claude Files Routes', () => {
         .send({ content: 'global agent' });
 
       const projList = await request(app).get('/api/claude-files/agents/project');
-      expect(projList.body.files.length).toBe(1);
-      expect(projList.body.files[0].name).toBe('proj-agent');
+      assert.equal(projList.body.files.length, 1);
+      assert.equal(projList.body.files[0].name, 'proj-agent');
 
       const globalList = await request(app).get('/api/claude-files/agents/global');
-      expect(globalList.body.files.length).toBe(1);
-      expect(globalList.body.files[0].name).toBe('global-agent');
+      assert.equal(globalList.body.files.length, 1);
+      assert.equal(globalList.body.files[0].name, 'global-agent');
     });
 
     it('should reject invalid type', async () => {
       const res = await request(app)
         .put('/api/claude-files/agents/project/invalid/test')
         .send({ content: 'bad' });
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('INVALID_TYPE');
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error, 'INVALID_TYPE');
     });
 
     it('Local scope should be disabled (invalid)', async () => {
       const res = await request(app).get('/api/claude-files/agents/local');
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('INVALID_SCOPE');
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error, 'INVALID_SCOPE');
     });
   });
 });
