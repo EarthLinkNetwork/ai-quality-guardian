@@ -10,7 +10,8 @@
  * Uses temp directories to avoid writing to real ~/.claude.
  */
 
-import { describe, it, beforeEach, afterEach, expect } from 'vitest';
+import { describe, it, beforeEach, afterEach } from 'mocha';
+import assert from 'node:assert/strict';
 import request from 'supertest';
 import express from 'express';
 import * as fs from 'fs';
@@ -46,11 +47,11 @@ describe('Claude Hooks Routes', () => {
   describe('Hooks CRUD', () => {
     it('should list empty events when settings.json does not exist', async () => {
       const res = await request(app).get('/api/claude-hooks/project');
-      expect(res.status).toBe(200);
-      expect(res.body.events).toEqual([]);
-      expect(res.body.eventCount).toBe(0);
-      expect(res.body.settingsExists).toBe(false);
-      expect(res.body.knownEvents).toContain('UserPromptSubmit');
+      assert.equal(res.status, 200);
+      assert.deepEqual(res.body.events, []);
+      assert.equal(res.body.eventCount, 0);
+      assert.equal(res.body.settingsExists, false);
+      assert.ok(res.body.knownEvents.includes('UserPromptSubmit'));
     });
 
     it('should create a hook event, list it, read it, then delete it', async () => {
@@ -62,24 +63,24 @@ describe('Claude Hooks Routes', () => {
             { type: 'command', command: 'echo "hello"', timeout: 5000 },
           ],
         });
-      expect(createRes.status).toBe(200);
-      expect(createRes.body.success).toBe(true);
-      expect(createRes.body.commandCount).toBe(1);
+      assert.equal(createRes.status, 200);
+      assert.equal(createRes.body.success, true);
+      assert.equal(createRes.body.commandCount, 1);
 
       // List
       const listRes = await request(app).get('/api/claude-hooks/project');
-      expect(listRes.status).toBe(200);
-      expect(listRes.body.eventCount).toBe(1);
-      expect(listRes.body.events[0].event).toBe('UserPromptSubmit');
-      expect(listRes.body.events[0].commandCount).toBe(1);
+      assert.equal(listRes.status, 200);
+      assert.equal(listRes.body.eventCount, 1);
+      assert.equal(listRes.body.events[0].event, 'UserPromptSubmit');
+      assert.equal(listRes.body.events[0].commandCount, 1);
 
       // Read
       const readRes = await request(app).get('/api/claude-hooks/project/UserPromptSubmit');
-      expect(readRes.status).toBe(200);
-      expect(readRes.body.exists).toBe(true);
-      expect(readRes.body.commands.length).toBe(1);
-      expect(readRes.body.commands[0].command).toBe('echo "hello"');
-      expect(readRes.body.commands[0].timeout).toBe(5000);
+      assert.equal(readRes.status, 200);
+      assert.equal(readRes.body.exists, true);
+      assert.equal(readRes.body.commands.length, 1);
+      assert.equal(readRes.body.commands[0].command, 'echo "hello"');
+      assert.equal(readRes.body.commands[0].timeout, 5000);
 
       // Update with more commands
       const updateRes = await request(app)
@@ -90,21 +91,21 @@ describe('Claude Hooks Routes', () => {
             { type: 'command', command: 'echo "world"' },
           ],
         });
-      expect(updateRes.status).toBe(200);
-      expect(updateRes.body.commandCount).toBe(2);
+      assert.equal(updateRes.status, 200);
+      assert.equal(updateRes.body.commandCount, 2);
 
       // Verify update
       const readRes2 = await request(app).get('/api/claude-hooks/project/UserPromptSubmit');
-      expect(readRes2.body.commands.length).toBe(2);
+      assert.equal(readRes2.body.commands.length, 2);
 
       // Delete
       const delRes = await request(app).delete('/api/claude-hooks/project/UserPromptSubmit');
-      expect(delRes.status).toBe(200);
-      expect(delRes.body.success).toBe(true);
+      assert.equal(delRes.status, 200);
+      assert.equal(delRes.body.success, true);
 
       // Verify deleted
       const listRes2 = await request(app).get('/api/claude-hooks/project');
-      expect(listRes2.body.eventCount).toBe(0);
+      assert.equal(listRes2.body.eventCount, 0);
     });
 
     it('should preserve other settings when writing hooks', async () => {
@@ -123,9 +124,9 @@ describe('Claude Hooks Routes', () => {
 
       // Verify other settings preserved
       const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-      expect(settings.permissions.allow).toEqual(['Read', 'Write']);
-      expect(settings.customKey).toBe('preserve-me');
-      expect(settings.hooks.PreToolUse.length).toBe(1);
+      assert.deepEqual(settings.permissions.allow, ['Read', 'Write']);
+      assert.equal(settings.customKey, 'preserve-me');
+      assert.equal(settings.hooks.PreToolUse.length, 1);
     });
 
     it('should scope switch: project and global are independent', async () => {
@@ -141,56 +142,56 @@ describe('Claude Hooks Routes', () => {
 
       // Project should only have UserPromptSubmit
       const projRes = await request(app).get('/api/claude-hooks/project');
-      expect(projRes.body.eventCount).toBe(1);
-      expect(projRes.body.events[0].event).toBe('UserPromptSubmit');
+      assert.equal(projRes.body.eventCount, 1);
+      assert.equal(projRes.body.events[0].event, 'UserPromptSubmit');
 
       // Global should only have Stop
       const globalRes = await request(app).get('/api/claude-hooks/global');
-      expect(globalRes.body.eventCount).toBe(1);
-      expect(globalRes.body.events[0].event).toBe('Stop');
+      assert.equal(globalRes.body.eventCount, 1);
+      assert.equal(globalRes.body.events[0].event, 'Stop');
     });
 
     it('should reject invalid scope', async () => {
       const res = await request(app).get('/api/claude-hooks/invalid');
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('INVALID_SCOPE');
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error, 'INVALID_SCOPE');
     });
 
     it('should reject invalid event name', async () => {
       const res = await request(app)
         .put('/api/claude-hooks/project/invalid-event')
         .send({ commands: [{ type: 'command', command: 'echo' }] });
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('INVALID_EVENT');
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error, 'INVALID_EVENT');
     });
 
     it('should reject non-array commands', async () => {
       const res = await request(app)
         .put('/api/claude-hooks/project/UserPromptSubmit')
         .send({ commands: 'not-an-array' });
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('INVALID_COMMANDS');
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error, 'INVALID_COMMANDS');
     });
 
     it('should reject command without command field', async () => {
       const res = await request(app)
         .put('/api/claude-hooks/project/UserPromptSubmit')
         .send({ commands: [{ type: 'command' }] });
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('INVALID_COMMAND');
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error, 'INVALID_COMMAND');
     });
 
     it('should return 404 when deleting non-existent event', async () => {
       const res = await request(app).delete('/api/claude-hooks/project/UserPromptSubmit');
-      expect(res.status).toBe(404);
-      expect(res.body.error).toBe('NOT_FOUND');
+      assert.equal(res.status, 404);
+      assert.equal(res.body.error, 'NOT_FOUND');
     });
 
     it('should read non-existent event as empty', async () => {
       const res = await request(app).get('/api/claude-hooks/project/UserPromptSubmit');
-      expect(res.status).toBe(200);
-      expect(res.body.exists).toBe(false);
-      expect(res.body.commands).toEqual([]);
+      assert.equal(res.status, 200);
+      assert.equal(res.body.exists, false);
+      assert.deepEqual(res.body.commands, []);
     });
   });
 
@@ -200,9 +201,9 @@ describe('Claude Hooks Routes', () => {
   describe('Scripts CRUD', () => {
     it('should list empty scripts when hooks dir does not exist', async () => {
       const res = await request(app).get('/api/claude-hooks/project/scripts');
-      expect(res.status).toBe(200);
-      expect(res.body.scripts).toEqual([]);
-      expect(res.body.scriptCount).toBe(0);
+      assert.equal(res.status, 200);
+      assert.deepEqual(res.body.scripts, []);
+      assert.equal(res.body.scriptCount, 0);
     });
 
     it('should create a script, list it, read it, delete it', async () => {
@@ -210,66 +211,66 @@ describe('Claude Hooks Routes', () => {
       const createRes = await request(app)
         .put('/api/claude-hooks/project/scripts/my-hook.sh')
         .send({ content: '#!/bin/bash\necho "Hello from hook"' });
-      expect(createRes.status).toBe(200);
-      expect(createRes.body.success).toBe(true);
+      assert.equal(createRes.status, 200);
+      assert.equal(createRes.body.success, true);
 
       // List
       const listRes = await request(app).get('/api/claude-hooks/project/scripts');
-      expect(listRes.status).toBe(200);
-      expect(listRes.body.scriptCount).toBe(1);
-      expect(listRes.body.scripts[0].name).toBe('my-hook.sh');
-      expect(listRes.body.scripts[0].executable).toBe(true);
+      assert.equal(listRes.status, 200);
+      assert.equal(listRes.body.scriptCount, 1);
+      assert.equal(listRes.body.scripts[0].name, 'my-hook.sh');
+      assert.equal(listRes.body.scripts[0].executable, true);
 
       // Read
       const readRes = await request(app).get('/api/claude-hooks/project/scripts/my-hook.sh');
-      expect(readRes.status).toBe(200);
-      expect(readRes.body.content).toContain('echo "Hello from hook"');
-      expect(readRes.body.executable).toBe(true);
+      assert.equal(readRes.status, 200);
+      assert.ok(readRes.body.content.includes('echo "Hello from hook"'));
+      assert.equal(readRes.body.executable, true);
 
       // Update
       const updateRes = await request(app)
         .put('/api/claude-hooks/project/scripts/my-hook.sh')
         .send({ content: '#!/bin/bash\necho "Updated hook"' });
-      expect(updateRes.status).toBe(200);
+      assert.equal(updateRes.status, 200);
 
       // Verify update
       const readRes2 = await request(app).get('/api/claude-hooks/project/scripts/my-hook.sh');
-      expect(readRes2.body.content).toContain('Updated hook');
+      assert.ok(readRes2.body.content.includes('Updated hook'));
 
       // Delete
       const delRes = await request(app).delete('/api/claude-hooks/project/scripts/my-hook.sh');
-      expect(delRes.status).toBe(200);
-      expect(delRes.body.success).toBe(true);
+      assert.equal(delRes.status, 200);
+      assert.equal(delRes.body.success, true);
 
       // Verify deleted
       const listRes2 = await request(app).get('/api/claude-hooks/project/scripts');
-      expect(listRes2.body.scriptCount).toBe(0);
+      assert.equal(listRes2.body.scriptCount, 0);
     });
 
     it('should reject invalid script filename', async () => {
       const res = await request(app)
         .put('/api/claude-hooks/project/scripts/bad-name.txt')
         .send({ content: 'bad' });
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('INVALID_FILENAME');
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error, 'INVALID_FILENAME');
     });
 
     it('should reject missing content', async () => {
       const res = await request(app)
         .put('/api/claude-hooks/project/scripts/test.sh')
         .send({});
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('MISSING_CONTENT');
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error, 'MISSING_CONTENT');
     });
 
     it('should return 404 for non-existent script read', async () => {
       const res = await request(app).get('/api/claude-hooks/project/scripts/nonexistent.sh');
-      expect(res.status).toBe(404);
+      assert.equal(res.status, 404);
     });
 
     it('should return 404 when deleting non-existent script', async () => {
       const res = await request(app).delete('/api/claude-hooks/project/scripts/nonexistent.sh');
-      expect(res.status).toBe(404);
+      assert.equal(res.status, 404);
     });
 
     it('should scope switch: project and global scripts are independent', async () => {
@@ -282,12 +283,12 @@ describe('Claude Hooks Routes', () => {
         .send({ content: '#!/bin/bash\necho global' });
 
       const projRes = await request(app).get('/api/claude-hooks/project/scripts');
-      expect(projRes.body.scriptCount).toBe(1);
-      expect(projRes.body.scripts[0].name).toBe('proj-hook.sh');
+      assert.equal(projRes.body.scriptCount, 1);
+      assert.equal(projRes.body.scripts[0].name, 'proj-hook.sh');
 
       const globalRes = await request(app).get('/api/claude-hooks/global/scripts');
-      expect(globalRes.body.scriptCount).toBe(1);
-      expect(globalRes.body.scripts[0].name).toBe('global-hook.sh');
+      assert.equal(globalRes.body.scriptCount, 1);
+      assert.equal(globalRes.body.scripts[0].name, 'global-hook.sh');
     });
   });
 
@@ -297,10 +298,10 @@ describe('Claude Hooks Routes', () => {
   describe('Inconsistency Detection', () => {
     it('should return no issues when no hooks or scripts exist', async () => {
       const res = await request(app).get('/api/claude-hooks/project/inconsistencies');
-      expect(res.status).toBe(200);
-      expect(res.body.issueCount).toBe(0);
-      expect(res.body.hasErrors).toBe(false);
-      expect(res.body.hasWarnings).toBe(false);
+      assert.equal(res.status, 200);
+      assert.equal(res.body.issueCount, 0);
+      assert.equal(res.body.hasErrors, false);
+      assert.equal(res.body.hasWarnings, false);
     });
 
     it('should detect missing script referenced by hook', async () => {
@@ -312,12 +313,13 @@ describe('Claude Hooks Routes', () => {
         });
 
       const res = await request(app).get('/api/claude-hooks/project/inconsistencies');
-      expect(res.status).toBe(200);
-      expect(res.body.issueCount).toBeGreaterThanOrEqual(1);
-      expect(res.body.hasErrors).toBe(true);
+      assert.equal(res.status, 200);
+      assert.ok(res.body.issueCount >= 1);
+      assert.equal(res.body.hasErrors, true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const missingIssue = res.body.issues.find((i: any) => i.type === 'missing_script');
-      expect(missingIssue).toBeDefined();
-      expect(missingIssue.script).toBe('missing-script.sh');
+      assert.ok(missingIssue !== undefined);
+      assert.equal(missingIssue.script, 'missing-script.sh');
     });
 
     it('should detect orphan scripts not referenced by any hook', async () => {
@@ -327,10 +329,11 @@ describe('Claude Hooks Routes', () => {
         .send({ content: '#!/bin/bash\necho orphan' });
 
       const res = await request(app).get('/api/claude-hooks/project/inconsistencies');
-      expect(res.status).toBe(200);
+      assert.equal(res.status, 200);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const orphanIssue = res.body.issues.find((i: any) => i.type === 'orphan_script');
-      expect(orphanIssue).toBeDefined();
-      expect(orphanIssue.script).toBe('orphan.sh');
+      assert.ok(orphanIssue !== undefined);
+      assert.equal(orphanIssue.script, 'orphan.sh');
     });
 
     it('should detect non-executable scripts', async () => {
@@ -340,10 +343,11 @@ describe('Claude Hooks Routes', () => {
         .send({ content: '#!/bin/bash\necho noexec', executable: false });
 
       const res = await request(app).get('/api/claude-hooks/project/inconsistencies');
-      expect(res.status).toBe(200);
+      assert.equal(res.status, 200);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const noexecIssue = res.body.issues.find((i: any) => i.type === 'not_executable');
-      expect(noexecIssue).toBeDefined();
-      expect(noexecIssue.script).toBe('noexec.sh');
+      assert.ok(noexecIssue !== undefined);
+      assert.equal(noexecIssue.script, 'noexec.sh');
     });
 
     it('should report no issues when hooks and scripts are consistent', async () => {
@@ -360,8 +364,8 @@ describe('Claude Hooks Routes', () => {
         });
 
       const res = await request(app).get('/api/claude-hooks/project/inconsistencies');
-      expect(res.status).toBe(200);
-      expect(res.body.hasErrors).toBe(false);
+      assert.equal(res.status, 200);
+      assert.equal(res.body.hasErrors, false);
       // May still have no warnings since script is executable
     });
   });

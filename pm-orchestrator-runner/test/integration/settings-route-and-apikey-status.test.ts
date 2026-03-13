@@ -19,9 +19,12 @@ import assert from 'node:assert/strict';
 // Check if playwright is available
 let playwright: typeof import('playwright') | null = null;
 let chromium: typeof import('playwright').chromium | null = null;
-type Browser = unknown;
-type BrowserContext = unknown;
-type Page = unknown;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Browser = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type BrowserContext = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Page = any;
 
 try {
   // Dynamic import to avoid compile error when not installed
@@ -154,7 +157,7 @@ describe('Settings Route Playwright E2E', function () {
 
     // Launch browser
     log('Launching browser...');
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium!.launch({ headless: true });
     context = await browser.newContext({
       extraHTTPHeaders: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -229,8 +232,8 @@ describe('Settings Route Playwright E2E', function () {
 
     // Get all status texts
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const statusTexts = await (page as any).$$eval('.provider-status', (els: Element[]) =>
-      els.map((el: Element) => el.textContent?.trim())
+    const statusTexts = await (page as any).$$eval('.provider-status', (els: any[]) =>
+      els.map((el: any) => el.textContent?.trim())
     );
     log(`Status texts found: ${JSON.stringify(statusTexts)}`);
 

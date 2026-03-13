@@ -71,7 +71,7 @@ describe('SupervisorLogger', () => {
       assert.equal(entry.category, 'TASK_TYPE_DETECTION');
       assert.ok(entry.message.includes('READ_INFO'));
       assert.equal(entry.details?.taskType, 'READ_INFO');
-      assert.ok(entry.details?.inputPreview?.includes('What is the status'));
+      assert.ok((entry.details?.inputPreview as string)?.includes('What is the status'));
       assert.equal(entry.details?.inputLength, input.length);
     });
 
@@ -79,7 +79,7 @@ describe('SupervisorLogger', () => {
       const longInput = 'A'.repeat(200);
       const entry = logger.logTaskTypeDetection('IMPLEMENTATION', longInput);
 
-      assert.ok(entry.details?.inputPreview?.includes('...'));
+      assert.ok((entry.details?.inputPreview as string)?.includes('...'));
       assert.ok((entry.details?.inputPreview as string).length < 110);
     });
   });

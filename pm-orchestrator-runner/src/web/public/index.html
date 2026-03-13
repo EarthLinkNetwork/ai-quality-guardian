@@ -2625,6 +2625,7 @@
         <a href="/hooks" data-nav="hooks"><span class="nav-icon">&#9889;</span><span class="nav-label">Hooks</span></a>
         <a href="/commands" data-nav="commands"><span class="nav-icon">&#9654;</span><span class="nav-label">Commands</span></a>
         <a href="/agents" data-nav="agents"><span class="nav-icon">&#129302;</span><span class="nav-label">Agents</span></a>
+        <a href="/agent" data-nav="agent"><span class="nav-icon">&#128640;</span><span class="nav-label">Agent Launcher</span></a>
         <a href="/mcp-servers" data-nav="mcp-servers"><span class="nav-icon">&#128268;</span><span class="nav-label">MCP Servers</span></a>
         <div class="nav-divider"></div>
         <div class="nav-section-label">Management</div>
@@ -4682,12 +4683,12 @@
           </div>
 
           <!-- Scope Selector -->
-          <div class="settings-scope-selector" data-testid="settings-scope-selector">
+          <div class="settings-scope-selector" data-testid="settings-tabs">
             <label class="scope-label">Scope:</label>
             ${scopeButtons.map(s =>
               '<button class="scope-btn' + (settingsScope === s.id ? ' active' : '') + (s.disabled ? ' disabled' : '') + '" ' +
               (s.disabled ? 'disabled title="Coming soon"' : 'onclick="switchSettingsScope(\'' + s.id + '\')"') +
-              ' data-testid="scope-btn-' + s.id + '">' + s.label +
+              ' data-testid="settings-tab-' + s.id + '">' + s.label +
               (s.disabled ? ' <span style="font-size:0.7rem;opacity:0.6;">Coming soon</span>' : '') + '</button>'
             ).join('')}
           </div>

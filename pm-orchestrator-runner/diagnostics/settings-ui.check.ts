@@ -547,11 +547,14 @@ async function runChecks(): Promise<void> {
     // Find and click "Save Global Settings" button
     const globalSaveBtn = await page.$('button:has-text("Save Global Settings")');
     if (globalSaveBtn) {
-      // Intercept alert
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (page as any).on('dialog', (dialog: { accept: () => void }) => dialog.accept());
       await globalSaveBtn.click();
-      await page.waitForTimeout(500);
+      // Handle custom confirm dialog (not browser dialog)
+      await page.waitForTimeout(300);
+      const globalConfirmBtn = await page.$('.confirm-dialog-overlay [data-action="confirm"]');
+      if (globalConfirmBtn) {
+        await globalConfirmBtn.click();
+        await page.waitForTimeout(500);
+      }
     }
 
     // Check global save went to /api/settings/project WITHOUT projectId
@@ -580,7 +583,13 @@ async function runChecks(): Promise<void> {
     const projectSaveBtn = await page.$('button:has-text("Save Project Overrides")');
     if (projectSaveBtn) {
       await projectSaveBtn.click();
-      await page.waitForTimeout(500);
+      // Handle custom confirm dialog
+      await page.waitForTimeout(300);
+      const projectConfirmBtn = await page.$('.confirm-dialog-overlay [data-action="confirm"]');
+      if (projectConfirmBtn) {
+        await projectConfirmBtn.click();
+        await page.waitForTimeout(500);
+      }
     }
 
     // Check project save went to /api/settings/project WITH projectId

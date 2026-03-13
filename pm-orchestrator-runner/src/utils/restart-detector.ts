@@ -8,6 +8,7 @@
  */
 
 import { QueueItem, QueueItemStatus, ProgressEvent } from '../queue/index';
+export { ProgressEvent };
 
 /**
  * Extended task with progress events for restart detection
