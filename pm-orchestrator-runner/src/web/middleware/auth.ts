@@ -10,11 +10,17 @@ import type { Request, Response, NextFunction } from 'express';
 import { ApiKeyManager } from '../../auth/api-key-manager';
 
 /**
- * Extended Request with userId and deviceName
+ * User roles for access control
+ */
+export type UserRole = 'admin' | 'viewer' | 'guest';
+
+/**
+ * Extended Request with userId, deviceName, and role
  */
 export interface AuthenticatedRequest extends Request {
   userId?: string;
   deviceName?: string;
+  role?: UserRole;
 }
 
 /**
@@ -86,5 +92,33 @@ export function createPublicPathBypass(authMiddleware: ReturnType<typeof createA
       return next();
     }
     return authMiddleware(req, res, next);
+  };
+}
+
+/**
+ * Executor log directory path constant
+ */
+export const EXECUTOR_LOGS_DIR = 'logs/executor/';
+
+/**
+ * Role-based access control middleware
+ *
+ * Returns 403 if the user's role is not in the allowed list.
+ * In local dev mode (role undefined), defaults to 'admin'.
+ */
+export function requireRole(...allowedRoles: UserRole[]) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const role = req.role ?? (req.userId === 'local' ? 'admin' : 'guest');
+
+    if (!allowedRoles.includes(role)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: `Role '${role}' does not have access to executor logs. Required: ${allowedRoles.join(', ')}`,
+        requiredRoles: allowedRoles,
+        currentRole: role,
+      });
+    }
+
+    next();
   };
 }

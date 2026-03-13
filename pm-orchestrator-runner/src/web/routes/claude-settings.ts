@@ -78,14 +78,27 @@ export function createClaudeSettingsRoutes(config: ClaudeSettingsConfig): Router
   const { projectRoot } = config;
   const globalDir = config.globalClaudeDir || getGlobalClaudeDir();
 
+  /**
+   * Extract projectPath from query params (validated: must be absolute path)
+   */
+  function getProjectPathOverride(req: Request): string | undefined {
+    const pp = req.query.projectPath as string | undefined;
+    if (pp && path.isAbsolute(pp)) return pp;
+    return undefined;
+  }
+
+  function resolveProjectRoot(req: Request): string {
+    return getProjectPathOverride(req) || projectRoot;
+  }
+
   // --- settings.json endpoints ---
 
   /**
    * GET /api/claude-settings/project
    * Read project-level .claude/settings.json
    */
-  router.get("/project", (_req: Request, res: Response) => {
-    const filePath = path.join(projectRoot, ".claude", "settings.json");
+  router.get("/project", (req: Request, res: Response) => {
+    const filePath = path.join(resolveProjectRoot(req), ".claude", "settings.json");
     const data = readJsonFile(filePath);
     res.json({
       exists: data !== null,
@@ -105,7 +118,7 @@ export function createClaudeSettingsRoutes(config: ClaudeSettingsConfig): Router
       res.status(400).json({ error: "MISSING_SETTINGS", message: "settings field is required" });
       return;
     }
-    const filePath = path.join(projectRoot, ".claude", "settings.json");
+    const filePath = path.join(resolveProjectRoot(req), ".claude", "settings.json");
     try {
       writeJsonFile(filePath, settings);
       res.json({ success: true, path: filePath });
@@ -156,8 +169,8 @@ export function createClaudeSettingsRoutes(config: ClaudeSettingsConfig): Router
    * GET /api/claude-settings/claude-md/project
    * Read project-level .claude/CLAUDE.md
    */
-  router.get("/claude-md/project", (_req: Request, res: Response) => {
-    const filePath = path.join(projectRoot, ".claude", "CLAUDE.md");
+  router.get("/claude-md/project", (req: Request, res: Response) => {
+    const filePath = path.join(resolveProjectRoot(req), ".claude", "CLAUDE.md");
     const content = readTextFile(filePath);
     res.json({
       exists: content !== null,
@@ -177,7 +190,7 @@ export function createClaudeSettingsRoutes(config: ClaudeSettingsConfig): Router
       res.status(400).json({ error: "MISSING_CONTENT", message: "content field is required" });
       return;
     }
-    const filePath = path.join(projectRoot, ".claude", "CLAUDE.md");
+    const filePath = path.join(resolveProjectRoot(req), ".claude", "CLAUDE.md");
     try {
       writeTextFile(filePath, content);
       res.json({ success: true, path: filePath });

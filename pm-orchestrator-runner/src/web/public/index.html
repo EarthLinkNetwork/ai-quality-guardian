@@ -2003,6 +2003,11 @@
     .confirm-dialog h4 { font-size: 1.1rem; margin-bottom: 12px; }
     .confirm-dialog p  { font-size: 0.9rem; color: #4b5563; margin-bottom: 20px; line-height: 1.5; }
     .confirm-dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .input-dialog-field { margin-bottom: 16px; }
+    .input-dialog-field label { display: block; font-size: 0.85rem; font-weight: 600; color: #374151; margin-bottom: 6px; }
+    .input-dialog-field input { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.95rem; box-sizing: border-box; }
+    .input-dialog-field input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+    .input-dialog-field .field-hint { font-size: 0.8rem; color: #9ca3af; margin-top: 4px; }
     @keyframes fadeIn {
       from { opacity: 0; }
       to   { opacity: 1; }
@@ -2582,6 +2587,27 @@
       .assistant-layout { grid-template-columns: 1fr; height: auto; }
     }
 
+    /* Scope bar (shared by Settings, Hooks, Commands, Agents, MCP pages) */
+    .scope-bar { display:flex; align-items:center; gap:8px; margin-bottom:16px; padding:8px 12px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; flex-wrap:wrap; }
+    .scope-bar .scope-label { font-weight:600; font-size:0.85rem; color:#374151; white-space:nowrap; }
+    .scope-bar .scope-path { margin-left:auto; font-size:0.78rem; color:#6b7280; font-family:'Monaco','Consolas',monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:400px; }
+    .scope-bar .project-select { padding:4px 8px; border:1px solid #d1d5db; border-radius:6px; font-size:0.82rem; background:#fff; color:#374151; max-width:300px; cursor:pointer; }
+    .scope-bar .project-select:focus { outline:none; border-color:#2563eb; box-shadow:0 0 0 2px rgba(37,99,235,0.15); }
+    .scope-btn { -webkit-appearance:none; appearance:none; padding:6px 16px; border:1px solid #d1d5db; background:#fff; border-radius:6px; cursor:pointer; font-weight:500; font-size:0.85rem; transition:all 0.15s; color:#6b7280; }
+    .scope-btn:hover { background:#f1f5f9; border-color:#94a3b8; }
+    .scope-btn.active { background:#2563eb; color:#fff; border-color:#2563eb; box-shadow:0 1px 3px rgba(37,99,235,0.3); font-weight:600; }
+    .scope-btn.disabled { background:#f3f4f6; color:#9ca3af; cursor:not-allowed; border-color:#e5e7eb; }
+
+    /* Sidebar context selector */
+    .sidebar-context { padding:4px 12px 8px 12px; }
+    .sidebar-context .ctx-row { display:flex; gap:4px; margin-bottom:4px; }
+    .sidebar-context .ctx-btn { -webkit-appearance:none; appearance:none; flex:1; padding:4px 8px; border:1px solid rgba(255,255,255,0.2); background:rgba(255,255,255,0.1); border-radius:4px; cursor:pointer; font-size:0.72rem; font-weight:500; color:rgba(255,255,255,0.7); transition:all 0.15s; text-align:center; }
+    .sidebar-context .ctx-btn:hover { background:rgba(255,255,255,0.2); }
+    .sidebar-context .ctx-btn.active { background:#2563eb; color:#fff; border-color:#2563eb; font-weight:600; }
+    .sidebar-context .ctx-select { width:100%; padding:3px 6px; border:1px solid rgba(255,255,255,0.2); background:rgba(255,255,255,0.1); border-radius:4px; font-size:0.72rem; color:rgba(255,255,255,0.9); cursor:pointer; }
+    .sidebar-context .ctx-select option { background:#1e293b; color:#fff; }
+    .sidebar.collapsed .sidebar-context { display:none; }
+
   </style>
 </head>
 <body>
@@ -2621,17 +2647,19 @@
         <a href="/" data-nav="home"><span class="nav-icon">&#128203;</span><span class="nav-label">Task Groups</span></a>
         <a href="/activity" data-nav="activity"><span class="nav-icon">&#9200;</span><span class="nav-label">Activity</span></a>
         <div class="nav-divider"></div>
+        <div data-testid="sidebar-section-claude-code">
         <div class="nav-section-label">Claude Code</div>
-        <a href="/hooks" data-nav="hooks"><span class="nav-icon">&#9889;</span><span class="nav-label">Hooks</span></a>
-        <a href="/commands" data-nav="commands"><span class="nav-icon">&#9654;</span><span class="nav-label">Commands</span></a>
-        <a href="/agents" data-nav="agents"><span class="nav-icon">&#129302;</span><span class="nav-label">Agents</span></a>
-        <a href="/agent" data-nav="agent"><span class="nav-icon">&#128640;</span><span class="nav-label">Agent Launcher</span></a>
-        <a href="/mcp-servers" data-nav="mcp-servers"><span class="nav-icon">&#128268;</span><span class="nav-label">MCP Servers</span></a>
+        <div class="sidebar-context" id="claude-code-context" data-testid="claude-code-context"></div>
+        <a href="/ai-generate" data-nav="ai-generate" data-testid="nav-ai-generate"><span class="nav-icon">&#10024;</span><span class="nav-label">AI Generate</span></a>
+        <a href="/hooks" data-nav="hooks" data-testid="nav-hooks"><span class="nav-icon">&#9889;</span><span class="nav-label">Hooks</span></a>
+        <a href="/commands" data-nav="commands" data-testid="nav-commands"><span class="nav-icon">&#9654;</span><span class="nav-label">Commands</span></a>
+        <a href="/agents" data-nav="agents" data-testid="nav-agents"><span class="nav-icon">&#129302;</span><span class="nav-label">Agents</span></a>
+        <a href="/plugins" data-nav="plugins" data-testid="nav-plugins"><span class="nav-icon">&#129513;</span><span class="nav-label">Plugins</span></a>
+        <a href="/mcp-servers" data-nav="mcp-servers" data-testid="nav-mcp-servers"><span class="nav-icon">&#128268;</span><span class="nav-label">MCP Servers</span></a>
+        </div>
         <div class="nav-divider"></div>
         <div class="nav-section-label">Management</div>
-        <a href="/assistant" data-nav="assistant"><span class="nav-icon">&#10024;</span><span class="nav-label">Assistant</span></a>
         <a href="/backup" data-nav="backup"><span class="nav-icon">&#128190;</span><span class="nav-label">Backup</span></a>
-        <a href="/plugins" data-nav="plugins"><span class="nav-icon">&#129513;</span><span class="nav-label">Plugins</span></a>
         <div class="nav-divider"></div>
         <a href="/settings" data-nav="settings"><span class="nav-icon">&#9881;</span><span class="nav-label">Settings</span></a>
       </nav>
@@ -2742,6 +2770,62 @@
       };
       overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
       document.body.appendChild(overlay);
+      return overlay;
+    }
+
+    /**
+     * Show an input dialog with one or more fields.
+     * @param {string} title - Dialog title
+     * @param {Array<{name:string, label:string, placeholder?:string, value?:string, hint?:string, required?:boolean}>} fields
+     * @param {string} confirmText - Text for the confirm button
+     * @param {function} onConfirm - Called with an object {fieldName: value, ...}
+     */
+    function showInputDialog(title, fields, confirmText, onConfirm) {
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-dialog-overlay';
+      var fieldsHtml = fields.map(function(f) {
+        return '<div class="input-dialog-field">' +
+          '<label for="input-dialog-' + escapeHtml(f.name) + '">' + escapeHtml(f.label) + (f.required ? ' <span style="color:#ef4444;">*</span>' : '') + '</label>' +
+          '<input type="text" id="input-dialog-' + escapeHtml(f.name) + '" data-field="' + escapeHtml(f.name) + '" placeholder="' + escapeHtml(f.placeholder || '') + '" value="' + escapeHtml(f.value || '') + '" />' +
+          (f.hint ? '<div class="field-hint">' + escapeHtml(f.hint) + '</div>' : '') +
+        '</div>';
+      }).join('');
+      overlay.innerHTML =
+        '<div class="confirm-dialog">' +
+          '<h4>' + escapeHtml(title) + '</h4>' +
+          fieldsHtml +
+          '<div class="confirm-dialog-actions">' +
+            '<button class="btn btn-secondary" data-action="cancel">Cancel</button>' +
+            '<button class="btn btn-primary" data-action="confirm">' + escapeHtml(confirmText) + '</button>' +
+          '</div>' +
+        '</div>';
+      overlay.querySelector('[data-action="cancel"]').onclick = function() { overlay.remove(); };
+      overlay.querySelector('[data-action="confirm"]').onclick = function() {
+        var result = {};
+        var valid = true;
+        fields.forEach(function(f) {
+          var input = overlay.querySelector('[data-field="' + f.name + '"]');
+          var val = input ? input.value.trim() : '';
+          if (f.required && !val) {
+            input.style.borderColor = '#ef4444';
+            valid = false;
+          }
+          result[f.name] = val;
+        });
+        if (!valid) return;
+        overlay.remove();
+        if (onConfirm) onConfirm(result);
+      };
+      // Enter key submits
+      overlay.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') overlay.querySelector('[data-action="confirm"]').click();
+        if (e.key === 'Escape') overlay.remove();
+      });
+      overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+      document.body.appendChild(overlay);
+      // Focus first input
+      var firstInput = overlay.querySelector('input');
+      if (firstInput) setTimeout(function() { firstInput.focus(); }, 50);
       return overlay;
     }
 
@@ -4786,6 +4870,23 @@
           </div>
         </div>
 
+        <!-- User Profile -->
+        <div data-testid="settings-user-profile" class="card settings-section">
+          <h3>User Profile</h3>
+          <p class="settings-hint">Your identity used across the application (e.g. plugin authorship).</p>
+          <div class="settings-form">
+            <div class="form-group">
+              <label for="settings-author-name">Author Name</label>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input type="text" id="settings-author-name" data-testid="settings-author-name" class="settings-input"
+                  placeholder="e.g. John Doe" value="${escapeHtml(localStorage.getItem('pluginAuthor') || '')}" style="flex:1;" />
+                <button class="btn btn-sm" onclick="saveAuthorName()">Save</button>
+              </div>
+              <div style="font-size:0.8rem;color:#9ca3af;margin-top:4px;">Used as the default author when saving plugins and for "My Plugins" filtering.</div>
+            </div>
+          </div>
+        </div>
+
         <!-- Runner Controls (AC-RC-UI-1) -->
         <div data-testid="settings-runner-controls" class="card settings-section">
           <h3>Self-Update (Build & Restart)</h3>
@@ -5379,12 +5480,9 @@
           .override-badge { padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 500; margin-left: auto; }
           .override-badge.inherited { background: #e5e7eb; color: #6b7280; }
           .override-badge.overridden { background: #dbeafe; color: #1e40af; }
-          /* Scope selector */
+          /* Scope selector (shared styles in global <style>, these are settings-only additions) */
           .settings-scope-selector { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
           .scope-label { font-weight:600; font-size:0.9rem; color:#374151; }
-          .scope-btn { padding:6px 16px; border:1px solid #e5e7eb; background:#fff; border-radius:6px; cursor:pointer; font-weight:500; font-size:0.85rem; transition:all 0.15s; }
-          .scope-btn.active { background:#2563eb; color:#fff; border-color:#2563eb; }
-          .scope-btn.disabled { background:#f3f4f6; color:#9ca3af; cursor:not-allowed; border-color:#e5e7eb; }
           /* Section nav */
           .settings-section-nav { display:flex; gap:6px; margin-bottom:16px; border-bottom:2px solid #e5e7eb; padding-bottom:8px; }
           .section-btn { padding:8px 16px; border:none; background:none; cursor:pointer; font-weight:500; font-size:0.88rem; color:#6b7280; border-bottom:2px solid transparent; margin-bottom:-10px; transition:all 0.15s; display:flex; align-items:center; gap:6px; }
@@ -5426,6 +5524,15 @@
         input.disabled = true;
         input.classList.add('inherited');
       }
+    }
+
+    // Save author name
+    function saveAuthorName() {
+      var input = document.getElementById('settings-author-name');
+      var name = input ? input.value.trim() : '';
+      if (!name) { showToast('Author name cannot be empty', 'error'); return; }
+      localStorage.setItem('pluginAuthor', name);
+      showToast('Author name saved: ' + name, 'success');
     }
 
     // Save API key
@@ -6204,24 +6311,24 @@
 
     // Show create project dialog
     async function showCreateProjectDialog() {
-      const projectPath = prompt('Enter project path:');
-      if (!projectPath) return;
-
-      const alias = prompt('Enter project alias (optional):');
-
-      try {
-        const data = await api('/projects', {
-          method: 'POST',
-          body: JSON.stringify({ projectPath, alias: alias || undefined }),
-        });
-        if (data.error) {
-          showToast(data.message || data.error, 'error');
-        } else {
-          navigate('/projects/' + encodeURIComponent(data.projectId));
+      showInputDialog('New Project', [
+        { name: 'projectPath', label: 'Project Path', placeholder: '/path/to/your/project', required: true, hint: 'Absolute path to the project directory' },
+        { name: 'alias', label: 'Alias', placeholder: 'my-project', hint: 'Optional short name for this project' },
+      ], 'Create Project', async function(values) {
+        try {
+          const data = await api('/projects', {
+            method: 'POST',
+            body: JSON.stringify({ projectPath: values.projectPath, alias: values.alias || undefined }),
+          });
+          if (data.error) {
+            showToast(data.message || data.error, 'error');
+          } else {
+            navigate('/projects/' + encodeURIComponent(data.projectId));
+          }
+        } catch (e) {
+          showToast(e.message, 'error');
         }
-      } catch (e) {
-        showToast(e.message, 'error');
-      }
+      });
     }
 
     // Render Activity page
@@ -6320,8 +6427,7 @@
           projectTaskGroupIds.has(g.task_group_id) ||
           g.project_id === projectId
         );
-        // Use filtered groups if any found, otherwise fall back to showing all
-        const projectTaskGroups = filteredTaskGroups.length > 0 ? filteredTaskGroups : allTaskGroups;
+        const projectTaskGroups = filteredTaskGroups;
 
         // Filter required actions to this project
         const projectActions = requiredActions.filter(a =>
@@ -7303,6 +7409,7 @@
     // =========================================================================
     let hooksPageState = {
       scope: 'project',
+      projectPath: '', // selected project path for project scope
       tab: 'events', // 'events' | 'scripts' | 'health'
       selectedEvent: null,
       selectedScript: null,
@@ -7329,11 +7436,16 @@
     async function renderHooksPage() {
       app.innerHTML = '<div class="loading">Loading Hooks...</div>';
       try {
-        var scope = hooksPageState.scope;
+        await loadProjectListCached();
+        // Use unified sidebar context
+        var scope = getContextScope();
+        hooksPageState.scope = scope;
+        hooksPageState.projectPath = claudeCodeContext.projectPath;
+        var hPp = getContextProjectParam();
         var [hooksRes, scriptsRes, inconsRes] = await Promise.all([
-          fetch('/api/claude-hooks/' + scope),
-          fetch('/api/claude-hooks/' + scope + '/scripts'),
-          fetch('/api/claude-hooks/' + scope + '/inconsistencies'),
+          fetch('/api/claude-hooks/' + scope + hPp),
+          fetch('/api/claude-hooks/' + scope + '/scripts' + hPp),
+          fetch('/api/claude-hooks/' + scope + '/inconsistencies' + hPp),
         ]);
         var hooksData = hooksRes.ok ? await hooksRes.json() : { events: [], knownEvents: [], settingsPath: '' };
         var scriptsData = scriptsRes.ok ? await scriptsRes.json() : { scripts: [] };
@@ -7386,12 +7498,7 @@
 
       app.innerHTML =
         '<div class="page-header"><h2>Hooks</h2>' +
-        '<span class="project-indicator">Scope: <span class="scope-pill ' + scope + '">' + scope + '</span></span></div>' +
-        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">' +
-        '<label style="font-weight:600;font-size:0.9rem;">Scope:</label>' +
-        '<button class="scope-btn' + (scope === 'global' ? ' active' : '') + '" data-testid="hooks-scope-global" onclick="switchHooksScope(\'global\')">Global</button>' +
-        '<button class="scope-btn' + (scope === 'project' ? ' active' : '') + '" data-testid="hooks-scope-project" onclick="switchHooksScope(\'project\')">Project</button>' +
-        '<span style="margin-left:auto;font-size:0.8rem;color:#6b7280;font-family:monospace;" data-testid="hooks-path">' + escapeHtml(hooksPageState.settingsPath) + '</span></div>' +
+        '<span class="scope-path" data-testid="hooks-path" style="font-size:0.78rem;color:#6b7280;margin-left:auto;">' + escapeHtml(hooksPageState.settingsPath) + '</span></div>' +
         tabBar + content;
 
       // Bind new event dropdown if present
@@ -7579,6 +7686,18 @@
       });
     }
 
+    function switchHooksProject(projectPath) {
+      hooksGuardUnsaved(function() {
+        hooksPageState.projectPath = projectPath;
+        hooksPageState.selectedEvent = null;
+        hooksPageState.selectedScript = null;
+        hooksPageState.isNewEvent = false;
+        hooksPageState.isNewScript = false;
+        hooksPageState.isDirty = false;
+        renderHooksPage();
+      });
+    }
+
     function switchHooksTab(tab) {
       hooksGuardUnsaved(function() {
         hooksPageState.tab = tab;
@@ -7613,7 +7732,8 @@
         async function() {
           try {
             var scope = hooksPageState.scope;
-            var response = await fetch('/api/claude-hooks/' + scope + '/' + event, { method: 'DELETE' });
+            var hPp = scope === 'project' ? projectPathParam(hooksPageState.projectPath) : '';
+            var response = await fetch('/api/claude-hooks/' + scope + '/' + event + hPp, { method: 'DELETE' });
             var data = await response.json();
             if (response.ok && data.success) {
               showToast('Hook "' + event + '" deleted', 'success');
@@ -7683,7 +7803,8 @@
         async function() {
           try {
             var scope = hooksPageState.scope;
-            var response = await fetch('/api/claude-hooks/' + scope + '/' + event, {
+            var hPp = scope === 'project' ? projectPathParam(hooksPageState.projectPath) : '';
+            var response = await fetch('/api/claude-hooks/' + scope + '/' + event + hPp, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ commands: eventData.commands }),
@@ -7733,7 +7854,8 @@
     async function hooksLoadScriptContent(filename) {
       try {
         var scope = hooksPageState.scope;
-        var response = await fetch('/api/claude-hooks/' + scope + '/scripts/' + encodeURIComponent(filename));
+        var hPp = scope === 'project' ? projectPathParam(hooksPageState.projectPath) : '';
+        var response = await fetch('/api/claude-hooks/' + scope + '/scripts/' + encodeURIComponent(filename) + hPp);
         var data = await response.json();
         var editor = document.getElementById('hooks-script-editor');
         var meta = document.getElementById('hooks-script-meta');
@@ -7764,7 +7886,8 @@
       showConfirmDialog('Create script?', 'Create "' + name + '"?', 'Create', async function() {
         try {
           var scope = hooksPageState.scope;
-          var response = await fetch('/api/claude-hooks/' + scope + '/scripts/' + encodeURIComponent(name), {
+          var hPp = scope === 'project' ? projectPathParam(hooksPageState.projectPath) : '';
+          var response = await fetch('/api/claude-hooks/' + scope + '/scripts/' + encodeURIComponent(name) + hPp, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: content }),
@@ -7791,7 +7914,8 @@
       showConfirmDialog('Save script?', 'Save "' + filename + '"?', 'Save', async function() {
         try {
           var scope = hooksPageState.scope;
-          var response = await fetch('/api/claude-hooks/' + scope + '/scripts/' + encodeURIComponent(filename), {
+          var hPp = scope === 'project' ? projectPathParam(hooksPageState.projectPath) : '';
+          var response = await fetch('/api/claude-hooks/' + scope + '/scripts/' + encodeURIComponent(filename) + hPp, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: content }),
@@ -7814,7 +7938,8 @@
       showConfirmDialog('Delete script?', 'Delete "' + filename + '"? This cannot be undone.', 'Delete', async function() {
         try {
           var scope = hooksPageState.scope;
-          var response = await fetch('/api/claude-hooks/' + scope + '/scripts/' + encodeURIComponent(filename), { method: 'DELETE' });
+          var hPp = scope === 'project' ? projectPathParam(hooksPageState.projectPath) : '';
+          var response = await fetch('/api/claude-hooks/' + scope + '/scripts/' + encodeURIComponent(filename) + hPp, { method: 'DELETE' });
           var data = await response.json();
           if (response.ok && data.success) {
             showToast('Script "' + filename + '" deleted', 'success');
@@ -7831,10 +7956,180 @@
     }
 
     // =========================================================================
+    // Shared: Project list cache (for scope dropdowns)
+    // =========================================================================
+    var projectListCache = null;
+    var projectListCacheTime = 0;
+
+    async function loadProjectListCached() {
+      var now = Date.now();
+      if (projectListCache && (now - projectListCacheTime) < 30000) return projectListCache;
+      try {
+        var resp = await fetch('/api/projects');
+        var data = await resp.json();
+        projectListCache = (data.projects || []).map(function(p) {
+          return { id: p.projectId, path: p.projectPath, alias: p.alias || p.projectPath };
+        });
+        projectListCacheTime = now;
+      } catch(e) {
+        projectListCache = [];
+      }
+      return projectListCache;
+    }
+
+    /** Get the first project with an absolute path (usable with ?projectPath=) */
+    function getFirstLocalProjectPath() {
+      if (!projectListCache) return '';
+      var p = projectListCache.find(function(x) { return x.path && x.path.charAt(0) === '/'; });
+      return p ? p.path : '';
+    }
+
+    /**
+     * Build a project <select> dropdown HTML.
+     * @param {string} selectedPath - Currently selected project path
+     * @param {string} onchangeHandler - JS expression for onchange (receives this.value)
+     * @param {string} testId - data-testid for the select element
+     */
+    function buildProjectDropdownHtml(selectedPath, onchangeHandler, testId) {
+      if (!projectListCache || projectListCache.length === 0) {
+        return '<select class="project-select" data-testid="' + testId + '" disabled><option>No projects</option></select>';
+      }
+      // Only include projects with absolute paths (non-absolute paths can't be used with ?projectPath=)
+      var validProjects = projectListCache.filter(function(p) { return p.path && p.path.charAt(0) === '/'; });
+      if (validProjects.length === 0) {
+        return '<select class="project-select" data-testid="' + testId + '" disabled><option>No local projects</option></select>';
+      }
+      var opts = validProjects.map(function(p) {
+        var label = p.alias !== p.path ? p.alias + ' (' + shortenPath(p.path) + ')' : shortenPath(p.path);
+        var sel = p.path === selectedPath ? ' selected' : '';
+        return '<option value="' + escapeHtml(p.path) + '"' + sel + '>' + escapeHtml(label) + '</option>';
+      }).join('');
+      return '<select class="project-select" data-testid="' + testId + '" onchange="' + onchangeHandler + '">' + opts + '</select>';
+    }
+
+    function shortenPath(p) {
+      if (!p) return '';
+      var home = '';
+      // Try to shorten home directory
+      if (p.indexOf('/Users/') === 0) {
+        var parts = p.split('/');
+        home = '~';
+        p = home + '/' + parts.slice(3).join('/');
+      }
+      // Truncate if still too long
+      if (p.length > 50) p = '...' + p.slice(-47);
+      return p;
+    }
+
+    /**
+     * Build the projectPath query parameter string for API calls.
+     * Returns empty string if no override needed.
+     */
+    function projectPathParam(projectPath) {
+      if (!projectPath) return '';
+      return '?projectPath=' + encodeURIComponent(projectPath);
+    }
+
+    // =========================================================================
+    // Claude Code Context - unified scope/project for all CLAUDE CODE pages
+    // =========================================================================
+    var claudeCodeContext = {
+      scope: 'project',   // 'global' or 'project'
+      projectPath: '',     // absolute path when scope='project'
+    };
+
+    /** Render the sidebar context selector widget */
+    async function renderSidebarContext() {
+      var el = document.getElementById('claude-code-context');
+      if (!el) return;
+      await loadProjectListCached();
+      if (claudeCodeContext.scope === 'project' && !claudeCodeContext.projectPath) {
+        claudeCodeContext.projectPath = getFirstLocalProjectPath();
+      }
+      var html = '<div class="ctx-row">' +
+        '<button class="ctx-btn' + (claudeCodeContext.scope === 'global' ? ' active' : '') + '" data-testid="context-scope-global" onclick="switchClaudeCodeScope(\'global\')">Global</button>' +
+        '<button class="ctx-btn' + (claudeCodeContext.scope === 'project' ? ' active' : '') + '" data-testid="context-scope-project" onclick="switchClaudeCodeScope(\'project\')">Project</button>' +
+        '</div>';
+      if (claudeCodeContext.scope === 'project') {
+        var validProjects = (projectListCache || []).filter(function(p) { return p.path && p.path.charAt(0) === '/'; });
+        if (validProjects.length > 0) {
+          var opts = validProjects.map(function(p) {
+            var label = p.alias !== p.path ? p.alias : shortenPath(p.path);
+            var sel = p.path === claudeCodeContext.projectPath ? ' selected' : '';
+            return '<option value="' + escapeHtml(p.path) + '"' + sel + '>' + escapeHtml(label) + '</option>';
+          }).join('');
+          html += '<select class="ctx-select" data-testid="context-project-select" onchange="switchClaudeCodeProject(this.value)">' + opts + '</select>';
+        } else {
+          html += '<div style="font-size:0.7rem;color:rgba(255,255,255,0.5);padding:2px 0;">No projects</div>';
+        }
+      }
+      el.innerHTML = html;
+    }
+
+    function switchClaudeCodeScope(scope) {
+      var doSwitch = function() {
+        claudeCodeContext.scope = scope;
+        if (scope === 'project' && !claudeCodeContext.projectPath) {
+          claudeCodeContext.projectPath = getFirstLocalProjectPath();
+        }
+        renderSidebarContext();
+        reloadCurrentClaudeCodePage();
+      };
+      // Check for unsaved changes on the current page
+      if (currentPath === '/hooks' && hooksPageState.isDirty) {
+        hooksGuardUnsaved(doSwitch); return;
+      }
+      if (currentPath === '/commands' && cmdPageState.isDirty) {
+        cmdGuardUnsaved(doSwitch); return;
+      }
+      if (currentPath === '/agents' && agentPageState.isDirty) {
+        agentGuardUnsaved(doSwitch); return;
+      }
+      doSwitch();
+    }
+
+    function switchClaudeCodeProject(projectPath) {
+      var doSwitch = function() {
+        claudeCodeContext.projectPath = projectPath;
+        renderSidebarContext();
+        reloadCurrentClaudeCodePage();
+      };
+      if (currentPath === '/hooks' && hooksPageState.isDirty) {
+        hooksGuardUnsaved(doSwitch); return;
+      }
+      if (currentPath === '/commands' && cmdPageState.isDirty) {
+        cmdGuardUnsaved(doSwitch); return;
+      }
+      if (currentPath === '/agents' && agentPageState.isDirty) {
+        agentGuardUnsaved(doSwitch); return;
+      }
+      doSwitch();
+    }
+
+    function reloadCurrentClaudeCodePage() {
+      var claudeCodePages = ['/hooks', '/commands', '/agents', '/plugins', '/mcp-servers', '/ai-generate'];
+      if (claudeCodePages.indexOf(currentPath) >= 0) {
+        router();
+      }
+    }
+
+    /** Get current scope for CLAUDE CODE API calls */
+    function getContextScope() {
+      return claudeCodeContext.scope;
+    }
+
+    /** Get current projectPath query param for CLAUDE CODE API calls */
+    function getContextProjectParam() {
+      if (claudeCodeContext.scope !== 'project') return '';
+      return projectPathParam(claudeCodeContext.projectPath);
+    }
+
+    // =========================================================================
     // Commands Page - 2-pane CRUD
     // =========================================================================
     let cmdPageState = {
       scope: 'project',
+      projectPath: '', // selected project path for project scope
       selected: null, // filename (without .md)
       files: [],
       dirPath: '',
@@ -7863,7 +8158,13 @@
     async function renderCommandsPage() {
       app.innerHTML = '<div class="loading">Loading Commands...</div>';
       try {
-        const res = await fetch('/api/claude-files/commands/' + cmdPageState.scope);
+        await loadProjectListCached();
+        // Use unified sidebar context
+        var scope = getContextScope();
+        cmdPageState.scope = scope;
+        cmdPageState.projectPath = claudeCodeContext.projectPath;
+        var pp = getContextProjectParam();
+        const res = await fetch('/api/claude-files/commands/' + scope + pp);
         const data = await res.json();
         cmdPageState.files = data.files || [];
         cmdPageState.dirPath = data.dirPath || '';
@@ -7928,12 +8229,7 @@
 
       app.innerHTML =
         '<div class="page-header"><h2>Commands</h2>' +
-        '<span class="project-indicator">Scope: <span class="scope-pill ' + scope + '">' + scope + '</span></span></div>' +
-        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">' +
-        '<label style="font-weight:600;font-size:0.9rem;">Scope:</label>' +
-        '<button class="scope-btn' + (scope === 'global' ? ' active' : '') + '" data-testid="cmd-scope-global" onclick="switchCmdScope(\'global\')">Global</button>' +
-        '<button class="scope-btn' + (scope === 'project' ? ' active' : '') + '" data-testid="cmd-scope-project" onclick="switchCmdScope(\'project\')">Project</button>' +
-        '<span style="margin-left:auto;font-size:0.8rem;color:#6b7280;font-family:monospace;" data-testid="cmd-dir-path">' + escapeHtml(cmdPageState.dirPath) + '</span></div>' +
+        '<span class="scope-path" data-testid="cmd-dir-path" style="font-size:0.78rem;color:#6b7280;margin-left:auto;">' + escapeHtml(cmdPageState.dirPath) + '</span></div>' +
         '<div class="two-pane" data-testid="cmd-two-pane"><div class="pane-list">' +
         '<div class="pane-list-header"><h3>Commands (' + files.length + ')</h3>' +
         '<button class="btn btn-sm" data-testid="cmd-new-btn" onclick="startNewCommand()">+ New</button></div>' +
@@ -7953,6 +8249,18 @@
       });
     }
 
+    function switchCmdProject(projectPath) {
+      cmdGuardUnsaved(function() {
+        cmdPageState.projectPath = projectPath;
+        cmdPageState.selected = null;
+        cmdPageState.editorContent = '';
+        cmdPageState.savedContent = '';
+        cmdPageState.isNew = false;
+        cmdPageState.isDirty = false;
+        renderCommandsPage();
+      });
+    }
+
     async function selectCommand(name) {
       if (name === cmdPageState.selected) return;
       cmdGuardUnsaved(async function() {
@@ -7960,7 +8268,8 @@
         cmdPageState.selected = name;
         cmdPageState.isDirty = false;
         try {
-          var res = await fetch('/api/claude-files/commands/' + cmdPageState.scope + '/' + encodeURIComponent(name));
+          var cPp = cmdPageState.scope === 'project' ? projectPathParam(cmdPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/commands/' + cmdPageState.scope + '/' + encodeURIComponent(name) + cPp);
           var data = await res.json();
           cmdPageState.editorContent = data.content || '';
           cmdPageState.savedContent = cmdPageState.editorContent;
@@ -8007,7 +8316,8 @@
       if (errorEl) { errorEl.style.display = 'none'; }
       showConfirmDialog('Create command?', 'Create /' + name + ' in ' + cmdPageState.dirPath, 'Create', async function() {
         try {
-          var res = await fetch('/api/claude-files/commands/' + cmdPageState.scope + '/' + encodeURIComponent(name), {
+          var cPp = cmdPageState.scope === 'project' ? projectPathParam(cmdPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/commands/' + cmdPageState.scope + '/' + encodeURIComponent(name) + cPp, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: content }),
           });
@@ -8030,7 +8340,8 @@
       var content = editorEl ? editorEl.value : '';
       showConfirmDialog('Save command?', 'Save /' + name + ' to ' + cmdPageState.dirPath, 'Save', async function() {
         try {
-          var res = await fetch('/api/claude-files/commands/' + cmdPageState.scope + '/' + encodeURIComponent(name), {
+          var cPp = cmdPageState.scope === 'project' ? projectPathParam(cmdPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/commands/' + cmdPageState.scope + '/' + encodeURIComponent(name) + cPp, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: content }),
           });
@@ -8048,7 +8359,8 @@
     function deleteCommand(name) {
       showConfirmDialog('Delete command?', 'Delete /' + name + ' from ' + cmdPageState.dirPath + '? This cannot be undone.', 'Delete', async function() {
         try {
-          var res = await fetch('/api/claude-files/commands/' + cmdPageState.scope + '/' + encodeURIComponent(name), { method: 'DELETE' });
+          var cPp = cmdPageState.scope === 'project' ? projectPathParam(cmdPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/commands/' + cmdPageState.scope + '/' + encodeURIComponent(name) + cPp, { method: 'DELETE' });
           var data = await res.json();
           if (data.success) {
             showToast('Command deleted: /' + name, 'success');
@@ -8067,6 +8379,7 @@
     // =========================================================================
     let agentPageState = {
       scope: 'project',
+      projectPath: '', // selected project path for project scope
       selected: null,   // { name, type }
       files: [],
       agentsDir: '',
@@ -8091,7 +8404,13 @@
     async function renderAgentsPage() {
       app.innerHTML = '<div class="loading">Loading Agents...</div>';
       try {
-        var res = await fetch('/api/claude-files/agents/' + agentPageState.scope);
+        await loadProjectListCached();
+        // Use unified sidebar context
+        var scope = getContextScope();
+        agentPageState.scope = scope;
+        agentPageState.projectPath = claudeCodeContext.projectPath;
+        var aPp = getContextProjectParam();
+        var res = await fetch('/api/claude-files/agents/' + scope + aPp);
         var data = await res.json();
         agentPageState.files = data.files || [];
         agentPageState.agentsDir = data.agentsDir || '';
@@ -8207,12 +8526,7 @@
 
       app.innerHTML =
         '<div class="page-header"><h2>Agents &amp; Skills</h2>' +
-        '<span class="project-indicator">Scope: <span class="scope-pill ' + scope + '">' + scope + '</span></span></div>' +
-        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">' +
-        '<label style="font-weight:600;font-size:0.9rem;">Scope:</label>' +
-        '<button class="scope-btn' + (scope === 'global' ? ' active' : '') + '" data-testid="agent-scope-global" onclick="switchAgentScope(\'global\')">Global</button>' +
-        '<button class="scope-btn' + (scope === 'project' ? ' active' : '') + '" data-testid="agent-scope-project" onclick="switchAgentScope(\'project\')">Project</button>' +
-        '<span style="margin-left:auto;font-size:0.75rem;color:#6b7280;font-family:monospace;">' +
+        '<span class="scope-path" style="font-size:0.78rem;color:#6b7280;margin-left:auto;">' +
         'agents: ' + escapeHtml(agentPageState.agentsDir) + ' | skills: ' + escapeHtml(agentPageState.skillsDir) + '</span></div>' +
         '<div class="two-pane" data-testid="agent-two-pane"><div class="pane-list">' +
         '<div class="pane-list-header"><h3>Files (' + files.length + ')</h3>' +
@@ -8233,6 +8547,18 @@
       });
     }
 
+    function switchAgentProject(projectPath) {
+      agentGuardUnsaved(function() {
+        agentPageState.projectPath = projectPath;
+        agentPageState.selected = null;
+        agentPageState.editorContent = '';
+        agentPageState.savedContent = '';
+        agentPageState.isNew = false;
+        agentPageState.isDirty = false;
+        renderAgentsPage();
+      });
+    }
+
     async function selectAgent(name, type) {
       if (agentPageState.selected && agentPageState.selected.name === name && agentPageState.selected.type === type) return;
       agentGuardUnsaved(async function() {
@@ -8240,7 +8566,8 @@
         agentPageState.selected = { name: name, type: type };
         agentPageState.isDirty = false;
         try {
-          var res = await fetch('/api/claude-files/agents/' + agentPageState.scope + '/' + type + '/' + encodeURIComponent(name));
+          var aPp = agentPageState.scope === 'project' ? projectPathParam(agentPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/agents/' + agentPageState.scope + '/' + type + '/' + encodeURIComponent(name) + aPp);
           var data = await res.json();
           agentPageState.editorContent = data.content || '';
           agentPageState.savedContent = agentPageState.editorContent;
@@ -8329,7 +8656,8 @@
       var typeLabel = type === 'skill' ? 'skill' : 'agent';
       showConfirmDialog('Create ' + typeLabel + '?', 'Create ' + name + '.md', 'Create', async function() {
         try {
-          var res = await fetch('/api/claude-files/agents/' + agentPageState.scope + '/' + type + '/' + encodeURIComponent(name), {
+          var aPp = agentPageState.scope === 'project' ? projectPathParam(agentPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/agents/' + agentPageState.scope + '/' + type + '/' + encodeURIComponent(name) + aPp, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: content }),
           });
@@ -8353,7 +8681,8 @@
       var typeLabel = type === 'skill' ? 'skill' : 'agent';
       showConfirmDialog('Save ' + typeLabel + '?', 'Save ' + name + '.md', 'Save', async function() {
         try {
-          var res = await fetch('/api/claude-files/agents/' + agentPageState.scope + '/' + type + '/' + encodeURIComponent(name), {
+          var aPp = agentPageState.scope === 'project' ? projectPathParam(agentPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/agents/' + agentPageState.scope + '/' + type + '/' + encodeURIComponent(name) + aPp, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: content }),
           });
@@ -8372,7 +8701,8 @@
       var typeLabel = type === 'skill' ? 'skill' : 'agent';
       showConfirmDialog('Delete ' + typeLabel + '?', 'Delete ' + name + '.md? This cannot be undone.', 'Delete', async function() {
         try {
-          var res = await fetch('/api/claude-files/agents/' + agentPageState.scope + '/' + type + '/' + encodeURIComponent(name), { method: 'DELETE' });
+          var aPp = agentPageState.scope === 'project' ? projectPathParam(agentPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/agents/' + agentPageState.scope + '/' + type + '/' + encodeURIComponent(name) + aPp, { method: 'DELETE' });
           var data = await res.json();
           if (data.success) {
             showToast(typeLabel + ' deleted: ' + name, 'success');
@@ -8391,6 +8721,7 @@
     // =========================================================================
     let mcpPageState = {
       scope: 'global',
+      projectPath: '', // selected project path for project scope
       selectedServer: null,
       data: { global: {}, project: {} },
       paths: { global: '', project: '' },
@@ -8399,9 +8730,17 @@
     async function renderMcpServersPage() {
       app.innerHTML = '<div class="loading">Loading MCP Servers...</div>';
       try {
+        await loadProjectListCached();
+        // Use unified sidebar context
+        mcpPageState.scope = getContextScope();
+        mcpPageState.projectPath = claudeCodeContext.projectPath;
+        if (!mcpPageState.projectPath) {
+          mcpPageState.projectPath = getFirstLocalProjectPath();
+        }
+        var mPp = projectPathParam(mcpPageState.projectPath);
         const [globalRes, projectRes] = await Promise.all([
           fetch('/api/claude-settings/global'),
-          fetch('/api/claude-settings/project'),
+          fetch('/api/claude-settings/project' + mPp),
         ]);
         const globalData = globalRes.ok ? await globalRes.json() : { settings: {}, path: '', exists: false };
         const projectData = projectRes.ok ? await projectRes.json() : { settings: {}, path: '', exists: false };
@@ -8459,14 +8798,7 @@
       app.innerHTML = `
         <div class="page-header">
           <h2>MCP Servers</h2>
-          <span class="project-indicator">Scope: <span class="scope-pill ${scope}">${scope}</span></span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
-          <label style="font-weight:600;font-size:0.9rem;">Scope:</label>
-          <button class="scope-btn${scope === 'global' ? ' active' : ''}" onclick="switchMcpScope('global')">Global</button>
-          <button class="scope-btn${scope === 'project' ? ' active' : ''}" onclick="switchMcpScope('project')">Project</button>
-          <button class="scope-btn disabled" disabled title="Coming soon">Local <span style="font-size:0.7rem;opacity:0.6;">Coming soon</span></button>
-          <span style="margin-left:auto;font-size:0.8rem;color:#6b7280;font-family:monospace;">${escapeHtml(mcpPageState.paths[scope])}</span>
+          <span class="scope-path" style="font-size:0.78rem;color:#6b7280;margin-left:auto;">${escapeHtml(mcpPageState.paths[scope])}</span>
         </div>
         <div class="two-pane">
           <div class="pane-list">
@@ -8484,7 +8816,17 @@
     function switchMcpScope(scope) {
       mcpPageState.scope = scope;
       mcpPageState.selectedServer = null;
-      renderMcpServersContent();
+      if (scope === 'project') {
+        renderMcpServersPage(); // re-fetch for the selected project
+      } else {
+        renderMcpServersContent();
+      }
+    }
+
+    function switchMcpProject(projectPath) {
+      mcpPageState.projectPath = projectPath;
+      mcpPageState.selectedServer = null;
+      renderMcpServersPage();
     }
 
     function selectMcpServer(name) {
@@ -8493,17 +8835,20 @@
     }
 
     function addMcpServerPrompt() {
-      const name = prompt('Enter MCP server name:');
-      if (!name || !name.trim()) return;
-      const scope = mcpPageState.scope;
-      if (!mcpPageState.data[scope]) mcpPageState.data[scope] = {};
-      if (mcpPageState.data[scope][name.trim()]) {
-        showToast('Server "' + name.trim() + '" already exists', 'warning');
-        return;
-      }
-      mcpPageState.data[scope][name.trim()] = { command: '', args: [] };
-      mcpPageState.selectedServer = name.trim();
-      renderMcpServersContent();
+      showInputDialog('Add MCP Server', [
+        { name: 'serverName', label: 'Server Name', placeholder: 'e.g. my-mcp-server', required: true, hint: 'Unique identifier for this MCP server' },
+      ], 'Add Server', function(values) {
+        var name = values.serverName;
+        var scope = mcpPageState.scope;
+        if (!mcpPageState.data[scope]) mcpPageState.data[scope] = {};
+        if (mcpPageState.data[scope][name]) {
+          showToast('Server "' + name + '" already exists', 'warning');
+          return;
+        }
+        mcpPageState.data[scope][name] = { command: '', args: [] };
+        mcpPageState.selectedServer = name;
+        renderMcpServersContent();
+      });
     }
 
     function deleteMcpServer(name) {
@@ -8553,7 +8898,8 @@
         'Save',
         async function() {
           try {
-            const url = scope === 'project' ? '/api/claude-settings/project' : '/api/claude-settings/global';
+            var mPp2 = scope === 'project' ? projectPathParam(mcpPageState.projectPath) : '';
+            const url = (scope === 'project' ? '/api/claude-settings/project' : '/api/claude-settings/global') + mPp2;
             const response = await fetch(url, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
@@ -8668,8 +9014,8 @@
               </div>
             </div>
             <div class="assistant-input-area">
-              <textarea id="assistant-input" data-testid="assistant-input" placeholder="e.g. Create a command that runs my test suite..." rows="2"></textarea>
-              <button class="btn btn-primary" id="assistant-send-btn" data-testid="assistant-send-btn" onclick="assistantSend()">Send</button>
+              <textarea id="assistant-input" data-testid="assistant-input" placeholder="Describe what you want to set up... (Cmd+Enter to send)" rows="2"></textarea>
+              <button class="btn btn-primary" id="assistant-send-btn" data-testid="assistant-send-btn" onclick="assistantSend()">Send <span style="font-size:0.7rem;opacity:0.7;">&#8984;&#8629;</span></button>
             </div>
           </div>
           <div class="assistant-proposals" id="assistant-proposals">
@@ -8689,9 +9035,15 @@
       }
       // Enter key support
       var inp = document.getElementById('assistant-input');
-      if (inp) inp.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); assistantSend(); }
-      });
+      if (inp) {
+        var isComposing = false;
+        inp.addEventListener('compositionstart', function() { isComposing = true; });
+        inp.addEventListener('compositionend', function() { isComposing = false; });
+        inp.addEventListener('keydown', function(e) {
+          if (isComposing) return;
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); assistantSend(); }
+        });
+      }
     }
 
     async function assistantLoadRepoProfile() {
@@ -9023,7 +9375,7 @@
         '<option value="other">Other</option>' +
         '</select>' +
         '<label style="font-size:0.8rem;color:#6b7280;">Author</label>' +
-        '<input type="text" id="plugin-save-author" placeholder="Your name" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;" data-testid="plugin-save-author-input" />' +
+        '<input type="text" id="plugin-save-author" placeholder="Your name" value="' + escapeHtml(localStorage.getItem('pluginAuthor') || '') + '" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;" data-testid="plugin-save-author-input" />' +
         '</div>';
       showConfirmDialog(
         'Save as Plugin',
@@ -9039,6 +9391,7 @@
           var category = catSelect ? catSelect.value : '';
           var authorInput = document.getElementById('plugin-save-author');
           var author = authorInput ? authorInput.value.trim() : '';
+          if (author) localStorage.setItem('pluginAuthor', author);
           try {
             var resp = await fetch('/api/assistant/plugins', {
               method: 'POST',
@@ -9149,6 +9502,7 @@
             <option value="productivity">Productivity</option>
             <option value="other">Other</option>
           </select>
+          <button id="plugin-filter-mine" data-testid="plugin-filter-mine" onclick="toggleMyPlugins()" style="padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:0.85rem;cursor:pointer;background:#fff;color:#374151;">My Plugins</button>
         </div>
         <p style="color:#6b7280;margin-bottom:16px;">
           Manage your installed plugins. Create new plugins from the <a href="/assistant" onclick="event.preventDefault();navigate('/assistant');" style="color:#2563eb;">Assistant</a>.
@@ -9161,9 +9515,46 @@
     }
 
     var _pluginSearchTimer = null;
+    var _pluginFilterMine = false;
     function pluginSearchDebounce() {
       clearTimeout(_pluginSearchTimer);
       _pluginSearchTimer = setTimeout(function() { loadPluginsList(); }, 300);
+    }
+
+    function toggleMyPlugins() {
+      if (!_pluginFilterMine) {
+        // Turning ON — check if author is set
+        var storedAuthor = localStorage.getItem('pluginAuthor') || '';
+        if (!storedAuthor) {
+          showInputDialog('Set Author Name', [
+            { name: 'author', label: 'Your Author Name', placeholder: 'e.g. John Doe', required: true, hint: 'Used to filter plugins you created. You can change this in Settings > App Settings.' },
+          ], 'Save & Filter', function(values) {
+            localStorage.setItem('pluginAuthor', values.author);
+            _pluginFilterMine = true;
+            updateMyPluginsButton();
+            loadPluginsList();
+          });
+          return;
+        }
+      }
+      _pluginFilterMine = !_pluginFilterMine;
+      updateMyPluginsButton();
+      loadPluginsList();
+    }
+
+    function updateMyPluginsButton() {
+      var btn = document.getElementById('plugin-filter-mine');
+      if (btn) {
+        if (_pluginFilterMine) {
+          btn.style.background = '#2563eb';
+          btn.style.color = '#fff';
+          btn.style.borderColor = '#2563eb';
+        } else {
+          btn.style.background = '#fff';
+          btn.style.color = '#374151';
+          btn.style.borderColor = '#d1d5db';
+        }
+      }
     }
 
     async function loadPluginsList() {
@@ -9177,6 +9568,10 @@
         var params = new URLSearchParams();
         if (q) params.set('q', q);
         if (category) params.set('category', category);
+        if (_pluginFilterMine) {
+          var storedAuthor = localStorage.getItem('pluginAuthor') || '';
+          if (storedAuthor) params.set('author', storedAuthor);
+        }
         var url = '/api/assistant/plugins/search?' + params.toString();
         var resp = await fetch(url);
         if (!resp.ok) {
@@ -9421,7 +9816,7 @@
         renderMcpServersPage();
       } else if (path === '/backup') {
         renderBackupPage();
-      } else if (path === '/assistant') {
+      } else if (path === '/assistant' || path === '/ai-generate') {
         renderAssistantPage();
       } else if (path === '/plugins') {
         renderPluginsPage();
@@ -10663,6 +11058,7 @@
     updateLogoutButton();
 
     // Initial load
+    renderSidebarContext();
     router();
   </script>
 </body>

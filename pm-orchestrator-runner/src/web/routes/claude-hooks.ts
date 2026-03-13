@@ -114,19 +114,33 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
   const globalDir = config.globalClaudeDir || getGlobalClaudeDir();
 
   /**
-   * Resolve base .claude directory for a scope
+   * Resolve base .claude directory for a scope.
+   * When scope is "project" and overrideProjectPath is provided,
+   * use that path instead of the default projectRoot.
    */
-  function resolveClaudeDir(scope: string): string | null {
+  function resolveClaudeDir(scope: string, overrideProjectPath?: string): string | null {
     if (scope === "global") return globalDir;
-    if (scope === "project") return path.join(projectRoot, ".claude");
+    if (scope === "project") {
+      const root = overrideProjectPath || projectRoot;
+      return path.join(root, ".claude");
+    }
     return null;
+  }
+
+  /**
+   * Extract projectPath from query params (validated: must be absolute path)
+   */
+  function getProjectPathOverride(req: Request): string | undefined {
+    const pp = req.query.projectPath as string | undefined;
+    if (pp && path.isAbsolute(pp)) return pp;
+    return undefined;
   }
 
   /**
    * Read hooks from settings.json for a scope
    */
-  function readHooks(scope: string): { hooks: HooksConfig; settingsPath: string; exists: boolean } {
-    const claudeDir = resolveClaudeDir(scope);
+  function readHooks(scope: string, overrideProjectPath?: string): { hooks: HooksConfig; settingsPath: string; exists: boolean } {
+    const claudeDir = resolveClaudeDir(scope, overrideProjectPath);
     if (!claudeDir) return { hooks: {}, settingsPath: "", exists: false };
     const settingsPath = path.join(claudeDir, "settings.json");
     const data = readJsonFile(settingsPath) as Record<string, unknown> | null;
@@ -141,8 +155,8 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
    * Write hooks back to settings.json for a scope
    * Preserves other settings, only replaces the hooks section
    */
-  function writeHooks(scope: string, hooks: HooksConfig): { success: boolean; settingsPath: string; error?: string } {
-    const claudeDir = resolveClaudeDir(scope);
+  function writeHooks(scope: string, hooks: HooksConfig, overrideProjectPath?: string): { success: boolean; settingsPath: string; error?: string } {
+    const claudeDir = resolveClaudeDir(scope, overrideProjectPath);
     if (!claudeDir) return { success: false, settingsPath: "", error: "Invalid scope" };
     const settingsPath = path.join(claudeDir, "settings.json");
     try {
@@ -170,8 +184,8 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
   /**
    * List script files in .claude/hooks/ directory
    */
-  function listScripts(scope: string): Array<{ name: string; path: string; size: number; executable: boolean }> {
-    const claudeDir = resolveClaudeDir(scope);
+  function listScripts(scope: string, overrideProjectPath?: string): Array<{ name: string; path: string; size: number; executable: boolean }> {
+    const claudeDir = resolveClaudeDir(scope, overrideProjectPath);
     if (!claudeDir) return [];
     const hooksDir = path.join(claudeDir, "hooks");
     try {
@@ -207,12 +221,13 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
    */
   router.get("/:scope/scripts", (req: Request, res: Response) => {
     const scope = req.params.scope as string;
-    const claudeDir = resolveClaudeDir(scope);
+    const claudeDir = resolveClaudeDir(scope, getProjectPathOverride(req));
     if (!claudeDir) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
     }
-    const scripts = listScripts(scope);
+    const pp = getProjectPathOverride(req);
+    const scripts = listScripts(scope, pp);
     const hooksDir = path.join(claudeDir, "hooks");
     res.json({ scope, hooksDir, scripts, scriptCount: scripts.length });
   });
@@ -224,7 +239,7 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
   router.get("/:scope/scripts/:filename", (req: Request, res: Response) => {
     const scope = req.params.scope as string;
     const filename = req.params.filename as string;
-    const claudeDir = resolveClaudeDir(scope);
+    const claudeDir = resolveClaudeDir(scope, getProjectPathOverride(req));
     if (!claudeDir) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
@@ -263,7 +278,7 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
     const filename = req.params.filename as string;
     const { content, executable } = req.body;
 
-    const claudeDir = resolveClaudeDir(scope);
+    const claudeDir = resolveClaudeDir(scope, getProjectPathOverride(req));
     if (!claudeDir) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
@@ -298,7 +313,7 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
   router.delete("/:scope/scripts/:filename", (req: Request, res: Response) => {
     const scope = req.params.scope as string;
     const filename = req.params.filename as string;
-    const claudeDir = resolveClaudeDir(scope);
+    const claudeDir = resolveClaudeDir(scope, getProjectPathOverride(req));
     if (!claudeDir) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
@@ -332,14 +347,15 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
    */
   router.get("/:scope/inconsistencies", (req: Request, res: Response) => {
     const scope = req.params.scope as string;
-    const claudeDir = resolveClaudeDir(scope);
+    const claudeDir = resolveClaudeDir(scope, getProjectPathOverride(req));
     if (!claudeDir) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
     }
 
-    const { hooks } = readHooks(scope);
-    const scripts = listScripts(scope);
+    const pp = getProjectPathOverride(req);
+    const { hooks } = readHooks(scope, pp);
+    const scripts = listScripts(scope, pp);
     const scriptNames = new Set(scripts.map(s => s.name));
 
     const issues: Array<{ type: string; severity: "warning" | "error"; message: string; event?: string; script?: string }> = [];
@@ -426,12 +442,12 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
    */
   router.get("/:scope", (req: Request, res: Response) => {
     const scope = req.params.scope as string;
-    const claudeDir = resolveClaudeDir(scope);
+    const claudeDir = resolveClaudeDir(scope, getProjectPathOverride(req));
     if (!claudeDir) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
     }
-    const { hooks, settingsPath, exists } = readHooks(scope);
+    const { hooks, settingsPath, exists } = readHooks(scope, getProjectPathOverride(req));
     const events = Object.entries(hooks).map(([event, commands]) => ({
       event,
       commands: commands || [],
@@ -454,12 +470,13 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
   router.get("/:scope/:event", (req: Request, res: Response) => {
     const scope = req.params.scope as string;
     const event = req.params.event as string;
-    const claudeDir = resolveClaudeDir(scope);
+    const claudeDir = resolveClaudeDir(scope, getProjectPathOverride(req));
     if (!claudeDir) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
     }
-    const { hooks, settingsPath } = readHooks(scope);
+    const pp = getProjectPathOverride(req);
+    const { hooks, settingsPath } = readHooks(scope, pp);
     const commands = hooks[event] || [];
     res.json({
       scope,
@@ -481,7 +498,7 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
     const event = req.params.event as string;
     const { commands } = req.body;
 
-    const claudeDir = resolveClaudeDir(scope);
+    const claudeDir = resolveClaudeDir(scope, getProjectPathOverride(req));
     if (!claudeDir) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
@@ -507,14 +524,15 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
       }
     }
 
-    const { hooks } = readHooks(scope);
+    const pp = getProjectPathOverride(req);
+    const { hooks } = readHooks(scope, pp);
     hooks[event] = commands.map((cmd: HookCommand) => ({
       type: "command" as const,
       command: cmd.command,
       ...(cmd.timeout ? { timeout: cmd.timeout } : {}),
     }));
 
-    const result = writeHooks(scope, hooks);
+    const result = writeHooks(scope, hooks, pp);
     if (!result.success) {
       res.status(500).json({ error: "WRITE_FAILED", message: result.error });
       return;
@@ -529,7 +547,7 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
   router.delete("/:scope/:event", (req: Request, res: Response) => {
     const scope = req.params.scope as string;
     const event = req.params.event as string;
-    const claudeDir = resolveClaudeDir(scope);
+    const claudeDir = resolveClaudeDir(scope, getProjectPathOverride(req));
     if (!claudeDir) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
@@ -538,13 +556,14 @@ export function createClaudeHooksRoutes(config: ClaudeHooksConfig): Router {
       res.status(400).json({ error: "INVALID_EVENT", message: "Invalid event name" });
       return;
     }
-    const { hooks } = readHooks(scope);
+    const pp = getProjectPathOverride(req);
+    const { hooks } = readHooks(scope, pp);
     if (!hooks[event]) {
       res.status(404).json({ error: "NOT_FOUND", message: "Hook event not found: " + event });
       return;
     }
     delete hooks[event];
-    const result = writeHooks(scope, hooks);
+    const result = writeHooks(scope, hooks, pp);
     if (!result.success) {
       res.status(500).json({ error: "WRITE_FAILED", message: result.error });
       return;

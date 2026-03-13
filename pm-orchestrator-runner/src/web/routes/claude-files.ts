@@ -71,12 +71,26 @@ export function createClaudeFilesRoutes(config: ClaudeFilesConfig): Router {
   const globalDir = config.globalClaudeDir || getGlobalClaudeDir();
 
   /**
-   * Resolve a directory path for a given scope and subdirectory
+   * Resolve a directory path for a given scope and subdirectory.
+   * When scope is "project" and a projectPath query param is provided,
+   * use that path instead of the default projectRoot.
    */
-  function resolveDir(scope: string, subDir: string): string | null {
+  function resolveDir(scope: string, subDir: string, overrideProjectPath?: string): string | null {
     if (scope === "global") return path.join(globalDir, subDir);
-    if (scope === "project") return path.join(projectRoot, ".claude", subDir);
+    if (scope === "project") {
+      const root = overrideProjectPath || projectRoot;
+      return path.join(root, ".claude", subDir);
+    }
     return null;
+  }
+
+  /**
+   * Extract projectPath from query params (validated: must be absolute path)
+   */
+  function getProjectPathOverride(req: Request): string | undefined {
+    const pp = req.query.projectPath as string | undefined;
+    if (pp && path.isAbsolute(pp)) return pp;
+    return undefined;
   }
 
   // =========================================================================
@@ -88,7 +102,7 @@ export function createClaudeFilesRoutes(config: ClaudeFilesConfig): Router {
    * List all commands for a scope (global or project)
    */
   router.get("/commands/:scope", (req: Request, res: Response) => {
-    const dirPath = resolveDir(req.params.scope as string, "commands");
+    const dirPath = resolveDir(req.params.scope as string, "commands", getProjectPathOverride(req));
     if (!dirPath) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
@@ -104,7 +118,7 @@ export function createClaudeFilesRoutes(config: ClaudeFilesConfig): Router {
   router.get("/commands/:scope/:name", (req: Request, res: Response) => {
     const scope = req.params.scope as string;
     const name = req.params.name as string;
-    const dirPath = resolveDir(scope, "commands");
+    const dirPath = resolveDir(scope, "commands", getProjectPathOverride(req));
     if (!dirPath) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
@@ -136,7 +150,7 @@ export function createClaudeFilesRoutes(config: ClaudeFilesConfig): Router {
       res.status(400).json({ error: "MISSING_CONTENT", message: "content field is required" });
       return;
     }
-    const dirPath = resolveDir(scope, "commands");
+    const dirPath = resolveDir(scope, "commands", getProjectPathOverride(req));
     if (!dirPath) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
@@ -162,7 +176,7 @@ export function createClaudeFilesRoutes(config: ClaudeFilesConfig): Router {
       res.status(400).json({ error: "INVALID_NAME", message: "Invalid filename" });
       return;
     }
-    const dirPath = resolveDir(scope, "commands");
+    const dirPath = resolveDir(scope, "commands", getProjectPathOverride(req));
     if (!dirPath) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
@@ -192,8 +206,9 @@ export function createClaudeFilesRoutes(config: ClaudeFilesConfig): Router {
    */
   router.get("/agents/:scope", (req: Request, res: Response) => {
     const scope = req.params.scope as string;
-    const agentsDir = resolveDir(scope, "agents");
-    const skillsDir = resolveDir(scope, "skills");
+    const pp = getProjectPathOverride(req);
+    const agentsDir = resolveDir(scope, "agents", pp);
+    const skillsDir = resolveDir(scope, "skills", pp);
     if (!agentsDir || !skillsDir) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
@@ -217,7 +232,7 @@ export function createClaudeFilesRoutes(config: ClaudeFilesConfig): Router {
     const type = req.params.type as string;
     const name = req.params.name as string;
     const subDir = type === "skill" ? "skills" : "agents";
-    const dirPath = resolveDir(scope, subDir);
+    const dirPath = resolveDir(scope, subDir, getProjectPathOverride(req));
     if (!dirPath) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
@@ -260,7 +275,7 @@ export function createClaudeFilesRoutes(config: ClaudeFilesConfig): Router {
       return;
     }
     const subDir = type === "skill" ? "skills" : "agents";
-    const dirPath = resolveDir(scope, subDir);
+    const dirPath = resolveDir(scope, subDir, getProjectPathOverride(req));
     if (!dirPath) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;
@@ -292,7 +307,7 @@ export function createClaudeFilesRoutes(config: ClaudeFilesConfig): Router {
       return;
     }
     const subDir = type === "skill" ? "skills" : "agents";
-    const dirPath = resolveDir(scope, subDir);
+    const dirPath = resolveDir(scope, subDir, getProjectPathOverride(req));
     if (!dirPath) {
       res.status(400).json({ error: "INVALID_SCOPE", message: "scope must be 'global' or 'project'" });
       return;

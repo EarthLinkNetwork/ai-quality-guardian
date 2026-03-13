@@ -15,7 +15,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 
-const TEST_PORT = 3603;
+const TEST_PORT = 3604;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 
@@ -257,4 +257,44 @@ test('Plugin Library search filters results', async ({ page }) => {
   // Wait for debounce
   await page.waitForTimeout(500);
   await expect(page.locator('[data-testid="plugins-list"]')).toContainText('Findable XYZ', { timeout: 3000 });
+});
+
+// ─── Author Filter Tests ───────────────────────────────────
+
+test('Search by author filters correctly', async ({ page }) => {
+  await createPlugin(page, { name: 'Alice Plugin', author: 'Alice', tags: ['a'] });
+  await createPlugin(page, { name: 'Bob Plugin', author: 'Bob', tags: ['b'] });
+
+  const resp = await page.request.get(`${BASE_URL}/api/assistant/plugins/search?author=Alice`);
+  expect(resp.ok()).toBeTruthy();
+  const data = await resp.json();
+
+  expect(data.items.every((p: any) => p.author === 'Alice')).toBe(true);
+  expect(data.items.some((p: any) => p.name === 'Alice Plugin')).toBe(true);
+});
+
+test('My Plugins toggle filters by stored author', async ({ page }) => {
+  await createPlugin(page, { name: 'My Plugin', author: 'TestUser', tags: ['mine'] });
+  await createPlugin(page, { name: 'Other Plugin', author: 'Someone', tags: ['other'] });
+
+  await page.goto(`${BASE_URL}/plugins`);
+  await page.waitForSelector('[data-testid="plugin-item"]', { timeout: 5000 });
+
+  // Set author in localStorage (simulates having saved a plugin before)
+  await page.evaluate(() => localStorage.setItem('pluginAuthor', 'TestUser'));
+
+  // Click My Plugins toggle
+  const toggle = page.locator('[data-testid="plugin-filter-mine"]');
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  await page.waitForTimeout(500);
+
+  // Should only show plugins by TestUser
+  await expect(page.locator('[data-testid="plugins-list"]')).toContainText('My Plugin');
+  await expect(page.locator('[data-testid="plugins-list"]')).not.toContainText('Other Plugin');
+
+  // Toggle off → show all
+  await toggle.click();
+  await page.waitForTimeout(500);
+  await expect(page.locator('[data-testid="plugins-list"]')).toContainText('Other Plugin');
 });

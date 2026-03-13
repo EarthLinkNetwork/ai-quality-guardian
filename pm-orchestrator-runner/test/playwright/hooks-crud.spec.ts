@@ -128,7 +128,7 @@ test('Hooks: create hook event via dropdown -> save -> listed -> persists', asyn
   await expect(page.locator('[data-testid="hooks-tab-events"]')).toHaveClass(/active/);
 
   // Switch to project scope
-  await page.click('[data-testid="hooks-scope-project"]');
+  await page.click('[data-testid="context-scope-project"]');
   await page.waitForSelector('[data-testid="hooks-event-list"]');
 
   // Empty state visible
@@ -152,7 +152,7 @@ test('Hooks: create hook event via dropdown -> save -> listed -> persists', asyn
   // Persists after reload
   await page.reload();
   await page.waitForSelector('[data-testid="hooks-tabs"]');
-  await page.click('[data-testid="hooks-scope-project"]');
+  await page.click('[data-testid="context-scope-project"]');
   await page.waitForSelector('[data-testid="hooks-event-list"]');
   await expect(page.locator('[data-testid="hooks-event-UserPromptSubmit"]')).toBeVisible();
 });
@@ -161,7 +161,7 @@ test('Hooks: create hook event via dropdown -> save -> listed -> persists', asyn
 test('Hooks: edit hook command -> save -> reflected', async ({ page }) => {
   await page.goto(`${BASE_URL}/hooks`);
   await page.waitForSelector('[data-testid="hooks-tabs"]');
-  await page.click('[data-testid="hooks-scope-project"]');
+  await page.click('[data-testid="context-scope-project"]');
   await page.waitForSelector('[data-testid="hooks-event-list"]');
 
   // Select the event
@@ -179,7 +179,7 @@ test('Hooks: edit hook command -> save -> reflected', async ({ page }) => {
   // Verify after reload
   await page.reload();
   await page.waitForSelector('[data-testid="hooks-tabs"]');
-  await page.click('[data-testid="hooks-scope-project"]');
+  await page.click('[data-testid="context-scope-project"]');
   await page.waitForSelector('[data-testid="hooks-event-list"]');
   await page.click('[data-testid="hooks-event-UserPromptSubmit"]');
   await page.waitForSelector('[data-testid="hooks-cmd-text-0"]');
@@ -191,7 +191,7 @@ test('Hooks: edit hook command -> save -> reflected', async ({ page }) => {
 test('Hooks: delete hook event -> removed from list', async ({ page }) => {
   await page.goto(`${BASE_URL}/hooks`);
   await page.waitForSelector('[data-testid="hooks-tabs"]');
-  await page.click('[data-testid="hooks-scope-project"]');
+  await page.click('[data-testid="context-scope-project"]');
   await page.waitForSelector('[data-testid="hooks-event-list"]');
 
   // Select the event
@@ -211,7 +211,7 @@ test('Hooks: delete hook event -> removed from list', async ({ page }) => {
 test('Hooks: Scripts tab - create script -> save -> listed', async ({ page }) => {
   await page.goto(`${BASE_URL}/hooks`);
   await page.waitForSelector('[data-testid="hooks-tabs"]');
-  await page.click('[data-testid="hooks-scope-project"]');
+  await page.click('[data-testid="context-scope-project"]');
 
   // Switch to Scripts tab
   await page.click('[data-testid="hooks-tab-scripts"]');
@@ -237,7 +237,7 @@ test('Hooks: Scripts tab - create script -> save -> listed', async ({ page }) =>
   // Persists after reload
   await page.reload();
   await page.waitForSelector('[data-testid="hooks-tabs"]');
-  await page.click('[data-testid="hooks-scope-project"]');
+  await page.click('[data-testid="context-scope-project"]');
   await page.click('[data-testid="hooks-tab-scripts"]');
   await page.waitForSelector('[data-testid="hooks-script-list"]');
   await expect(page.locator('[data-testid="hooks-script-test-hook.sh"]')).toBeVisible();
@@ -247,7 +247,7 @@ test('Hooks: Scripts tab - create script -> save -> listed', async ({ page }) =>
 test('Hooks: Scripts tab - delete script -> removed', async ({ page }) => {
   await page.goto(`${BASE_URL}/hooks`);
   await page.waitForSelector('[data-testid="hooks-tabs"]');
-  await page.click('[data-testid="hooks-scope-project"]');
+  await page.click('[data-testid="context-scope-project"]');
   await page.click('[data-testid="hooks-tab-scripts"]');
   await page.waitForSelector('[data-testid="hooks-script-list"]');
 
@@ -277,7 +277,7 @@ test('Hooks: Health tab - shows inconsistency when script missing', async ({ pag
 
   await page.goto(`${BASE_URL}/hooks`);
   await page.waitForSelector('[data-testid="hooks-tabs"]');
-  await page.click('[data-testid="hooks-scope-project"]');
+  await page.click('[data-testid="context-scope-project"]');
 
   // Switch to Health tab
   await page.click('[data-testid="hooks-tab-health"]');

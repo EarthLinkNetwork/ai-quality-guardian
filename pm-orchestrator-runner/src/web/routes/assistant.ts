@@ -166,7 +166,7 @@ export function createAssistantRoutes(config: AssistantRoutesConfig): Router {
     }
   });
 
-  // GET /api/assistant/plugins/search?q=&tags=&category=  (MUST be before /:id)
+  // GET /api/assistant/plugins/search?q=&tags=&category=&author=  (MUST be before /:id)
   router.get("/plugins/search", async (req: Request, res: Response) => {
     try {
       await fs.mkdir(pluginsDir, { recursive: true });
@@ -182,6 +182,7 @@ export function createAssistantRoutes(config: AssistantRoutesConfig): Router {
       const q = ((req.query.q as string) || "").toLowerCase();
       const tags = (req.query.tags as string || "").split(",").filter(Boolean);
       const category = (req.query.category as string) || "";
+      const author = (req.query.author as string) || "";
 
       if (q) {
         plugins = plugins.filter(
@@ -198,6 +199,9 @@ export function createAssistantRoutes(config: AssistantRoutesConfig): Router {
       }
       if (category) {
         plugins = plugins.filter((p) => p.category === category);
+      }
+      if (author) {
+        plugins = plugins.filter((p) => p.author === author);
       }
 
       plugins.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -655,7 +659,7 @@ async function generateProposal(
     model,
     apiKey,
     temperature: 0.7,
-    maxTokens: 4096,
+    maxTokens: 8192,
   });
 
   const systemPrompt = buildSystemPrompt(scope);
@@ -666,10 +670,15 @@ async function generateProposal(
     userContent = `[Project Context]\n${JSON.stringify(repoProfile, null, 2)}\n\n[User Request]\n${prompt}`;
   }
 
+  // Use JSON mode for OpenAI to guarantee valid JSON output
+  const chatOptions = provider === "openai"
+    ? { responseFormat: { type: "json_object" } }
+    : undefined;
+
   const response = await client.chat([
     { role: "system", content: systemPrompt },
     { role: "user", content: userContent },
-  ]);
+  ], chatOptions);
 
   // Extract JSON from response
   const planSet = parseProposalResponse(response.content, prompt);
@@ -716,6 +725,85 @@ Generate 1-2 choices (plans). Each choice should be a complete, self-contained s
 Scope "${scope}" means files go to ${scope === "global" ? "~/.claude/" : ".claude/ (project root)"}.`;
 }
 
+/**
+ * Attempt to repair truncated JSON from LLM output that was cut off mid-response.
+ * Closes unclosed brackets/braces and truncates at the last complete element.
+ */
+function repairTruncatedJson(input: string): string | null {
+  // Must start with { to be a JSON object
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("{")) return null;
+
+  // Count unclosed brackets/braces (ignoring those inside strings)
+  let inString = false;
+  let escape = false;
+  const stack: string[] = [];
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\") { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") stack.push("}");
+    else if (ch === "[") stack.push("]");
+    else if (ch === "}" || ch === "]") stack.pop();
+  }
+
+  // If nothing is unclosed, no repair needed
+  if (stack.length === 0) return null;
+
+  // Truncate after the last complete value (find last comma, colon, or closing bracket outside string)
+  let truncateAt = trimmed.length;
+  let sInStr = false;
+  let sEscape = false;
+  let lastSafe = -1;
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (sEscape) { sEscape = false; continue; }
+    if (ch === "\\") { sEscape = true; continue; }
+    if (ch === '"') { sInStr = !sInStr; continue; }
+    if (sInStr) continue;
+    if (ch === "," || ch === "}" || ch === "]") lastSafe = i;
+  }
+
+  if (lastSafe > 0) {
+    const ch = trimmed[lastSafe];
+    // If last safe char is a comma, trim it and everything after
+    if (ch === ",") {
+      truncateAt = lastSafe;
+    } else {
+      truncateAt = lastSafe + 1;
+    }
+  }
+
+  let repaired = trimmed.substring(0, truncateAt);
+
+  // Recount unclosed after truncation
+  const stack2: string[] = [];
+  let s2 = false, e2 = false;
+  for (let i = 0; i < repaired.length; i++) {
+    const ch = repaired[i];
+    if (e2) { e2 = false; continue; }
+    if (ch === "\\") { e2 = true; continue; }
+    if (ch === '"') { s2 = !s2; continue; }
+    if (s2) continue;
+    if (ch === "{") stack2.push("}");
+    else if (ch === "[") stack2.push("]");
+    else if (ch === "}" || ch === "]") stack2.pop();
+  }
+
+  // Close unclosed brackets in reverse order
+  repaired += stack2.reverse().join("");
+
+  try {
+    JSON.parse(repaired);
+    return repaired;
+  } catch {
+    return null;
+  }
+}
+
 function parseProposalResponse(
   rawResponse: string,
   originalPrompt: string
@@ -736,10 +824,36 @@ function parseProposalResponse(
   // Try to find JSON object
   const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error("LLM response does not contain valid JSON");
+    // Attempt to repair truncated JSON (LLM output cut off mid-response)
+    const repaired = repairTruncatedJson(jsonStr);
+    if (!repaired) {
+      const preview = rawResponse.substring(0, 200);
+      throw new Error(`LLM response does not contain valid JSON. Preview: ${preview}`);
+    }
+    jsonStr = repaired;
   }
 
-  const parsed = JSON.parse(jsonMatch[0]);
+  const finalJsonStr = jsonMatch ? jsonMatch[0] : jsonStr;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any;
+  try {
+    parsed = JSON.parse(finalJsonStr);
+  } catch {
+    // Try to repair truncated JSON from a partial match
+    const repaired = repairTruncatedJson(finalJsonStr);
+    if (repaired) {
+      try {
+        parsed = JSON.parse(repaired);
+      } catch {
+        const preview = finalJsonStr.substring(0, 200);
+        throw new Error(`LLM response contains malformed JSON. Preview: ${preview}`);
+      }
+    } else {
+      const preview = finalJsonStr.substring(0, 200);
+      throw new Error(`LLM response contains malformed JSON. Preview: ${preview}`);
+    }
+  }
 
   if (!parsed.choices || !Array.isArray(parsed.choices)) {
     throw new Error('LLM response missing "choices" array');
