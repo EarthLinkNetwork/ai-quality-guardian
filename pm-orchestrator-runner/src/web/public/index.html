@@ -4079,6 +4079,15 @@
             var statusSummary = statusParts.length > 0 ? '<div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">' + statusParts.join(' ') + '</div>' : '';
             var descLine = p.description ? '<div data-testid="project-description" style="margin-top:2px; font-size:0.8rem; color:#64748b; line-height:1.3;">' + escapeHtml(p.description) + '</div>' : '';
             var notesLine = p.notes ? '<div data-testid="project-notes" style="margin-top:2px; font-size:0.75rem; color:#94a3b8; font-style:italic; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:600px;">Note: ' + escapeHtml(p.notes) + '</div>' : '';
+            var costLine = '';
+            if (p.costInfo && p.costInfo.modelDisplayName) {
+              costLine = '<div style="margin-top:3px; font-size:0.75rem; color:#60a5fa;">' +
+                'Model: ' + escapeHtml(p.costInfo.modelDisplayName) +
+                (p.costInfo.inputPricePerMillion ? ' ($' + p.costInfo.inputPricePerMillion + '/$' + p.costInfo.outputPricePerMillion + ' per 1M tokens)' : '') +
+                '</div>';
+            } else if (p.aiModel) {
+              costLine = '<div style="margin-top:3px; font-size:0.75rem; color:#60a5fa;">Model: ' + escapeHtml(p.aiModel) + '</div>';
+            }
             return '<div class="list-item" data-testid="project-card" onclick="navigate(\'/projects/' + encodeURIComponent(p.projectId) + '\')">' +
               '<div class="list-item-main">' +
                 '<div class="list-item-title">' +
@@ -4088,6 +4097,7 @@
                   ' ' + getProjectStatusBadge(p.projectStatus) +
                 '</div>' +
                 descLine +
+                costLine +
                 '<div class="list-item-meta">' +
                   escapeHtml(p.projectPath) +
                   ' | ' + gc + ' task group(s)' +
@@ -5406,14 +5416,14 @@
             <div class="template-full-section">
               <div class="template-full-label">Input Rules ${rulesText ? '<span style="font-weight:normal;color:#6b7280;font-size:0.75rem;">(' + rulesText.length + ' chars, ' + rulesLineCount + ' lines)</span>' : ''}</div>
               ${isBuiltIn
-                ? '<pre class="template-full-text">' + (rulesText ? escapeHtml(rulesText) : '<em>empty</em>') + '</pre>'
+                ? '<textarea class="template-full-textarea" id="' + cardId + '-rules" rows="' + Math.max(8, rulesLineCount + 2) + '" readonly style="opacity:0.8;cursor:default;">' + escapeHtml(rulesText || '(empty)') + '</textarea>'
                 : '<textarea class="template-full-textarea" id="' + cardId + '-rules" rows="' + Math.max(8, rulesLineCount + 2) + '">' + escapeHtml(rulesText) + '</textarea>'
               }
             </div>
             <div class="template-full-section">
               <div class="template-full-label">Output Format ${outputText ? '<span style="font-weight:normal;color:#6b7280;font-size:0.75rem;">(' + outputText.length + ' chars, ' + outputLineCount + ' lines)</span>' : ''}</div>
               ${isBuiltIn
-                ? '<pre class="template-full-text">' + (outputText ? escapeHtml(outputText) : '<em>empty</em>') + '</pre>'
+                ? '<textarea class="template-full-textarea" id="' + cardId + '-output" rows="' + Math.max(6, outputLineCount + 2) + '" readonly style="opacity:0.8;cursor:default;">' + escapeHtml(outputText || '(empty)') + '</textarea>'
                 : '<textarea class="template-full-textarea" id="' + cardId + '-output" rows="' + Math.max(6, outputLineCount + 2) + '">' + escapeHtml(outputText) + '</textarea>'
               }
             </div>
@@ -7620,20 +7630,33 @@
     var settingsCommandsCache = { global: [], project: [] };
 
     /**
-     * Load custom commands from settings.json (global + project)
+     * Load custom commands from settings.json AND slash commands from .claude/commands/*.md
      * and populate the dropdown bar if commands exist.
      */
     async function loadSettingsCommands(projectPath) {
       try {
-        var url = '/api/claude-settings/custom-commands';
-        if (projectPath) {
-          url += '?projectPath=' + encodeURIComponent(projectPath);
-        }
-        var res = await fetch(url);
-        var data = await res.json();
+        var qp = projectPath ? '?projectPath=' + encodeURIComponent(projectPath) : '';
 
-        settingsCommandsCache.global = data.global || [];
-        settingsCommandsCache.project = data.project || [];
+        // Fetch both settings commands and slash commands in parallel
+        var [settingsRes, slashRes] = await Promise.all([
+          fetch('/api/claude-settings/custom-commands' + qp),
+          fetch('/api/claude-settings/slash-commands' + qp)
+        ]);
+        var settingsData = await settingsRes.json();
+        var slashData = slashRes.ok ? await slashRes.json() : { global: [], project: [] };
+
+        // Merge: settings commands + slash commands (slash commands use name as prompt prefix)
+        var globalFromSettings = (settingsData.global || []);
+        var projectFromSettings = (settingsData.project || []);
+        var globalSlash = (slashData.global || []).map(function(cmd) {
+          return { name: cmd.name.replace(/^\//, ''), description: cmd.description, prompt: cmd.name + ' ', isSlashCommand: true };
+        });
+        var projectSlash = (slashData.project || []).map(function(cmd) {
+          return { name: cmd.name.replace(/^\//, ''), description: cmd.description, prompt: cmd.name + ' ', isSlashCommand: true };
+        });
+
+        settingsCommandsCache.global = globalFromSettings.concat(globalSlash);
+        settingsCommandsCache.project = projectFromSettings.concat(projectSlash);
 
         var bar = document.getElementById('cmd-dropdown-bar');
         if (!bar) return;
@@ -7797,6 +7820,9 @@
      * Select a command from the clickable panel.
      * Populates the chat input with the command's prompt.
      */
+    // Track which scope's command is currently selected (for mutual exclusion)
+    var selectedCommandScope = null;
+
     function selectCommandFromPanel(element) {
       var scope = element.getAttribute('data-cmd-scope');
       var index = parseInt(element.getAttribute('data-cmd-index'), 10);
@@ -7807,18 +7833,53 @@
       var cmd = cmds[index];
       var chatInput = document.getElementById('chat-input');
       if (chatInput) {
-        chatInput.value = cmd.prompt;
+        // For slash commands, prefix with the command name
+        if (cmd.isSlashCommand) {
+          chatInput.value = '/' + cmd.name + ' ';
+        } else {
+          chatInput.value = cmd.prompt;
+        }
         chatInput.focus();
         var panel = document.getElementById('cmd-panel');
         var projectIdAttr = panel ? panel.getAttribute('data-project-id') : null;
         if (projectIdAttr) {
-          chatInputDrafts[projectIdAttr] = cmd.prompt;
+          chatInputDrafts[projectIdAttr] = chatInput.value;
         }
       }
+
+      // Set mutual exclusion: selecting a command from one scope disables the other
+      selectedCommandScope = scope;
+      updateCommandScopeExclusion();
 
       // Collapse the panel after selection
       var panel = document.getElementById('cmd-panel');
       if (panel) panel.classList.remove('active');
+    }
+
+    /**
+     * Update mutual exclusion: when one scope is selected, disable the other.
+     * When input is cleared, re-enable both.
+     */
+    function updateCommandScopeExclusion() {
+      var globalToggle = document.getElementById('cmd-toggle-global');
+      var projectToggle = document.getElementById('cmd-toggle-project');
+      if (!globalToggle || !projectToggle) return;
+
+      if (selectedCommandScope === 'global') {
+        projectToggle.disabled = true;
+        projectToggle.title = 'Clear input to switch to project commands';
+        globalToggle.disabled = settingsCommandsCache.global.length === 0;
+      } else if (selectedCommandScope === 'project') {
+        globalToggle.disabled = true;
+        globalToggle.title = 'Clear input to switch to global commands';
+        projectToggle.disabled = settingsCommandsCache.project.length === 0;
+      } else {
+        // No selection — restore based on command availability
+        globalToggle.disabled = settingsCommandsCache.global.length === 0;
+        globalToggle.title = settingsCommandsCache.global.length === 0 ? 'No global custom commands' : '';
+        projectToggle.disabled = settingsCommandsCache.project.length === 0;
+        projectToggle.title = settingsCommandsCache.project.length === 0 ? 'No project custom commands' : '';
+      }
     }
 
     /**
@@ -7838,6 +7899,12 @@
     function handleSlashCommandInput(value) {
       var panel = document.getElementById('cmd-panel');
       if (!panel) return;
+
+      // Reset mutual exclusion when input is cleared
+      if (!value || value.trim() === '') {
+        selectedCommandScope = null;
+        updateCommandScopeExclusion();
+      }
 
       var globalCmds = settingsCommandsCache.global || [];
       var projectCmds = settingsCommandsCache.project || [];
@@ -8069,9 +8136,15 @@
           showToast('Templates injected: ' + injectionParts.join(', '), 'info');
         }
 
-        // Clear attachments and draft on success
+        // Clear input, attachments, and draft on success
+        input.value = '';
         chatAttachments = [];
         delete chatInputDrafts[projectId];
+
+        // Re-enable input
+        input.disabled = false;
+        sendBtn.disabled = false;
+        sendBtn.textContent = isRespond ? 'Respond' : 'Send';
 
         // Refresh chat
         renderChat(projectId);
