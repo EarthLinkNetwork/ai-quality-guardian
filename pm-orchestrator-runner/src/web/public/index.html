@@ -7344,7 +7344,8 @@
           currentChatTaskGroupId = data.taskGroupId;
         }
 
-        // Clear attachments and draft on success
+        // Clear input, attachments, and draft on success
+        input.value = '';
         chatAttachments = [];
         delete chatInputDrafts[projectId];
 

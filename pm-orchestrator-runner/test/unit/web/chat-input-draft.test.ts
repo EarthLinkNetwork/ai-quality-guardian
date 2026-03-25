@@ -150,6 +150,20 @@ describe('Chat Input Draft Preservation', () => {
         'Should clear draft after successful send'
       );
     });
+
+    it('should explicitly clear input value after successful message send', async () => {
+      const res = await request(app)
+        .get('/')
+        .expect(200);
+
+      const html = res.text;
+      // Verify that sendChatMessage clears input.value = '' on success
+      // This ensures the text field is emptied even if renderChat doesn't fully re-render
+      assert.ok(
+        html.includes("input.value = ''"),
+        'Should explicitly clear input.value after successful send'
+      );
+    });
   });
 
   describe('Chat API still works correctly (no regression)', () => {
