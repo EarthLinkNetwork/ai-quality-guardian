@@ -238,6 +238,9 @@ export interface StatusUpdateResult {
  * Task Group summary for listing
  * Per spec/19_WEB_UI.md: task group list view
  */
+/** Task group lifecycle status */
+export type TaskGroupStatus = 'active' | 'complete' | 'archived';
+
 export interface TaskGroupSummary {
   task_group_id: string;
   task_count: number;
@@ -256,6 +259,16 @@ export interface TaskGroupSummary {
   latest_status?: QueueItemStatus;
   /** Preview of the first task's prompt (for display instead of raw group ID) */
   first_prompt?: string;
+  /** Derived group status: active (has running/queued/awaiting tasks), complete (all done), or archived (user-set) */
+  group_status?: TaskGroupStatus;
+}
+
+/**
+ * Derive task group status from status counts
+ * Always returns 'active' — group lifecycle (complete/archived) is controlled by the user, not auto-derived.
+ */
+export function deriveTaskGroupStatus(_statusCounts: Record<string, number>): TaskGroupStatus {
+  return 'active';
 }
 
 /**
@@ -309,6 +322,10 @@ export interface IQueueStore {
     failure_next_actions: Array<{ label: string; actionType: string; target?: string }>;
     command_preview?: string;
   }): Promise<void>;
+  /** Set or clear archived status on a task group */
+  setTaskGroupArchived(taskGroupId: string, archived: boolean, targetNamespace?: string): Promise<boolean>;
+  /** Set group status override (active/complete/archived). null clears the override and returns to derived status. */
+  setTaskGroupStatus(taskGroupId: string, status: TaskGroupStatus | null, targetNamespace?: string): Promise<boolean>;
   destroy(): void;
 }
 
@@ -322,6 +339,8 @@ export class QueueStore implements IQueueStore {
   private readonly docClient: DynamoDBDocumentClient;
   private readonly namespace: string;
   private readonly endpoint: string;
+  private readonly archivedGroups: Set<string> = new Set();
+  private readonly groupStatusOverrides: Map<string, TaskGroupStatus> = new Map();
 
   constructor(config: QueueStoreConfig) {
     this.namespace = config.namespace;
@@ -1059,6 +1078,7 @@ export class QueueStore implements IQueueStore {
         latest_updated_at: data.latestUpdatedAt,
         status_counts: data.statusCounts,
         latest_status: data.latestStatus,
+        group_status: this.groupStatusOverrides.get(taskGroupId) || (this.archivedGroups.has(taskGroupId) ? 'archived' : deriveTaskGroupStatus(data.statusCounts)),
         first_prompt: data.firstPrompt,
       });
     }
@@ -1066,6 +1086,46 @@ export class QueueStore implements IQueueStore {
     groups.sort((a, b) => a.created_at.localeCompare(b.created_at));
 
     return groups;
+  }
+
+  /**
+   * Set or clear archived status on a task group
+   */
+  async setTaskGroupArchived(taskGroupId: string, archived: boolean, _targetNamespace?: string): Promise<boolean> {
+    const items = await this.getByTaskGroup(taskGroupId, _targetNamespace);
+    if (items.length === 0) {
+      return false;
+    }
+    if (archived) {
+      this.archivedGroups.add(taskGroupId);
+      this.groupStatusOverrides.set(taskGroupId, 'archived');
+    } else {
+      this.archivedGroups.delete(taskGroupId);
+      this.groupStatusOverrides.delete(taskGroupId);
+    }
+    return true;
+  }
+
+  /**
+   * Set group status override. null clears the override and returns to derived status.
+   */
+  async setTaskGroupStatus(taskGroupId: string, status: TaskGroupStatus | null, _targetNamespace?: string): Promise<boolean> {
+    const items = await this.getByTaskGroup(taskGroupId, _targetNamespace);
+    if (items.length === 0) {
+      return false;
+    }
+    if (status === null) {
+      this.groupStatusOverrides.delete(taskGroupId);
+      this.archivedGroups.delete(taskGroupId);
+    } else {
+      this.groupStatusOverrides.set(taskGroupId, status);
+      if (status === 'archived') {
+        this.archivedGroups.add(taskGroupId);
+      } else {
+        this.archivedGroups.delete(taskGroupId);
+      }
+    }
+    return true;
   }
 
   /**

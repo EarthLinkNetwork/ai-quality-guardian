@@ -234,6 +234,8 @@ export class NoDynamoDAL {
       orgId: input.orgId,
       projectPath: input.projectPath,
       alias: input.alias,
+      description: input.description,
+      notes: input.notes,
       tags: input.tags || [],
       favorite: false,
       archived: false,
@@ -323,7 +325,9 @@ export class NoDynamoDAL {
         const name = (p.alias || p.projectPath || '').toLowerCase();
         const pathStr = (p.projectPath || '').toLowerCase();
         const tagStr = (p.tags || []).join(' ').toLowerCase();
-        return name.includes(q) || pathStr.includes(q) || tagStr.includes(q);
+        const descStr = (p.description || '').toLowerCase();
+        const notesStr = (p.notes || '').toLowerCase();
+        return name.includes(q) || pathStr.includes(q) || tagStr.includes(q) || descStr.includes(q) || notesStr.includes(q);
       });
     }
 

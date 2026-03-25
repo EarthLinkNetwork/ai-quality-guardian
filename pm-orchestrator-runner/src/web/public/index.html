@@ -3687,6 +3687,22 @@
       return filtered;
     }
 
+    // Build inline group status buttons for use in group list items
+    function buildInlineGroupStatusButtons(taskGroupId, currentStatus) {
+      var statuses = ['active', 'complete', 'archived'];
+      var statusColors = { active: '#22c55e', complete: '#3b82f6', archived: '#94a3b8' };
+      var statusLabels = { active: 'Active', complete: 'Complete', archived: 'Archived' };
+      return statuses.map(function(s) {
+        var isCurrent = s === currentStatus;
+        var style = isCurrent
+          ? 'background:' + statusColors[s] + '; color:white; border:none; font-weight:600; opacity:1;'
+          : 'background:white; color:#6b7280; border:1px solid #d1d5db; opacity:0.7;';
+        return '<button data-testid="group-list-status-btn-' + s + '" style="padding:2px 8px; border-radius:3px; cursor:pointer; font-size:0.7rem; ' + style + '"' +
+          (isCurrent ? ' disabled' : ' onclick="event.stopPropagation(); changeTaskGroupStatus(\'' + escapeHtml(taskGroupId) + '\', \'' + s + '\', \'list\')"') +
+          '>' + statusLabels[s] + '</button>';
+      }).join(' ');
+    }
+
     // Render a single task group item (shared between all views)
     function renderTaskGroupItem(g) {
       const sc = g.status_counts || {};
@@ -3706,6 +3722,9 @@
       // Show first_prompt preview as title if available, fallback to task_group_id
       const displayTitle = g.first_prompt ? g.first_prompt : g.task_group_id;
       const groupIdLabel = g.first_prompt ? '<code style="font-size:0.75rem; color:#6b7280;">' + escapeHtml(g.task_group_id.substring(0, 24)) + '</code>' : '';
+      // Inline status buttons for group lifecycle control
+      const currentGroupStatus = g.group_status || 'active';
+      const inlineStatusButtons = buildInlineGroupStatusButtons(g.task_group_id, currentGroupStatus);
       return `
         <div class="list-item" onclick="navigate('/task-groups/${encodeURIComponent(g.task_group_id)}')">
           <div class="list-item-main">
@@ -3716,34 +3735,66 @@
             <div class="list-item-meta">
               ${groupIdLabel ? groupIdLabel + ' | ' : ''}${g.task_count} task(s) | Project: ${projectLink} | Created: ${formatDate(g.created_at)} | Updated: ${formatDate(g.latest_updated_at)}
             </div>
-            ${statusSummary ? '<div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">' + statusSummary + '</div>' : ''}
+            <div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap; align-items:center;">
+              ${statusSummary}
+              <span style="margin-left:auto; display:flex; gap:3px;" onclick="event.stopPropagation();">${inlineStatusButtons}</span>
+            </div>
           </div>
           <span class="list-item-arrow">›</span>
         </div>`;
     }
 
+    // Track expanded state per panel for "Load More"
+    var taskGroupPanelExpanded = {};
+
     // Render a complete task group panel with filter/sort bar
     // containerId: unique ID for the panel container
     // allGroups: full array of task groups
-    // options: { filterState, onRerender, showProjectColumn, maxItems }
+    // options: { filterState, onRerender, showProjectColumn, maxItems, initialLimit, rerenderCall }
     function renderTaskGroupPanel(containerId, allGroups, options) {
       options = options || {};
       var filterState = options.filterState || taskGroupFilterState;
       var onRerender = options.onRerender || function() { renderTaskGroupPanel(containerId, allGroups, options); };
       var maxItems = options.maxItems || 0;
+      var initialLimit = options.initialLimit || 4; // Default: show 4 groups
 
       var groups = applyTaskGroupFilters(allGroups, filterState);
+      var filteredTotal = groups.length;
       if (maxItems > 0) groups = groups.slice(0, maxItems);
 
-      var items = groups.map(renderTaskGroupItem).join('');
+      // Apply "Load More" limit unless panel is expanded
+      var isExpanded = taskGroupPanelExpanded[containerId] || false;
+      var displayGroups = groups;
+      var hasMore = false;
+      if (!isExpanded && initialLimit > 0 && groups.length > initialLimit) {
+        displayGroups = groups.slice(0, initialLimit);
+        hasMore = true;
+      }
+
+      var items = displayGroups.map(renderTaskGroupItem).join('');
       var hasFilters = filterState.statusFilter || filterState.searchQuery || filterState.sortBy !== 'updated_desc';
+      var rerenderCall = options.rerenderCall || 'renderTaskGroupListUI(window._taskGroupListData)';
+
+      var loadMoreBtn = hasMore
+        ? '<div style="padding:12px 16px; text-align:center; border-top:1px solid #e5e7eb;">' +
+          '<button class="btn btn-secondary" style="font-size:0.85rem;" ' +
+          'onclick="taskGroupPanelExpanded[\'' + containerId + '\']=true; ' + rerenderCall + ';">' +
+          'Load More (' + (groups.length - initialLimit) + ' more)</button></div>'
+        : '';
+
+      var collapseBtn = isExpanded && groups.length > initialLimit
+        ? '<div style="padding:12px 16px; text-align:center; border-top:1px solid #e5e7eb;">' +
+          '<button class="btn btn-secondary" style="font-size:0.85rem;" ' +
+          'onclick="taskGroupPanelExpanded[\'' + containerId + '\']=false; ' + rerenderCall + ';">' +
+          'Show Less</button></div>'
+        : '';
 
       return `
         <div class="card" style="padding:0; overflow:hidden;" id="${containerId}">
           <div class="filter-bar">
             <div class="filter-group">
               <label for="${containerId}-sort">Sort:</label>
-              <select id="${containerId}-sort" onchange="taskGroupFilterState.sortBy = this.value; ${options.rerenderCall || 'renderTaskGroupListUI(window._taskGroupListData)'};">
+              <select id="${containerId}-sort" onchange="taskGroupFilterState.sortBy = this.value; ${rerenderCall};">
                 <option value="updated_desc" ${filterState.sortBy === 'updated_desc' ? 'selected' : ''}>Updated (newest)</option>
                 <option value="updated_asc" ${filterState.sortBy === 'updated_asc' ? 'selected' : ''}>Updated (oldest)</option>
                 <option value="created_desc" ${filterState.sortBy === 'created_desc' ? 'selected' : ''}>Created (newest)</option>
@@ -3756,7 +3807,7 @@
             </div>
             <div class="filter-group">
               <label for="${containerId}-status">Status:</label>
-              <select id="${containerId}-status" onchange="taskGroupFilterState.statusFilter = this.value; ${options.rerenderCall || 'renderTaskGroupListUI(window._taskGroupListData)'};">
+              <select id="${containerId}-status" onchange="taskGroupFilterState.statusFilter = this.value; ${rerenderCall};">
                 <option value="" ${filterState.statusFilter === '' ? 'selected' : ''}>All</option>
                 <option value="RUNNING" ${filterState.statusFilter === 'RUNNING' ? 'selected' : ''}>Running</option>
                 <option value="AWAITING_RESPONSE" ${filterState.statusFilter === 'AWAITING_RESPONSE' ? 'selected' : ''}>Awaiting</option>
@@ -3768,15 +3819,17 @@
             <div class="filter-group">
               <label for="${containerId}-search">Search:</label>
               <input id="${containerId}-search" type="text" placeholder="Group ID, project..." value="${escapeHtml(filterState.searchQuery)}"
-                oninput="taskGroupFilterState.searchQuery = this.value; ${options.rerenderCall || 'renderTaskGroupListUI(window._taskGroupListData)'};" style="width:180px;" />
+                oninput="taskGroupFilterState.searchQuery = this.value; ${rerenderCall};" style="width:180px;" />
             </div>
-            ${hasFilters ? '<button class="reset-btn" onclick="taskGroupFilterState = { sortBy: \'updated_desc\', statusFilter: \'\', searchQuery: \'\' }; ' + (options.rerenderCall || 'renderTaskGroupListUI(window._taskGroupListData)') + ';">Reset</button>' : ''}
+            ${hasFilters ? '<button class="reset-btn" onclick="taskGroupFilterState = { sortBy: \'updated_desc\', statusFilter: \'\', searchQuery: \'\' }; ' + rerenderCall + ';">Reset</button>' : ''}
           </div>
           <div style="padding:0;">
-            ${groups.length > 0 ? items : '<div class="empty-state" style="padding:24px;"><p>No groups match the current filters.</p></div>'}
+            ${displayGroups.length > 0 ? items : '<div class="empty-state" style="padding:24px;"><p>No groups match the current filters.</p></div>'}
           </div>
+          ${loadMoreBtn}
+          ${collapseBtn}
           <div style="padding:8px 16px; background:#f9fafb; border-top:1px solid #e5e7eb; font-size:0.8rem; color:#6b7280;">
-            Showing ${groups.length} of ${allGroups.length} group(s)
+            Showing ${displayGroups.length} of ${filteredTotal} group(s)
           </div>
         </div>`;
     }
@@ -3906,7 +3959,9 @@
             if (sc.COMPLETE) statusParts.push('<span class="badge badge-complete" style="font-size:0.7rem;">' + sc.COMPLETE + ' done</span>');
             if (sc.QUEUED) statusParts.push('<span class="badge badge-queued" style="font-size:0.7rem;">' + sc.QUEUED + ' queued</span>');
             var statusSummary = statusParts.length > 0 ? '<div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">' + statusParts.join(' ') + '</div>' : '';
-            return '<div class="list-item" onclick="navigate(\'/projects/' + encodeURIComponent(p.projectId) + '\')">' +
+            var descLine = p.description ? '<div data-testid="project-description" style="margin-top:2px; font-size:0.8rem; color:#64748b; line-height:1.3;">' + escapeHtml(p.description) + '</div>' : '';
+            var notesLine = p.notes ? '<div data-testid="project-notes" style="margin-top:2px; font-size:0.75rem; color:#94a3b8; font-style:italic; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:600px;">Note: ' + escapeHtml(p.notes) + '</div>' : '';
+            return '<div class="list-item" data-testid="project-card" onclick="navigate(\'/projects/' + encodeURIComponent(p.projectId) + '\')">' +
               '<div class="list-item-main">' +
                 '<div class="list-item-title">' +
                   (p.favorite ? '<span style="color: #f59e0b;">&#9733;</span> ' : '') +
@@ -3914,12 +3969,14 @@
                   ' <span class="badge badge-' + (p.status === 'running' ? 'running' : p.status === 'error' ? 'error' : 'queued') + '" style="font-size:0.7rem;">' + p.status + '</span>' +
                   ' ' + getProjectStatusBadge(p.projectStatus) +
                 '</div>' +
+                descLine +
                 '<div class="list-item-meta">' +
                   escapeHtml(p.projectPath) +
                   ' | ' + gc + ' task group(s)' +
                   ' | ' + p.sessionCount + ' session(s)' +
                   ' | Updated: ' + formatDate(p.updatedAt) +
                 '</div>' +
+                notesLine +
                 statusSummary +
               '</div>' +
               '<span class="list-item-arrow">&#8250;</span>' +
@@ -3993,6 +4050,41 @@
       `;
     }
 
+    // Change task group status via API
+    // refreshMode: 'detail' (default) re-renders task detail, 'list' re-renders current page via router
+    async function changeTaskGroupStatus(taskGroupId, newStatus, refreshMode) {
+      try {
+        await api(`/task-groups/${encodeURIComponent(taskGroupId)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ group_status: newStatus }),
+        });
+        if (refreshMode === 'list') {
+          // Re-render current page (works for both task group list and dashboard)
+          router();
+        } else {
+          renderTaskList(taskGroupId);
+        }
+      } catch (error) {
+        alert('Failed to update status: ' + error.message);
+      }
+    }
+
+    // Build status toggle buttons for task group detail
+    function buildGroupStatusButtons(taskGroupId, currentStatus) {
+      const statuses = ['active', 'complete', 'archived'];
+      const statusColors = { active: '#22c55e', complete: '#3b82f6', archived: '#94a3b8' };
+      return statuses.map(s => {
+        const isCurrent = s === currentStatus;
+        const style = isCurrent
+          ? 'background:' + statusColors[s] + '; color:white; border:none; font-weight:600;'
+          : 'background:white; color:#374151; border:1px solid #d1d5db;';
+        return '<button data-testid="group-status-btn-' + s + '" style="padding:4px 12px; border-radius:4px; cursor:pointer; font-size:0.8rem; ' + style + '"' +
+          (isCurrent ? ' disabled' : ' onclick="changeTaskGroupStatus(\'' + escapeHtml(taskGroupId) + '\', \'' + s + '\')"') +
+          '>' + s.charAt(0).toUpperCase() + s.slice(1) + '</button>';
+      }).join(' ');
+    }
+
     // Render task list for a task group
     async function renderTaskList(taskGroupId) {
       app.innerHTML = '<div class="loading">Loading</div>';
@@ -4001,17 +4093,19 @@
         // Fetch tasks and task group metadata in parallel
         const [data, tgData] = await Promise.all([
           api(`/task-groups/${encodeURIComponent(taskGroupId)}/tasks`),
-          api('/task-groups').catch(() => ({ task_groups: [] })),
+          api('/task-groups?group_status=all').catch(() => ({ task_groups: [] })),
         ]);
         const tasks = data.tasks || [];
         const allGroups = tgData.task_groups || [];
         const thisGroup = allGroups.find(g => g.task_group_id === taskGroupId);
         const projectId = thisGroup?.project_id && thisGroup.project_id !== 'N/A' ? thisGroup.project_id : null;
+        const currentGroupStatus = thisGroup?.group_status || 'active';
 
         const backBtn = `<a href="/" class="back-btn" onclick="event.preventDefault(); navigate('/')">← Back to Groups</a>`;
         const chatBtn = projectId
-          ? `<button class="btn btn-primary" onclick="navigate('/chat/${encodeURIComponent(projectId)}')">Chat</button>`
+          ? `<button class="btn btn-primary" onclick="navigate('/chat/${encodeURIComponent(projectId)}?taskGroupId=${encodeURIComponent(taskGroupId)}')">Chat</button>`
           : '';
+        const statusButtons = buildGroupStatusButtons(taskGroupId, currentGroupStatus);
 
         if (tasks.length === 0) {
           app.innerHTML = `
@@ -4022,6 +4116,10 @@
                 <button class="refresh-btn" onclick="renderTaskList('${escapeHtml(taskGroupId)}')">Refresh</button>
                 ${chatBtn}
               </div>
+            </div>
+            <div class="card" style="padding:12px; display:flex; align-items:center; gap:8px;">
+              <span style="font-size:0.85rem; color:#6b7280;">Status:</span>
+              ${statusButtons}
             </div>
             <div class="card">
               <div class="empty-state">
@@ -4058,6 +4156,10 @@
               ${chatBtn}
             </div>
           </div>
+          <div class="card" data-testid="group-status-bar" style="padding:12px; display:flex; align-items:center; gap:8px;">
+            <span style="font-size:0.85rem; color:#6b7280;">Status:</span>
+            ${statusButtons}
+          </div>
           <div class="card">
             <h3>Tasks (${tasks.length})</h3>
             ${items}
@@ -4093,7 +4195,7 @@
 
         const backBtn = `<a href="/task-groups/${encodeURIComponent(task.task_group_id)}" class="back-btn" onclick="event.preventDefault(); navigate('/task-groups/${encodeURIComponent(task.task_group_id)}')">← Back to Tasks</a>`;
         const chatBtn = taskProjectId
-          ? `<button class="btn btn-primary" onclick="navigate('/chat/${encodeURIComponent(taskProjectId)}')">Chat</button>`
+          ? `<button class="btn btn-primary" onclick="navigate('/chat/${encodeURIComponent(taskProjectId)}?taskGroupId=${encodeURIComponent(task.task_group_id)}')">Chat</button>`
           : '';
 
         let errorSection = '';
@@ -6405,7 +6507,7 @@
 
       try {
         const [data, taskGroupsData, actionsData] = await Promise.all([
-          fetch('/api/projects/' + encodeURIComponent(projectId)).then(r => r.json()),
+          fetch('/api/projects/' + encodeURIComponent(projectId) + '?excludeGroupStatus=archived,completed').then(r => r.json()),
           fetch('/api/task-groups').then(r => r.json()).catch(() => ({ task_groups: [] })),
           fetch('/api/required-actions').then(r => r.json()).catch(() => ({ actions: [] })),
         ]);
@@ -6421,13 +6523,15 @@
         const allTaskGroups = taskGroupsData.task_groups || [];
         const requiredActions = (actionsData.actions || []);
 
-        // Filter task groups to those associated with this project
-        // Use both activity-event-based mapping and API enrichment
-        const filteredTaskGroups = allTaskGroups.filter(g =>
-          projectTaskGroupIds.has(g.task_group_id) ||
-          g.project_id === projectId
+        // Merge: use API-filtered recentTaskGroups (already excludes archived/completed),
+        // and also include queue-store groups that match this project (also filtered)
+        const apiGroupIds = new Set(recentTaskGroups.map(g => g.task_group_id));
+        const additionalQueueGroups = allTaskGroups.filter(g =>
+          !apiGroupIds.has(g.task_group_id) &&
+          (projectTaskGroupIds.has(g.task_group_id) || g.project_id === projectId) &&
+          g.group_status !== 'archived' && g.group_status !== 'complete'
         );
-        const projectTaskGroups = filteredTaskGroups;
+        const projectTaskGroups = [...recentTaskGroups, ...additionalQueueGroups];
 
         // Filter required actions to this project
         const projectActions = requiredActions.filter(a =>
@@ -6503,7 +6607,7 @@
             </div>
           </div>
 
-          <div class="card">
+          <div class="card" data-testid="project-details-card">
             <h3>Project Details</h3>
             <div class="detail-grid">
               <div class="detail-item">
@@ -6529,6 +6633,41 @@
               <div class="detail-item">
                 <label>Last Activity</label>
                 <value>${formatFullDate(project.lastActivityAt)}</value>
+              </div>
+            </div>
+
+            <!-- Editable Project Metadata -->
+            <div style="margin-top:16px; border-top:1px solid #e2e8f0; padding-top:16px;" data-testid="project-metadata-section">
+              <h4 style="margin:0 0 12px 0; font-size:0.9rem; color:#475569;">Project Metadata</h4>
+              <div style="display:flex; flex-direction:column; gap:12px;">
+                <div>
+                  <label style="display:block; font-size:0.8rem; color:#64748b; margin-bottom:4px;">Display Name (Alias)</label>
+                  <input type="text" id="project-alias-input" data-testid="project-alias-input"
+                    value="${escapeHtml(project.alias || '')}"
+                    placeholder="Enter a display name..."
+                    style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:0.85rem; box-sizing:border-box;" />
+                </div>
+                <div>
+                  <label style="display:block; font-size:0.8rem; color:#64748b; margin-bottom:4px;">Description</label>
+                  <input type="text" id="project-description-input" data-testid="project-description-input"
+                    value="${escapeHtml(project.description || '')}"
+                    placeholder="Brief project description..."
+                    style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:0.85rem; box-sizing:border-box;" />
+                </div>
+                <div>
+                  <label style="display:block; font-size:0.8rem; color:#64748b; margin-bottom:4px;">Notes</label>
+                  <textarea id="project-notes-input" data-testid="project-notes-input"
+                    placeholder="Add notes or reminders..."
+                    rows="3"
+                    style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:0.85rem; resize:vertical; box-sizing:border-box; font-family:inherit;">${escapeHtml(project.notes || '')}</textarea>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                  <button class="btn btn-primary" data-testid="save-project-metadata-btn" style="font-size:0.8rem; padding:6px 16px;"
+                    onclick="saveProjectMetadata('${escapeHtml(projectId)}')">Save Changes</button>
+                  <button class="btn btn-secondary" data-testid="revert-project-metadata-btn" style="font-size:0.8rem; padding:6px 16px;"
+                    onclick="revertProjectMetadata('${escapeHtml(projectId)}', ${JSON.stringify(escapeHtml(project.alias || ''))}, ${JSON.stringify(escapeHtml(project.description || ''))}, ${JSON.stringify(escapeHtml(project.notes || ''))})">Revert</button>
+                  <span id="project-metadata-status" style="font-size:0.8rem; color:#059669; display:none;">Saved!</span>
+                </div>
               </div>
             </div>
           </div>
@@ -6678,6 +6817,57 @@
       }
     }
 
+    // Save project metadata (alias, description, notes)
+    async function saveProjectMetadata(projectId) {
+      var aliasEl = document.getElementById('project-alias-input');
+      var descEl = document.getElementById('project-description-input');
+      var notesEl = document.getElementById('project-notes-input');
+      var statusEl = document.getElementById('project-metadata-status');
+      if (!aliasEl || !descEl || !notesEl) return;
+
+      try {
+        var res = await fetch('/api/projects/' + encodeURIComponent(projectId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            alias: aliasEl.value || undefined,
+            description: descEl.value || undefined,
+            notes: notesEl.value || undefined,
+          }),
+        });
+        if (!res.ok) throw new Error('Failed to save');
+        if (statusEl) {
+          statusEl.style.display = 'inline';
+          statusEl.textContent = 'Saved!';
+          statusEl.style.color = '#059669';
+          setTimeout(function() { statusEl.style.display = 'none'; }, 2000);
+        }
+      } catch (e) {
+        if (statusEl) {
+          statusEl.style.display = 'inline';
+          statusEl.textContent = 'Error: ' + e.message;
+          statusEl.style.color = '#dc2626';
+        }
+      }
+    }
+
+    // Revert project metadata to original values
+    function revertProjectMetadata(projectId, originalAlias, originalDescription, originalNotes) {
+      var aliasEl = document.getElementById('project-alias-input');
+      var descEl = document.getElementById('project-description-input');
+      var notesEl = document.getElementById('project-notes-input');
+      var statusEl = document.getElementById('project-metadata-status');
+      if (aliasEl) aliasEl.value = originalAlias;
+      if (descEl) descEl.value = originalDescription;
+      if (notesEl) notesEl.value = originalNotes;
+      if (statusEl) {
+        statusEl.style.display = 'inline';
+        statusEl.textContent = 'Reverted';
+        statusEl.style.color = '#64748b';
+        setTimeout(function() { statusEl.style.display = 'none'; }, 2000);
+      }
+    }
+
     // Load self-hosting status
     async function loadSelfhostStatus(projectId) {
       var section = document.getElementById('selfhost-section');
@@ -6824,7 +7014,27 @@
 
     // Render Chat page
     async function renderChat(projectId) {
+      // Save current chat input draft before DOM replacement
+      var existingInput = document.getElementById('chat-input');
+      if (existingInput && existingInput.value) {
+        chatInputDrafts[currentChatProjectId || projectId] = existingInput.value;
+      }
+
       app.innerHTML = '<div class="loading">Loading Chat</div>';
+
+      // Reset taskGroupId when switching to a different project's chat
+      // or when starting a fresh new chat (no existing messages)
+      if (currentChatProjectId !== projectId) {
+        currentChatTaskGroupId = null;
+        currentChatProjectId = projectId;
+      }
+
+      // Check URL params for explicit taskGroupId (e.g. from "Chat" within a task group)
+      var urlParams = new URLSearchParams(window.location.search);
+      var urlTaskGroupId = urlParams.get('taskGroupId');
+      if (urlTaskGroupId) {
+        currentChatTaskGroupId = urlTaskGroupId;
+      }
 
       try {
         // Fetch project and conversation in parallel
@@ -6928,9 +7138,20 @@
           chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
-        // Focus input and setup drag-drop
+        // Focus input, restore draft, and setup drag-drop
         var chatInput = document.getElementById('chat-input');
-        if (chatInput) chatInput.focus();
+        if (chatInput) {
+          // Restore saved draft for this project
+          var draft = chatInputDrafts[projectId];
+          if (draft) {
+            chatInput.value = draft;
+          }
+          chatInput.focus();
+          // Save draft on every input change
+          chatInput.addEventListener('input', function() {
+            chatInputDrafts[projectId] = chatInput.value;
+          });
+        }
         setupChatDragDrop();
         chatAttachments = []; // Reset on re-render
 
@@ -7069,7 +7290,12 @@
     }
 
     // Track current chat session's taskGroupId to reuse across messages
+    // Reset when navigating to a new chat (see renderChat)
     var currentChatTaskGroupId = null;
+    var currentChatProjectId = null;
+
+    // Preserve chat input text across re-renders (keyed by projectId)
+    var chatInputDrafts = {};
 
     // Send chat message (with optional attachments)
     async function sendChatMessage(projectId, isRespond) {
@@ -7118,8 +7344,9 @@
           currentChatTaskGroupId = data.taskGroupId;
         }
 
-        // Clear attachments on success
+        // Clear attachments and draft on success
         chatAttachments = [];
+        delete chatInputDrafts[projectId];
 
         // Refresh chat
         renderChat(projectId);

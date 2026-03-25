@@ -20,6 +20,7 @@ export {
   ProgressEvent,
   ClaimResult,
   TaskGroupSummary,
+  TaskGroupStatus,
   StatusUpdateResult,
   NamespaceSummary,
   RunnerRecord,

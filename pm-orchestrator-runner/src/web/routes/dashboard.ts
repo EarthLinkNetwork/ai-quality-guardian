@@ -11,6 +11,7 @@ import {
   getNoDynamo,
   isNoDynamoInitialized,
 } from '../dal/no-dynamo';
+import type { IQueueStore } from '../../queue/queue-store';
 
 /**
  * Error response format
@@ -21,9 +22,22 @@ interface ErrorResponse {
 }
 
 /**
+ * Dashboard routes configuration
+ */
+export interface DashboardRoutesConfig {
+  stateDir: string;
+  /** Optional queue store for task group status enrichment */
+  queueStore?: IQueueStore;
+}
+
+/**
  * Create dashboard routes
  */
-export function createDashboardRoutes(stateDir: string): Router {
+export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutesConfig): Router {
+  const config = typeof stateDirOrConfig === 'string'
+    ? { stateDir: stateDirOrConfig }
+    : stateDirOrConfig;
+  const { stateDir, queueStore } = config;
   const router = Router();
 
   // Ensure NoDynamo is initialized
@@ -100,7 +114,7 @@ export function createDashboardRoutes(stateDir: string): Router {
   router.post('/projects', async (req: Request, res: Response) => {
     try {
       const dal = getNoDynamo();
-      const { projectPath, alias, tags, projectType } = req.body;
+      const { projectPath, alias, description, notes, tags, projectType } = req.body;
 
       if (!projectPath || typeof projectPath !== 'string') {
         res.status(400).json({
@@ -114,6 +128,8 @@ export function createDashboardRoutes(stateDir: string): Router {
         orgId: 'default',
         projectPath,
         alias,
+        description,
+        notes,
         tags,
         projectType: projectType || 'normal',
       });
@@ -225,19 +241,38 @@ export function createDashboardRoutes(stateDir: string): Router {
         }
       }
 
-      // Build recentTaskGroups with task_group_id and task counts
-      const recentTaskGroups = Array.from(projectTaskGroupIds).map(tgId => {
-        const taskIds = taskGroupTaskMap.get(tgId) || new Set();
-        const latestEvent = taskGroupLatestEvent.get(tgId);
-        return {
-          task_group_id: tgId,
-          projectId,
-          task_count: taskIds.size,
-          task_ids: Array.from(taskIds),
-          latest_activity_type: latestEvent?.type || 'N/A',
-          latest_activity_at: latestEvent?.timestamp || 'N/A',
-        };
-      });
+      // Build task group status lookup from queue store if available
+      const groupStatusMap = new Map<string, string>();
+      if (queueStore) {
+        try {
+          const allQueueGroups = await queueStore.getAllTaskGroups();
+          for (const g of allQueueGroups) {
+            if (g.group_status) {
+              groupStatusMap.set(g.task_group_id, g.group_status);
+            }
+          }
+        } catch {
+          // Best effort - queue store lookup is optional
+        }
+      }
+
+      // Build recentTaskGroups with task_group_id, task counts, and group_status
+      const excludeGroupStatus = (req.query.excludeGroupStatus as string || '').split(',').filter(Boolean);
+      const recentTaskGroups = Array.from(projectTaskGroupIds)
+        .map(tgId => {
+          const taskIds = taskGroupTaskMap.get(tgId) || new Set();
+          const latestEvent = taskGroupLatestEvent.get(tgId);
+          return {
+            task_group_id: tgId,
+            projectId,
+            task_count: taskIds.size,
+            task_ids: Array.from(taskIds),
+            latest_activity_type: latestEvent?.type || 'N/A',
+            latest_activity_at: latestEvent?.timestamp || 'N/A',
+            group_status: groupStatusMap.get(tgId) || 'active',
+          };
+        })
+        .filter(tg => !excludeGroupStatus.includes(tg.group_status));
 
       // Build recentTasks from runs with resolved identifiers
       const recentTasks = projectRuns.slice(0, 20).map(r => {
@@ -277,11 +312,13 @@ export function createDashboardRoutes(stateDir: string): Router {
   router.patch('/projects/:projectId', async (req: Request, res: Response) => {
     try {
       const dal = getNoDynamo();
-      const { favorite, alias, tags, bootstrapPrompt, projectType, projectStatus } = req.body;
+      const { favorite, alias, description, notes, tags, bootstrapPrompt, projectType, projectStatus } = req.body;
 
       const project = await dal.updateProjectIndex(req.params.projectId as string, {
         favorite,
         alias,
+        description,
+        notes,
         tags,
         bootstrapPrompt,
         projectType,

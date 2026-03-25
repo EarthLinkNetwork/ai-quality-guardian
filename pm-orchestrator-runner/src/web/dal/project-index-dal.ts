@@ -127,6 +127,8 @@ export async function createProjectIndex(
     orgId: input.orgId,
     projectPath: input.projectPath,
     alias: input.alias,
+    description: input.description,
+    notes: input.notes,
     tags: input.tags || [],
     favorite: false,
     archived: false,
@@ -307,6 +309,16 @@ export async function updateProjectIndex(
     updateExpressions.push("#alias = :alias");
     expressionAttributeNames["#alias"] = "alias";
     expressionAttributeValues[":alias"] = updates.alias;
+  }
+
+  if (updates.description !== undefined) {
+    updateExpressions.push("description = :description");
+    expressionAttributeValues[":description"] = updates.description;
+  }
+
+  if (updates.notes !== undefined) {
+    updateExpressions.push("notes = :notes");
+    expressionAttributeValues[":notes"] = updates.notes;
   }
 
   if (updates.tags !== undefined) {

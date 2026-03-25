@@ -67,7 +67,9 @@ export function filterProjects(
       const name = (p.alias || p.projectPath || '').toLowerCase();
       const pathStr = (p.projectPath || '').toLowerCase();
       const tagStr = (p.tags || []).join(' ').toLowerCase();
-      return name.includes(q) || pathStr.includes(q) || tagStr.includes(q);
+      const descStr = (p.description || '').toLowerCase();
+      const notesStr = (p.notes || '').toLowerCase();
+      return name.includes(q) || pathStr.includes(q) || tagStr.includes(q) || descStr.includes(q) || notesStr.includes(q);
     });
   }
 

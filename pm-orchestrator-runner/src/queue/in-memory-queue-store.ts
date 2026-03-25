@@ -20,6 +20,7 @@ import {
   ClaimResult,
   StatusUpdateResult,
   TaskGroupSummary,
+  TaskGroupStatus,
   NamespaceSummary,
   RunnerRecord,
   ClarificationRequest,
@@ -27,6 +28,7 @@ import {
   isValidStatusTransition,
   IQueueStore,
   TaskTypeValue,
+  deriveTaskGroupStatus,
 } from './queue-store';
 
 /**
@@ -45,6 +47,8 @@ export class InMemoryQueueStore implements IQueueStore {
   private readonly namespace: string;
   private readonly tasks: Map<string, QueueItem> = new Map();
   private readonly runners: Map<string, RunnerRecord> = new Map();
+  private readonly archivedGroups: Set<string> = new Set();
+  private readonly groupStatusOverrides: Map<string, TaskGroupStatus> = new Map();
 
   constructor(config: InMemoryQueueStoreConfig) {
     this.namespace = config.namespace;
@@ -486,6 +490,7 @@ export class InMemoryQueueStore implements IQueueStore {
         latest_updated_at: data.latestUpdatedAt,
         status_counts: data.statusCounts,
         latest_status: data.latestStatus,
+        group_status: this.groupStatusOverrides.get(taskGroupId) || (this.archivedGroups.has(taskGroupId) ? 'archived' : deriveTaskGroupStatus(data.statusCounts)),
         first_prompt: data.firstPrompt,
       });
     }
@@ -493,6 +498,47 @@ export class InMemoryQueueStore implements IQueueStore {
     groups.sort((a, b) => b.latest_updated_at.localeCompare(a.latest_updated_at));
 
     return groups;
+  }
+
+  /**
+   * Set or clear archived status on a task group
+   */
+  async setTaskGroupArchived(taskGroupId: string, archived: boolean, _targetNamespace?: string): Promise<boolean> {
+    // Check if group exists
+    const items = await this.getByTaskGroup(taskGroupId, _targetNamespace);
+    if (items.length === 0) {
+      return false;
+    }
+    if (archived) {
+      this.archivedGroups.add(taskGroupId);
+      this.groupStatusOverrides.set(taskGroupId, 'archived');
+    } else {
+      this.archivedGroups.delete(taskGroupId);
+      this.groupStatusOverrides.delete(taskGroupId);
+    }
+    return true;
+  }
+
+  /**
+   * Set group status override. null clears the override and returns to derived status.
+   */
+  async setTaskGroupStatus(taskGroupId: string, status: TaskGroupStatus | null, _targetNamespace?: string): Promise<boolean> {
+    const items = await this.getByTaskGroup(taskGroupId, _targetNamespace);
+    if (items.length === 0) {
+      return false;
+    }
+    if (status === null) {
+      this.groupStatusOverrides.delete(taskGroupId);
+      this.archivedGroups.delete(taskGroupId);
+    } else {
+      this.groupStatusOverrides.set(taskGroupId, status);
+      if (status === 'archived') {
+        this.archivedGroups.add(taskGroupId);
+      } else {
+        this.archivedGroups.delete(taskGroupId);
+      }
+    }
+    return true;
   }
 
   /**

@@ -507,6 +507,8 @@ export interface ProjectIndex {
   orgId: string;
   projectPath: string;
   alias?: string;
+  description?: string;         // User-provided project description
+  notes?: string;               // User-provided project notes/memo
   tags: string[];
   favorite: boolean;
   archived: boolean;
@@ -532,12 +534,16 @@ export interface CreateProjectIndexInput {
   orgId: string;
   projectPath: string;
   alias?: string;
+  description?: string;
+  notes?: string;
   tags?: string[];
   projectType?: 'normal' | 'runner-dev';
 }
 
 export interface UpdateProjectIndexInput {
   alias?: string;
+  description?: string;
+  notes?: string;
   tags?: string[];
   favorite?: boolean;
   status?: ProjectIndexStatus;
@@ -617,6 +623,9 @@ export interface ConversationMessage {
     error?: string;
     clarificationQuestion?: string;  // Question that needs response
     images?: ChatImageAttachment[];  // Attached images
+    isCommand?: boolean;             // Whether this message is a custom command
+    isCommandResult?: boolean;       // Whether this is a command result
+    commandName?: string;            // Name of the custom command
   };
 }
 

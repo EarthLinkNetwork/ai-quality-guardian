@@ -145,8 +145,8 @@ export function createApp(config: WebServerConfig): Express {
   if (stateDir) {
     app.use('/api/settings', createSettingsRoutes(stateDir));
     // Dashboard routes (projects, activity, runs)
-    app.use("/api/dashboard", createDashboardRoutes(stateDir));
-    app.use("/api", createDashboardRoutes(stateDir)); // Also mount projects/activity/runs at /api
+    app.use("/api/dashboard", createDashboardRoutes({ stateDir, queueStore }));
+    app.use("/api", createDashboardRoutes({ stateDir, queueStore })); // Also mount projects/activity/runs at /api
     // Inspection packet routes
     app.use("/api/inspection", createInspectionRoutes(stateDir));
     // Chat routes (conversation management with execution pipeline integration)
@@ -387,9 +387,32 @@ export function createApp(config: WebServerConfig): Express {
         };
       });
 
+      // Filter by group_status (default: exclude archived)
+      const groupStatusFilter = req.query.group_status as string | undefined;
+      let filteredGroups = enrichedGroups;
+      if (groupStatusFilter === 'all') {
+        // Show everything including archived
+      } else if (groupStatusFilter) {
+        // Filter to specific status
+        filteredGroups = enrichedGroups.filter(g => g.group_status === groupStatusFilter);
+      } else {
+        // Default: exclude archived groups
+        filteredGroups = enrichedGroups.filter(g => g.group_status !== 'archived');
+      }
+
+      // Apply limit if requested (for "load more" pagination)
+      const limitParam = parseInt(req.query.limit as string);
+      const offsetParam = parseInt(req.query.offset as string) || 0;
+      const totalCount = filteredGroups.length;
+      if (limitParam > 0) {
+        filteredGroups = filteredGroups.slice(offsetParam, offsetParam + limitParam);
+      }
+
       res.json({
         namespace: targetNamespace,
-        task_groups: enrichedGroups,
+        task_groups: filteredGroups,
+        total_count: totalCount,
+        has_more: limitParam > 0 ? (offsetParam + limitParam) < totalCount : false,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -465,6 +488,68 @@ export function createApp(config: WebServerConfig): Express {
           has_output: !!t.output,  // Flag for quick check
         })),
       });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * PATCH /api/task-groups/:task_group_id
+   * Update task group status (archive/unarchive or set group_status)
+   * Body: { archived?: boolean, group_status?: 'active' | 'complete' | 'archived' | null }
+   */
+  app.patch('/api/task-groups/:task_group_id', async (req: Request, res: Response) => {
+    try {
+      const task_group_id = req.params.task_group_id as string;
+      const { archived, group_status } = req.body;
+
+      // Support group_status field (preferred) or archived field (backward compat)
+      if (group_status !== undefined) {
+        const validStatuses = ['active', 'complete', 'archived', null];
+        if (!validStatuses.includes(group_status)) {
+          res.status(400).json({
+            error: 'INVALID_INPUT',
+            message: 'group_status must be one of: active, complete, archived, or null',
+          } as ErrorResponse);
+          return;
+        }
+
+        const success = await queueStore.setTaskGroupStatus(task_group_id, group_status);
+        if (!success) {
+          res.status(404).json({
+            error: 'NOT_FOUND',
+            message: 'Task group not found: ' + task_group_id,
+          } as ErrorResponse);
+          return;
+        }
+
+        res.json({
+          task_group_id,
+          group_status,
+          archived: group_status === 'archived',
+        });
+      } else if (typeof archived === 'boolean') {
+        const success = await queueStore.setTaskGroupArchived(task_group_id, archived);
+        if (!success) {
+          res.status(404).json({
+            error: 'NOT_FOUND',
+            message: 'Task group not found: ' + task_group_id,
+          } as ErrorResponse);
+          return;
+        }
+
+        res.json({
+          task_group_id,
+          archived,
+          group_status: archived ? 'archived' : null,
+        });
+      } else {
+        res.status(400).json({
+          error: 'INVALID_INPUT',
+          message: 'Either group_status or archived must be provided',
+        } as ErrorResponse);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
@@ -1355,6 +1440,7 @@ export function createApp(config: WebServerConfig): Express {
       'GET /api/task-groups',
       'POST /api/task-groups',
       'GET /api/task-groups/:task_group_id/tasks',
+      'PATCH /api/task-groups/:task_group_id',
       'GET /api/tasks/:task_id',
       'GET /api/tasks/:task_id/trace',
       'POST /api/tasks',

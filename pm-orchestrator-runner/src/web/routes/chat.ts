@@ -25,8 +25,9 @@ import {
   CreateConversationMessageInput,
 } from "../dal/types";
 import { v4 as uuidv4 } from "uuid";
-import { IQueueStore } from "../../queue/queue-store";
+import { IQueueStore, TaskTypeValue } from "../../queue/queue-store";
 import { detectTaskType } from "../../utils/task-type-detector";
+import { parseCommand, getCommandRegistry, CommandContext } from "../services/custom-command-registry";
 
 /**
  * Error response format
@@ -72,6 +73,24 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
   if (!isNoDynamoExtendedInitialized()) {
     initNoDynamoExtended(stateDir);
   }
+
+  /**
+   * GET /api/commands
+   * List all available custom commands
+   */
+  router.get("/commands", async (_req: Request, res: Response) => {
+    try {
+      const registry = getCommandRegistry();
+      const commands = registry.list().map((cmd) => ({
+        name: cmd.name,
+        description: cmd.description,
+      }));
+      res.json({ commands });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ error: "INTERNAL_ERROR", message } as ErrorResponse);
+    }
+  });
 
   /**
    * GET /api/projects/:projectId/conversation
@@ -164,6 +183,97 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
             error: "INVALID_INPUT",
             message: "content is required and must be a non-empty string",
           } as ErrorResponse);
+          return;
+        }
+
+        // Check for custom command (slash commands)
+        const parsed = parseCommand(content);
+        if (parsed.isCommand) {
+          const registry = getCommandRegistry();
+          const project = await dal.getProjectIndex(projectId);
+          const commandContext: CommandContext = {
+            projectId,
+            projectPath: project?.projectPath,
+            sessionId: sessionId || "sess_" + projectId,
+          };
+          const commandResult = await registry.execute(parsed.name, parsed.args, commandContext);
+
+          // Store the user command message
+          const userMessage = await dal.createConversationMessage({
+            projectId,
+            role: "user",
+            content: content.trim(),
+            status: "complete",
+            metadata: { isCommand: true, commandName: parsed.name },
+          });
+
+          // Handle /clear action
+          if (commandResult.metadata?.action === "clear_conversation") {
+            await dal.clearConversationHistory(projectId);
+          }
+
+          // If passthrough, enqueue for Claude Code execution
+          if (commandResult.passthrough && commandResult.passthroughPrompt && queueStore && project) {
+            const taskRunId = "task_" + uuidv4();
+            const effectiveSessionId = sessionId || "sess_" + projectId;
+            const effectiveTaskGroupId = (typeof requestedTaskGroupId === "string" && requestedTaskGroupId.trim())
+              ? requestedTaskGroupId.trim()
+              : effectiveSessionId;
+
+            const taskType = (commandResult.metadata?.taskType as TaskTypeValue) || detectTaskType(commandResult.passthroughPrompt);
+            await queueStore.enqueue(
+              effectiveSessionId,
+              effectiveTaskGroupId,
+              commandResult.passthroughPrompt,
+              taskRunId,
+              taskType,
+              project.projectPath
+            );
+
+            const run = await dal.createRun({
+              sessionId: effectiveSessionId,
+              projectId,
+              taskRunId,
+              prompt: commandResult.passthroughPrompt,
+            });
+
+            const assistantMessage = await dal.createConversationMessage({
+              projectId,
+              role: "assistant",
+              content: commandResult.output + "\n\nProcessing...",
+              runId: run.runId,
+              status: "processing",
+              metadata: { isCommandResult: true, commandName: parsed.name },
+            });
+
+            res.status(201).json({
+              userMessage,
+              assistantMessage,
+              runId: run.runId,
+              taskGroupId: effectiveTaskGroupId,
+              isCommand: true,
+              commandName: parsed.name,
+              commandResult,
+            });
+            return;
+          }
+
+          // Local command - create assistant response immediately
+          const assistantMessage = await dal.createConversationMessage({
+            projectId,
+            role: "assistant",
+            content: commandResult.output,
+            status: "complete",
+            metadata: { isCommandResult: true, commandName: parsed.name },
+          });
+
+          res.status(200).json({
+            userMessage,
+            assistantMessage,
+            isCommand: true,
+            commandName: parsed.name,
+            commandResult,
+          });
           return;
         }
 

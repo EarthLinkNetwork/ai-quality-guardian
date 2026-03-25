@@ -16,7 +16,7 @@ import { strict as assert } from 'assert';
 import request from 'supertest';
 import { Express } from 'express';
 import { createApp } from '../../../src/web/server';
-import { QueueItem, QueueItemStatus, ClaimResult, TaskGroupSummary } from '../../../src/queue';
+import { QueueItem, QueueItemStatus, ClaimResult, TaskGroupSummary, TaskGroupStatus } from '../../../src/queue';
 
 /**
  * Mock QueueStore for Web Server testing
@@ -24,10 +24,14 @@ import { QueueItem, QueueItemStatus, ClaimResult, TaskGroupSummary } from '../..
 class MockQueueStore {
   private items: Map<string, QueueItem> = new Map();
   private taskCounter = 0;
+  private archivedGroups: Set<string> = new Set();
+  private groupStatusOverrides: Map<string, TaskGroupStatus> = new Map();
 
   clear(): void {
     this.items.clear();
     this.taskCounter = 0;
+    this.archivedGroups.clear();
+    this.groupStatusOverrides.clear();
   }
 
   async enqueue(
@@ -101,7 +105,14 @@ class MockQueueStore {
   }
 
   async getAllTaskGroups(): Promise<TaskGroupSummary[]> {
-    const groupMap = new Map<string, { count: number; createdAt: string; latestUpdatedAt: string }>();
+    const groupMap = new Map<string, {
+      count: number;
+      createdAt: string;
+      latestUpdatedAt: string;
+      statusCounts: Record<string, number>;
+      latestStatus: string;
+      firstPrompt: string;
+    }>();
 
     for (const item of this.items.values()) {
       const existing = groupMap.get(item.task_group_id);
@@ -109,31 +120,74 @@ class MockQueueStore {
         existing.count++;
         if (item.created_at < existing.createdAt) {
           existing.createdAt = item.created_at;
+          existing.firstPrompt = item.prompt?.substring(0, 120) || '';
         }
         if (item.updated_at > existing.latestUpdatedAt) {
           existing.latestUpdatedAt = item.updated_at;
         }
+        existing.statusCounts[item.status] = (existing.statusCounts[item.status] || 0) + 1;
+        existing.latestStatus = item.status;
       } else {
+        const statusCounts: Record<string, number> = { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 };
+        statusCounts[item.status] = 1;
         groupMap.set(item.task_group_id, {
           count: 1,
           createdAt: item.created_at,
           latestUpdatedAt: item.updated_at,
+          statusCounts,
+          latestStatus: item.status,
+          firstPrompt: item.prompt?.substring(0, 120) || '',
         });
       }
     }
 
     const groups: TaskGroupSummary[] = [];
     for (const [taskGroupId, data] of groupMap) {
+      // Group lifecycle is user-controlled: default is always 'active'
       groups.push({
         task_group_id: taskGroupId,
         task_count: data.count,
         created_at: data.createdAt,
         latest_updated_at: data.latestUpdatedAt,
+        status_counts: data.statusCounts as any,
+        latest_status: data.latestStatus as any,
+        group_status: this.groupStatusOverrides.get(taskGroupId) || (this.archivedGroups.has(taskGroupId) ? 'archived' : 'active'),
+        first_prompt: data.firstPrompt,
       });
     }
 
     groups.sort((a, b) => a.created_at.localeCompare(b.created_at));
     return groups;
+  }
+
+  async setTaskGroupArchived(taskGroupId: string, archived: boolean): Promise<boolean> {
+    const items = Array.from(this.items.values()).filter(i => i.task_group_id === taskGroupId);
+    if (items.length === 0) return false;
+    if (archived) {
+      this.archivedGroups.add(taskGroupId);
+      this.groupStatusOverrides.set(taskGroupId, 'archived');
+    } else {
+      this.archivedGroups.delete(taskGroupId);
+      this.groupStatusOverrides.delete(taskGroupId);
+    }
+    return true;
+  }
+
+  async setTaskGroupStatus(taskGroupId: string, status: TaskGroupStatus | null): Promise<boolean> {
+    const items = Array.from(this.items.values()).filter(i => i.task_group_id === taskGroupId);
+    if (items.length === 0) return false;
+    if (status === null) {
+      this.groupStatusOverrides.delete(taskGroupId);
+      this.archivedGroups.delete(taskGroupId);
+    } else {
+      this.groupStatusOverrides.set(taskGroupId, status);
+      if (status === 'archived') {
+        this.archivedGroups.add(taskGroupId);
+      } else {
+        this.archivedGroups.delete(taskGroupId);
+      }
+    }
+    return true;
   }
 
   async deleteItem(taskId: string): Promise<void> {
@@ -286,6 +340,54 @@ describe('Web Server', () => {
       assert.ok(groupB, 'group-b should exist');
       assert.equal(groupA.task_count, 2);
       assert.equal(groupB.task_count, 1);
+    });
+
+    it('should include group_status derived from task statuses', async () => {
+      await store.enqueue(testSessionId, 'group-active', 'prompt 1');
+      // group-active has QUEUED tasks -> group_status should be "active"
+
+      const response = await request(app)
+        .get('/api/task-groups')
+        .expect(200);
+
+      const activeGroup = response.body.task_groups.find((g: TaskGroupSummary) => g.task_group_id === 'group-active');
+      assert.ok(activeGroup, 'group-active should exist');
+      assert.equal(activeGroup.group_status, 'active');
+    });
+
+    it('should include total_count and has_more fields', async () => {
+      await store.enqueue(testSessionId, 'group-a', 'prompt 1');
+      await store.enqueue(testSessionId, 'group-b', 'prompt 2');
+
+      const response = await request(app)
+        .get('/api/task-groups')
+        .expect(200);
+
+      assert.equal(typeof response.body.total_count, 'number');
+      assert.equal(response.body.total_count, 2);
+      assert.equal(response.body.has_more, false);
+    });
+
+    it('should support limit and offset for pagination', async () => {
+      await store.enqueue(testSessionId, 'group-a', 'prompt 1');
+      await store.enqueue(testSessionId, 'group-b', 'prompt 2');
+      await store.enqueue(testSessionId, 'group-c', 'prompt 3');
+
+      const response = await request(app)
+        .get('/api/task-groups?limit=2&offset=0')
+        .expect(200);
+
+      assert.equal(response.body.task_groups.length, 2);
+      assert.equal(response.body.total_count, 3);
+      assert.equal(response.body.has_more, true);
+
+      // Second page
+      const response2 = await request(app)
+        .get('/api/task-groups?limit=2&offset=2')
+        .expect(200);
+
+      assert.equal(response2.body.task_groups.length, 1);
+      assert.equal(response2.body.has_more, false);
     });
   });
 
@@ -474,6 +576,324 @@ describe('Web Server', () => {
 
       assert.equal(response.body.status, 'ok');
       assert.ok(response.body.timestamp, 'timestamp should be present');
+    });
+  });
+
+  describe('PATCH /api/task-groups/:task_group_id', () => {
+    it('should archive a task group', async () => {
+      await store.enqueue(testSessionId, 'group-to-archive', 'prompt 1');
+
+      const response = await request(app)
+        .patch('/api/task-groups/group-to-archive')
+        .send({ archived: true })
+        .expect(200);
+
+      assert.equal(response.body.task_group_id, 'group-to-archive');
+      assert.equal(response.body.archived, true);
+      assert.equal(response.body.group_status, 'archived');
+    });
+
+    it('should unarchive a task group', async () => {
+      await store.enqueue(testSessionId, 'group-to-unarchive', 'prompt 1');
+      // Archive first
+      await request(app)
+        .patch('/api/task-groups/group-to-unarchive')
+        .send({ archived: true })
+        .expect(200);
+
+      // Unarchive
+      const response = await request(app)
+        .patch('/api/task-groups/group-to-unarchive')
+        .send({ archived: false })
+        .expect(200);
+
+      assert.equal(response.body.task_group_id, 'group-to-unarchive');
+      assert.equal(response.body.archived, false);
+    });
+
+    it('should return 404 for non-existent task group', async () => {
+      const response = await request(app)
+        .patch('/api/task-groups/non-existent')
+        .send({ archived: true })
+        .expect(404);
+
+      assert.equal(response.body.error, 'NOT_FOUND');
+    });
+
+    it('should return 400 for invalid archived value', async () => {
+      const response = await request(app)
+        .patch('/api/task-groups/some-group')
+        .send({ archived: 'yes' })
+        .expect(400);
+
+      assert.equal(response.body.error, 'INVALID_INPUT');
+    });
+
+    it('should return 400 when neither group_status nor archived provided', async () => {
+      await store.enqueue(testSessionId, 'group-a', 'prompt 1');
+      const response = await request(app)
+        .patch('/api/task-groups/group-a')
+        .send({ foo: 'bar' })
+        .expect(400);
+
+      assert.equal(response.body.error, 'INVALID_INPUT');
+    });
+
+    it('should set group_status to complete via group_status field', async () => {
+      await store.enqueue(testSessionId, 'group-complete', 'prompt 1');
+
+      const response = await request(app)
+        .patch('/api/task-groups/group-complete')
+        .send({ group_status: 'complete' })
+        .expect(200);
+
+      assert.equal(response.body.task_group_id, 'group-complete');
+      assert.equal(response.body.group_status, 'complete');
+      assert.equal(response.body.archived, false);
+    });
+
+    it('should set group_status to archived via group_status field', async () => {
+      await store.enqueue(testSessionId, 'group-arch', 'prompt 1');
+
+      const response = await request(app)
+        .patch('/api/task-groups/group-arch')
+        .send({ group_status: 'archived' })
+        .expect(200);
+
+      assert.equal(response.body.group_status, 'archived');
+      assert.equal(response.body.archived, true);
+    });
+
+    it('should clear override when group_status is null', async () => {
+      await store.enqueue(testSessionId, 'group-clear', 'prompt 1');
+
+      // Set to complete first
+      await request(app)
+        .patch('/api/task-groups/group-clear')
+        .send({ group_status: 'complete' })
+        .expect(200);
+
+      // Clear by setting to null
+      const response = await request(app)
+        .patch('/api/task-groups/group-clear')
+        .send({ group_status: null })
+        .expect(200);
+
+      assert.equal(response.body.group_status, null);
+    });
+
+    it('should return 400 for invalid group_status value', async () => {
+      await store.enqueue(testSessionId, 'group-invalid', 'prompt 1');
+      const response = await request(app)
+        .patch('/api/task-groups/group-invalid')
+        .send({ group_status: 'invalid_status' })
+        .expect(400);
+
+      assert.equal(response.body.error, 'INVALID_INPUT');
+    });
+
+    it('should return 404 for non-existent group with group_status', async () => {
+      const response = await request(app)
+        .patch('/api/task-groups/nonexistent-group')
+        .send({ group_status: 'complete' })
+        .expect(404);
+
+      assert.equal(response.body.error, 'NOT_FOUND');
+    });
+
+    it('should prefer group_status over archived when both provided', async () => {
+      await store.enqueue(testSessionId, 'group-both', 'prompt 1');
+
+      const response = await request(app)
+        .patch('/api/task-groups/group-both')
+        .send({ group_status: 'complete', archived: true })
+        .expect(200);
+
+      // group_status takes precedence
+      assert.equal(response.body.group_status, 'complete');
+      assert.equal(response.body.archived, false);
+    });
+  });
+
+  describe('GET /api/task-groups group_status filtering', () => {
+    it('should exclude archived groups by default', async () => {
+      await store.enqueue(testSessionId, 'active-group', 'prompt 1');
+      await store.enqueue(testSessionId, 'archived-group', 'prompt 2');
+
+      // Archive one group
+      await request(app)
+        .patch('/api/task-groups/archived-group')
+        .send({ archived: true })
+        .expect(200);
+
+      // Default query should exclude archived
+      const response = await request(app)
+        .get('/api/task-groups')
+        .expect(200);
+
+      assert.equal(response.body.task_groups.length, 1);
+      assert.equal(response.body.task_groups[0].task_group_id, 'active-group');
+    });
+
+    it('should include archived groups when group_status=all', async () => {
+      await store.enqueue(testSessionId, 'active-group', 'prompt 1');
+      await store.enqueue(testSessionId, 'archived-group', 'prompt 2');
+
+      // Archive one group
+      await request(app)
+        .patch('/api/task-groups/archived-group')
+        .send({ archived: true })
+        .expect(200);
+
+      const response = await request(app)
+        .get('/api/task-groups?group_status=all')
+        .expect(200);
+
+      assert.equal(response.body.task_groups.length, 2);
+    });
+
+    it('should filter to archived only when group_status=archived', async () => {
+      await store.enqueue(testSessionId, 'active-group', 'prompt 1');
+      await store.enqueue(testSessionId, 'archived-group', 'prompt 2');
+
+      // Archive one group
+      await request(app)
+        .patch('/api/task-groups/archived-group')
+        .send({ archived: true })
+        .expect(200);
+
+      const response = await request(app)
+        .get('/api/task-groups?group_status=archived')
+        .expect(200);
+
+      assert.equal(response.body.task_groups.length, 1);
+      assert.equal(response.body.task_groups[0].task_group_id, 'archived-group');
+      assert.equal(response.body.task_groups[0].group_status, 'archived');
+    });
+
+    it('should show group_status=active for groups with queued tasks', async () => {
+      await store.enqueue(testSessionId, 'queued-group', 'prompt 1');
+
+      const response = await request(app)
+        .get('/api/task-groups?group_status=active')
+        .expect(200);
+
+      assert.equal(response.body.task_groups.length, 1);
+      assert.equal(response.body.task_groups[0].group_status, 'active');
+    });
+
+    it('should show group_status=active for groups with all completed tasks (user controls lifecycle)', async () => {
+      const item = await store.enqueue(testSessionId, 'done-group', 'prompt 1');
+      await store.updateStatus(item.task_id, 'RUNNING');
+      await store.updateStatus(item.task_id, 'COMPLETE');
+
+      const response = await request(app)
+        .get('/api/task-groups?group_status=active')
+        .expect(200);
+
+      // Group stays active even when all tasks are complete — user decides when to mark it complete
+      const doneGroup = response.body.task_groups.find((g: any) => g.task_group_id === 'done-group');
+      assert.ok(doneGroup, 'done-group should be in active list');
+      assert.equal(doneGroup.group_status, 'active');
+    });
+  });
+
+  describe('Task group grouping correctness', () => {
+    it('should add tasks to existing group when using same task_group_id', async () => {
+      // Enqueue two tasks with the same task_group_id
+      await store.enqueue(testSessionId, 'shared-group', 'prompt 1');
+      await store.enqueue(testSessionId, 'shared-group', 'prompt 2');
+      await store.enqueue(testSessionId, 'shared-group', 'prompt 3');
+
+      // Verify there's only 1 group with 3 tasks
+      const groupsResponse = await request(app)
+        .get('/api/task-groups')
+        .expect(200);
+
+      assert.equal(groupsResponse.body.task_groups.length, 1);
+      assert.equal(groupsResponse.body.task_groups[0].task_group_id, 'shared-group');
+      assert.equal(groupsResponse.body.task_groups[0].task_count, 3);
+
+      // Verify tasks are listed correctly
+      const tasksResponse = await request(app)
+        .get('/api/task-groups/shared-group/tasks')
+        .expect(200);
+
+      assert.equal(tasksResponse.body.tasks.length, 3);
+    });
+
+    it('should create separate groups for different task_group_ids', async () => {
+      await store.enqueue(testSessionId, 'group-x', 'prompt 1');
+      await store.enqueue(testSessionId, 'group-y', 'prompt 2');
+
+      const response = await request(app)
+        .get('/api/task-groups')
+        .expect(200);
+
+      assert.equal(response.body.task_groups.length, 2);
+      const ids = response.body.task_groups.map((g: TaskGroupSummary) => g.task_group_id);
+      assert.ok(ids.includes('group-x'));
+      assert.ok(ids.includes('group-y'));
+    });
+  });
+
+  describe('Task group status management - immediate reflection', () => {
+    it('should reflect status change immediately in subsequent GET', async () => {
+      await store.enqueue(testSessionId, 'group-reflect', 'prompt 1');
+
+      // Verify initial status is active
+      const before = await request(app).get('/api/task-groups?group_status=all').expect(200);
+      const groupBefore = before.body.task_groups.find((g: TaskGroupSummary) => g.task_group_id === 'group-reflect');
+      assert.equal(groupBefore.group_status, 'active');
+
+      // Change to archived
+      await request(app)
+        .patch('/api/task-groups/group-reflect')
+        .send({ group_status: 'archived' })
+        .expect(200);
+
+      // Verify status changed immediately
+      const after = await request(app).get('/api/task-groups?group_status=all').expect(200);
+      const groupAfter = after.body.task_groups.find((g: TaskGroupSummary) => g.task_group_id === 'group-reflect');
+      assert.equal(groupAfter.group_status, 'archived');
+    });
+
+    it('should cycle through all statuses: active -> complete -> archived -> active', async () => {
+      await store.enqueue(testSessionId, 'group-cycle', 'prompt 1');
+
+      // Set to complete
+      await request(app).patch('/api/task-groups/group-cycle').send({ group_status: 'complete' }).expect(200);
+      let resp = await request(app).get('/api/task-groups?group_status=all').expect(200);
+      assert.equal(resp.body.task_groups.find((g: TaskGroupSummary) => g.task_group_id === 'group-cycle').group_status, 'complete');
+
+      // Set to archived
+      await request(app).patch('/api/task-groups/group-cycle').send({ group_status: 'archived' }).expect(200);
+      resp = await request(app).get('/api/task-groups?group_status=all').expect(200);
+      assert.equal(resp.body.task_groups.find((g: TaskGroupSummary) => g.task_group_id === 'group-cycle').group_status, 'archived');
+
+      // Set back to active
+      await request(app).patch('/api/task-groups/group-cycle').send({ group_status: 'active' }).expect(200);
+      resp = await request(app).get('/api/task-groups?group_status=all').expect(200);
+      assert.equal(resp.body.task_groups.find((g: TaskGroupSummary) => g.task_group_id === 'group-cycle').group_status, 'active');
+    });
+
+    it('should exclude both archived AND completed groups from default listing', async () => {
+      await store.enqueue(testSessionId, 'group-active', 'prompt 1');
+      await store.enqueue(testSessionId, 'group-completed', 'prompt 2');
+      await store.enqueue(testSessionId, 'group-archived', 'prompt 3');
+
+      // Set statuses
+      await request(app).patch('/api/task-groups/group-completed').send({ group_status: 'complete' }).expect(200);
+      await request(app).patch('/api/task-groups/group-archived').send({ group_status: 'archived' }).expect(200);
+
+      // Default listing should only show active group (archived excluded by default)
+      const defaultResp = await request(app).get('/api/task-groups').expect(200);
+      assert.equal(defaultResp.body.task_groups.length, 2); // active + completed (only archived excluded by default)
+
+      // Filter to active only
+      const activeResp = await request(app).get('/api/task-groups?group_status=active').expect(200);
+      assert.equal(activeResp.body.task_groups.length, 1);
+      assert.equal(activeResp.body.task_groups[0].task_group_id, 'group-active');
     });
   });
 

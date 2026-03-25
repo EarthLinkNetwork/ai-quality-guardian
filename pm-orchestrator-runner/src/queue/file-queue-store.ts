@@ -24,6 +24,7 @@ import {
   ClaimResult,
   StatusUpdateResult,
   TaskGroupSummary,
+  TaskGroupStatus,
   NamespaceSummary,
   RunnerRecord,
   ClarificationRequest,
@@ -31,6 +32,7 @@ import {
   isValidStatusTransition,
   IQueueStore,
   TaskTypeValue,
+  deriveTaskGroupStatus,
 } from './queue-store';
 
 /**
@@ -64,9 +66,13 @@ export class FileQueueStore implements IQueueStore {
   private readonly queueDir: string;
   private readonly tasksFile: string;
   private readonly runnersFile: string;
+  private readonly archivedGroupsFile: string;
+  private readonly groupStatusOverridesFile: string;
 
   private tasks: Map<string, QueueItem> = new Map();
   private runners: Map<string, RunnerRecord> = new Map();
+  private archivedGroups: Set<string> = new Set();
+  private groupStatusOverrides: Map<string, TaskGroupStatus> = new Map();
   private initialized: boolean = false;
 
   constructor(config: FileQueueStoreConfig) {
@@ -75,6 +81,8 @@ export class FileQueueStore implements IQueueStore {
     this.queueDir = path.join(this.stateDir, 'queue');
     this.tasksFile = path.join(this.queueDir, 'tasks.json');
     this.runnersFile = path.join(this.queueDir, 'runners.json');
+    this.archivedGroupsFile = path.join(this.queueDir, 'archived-groups.json');
+    this.groupStatusOverridesFile = path.join(this.queueDir, 'group-status-overrides.json');
   }
 
   /**
@@ -200,6 +208,32 @@ export class FileQueueStore implements IQueueStore {
         console.warn(`[FileQueueStore] Warning: Could not load runners from ${this.runnersFile}:`, error);
       }
     }
+
+    // Load archived groups
+    if (fs.existsSync(this.archivedGroupsFile)) {
+      try {
+        const content = fs.readFileSync(this.archivedGroupsFile, 'utf-8');
+        const ids: string[] = JSON.parse(content);
+        for (const id of ids) {
+          this.archivedGroups.add(id);
+        }
+      } catch (error) {
+        console.warn(`[FileQueueStore] Warning: Could not load archived groups from ${this.archivedGroupsFile}:`, error);
+      }
+    }
+
+    // Load group status overrides
+    if (fs.existsSync(this.groupStatusOverridesFile)) {
+      try {
+        const content = fs.readFileSync(this.groupStatusOverridesFile, 'utf-8');
+        const overrides: Record<string, TaskGroupStatus> = JSON.parse(content);
+        for (const [key, value] of Object.entries(overrides)) {
+          this.groupStatusOverrides.set(key, value);
+        }
+      } catch (error) {
+        console.warn(`[FileQueueStore] Warning: Could not load group status overrides from ${this.groupStatusOverridesFile}:`, error);
+      }
+    }
   }
 
   /**
@@ -258,6 +292,20 @@ export class FileQueueStore implements IQueueStore {
     }
 
     fs.writeFileSync(this.runnersFile, JSON.stringify(runners, null, 2), 'utf-8');
+  }
+
+  /**
+   * Save archived groups to file
+   */
+  private saveArchivedGroups(): void {
+    fs.writeFileSync(this.archivedGroupsFile, JSON.stringify(Array.from(this.archivedGroups), null, 2), 'utf-8');
+  }
+
+  /**
+   * Save group status overrides to file
+   */
+  private saveGroupStatusOverrides(): void {
+    fs.writeFileSync(this.groupStatusOverridesFile, JSON.stringify(Object.fromEntries(this.groupStatusOverrides), null, 2), 'utf-8');
   }
 
   /**
@@ -621,12 +669,57 @@ export class FileQueueStore implements IQueueStore {
         latest_updated_at: data.latestUpdatedAt,
         status_counts: data.statusCounts,
         latest_status: data.latestStatus,
+        group_status: this.groupStatusOverrides.get(taskGroupId) || (this.archivedGroups.has(taskGroupId) ? 'archived' : deriveTaskGroupStatus(data.statusCounts)),
         first_prompt: data.firstPrompt,
       });
     }
 
     groups.sort((a, b) => b.latest_updated_at.localeCompare(a.latest_updated_at));
     return groups;
+  }
+
+  /**
+   * Set or clear archived status on a task group
+   */
+  async setTaskGroupArchived(taskGroupId: string, archived: boolean, _targetNamespace?: string): Promise<boolean> {
+    const items = await this.getByTaskGroup(taskGroupId, _targetNamespace);
+    if (items.length === 0) {
+      return false;
+    }
+    if (archived) {
+      this.archivedGroups.add(taskGroupId);
+      this.groupStatusOverrides.set(taskGroupId, 'archived');
+    } else {
+      this.archivedGroups.delete(taskGroupId);
+      this.groupStatusOverrides.delete(taskGroupId);
+    }
+    this.saveArchivedGroups();
+    this.saveGroupStatusOverrides();
+    return true;
+  }
+
+  /**
+   * Set group status override. null clears the override and returns to derived status.
+   */
+  async setTaskGroupStatus(taskGroupId: string, status: TaskGroupStatus | null, _targetNamespace?: string): Promise<boolean> {
+    const items = await this.getByTaskGroup(taskGroupId, _targetNamespace);
+    if (items.length === 0) {
+      return false;
+    }
+    if (status === null) {
+      this.groupStatusOverrides.delete(taskGroupId);
+      this.archivedGroups.delete(taskGroupId);
+    } else {
+      this.groupStatusOverrides.set(taskGroupId, status);
+      if (status === 'archived') {
+        this.archivedGroups.add(taskGroupId);
+      } else {
+        this.archivedGroups.delete(taskGroupId);
+      }
+    }
+    this.saveArchivedGroups();
+    this.saveGroupStatusOverrides();
+    return true;
   }
 
   /**
