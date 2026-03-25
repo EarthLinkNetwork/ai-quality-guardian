@@ -9,6 +9,7 @@ import { Router, Request, Response } from "express";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { parseSettingsCommands } from "../services/settings-command-parser";
 
 /**
  * Global Claude directory path (~/.claude)
@@ -233,6 +234,36 @@ export function createClaudeSettingsRoutes(config: ClaudeSettingsConfig): Router
       const message = error instanceof Error ? error.message : "Unknown error";
       res.status(500).json({ error: "WRITE_FAILED", message });
     }
+  });
+
+  // --- Custom commands from settings.json ---
+
+  /**
+   * GET /api/claude-settings/custom-commands
+   * Extract custom commands from both global and project settings.json files.
+   * Returns separate arrays for global and project commands.
+   *
+   * Query params:
+   *   projectPath (optional) - override project root
+   */
+  router.get("/custom-commands", (req: Request, res: Response) => {
+    const effectiveProjectRoot = resolveProjectRoot(req);
+    const projectSettingsPath = path.join(effectiveProjectRoot, ".claude", "settings.json");
+    const globalSettingsPath = path.join(globalDir, "settings.json");
+
+    const globalSettings = readJsonFile(globalSettingsPath);
+    const projectSettings = readJsonFile(projectSettingsPath);
+
+    const result = parseSettingsCommands(globalSettings, projectSettings);
+
+    res.json({
+      global: result.global,
+      project: result.project,
+      paths: {
+        global: globalSettingsPath,
+        project: projectSettingsPath,
+      },
+    });
   });
 
   return router;

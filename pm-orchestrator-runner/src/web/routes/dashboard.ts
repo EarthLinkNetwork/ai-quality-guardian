@@ -12,6 +12,7 @@ import {
   isNoDynamoInitialized,
 } from '../dal/no-dynamo';
 import type { IQueueStore } from '../../queue/queue-store';
+import { buildProjectCostInfo, getAllModelCostInfo } from '../services/ai-cost-service';
 
 /**
  * Error response format
@@ -97,8 +98,20 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         limit: 50,
       });
 
+      // Enrich projects with cost info
+      const projectsWithCost = result.items.map(p => {
+        const proj = p as any;
+        const costInfo = proj.aiModel
+          ? buildProjectCostInfo(proj.aiModel, proj.aiProvider)
+          : null;
+        return {
+          ...p,
+          costInfo,
+        };
+      });
+
       res.json({
-        projects: result.items,
+        projects: projectsWithCost,
         nextCursor: result.nextCursor,
       });
     } catch (error) {
@@ -114,7 +127,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
   router.post('/projects', async (req: Request, res: Response) => {
     try {
       const dal = getNoDynamo();
-      const { projectPath, alias, description, notes, tags, projectType } = req.body;
+      const { projectPath, alias, description, notes, tags, projectType, aiModel, aiProvider } = req.body;
 
       if (!projectPath || typeof projectPath !== 'string') {
         res.status(400).json({
@@ -132,6 +145,8 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         notes,
         tags,
         projectType: projectType || 'normal',
+        aiModel,
+        aiProvider,
       });
 
       res.status(201).json(project);
@@ -290,8 +305,15 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         };
       });
 
+      // Build cost info for the project
+      const proj = project as any;
+      const costInfo = proj.aiModel
+        ? buildProjectCostInfo(proj.aiModel, proj.aiProvider)
+        : null;
+
       res.json({
         project,
+        costInfo,
         sessions,
         recentActivity: activityResult.items.slice(0, 20),
         taskGroupIds: Array.from(projectTaskGroupIds),
@@ -307,12 +329,12 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
 
   /**
    * PATCH /api/projects/:projectId
-   * Update project (favorite, tags, alias, bootstrapPrompt, projectType)
+   * Update project (favorite, tags, alias, bootstrapPrompt, projectType, inputTemplateId, outputTemplateId)
    */
   router.patch('/projects/:projectId', async (req: Request, res: Response) => {
     try {
       const dal = getNoDynamo();
-      const { favorite, alias, description, notes, tags, bootstrapPrompt, projectType, projectStatus } = req.body;
+      const { favorite, alias, description, notes, tags, bootstrapPrompt, projectType, projectStatus, inputTemplateId, outputTemplateId, aiModel, aiProvider } = req.body;
 
       const project = await dal.updateProjectIndex(req.params.projectId as string, {
         favorite,
@@ -323,6 +345,10 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         bootstrapPrompt,
         projectType,
         projectStatus,
+        inputTemplateId,
+        outputTemplateId,
+        aiModel,
+        aiProvider,
       });
 
       if (!project) {
@@ -590,6 +616,20 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         session,
         runs,
       });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * GET /api/models
+   * List all available AI models with pricing info
+   */
+  router.get('/models', (_req: Request, res: Response) => {
+    try {
+      const models = getAllModelCostInfo();
+      res.json({ models });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
