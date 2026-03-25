@@ -324,7 +324,7 @@ Another agent for projB.
     log(`[EVIDENCE] Screenshot saved: ${screenshotPath}`);
 
     // AC-AGENT-8: Nav link exists
-    const navLink = await page.$('nav a[data-nav="agent"]');
+    const navLink = await page.$('nav a[data-nav="agents"]');
     if (navLink) {
       pass('AC-AGENT-8', 'Agent Launcher nav link exists');
     } else {
