@@ -1,5 +1,16 @@
 # PM Orchestrator Automatic Boot - Skills-First Architecture (v2.1.0)
 
+## Project Focus
+
+**`pm-orchestrator-runner/` がこのリポジトリのメインプロジェクト。**
+
+- `pm-orchestrator/` — Legacy（古いコード、メンテナンス対象外）
+- `quality-guardian/` — Legacy（古いコード、メンテナンス対象外）
+
+開発・実装作業は `pm-orchestrator-runner/` に集中すること。
+
+---
+
 <law>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ELN PM運用原則（絶対法則）

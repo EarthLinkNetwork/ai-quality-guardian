@@ -1,8 +1,31 @@
-# 🛡️ AI Development Scripts
+# AI Development Scripts
 
-Claude Codeで開発する際に使用する品質管理ツール集です。
+## Active Project
 
-## 📦 Quality Guardian - 統合品質管理システム
+**`pm-orchestrator-runner`** がこのリポジトリのメインプロジェクトです。
+
+Claude Code を制御・実行する CLI + Web UI ツールで、タスク管理、キュー、LLM 仲介レイヤーを提供します。
+
+```bash
+cd pm-orchestrator-runner
+npm run build
+node dist/cli/index.js web --port 3456
+```
+
+## Legacy (archived)
+
+以下のパッケージは古いコードであり、現在はメンテナンスされていません。
+
+| パッケージ | 説明 | 状態 |
+|---|---|---|
+| `pm-orchestrator/` | PM Orchestrator スキルテンプレート配布 | Legacy |
+| `quality-guardian/` | 品質ガーディアン（ルール・フック） | Legacy |
+
+---
+
+## Legacy: Quality Guardian - 統合品質管理システム
+
+> **Note**: 以下は Legacy コードの説明です。現在のメインは `pm-orchestrator-runner` です。
 
 AI（Claude Code）による開発の品質を多角的に検証し、「AIのズル」を検出して品質劣化を防ぐシステムです。
 
