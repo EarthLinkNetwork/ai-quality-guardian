@@ -312,12 +312,58 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
           return;
         }
 
-        // Inject bootstrapPrompt if exists
-        const extendedProject = project as unknown as { bootstrapPrompt?: string };
+        // Inject bootstrapPrompt and/or templates if configured
+        const extendedProject = project as unknown as {
+          bootstrapPrompt?: string;
+          inputTemplateId?: string | null;
+          outputTemplateId?: string | null;
+        };
         const bootstrapPrompt = extendedProject.bootstrapPrompt;
-        const finalContent = bootstrapPrompt
-          ? bootstrapPrompt + "\n\n---\n\n" + content.trim()
-          : content.trim();
+
+        // Resolve input/output template content
+        let inputTemplateText = '';
+        let outputTemplateText = '';
+        let inputTemplateName = '';
+        let outputTemplateName = '';
+        if (extendedProject.inputTemplateId || extendedProject.outputTemplateId) {
+          try {
+            const { TemplateStore } = require('../../template');
+            const templateStore = new TemplateStore();
+            await templateStore.initialize();
+
+            if (extendedProject.inputTemplateId) {
+              const tpl = templateStore.get(extendedProject.inputTemplateId);
+              if (tpl) {
+                inputTemplateText = tpl.rulesText || '';
+                inputTemplateName = tpl.name;
+              }
+            }
+            if (extendedProject.outputTemplateId) {
+              const tpl = templateStore.get(extendedProject.outputTemplateId);
+              if (tpl) {
+                outputTemplateText = tpl.outputFormatText || '';
+                outputTemplateName = tpl.name;
+              }
+            }
+          } catch (tplError) {
+            console.warn('[chat] Failed to load templates:', tplError);
+          }
+        }
+
+        // Build the final prompt:
+        // [InputTemplate] + [BootstrapPrompt] + [UserContent] + [OutputTemplate]
+        const promptParts: string[] = [];
+        if (inputTemplateText) {
+          promptParts.push('[InputRules]\n' + inputTemplateText + '\n[/InputRules]');
+        }
+        if (bootstrapPrompt) {
+          promptParts.push(bootstrapPrompt);
+        }
+        promptParts.push(content.trim());
+        if (outputTemplateText) {
+          promptParts.push('[OutputRules]\n' + outputTemplateText + '\n[/OutputRules]');
+        }
+        const finalContent = promptParts.join('\n\n---\n\n');
 
         // Create user message (with optional image attachments in metadata)
         const userMessage = await dal.createConversationMessage({
@@ -460,12 +506,20 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
           taskGroupId,
           activityId,
           bootstrapInjected: !!bootstrapPrompt,
+          inputTemplateInjected: !!inputTemplateText,
+          outputTemplateInjected: !!outputTemplateText,
+          inputTemplateName: inputTemplateName || null,
+          outputTemplateName: outputTemplateName || null,
         } as ChatResponse & {
           userMessage: ConversationMessage;
           assistantMessage: ConversationMessage;
           taskGroupId?: string;
           activityId?: string;
           bootstrapInjected: boolean;
+          inputTemplateInjected: boolean;
+          outputTemplateInjected: boolean;
+          inputTemplateName: string | null;
+          outputTemplateName: string | null;
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";

@@ -525,6 +525,8 @@ export interface ProjectIndex {
     running: number;
     awaiting: number;
   };
+  aiModel?: string;              // AI model ID used by this project (e.g. "gpt-4o")
+  aiProvider?: string;            // AI provider used by this project (e.g. "openai")
   createdAt: string;
   updatedAt: string;
   ttl?: number;
@@ -538,6 +540,8 @@ export interface CreateProjectIndexInput {
   notes?: string;
   tags?: string[];
   projectType?: 'normal' | 'runner-dev';
+  aiModel?: string;
+  aiProvider?: string;
 }
 
 export interface UpdateProjectIndexInput {
@@ -560,6 +564,10 @@ export interface UpdateProjectIndexInput {
   };
   bootstrapPrompt?: string;
   projectType?: ProjectType;
+  inputTemplateId?: string | null;
+  outputTemplateId?: string | null;
+  aiModel?: string;
+  aiProvider?: string;
 }
 
 export interface ListProjectIndexOptions {
@@ -662,6 +670,8 @@ export type ProjectType = 'normal' | 'runner-dev';
 export interface ProjectIndexExtended extends ProjectIndex {
   bootstrapPrompt?: string;
   projectType?: ProjectType;
+  inputTemplateId?: string | null;
+  outputTemplateId?: string | null;
 }
 
 // ==========================================

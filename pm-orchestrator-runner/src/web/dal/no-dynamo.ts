@@ -258,6 +258,14 @@ export class NoDynamoDAL {
       (project as any).projectType = input.projectType;
     }
 
+    // Add AI model/provider if provided
+    if (input.aiModel) {
+      (project as any).aiModel = input.aiModel;
+    }
+    if (input.aiProvider) {
+      (project as any).aiProvider = input.aiProvider;
+    }
+
     const filePath = path.join(this.projectsDir, projectId + ".json");
     await fs.promises.writeFile(filePath, JSON.stringify(project, null, 2));
 

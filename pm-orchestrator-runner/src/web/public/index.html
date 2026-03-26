@@ -743,6 +743,124 @@
       background: #d1d5db;
     }
 
+    /* Custom command dropdown styles */
+    .cmd-dropdown-bar {
+      display: flex;
+      gap: 8px;
+      padding: 0 0 8px 0;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .cmd-dropdown-toggle {
+      padding: 4px 12px;
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .cmd-dropdown-toggle:hover {
+      background: #e5e7eb;
+      border-color: #9ca3af;
+    }
+
+    .cmd-dropdown-toggle.active {
+      background: #2563eb;
+      color: white;
+      border-color: #2563eb;
+    }
+
+    .cmd-dropdown-toggle:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .cmd-dropdown-select {
+      padding: 4px 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      background: white;
+      color: #374151;
+      max-width: 250px;
+      cursor: pointer;
+    }
+
+    .cmd-dropdown-select:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+    }
+
+    .cmd-dropdown-label {
+      font-size: 0.75rem;
+      color: #6b7280;
+      font-weight: 500;
+    }
+
+    .cmd-panel {
+      display: none;
+      width: 100%;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #fff;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 4px;
+    }
+
+    .cmd-panel.active {
+      display: block;
+    }
+
+    .cmd-panel-item {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      border-bottom: 1px solid #f3f4f6;
+      transition: background 0.15s;
+    }
+
+    .cmd-panel-item:last-child {
+      border-bottom: none;
+    }
+
+    .cmd-panel-item:hover {
+      background: #eff6ff;
+    }
+
+    .cmd-panel-item-name {
+      font-weight: 600;
+      color: #2563eb;
+      white-space: nowrap;
+    }
+
+    .cmd-panel-item-desc {
+      color: #6b7280;
+      font-size: 0.8rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .cmd-panel-scope {
+      padding: 4px 12px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
     .chat-drop-overlay {
       display: none;
       position: absolute;
@@ -3961,6 +4079,15 @@
             var statusSummary = statusParts.length > 0 ? '<div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">' + statusParts.join(' ') + '</div>' : '';
             var descLine = p.description ? '<div data-testid="project-description" style="margin-top:2px; font-size:0.8rem; color:#64748b; line-height:1.3;">' + escapeHtml(p.description) + '</div>' : '';
             var notesLine = p.notes ? '<div data-testid="project-notes" style="margin-top:2px; font-size:0.75rem; color:#94a3b8; font-style:italic; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:600px;">Note: ' + escapeHtml(p.notes) + '</div>' : '';
+            var costLine = '';
+            if (p.costInfo && p.costInfo.modelDisplayName) {
+              costLine = '<div style="margin-top:3px; font-size:0.75rem; color:#60a5fa;">' +
+                'Model: ' + escapeHtml(p.costInfo.modelDisplayName) +
+                (p.costInfo.inputPricePerMillion ? ' ($' + p.costInfo.inputPricePerMillion + '/$' + p.costInfo.outputPricePerMillion + ' per 1M tokens)' : '') +
+                '</div>';
+            } else if (p.aiModel) {
+              costLine = '<div style="margin-top:3px; font-size:0.75rem; color:#60a5fa;">Model: ' + escapeHtml(p.aiModel) + '</div>';
+            }
             return '<div class="list-item" data-testid="project-card" onclick="navigate(\'/projects/' + encodeURIComponent(p.projectId) + '\')">' +
               '<div class="list-item-main">' +
                 '<div class="list-item-title">' +
@@ -3970,6 +4097,7 @@
                   ' ' + getProjectStatusBadge(p.projectStatus) +
                 '</div>' +
                 descLine +
+                costLine +
                 '<div class="list-item-meta">' +
                   escapeHtml(p.projectPath) +
                   ' | ' + gc + ' task group(s)' +
@@ -4798,6 +4926,7 @@
       claudeGlobalSettings: { exists: false, path: '', settings: {} },
       claudeMdProject: { exists: false, path: '', content: '' },
       claudeMdGlobal: { exists: false, path: '', content: '' },
+      templates: [],
     };
 
     // Render Settings page - main dispatcher
@@ -4840,6 +4969,15 @@
         if (claudeMdProjRes.ok) settingsData.claudeMdProject = await claudeMdProjRes.json();
         if (claudeMdGlobalRes.ok) settingsData.claudeMdGlobal = await claudeMdGlobalRes.json();
 
+        // Load templates (non-fatal)
+        try {
+          const tplRes = await fetch('/api/templates');
+          if (tplRes.ok) {
+            const tplData = await tplRes.json();
+            settingsData.templates = tplData.templates || [];
+          }
+        } catch { /* use defaults */ }
+
         renderSettingsPage();
       } catch (error) {
         app.innerHTML = '<div class="card"><h2>Error Loading Settings</h2><p>' + escapeHtml(error.message) + '</p><button class="btn btn-primary" onclick="renderSettings()" style="margin-top:16px;">Retry</button></div>';
@@ -4855,6 +4993,7 @@
       ];
       const sectionButtons = [
         { id: 'app', label: 'App Settings', icon: '\u2699\uFE0F' },
+        { id: 'templates', label: 'Templates', icon: '\uD83D\uDCC4' },
         { id: 'claude', label: 'Claude Settings', icon: '\uD83D\uDCCB' },
         { id: 'instructions', label: 'Claude Instructions', icon: '\uD83D\uDCDD' },
         { id: 'effective', label: 'Effective', icon: '\uD83D\uDD0D' },
@@ -4915,6 +5054,7 @@
       if (!container) return;
       switch (settingsSection) {
         case 'app': renderAppSettings(container); break;
+        case 'templates': renderTemplatesSettings(container); break;
         case 'claude': renderClaudeSettings(container); break;
         case 'instructions': renderClaudeInstructions(container); break;
         case 'effective': renderEffectiveSettings(container); break;
@@ -5217,6 +5357,259 @@
           <button class="btn btn-secondary" onclick="clearProjectOverrides()">Clear All Overrides</button>
         </div>
       `;
+    }
+
+    // ===================
+    // Templates section (Input/Output template management)
+    // ===================
+    function renderTemplatesSettings(container) {
+      const templates = settingsData.templates || [];
+      const userTemplates = templates.filter(t => !t.isBuiltIn);
+      const builtInTemplates = templates.filter(t => t.isBuiltIn);
+
+      container.innerHTML = `
+        <div class="card settings-section">
+          <h3>Template Management</h3>
+          <p class="settings-hint">
+            Create and manage input/output templates. Input templates inject rules at the start of every task prompt.
+            Output templates define the expected response format. Assign templates to projects in the Project Settings modal.
+          </p>
+          <button class="btn btn-primary" onclick="openTemplateEditor()" style="margin-bottom: 16px;">+ New Template</button>
+        </div>
+
+        <!-- User Templates -->
+        <div class="card settings-section">
+          <h3>Custom Templates (${userTemplates.length})</h3>
+          ${userTemplates.length === 0 ? '<p class="settings-hint">No custom templates yet. Click "+ New Template" to create one.</p>' : ''}
+          <div class="template-list">
+            ${userTemplates.map(t => renderTemplateCard(t, false)).join('')}
+          </div>
+        </div>
+
+        <!-- Built-in Templates -->
+        <div class="card settings-section">
+          <h3>Built-in Templates (${builtInTemplates.length})</h3>
+          <p class="settings-hint">Built-in templates are read-only. Copy them to create a customizable version.</p>
+          <div class="template-list">
+            ${builtInTemplates.map(t => renderTemplateCard(t, true)).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTemplateCard(template, isBuiltIn) {
+      const rulesText = template.rulesText || '';
+      const outputText = template.outputFormatText || '';
+      const cardId = 'tpl-card-' + template.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const escapedId = escapeHtml(template.id);
+      const rulesLineCount = rulesText.split('\n').length;
+      const outputLineCount = outputText.split('\n').length;
+
+      return `
+        <div class="template-card" data-template-id="${escapedId}">
+          <div class="template-card-header">
+            <span class="template-name">${escapeHtml(template.name)}</span>
+            ${isBuiltIn ? '<span class="badge badge-builtin">Built-in</span>' : ''}
+            <button class="btn btn-sm template-expand-btn" onclick="toggleTemplateContent('${cardId}')" data-testid="tpl-expand-${escapedId}">Hide Content</button>
+          </div>
+          <div class="template-full-content" id="${cardId}" style="display:block;">
+            <div class="template-full-section">
+              <div class="template-full-label">Input Rules ${rulesText ? '<span style="font-weight:normal;color:#6b7280;font-size:0.75rem;">(' + rulesText.length + ' chars, ' + rulesLineCount + ' lines)</span>' : ''}</div>
+              ${isBuiltIn
+                ? '<textarea class="template-full-textarea" id="' + cardId + '-rules" rows="' + Math.max(8, rulesLineCount + 2) + '" readonly style="opacity:0.8;cursor:default;">' + escapeHtml(rulesText || '(empty)') + '</textarea>'
+                : '<textarea class="template-full-textarea" id="' + cardId + '-rules" rows="' + Math.max(8, rulesLineCount + 2) + '">' + escapeHtml(rulesText) + '</textarea>'
+              }
+            </div>
+            <div class="template-full-section">
+              <div class="template-full-label">Output Format ${outputText ? '<span style="font-weight:normal;color:#6b7280;font-size:0.75rem;">(' + outputText.length + ' chars, ' + outputLineCount + ' lines)</span>' : ''}</div>
+              ${isBuiltIn
+                ? '<textarea class="template-full-textarea" id="' + cardId + '-output" rows="' + Math.max(6, outputLineCount + 2) + '" readonly style="opacity:0.8;cursor:default;">' + escapeHtml(outputText || '(empty)') + '</textarea>'
+                : '<textarea class="template-full-textarea" id="' + cardId + '-output" rows="' + Math.max(6, outputLineCount + 2) + '">' + escapeHtml(outputText) + '</textarea>'
+              }
+            </div>
+            ${!isBuiltIn ? '<div style="margin-top:8px;text-align:right;"><button class="btn btn-primary btn-sm" onclick="saveTemplateInline(\'' + escapedId + '\', \'' + cardId + '\')">Save Changes</button></div>' : ''}
+          </div>
+          <div class="template-card-actions">
+            ${isBuiltIn
+              ? '<button class="btn btn-sm" onclick="copyTemplate(\'' + escapedId + '\', \'' + escapeHtml(template.name) + '\')">Copy</button>'
+              : '<button class="btn btn-sm" onclick="openTemplateEditor(\'' + escapedId + '\')">Edit in Modal</button>' +
+                '<button class="btn btn-sm btn-danger" onclick="deleteTemplate(\'' + escapedId + '\', \'' + escapeHtml(template.name) + '\')">Delete</button>'
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    function toggleTemplateContent(cardId) {
+      var el = document.getElementById(cardId);
+      if (!el) return;
+      var btn = el.parentElement.querySelector('.template-expand-btn');
+      if (el.style.display === 'none') {
+        el.style.display = 'block';
+        if (btn) btn.textContent = 'Hide Content';
+      } else {
+        el.style.display = 'none';
+        if (btn) btn.textContent = 'Show Content';
+      }
+    }
+
+    /**
+     * Save template content inline from the expanded card view.
+     */
+    async function saveTemplateInline(templateId, cardId) {
+      var rulesEl = document.getElementById(cardId + '-rules');
+      var outputEl = document.getElementById(cardId + '-output');
+      if (!rulesEl || !outputEl) return;
+
+      try {
+        var response = await fetch('/api/templates/' + encodeURIComponent(templateId), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rulesText: rulesEl.value,
+            outputFormatText: outputEl.value,
+          }),
+        });
+        var data = await response.json();
+        if (data.error) throw new Error(data.message);
+
+        showToast('Template saved successfully', 'success');
+        // Refresh templates data and re-render
+        try {
+          var tplRes = await fetch('/api/templates');
+          if (tplRes.ok) {
+            var tplData = await tplRes.json();
+            settingsData.templates = tplData.templates || [];
+          }
+        } catch (e) { /* ignore reload failure */ }
+        renderSettingsContent();
+      } catch (err) {
+        showToast('Failed to save template: ' + err.message, 'error');
+      }
+    }
+
+    function openTemplateEditor(templateId) {
+      var template = null;
+      if (templateId) {
+        template = (settingsData.templates || []).find(function(t) { return t.id === templateId; });
+      }
+
+      var modal = document.createElement('div');
+      modal.id = 'template-editor-modal';
+      modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;';
+      modal.innerHTML =
+        '<div style="background: var(--bg-primary, #1a1a2e); color: var(--text-primary, #e0e0e0); padding: 24px; border-radius: 12px; max-width: 800px; width: 95%; max-height: 85vh; overflow-y: auto;">' +
+          '<h3 style="margin-bottom: 16px;">' + (template ? 'Edit Template' : 'New Template') + '</h3>' +
+          '<div class="form-group" style="margin-bottom: 12px;">' +
+            '<label style="display:block;margin-bottom:4px;font-weight:600;">Template Name</label>' +
+            '<input type="text" id="tpl-edit-name" class="settings-input" placeholder="my-project-rules" value="' + escapeHtml(template ? template.name : '') + '" style="width:100%;" />' +
+            '<span style="font-size:0.75rem;color:#9ca3af;">Letters, numbers, hyphens, underscores only. Max 50 chars.</span>' +
+          '</div>' +
+          '<div class="form-group" style="margin-bottom: 12px;">' +
+            '<label style="display:block;margin-bottom:4px;font-weight:600;">Input Rules (injected before user prompt)</label>' +
+            '<textarea id="tpl-edit-rules" rows="10" style="font-family: monospace; width: 100%; background: var(--bg-secondary, #16213e); color: var(--text-primary, #e0e0e0); border: 1px solid var(--border-color, #2a2a4a); border-radius: 6px; padding: 8px;">' + escapeHtml(template ? template.rulesText : '') + '</textarea>' +
+            '<span style="font-size:0.75rem;color:#9ca3af;">Max 10,000 chars. This text is prepended to every task prompt for projects using this template.</span>' +
+          '</div>' +
+          '<div class="form-group" style="margin-bottom: 12px;">' +
+            '<label style="display:block;margin-bottom:4px;font-weight:600;">Output Format Rules (injected after user prompt)</label>' +
+            '<textarea id="tpl-edit-output" rows="8" style="font-family: monospace; width: 100%; background: var(--bg-secondary, #16213e); color: var(--text-primary, #e0e0e0); border: 1px solid var(--border-color, #2a2a4a); border-radius: 6px; padding: 8px;">' + escapeHtml(template ? template.outputFormatText : '') + '</textarea>' +
+            '<span style="font-size:0.75rem;color:#9ca3af;">Max 5,000 chars. Defines the expected output format (language, structure, evidence requirements).</span>' +
+          '</div>' +
+          '<div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">' +
+            '<button class="btn btn-secondary" onclick="closeTemplateEditor()">Cancel</button>' +
+            '<button class="btn btn-primary" onclick="saveTemplateFromEditor(\'' + (template ? escapeHtml(template.id) : '') + '\')">' + (template ? 'Update' : 'Create') + '</button>' +
+          '</div>' +
+        '</div>';
+
+      document.body.appendChild(modal);
+      modal.addEventListener('click', function(e) { if (e.target === modal) closeTemplateEditor(); });
+    }
+
+    function closeTemplateEditor() {
+      var modal = document.getElementById('template-editor-modal');
+      if (modal) modal.remove();
+    }
+
+    async function saveTemplateFromEditor(templateId) {
+      var name = document.getElementById('tpl-edit-name').value.trim();
+      var rulesText = document.getElementById('tpl-edit-rules').value;
+      var outputFormatText = document.getElementById('tpl-edit-output').value;
+
+      if (!name) { showToast('Template name is required', 'error'); return; }
+
+      try {
+        var url = templateId ? '/api/templates/' + encodeURIComponent(templateId) : '/api/templates';
+        var method = templateId ? 'PUT' : 'POST';
+
+        var response = await fetch(url, {
+          method: method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name, rulesText: rulesText, outputFormatText: outputFormatText })
+        });
+
+        var data = await response.json();
+        if (data.error) throw new Error(data.message);
+
+        closeTemplateEditor();
+        showToast('Template ' + (templateId ? 'updated' : 'created') + ' successfully', 'success');
+
+        // Refresh templates list
+        var tplRes = await fetch('/api/templates');
+        if (tplRes.ok) {
+          var tplData = await tplRes.json();
+          settingsData.templates = tplData.templates || [];
+        }
+        renderSettingsContent();
+      } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+      }
+    }
+
+    async function deleteTemplate(templateId, templateName) {
+      if (!confirm('Delete template "' + templateName + '"? This cannot be undone.')) return;
+
+      try {
+        var response = await fetch('/api/templates/' + encodeURIComponent(templateId), { method: 'DELETE' });
+        var data = await response.json();
+        if (data.error) throw new Error(data.message);
+
+        showToast('Template deleted', 'success');
+
+        var tplRes = await fetch('/api/templates');
+        if (tplRes.ok) {
+          var tplData = await tplRes.json();
+          settingsData.templates = tplData.templates || [];
+        }
+        renderSettingsContent();
+      } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+      }
+    }
+
+    async function copyTemplate(templateId, templateName) {
+      var newName = prompt('Name for the copy:', templateName + '-copy');
+      if (!newName) return;
+
+      try {
+        var response = await fetch('/api/templates/' + encodeURIComponent(templateId) + '/copy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName })
+        });
+        var data = await response.json();
+        if (data.error) throw new Error(data.message);
+
+        showToast('Template copied as "' + newName + '"', 'success');
+
+        var tplRes = await fetch('/api/templates');
+        if (tplRes.ok) {
+          var tplData = await tplRes.json();
+          settingsData.templates = tplData.templates || [];
+        }
+        renderSettingsContent();
+      } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+      }
     }
 
     // ===================
@@ -5609,6 +6002,25 @@
           .perm-item input { width:16px; height:16px; }
           .advanced-toggle { display:flex; align-items:center; gap:8px; margin-bottom:12px; padding:8px 12px; background:#fef3c7; border-radius:6px; cursor:pointer; font-size:0.85rem; }
           .advanced-toggle input { width:16px; height:16px; }
+          /* Template card styles */
+          .template-list { display: flex; flex-direction: column; gap: 12px; }
+          .template-card { border: 1px solid var(--border-color, #2a2a4a); border-radius: 8px; padding: 12px 16px; background: var(--bg-secondary, #16213e); }
+          .template-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+          .template-name { font-weight: 600; font-size: 1rem; }
+          .badge-builtin { background: #6366f1; color: white; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; }
+          /* template-card-body and template-preview removed - full content shown by default */
+          .template-card-actions { display: flex; gap: 8px; }
+          .template-expand-btn { margin-left: auto; font-size: 0.75rem; padding: 2px 10px; }
+          .template-full-content { margin: 8px 0; padding: 12px; background: var(--bg-primary, #1a1a2e); border: 1px solid var(--border-color, #2a2a4a); border-radius: 6px; }
+          .template-full-section { margin-bottom: 12px; }
+          .template-full-section:last-child { margin-bottom: 0; }
+          .template-full-label { font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; color: var(--text-primary, #e0e0e0); }
+          .template-full-text { font-family: monospace; font-size: 0.82rem; white-space: pre-wrap; word-break: break-word; color: #9ca3af; background: transparent; border: none; padding: 8px; margin: 0; overflow-y: auto; }
+          .template-full-textarea { font-family: monospace; font-size: 0.82rem; width: 100%; min-height: 100px; background: var(--bg-primary, #1a1a2e); color: var(--text-primary, #e0e0e0); border: 1px solid var(--border-color, #2a2a4a); border-radius: 6px; padding: 8px; resize: vertical; line-height: 1.5; }
+          /* Template injection badge in chat */
+          .tpl-badge { display: inline-block; font-size: 0.7rem; padding: 1px 6px; border-radius: 3px; margin-right: 4px; }
+          .tpl-badge-input { background: #818cf8; color: white; }
+          .tpl-badge-output { background: #34d399; color: white; }
         </style>
       `;
     }
@@ -7037,11 +7449,14 @@
       }
 
       try {
-        // Fetch project and conversation in parallel
-        const [projectRes, conversationRes] = await Promise.all([
+        // Fetch project, conversation, and templates in parallel
+        const [projectRes, conversationRes, templatesRes] = await Promise.all([
           fetch('/api/projects/' + encodeURIComponent(projectId)).then(r => r.json()),
-          fetch('/api/projects/' + encodeURIComponent(projectId) + '/conversation').then(r => r.json())
+          fetch('/api/projects/' + encodeURIComponent(projectId) + '/conversation').then(r => r.json()),
+          fetch('/api/templates').then(r => r.ok ? r.json() : { templates: [] }).catch(() => ({ templates: [] }))
         ]);
+        // Cache templates in settingsData for badge rendering
+        settingsData.templates = templatesRes.templates || [];
 
         if (projectRes.error) throw new Error(projectRes.message);
 
@@ -7099,9 +7514,25 @@
           '</div>';
         }
 
-        app.innerHTML = 
+        // Build template badges for header
+        var tplBadges = '';
+        if (project.inputTemplateId || project.outputTemplateId) {
+          var badges = [];
+          if (project.inputTemplateId) {
+            var inTpl = (settingsData.templates || []).find(function(t) { return t.id === project.inputTemplateId; });
+            badges.push('<span class="tpl-badge tpl-badge-input">Input: ' + escapeHtml(inTpl ? inTpl.name : 'Unknown') + '</span>');
+          }
+          if (project.outputTemplateId) {
+            var outTpl = (settingsData.templates || []).find(function(t) { return t.id === project.outputTemplateId; });
+            badges.push('<span class="tpl-badge tpl-badge-output">Output: ' + escapeHtml(outTpl ? outTpl.name : 'Unknown') + '</span>');
+          }
+          tplBadges = '<div style="margin-top: 4px;">' + badges.join(' ') + '</div>';
+        }
+
+        app.innerHTML =
           '<div class="page-header">' +
             '<h2>Chat: ' + escapeHtml(project.alias || project.projectPath) + '</h2>' +
+            tplBadges +
             '<div class="action-bar">' +
               backBtn +
               '<button class="refresh-btn" onclick="renderChat(\'' + escapeHtml(projectId) + '\')">Refresh</button>' +
@@ -7113,6 +7544,14 @@
             statusBar +
             '<div class="chat-input-container" style="position:relative;" id="chat-input-container">' +
               '<div class="chat-drop-overlay" id="chat-drop-overlay">Drop files here to attach</div>' +
+              '<div id="cmd-dropdown-bar" class="cmd-dropdown-bar" style="display:none;">' +
+                '<span class="cmd-dropdown-label">Commands:</span>' +
+                '<button class="cmd-dropdown-toggle" id="cmd-toggle-global" data-testid="cmd-toggle-global" onclick="toggleCommandDropdown(\'global\')">Global</button>' +
+                '<select class="cmd-dropdown-select" id="cmd-select-global" data-testid="cmd-select-global" style="display:none;" onchange="selectSettingsCommand(this, \'' + escapeHtml(projectId) + '\')"><option value="">-- select --</option></select>' +
+                '<button class="cmd-dropdown-toggle" id="cmd-toggle-project" data-testid="cmd-toggle-project" onclick="toggleCommandDropdown(\'project\')">Project</button>' +
+                '<select class="cmd-dropdown-select" id="cmd-select-project" data-testid="cmd-select-project" style="display:none;" onchange="selectSettingsCommand(this, \'' + escapeHtml(projectId) + '\')"><option value="">-- select --</option></select>' +
+              '</div>' +
+              '<div id="cmd-panel" class="cmd-panel" data-project-id="' + escapeHtml(projectId) + '"></div>' +
               '<div class="chat-input-area">' +
                 '<div class="chat-attachments" id="chat-attachments"></div>' +
                 '<div class="chat-input-wrapper">' +
@@ -7147,13 +7586,17 @@
             chatInput.value = draft;
           }
           chatInput.focus();
-          // Save draft on every input change
+          // Save draft on every input change and handle slash-command filtering
           chatInput.addEventListener('input', function() {
             chatInputDrafts[projectId] = chatInput.value;
+            handleSlashCommandInput(chatInput.value);
           });
         }
         setupChatDragDrop();
         chatAttachments = []; // Reset on re-render
+
+        // Load settings custom commands for the dropdown bar
+        loadSettingsCommands(project.projectPath);
 
       } catch (error) {
         app.innerHTML = 
@@ -7174,6 +7617,346 @@
         sendChatMessage(projectId, isRespond);
       }
       // Plain Enter = newline (default textarea behavior, no preventDefault)
+    }
+
+    // ============================================
+    // Settings Custom Command Dropdowns
+    // ============================================
+
+    // Track which dropdown is active (null, 'global', or 'project')
+    var activeCommandDropdown = null;
+
+    // Cached command data from settings
+    var settingsCommandsCache = { global: [], project: [] };
+
+    /**
+     * Load custom commands from settings.json AND slash commands from .claude/commands/*.md
+     * and populate the dropdown bar if commands exist.
+     */
+    async function loadSettingsCommands(projectPath) {
+      try {
+        var qp = projectPath ? '?projectPath=' + encodeURIComponent(projectPath) : '';
+
+        // Fetch both settings commands and slash commands in parallel
+        var [settingsRes, slashRes] = await Promise.all([
+          fetch('/api/claude-settings/custom-commands' + qp),
+          fetch('/api/claude-settings/slash-commands' + qp)
+        ]);
+        var settingsData = await settingsRes.json();
+        var slashData = slashRes.ok ? await slashRes.json() : { global: [], project: [] };
+
+        // Merge: settings commands + slash commands (slash commands use name as prompt prefix)
+        var globalFromSettings = (settingsData.global || []);
+        var projectFromSettings = (settingsData.project || []);
+        var globalSlash = (slashData.global || []).map(function(cmd) {
+          return { name: cmd.name.replace(/^\//, ''), description: cmd.description, prompt: cmd.name + ' ', isSlashCommand: true };
+        });
+        var projectSlash = (slashData.project || []).map(function(cmd) {
+          return { name: cmd.name.replace(/^\//, ''), description: cmd.description, prompt: cmd.name + ' ', isSlashCommand: true };
+        });
+
+        settingsCommandsCache.global = globalFromSettings.concat(globalSlash);
+        settingsCommandsCache.project = projectFromSettings.concat(projectSlash);
+
+        var bar = document.getElementById('cmd-dropdown-bar');
+        if (!bar) return;
+
+        // Show the bar only if at least one scope has commands
+        if (settingsCommandsCache.global.length > 0 || settingsCommandsCache.project.length > 0) {
+          bar.style.display = 'flex';
+        } else {
+          bar.style.display = 'none';
+          return;
+        }
+
+        // Populate global select
+        populateCommandSelect('cmd-select-global', settingsCommandsCache.global);
+        // Populate project select
+        populateCommandSelect('cmd-select-project', settingsCommandsCache.project);
+
+        // Disable toggle buttons when no commands for that scope
+        var globalToggle = document.getElementById('cmd-toggle-global');
+        var projectToggle = document.getElementById('cmd-toggle-project');
+        if (globalToggle) {
+          globalToggle.disabled = settingsCommandsCache.global.length === 0;
+          if (settingsCommandsCache.global.length === 0) globalToggle.title = 'No global custom commands';
+        }
+        if (projectToggle) {
+          projectToggle.disabled = settingsCommandsCache.project.length === 0;
+          if (settingsCommandsCache.project.length === 0) projectToggle.title = 'No project custom commands';
+        }
+
+        // Reset dropdown state
+        activeCommandDropdown = null;
+
+        // Populate the clickable command panel
+        populateCommandPanel();
+
+      } catch (err) {
+        // Silently fail - dropdowns are optional UI enhancement
+        console.warn('[cmd-dropdown] Failed to load settings commands:', err);
+      }
+    }
+
+    /**
+     * Populate a <select> element with command options.
+     */
+    function populateCommandSelect(selectId, commands) {
+      var select = document.getElementById(selectId);
+      if (!select) return;
+      // Keep the placeholder option, clear the rest
+      select.innerHTML = '<option value="">-- select --</option>';
+      for (var i = 0; i < commands.length; i++) {
+        var cmd = commands[i];
+        var opt = document.createElement('option');
+        opt.value = cmd.name;
+        opt.textContent = '/' + cmd.name + (cmd.description ? ' - ' + cmd.description : '');
+        opt.setAttribute('data-prompt', cmd.prompt);
+        select.appendChild(opt);
+      }
+    }
+
+    /**
+     * Toggle a command dropdown (global or project).
+     * Enforces mutual exclusivity: only one dropdown can be active at a time.
+     */
+    function toggleCommandDropdown(scope) {
+      var globalSelect = document.getElementById('cmd-select-global');
+      var projectSelect = document.getElementById('cmd-select-project');
+      var globalToggle = document.getElementById('cmd-toggle-global');
+      var projectToggle = document.getElementById('cmd-toggle-project');
+
+      if (activeCommandDropdown === scope) {
+        // Deactivate current
+        activeCommandDropdown = null;
+        if (globalSelect) globalSelect.style.display = 'none';
+        if (projectSelect) projectSelect.style.display = 'none';
+        if (globalToggle) globalToggle.classList.remove('active');
+        if (projectToggle) projectToggle.classList.remove('active');
+      } else {
+        // Activate the requested scope, deactivate the other
+        activeCommandDropdown = scope;
+        if (scope === 'global') {
+          if (globalSelect) globalSelect.style.display = '';
+          if (projectSelect) projectSelect.style.display = 'none';
+          if (globalToggle) globalToggle.classList.add('active');
+          if (projectToggle) projectToggle.classList.remove('active');
+        } else {
+          if (globalSelect) globalSelect.style.display = 'none';
+          if (projectSelect) projectSelect.style.display = '';
+          if (globalToggle) globalToggle.classList.remove('active');
+          if (projectToggle) projectToggle.classList.add('active');
+        }
+      }
+    }
+
+    /**
+     * Handle selecting a command from the dropdown.
+     * Populates the chat input with the command's prompt.
+     */
+    function selectSettingsCommand(selectElement, projectId) {
+      var selectedOption = selectElement.options[selectElement.selectedIndex];
+      if (!selectedOption || !selectedOption.value) return;
+
+      var prompt = selectedOption.getAttribute('data-prompt');
+      if (!prompt) return;
+
+      var chatInput = document.getElementById('chat-input');
+      if (chatInput) {
+        chatInput.value = prompt;
+        chatInput.focus();
+        // Save as draft
+        if (projectId) {
+          chatInputDrafts[projectId] = prompt;
+        }
+      }
+
+      // Reset selection back to placeholder
+      selectElement.selectedIndex = 0;
+    }
+
+    /**
+     * Populate the clickable command panel with all available commands.
+     * Commands are grouped by scope (global / project).
+     */
+    function populateCommandPanel() {
+      var panel = document.getElementById('cmd-panel');
+      if (!panel) return;
+
+      var globalCmds = settingsCommandsCache.global || [];
+      var projectCmds = settingsCommandsCache.project || [];
+
+      if (globalCmds.length === 0 && projectCmds.length === 0) {
+        panel.classList.remove('active');
+        return;
+      }
+
+      var html = '';
+      if (globalCmds.length > 0) {
+        html += '<div class="cmd-panel-scope">Global Commands</div>';
+        for (var i = 0; i < globalCmds.length; i++) {
+          html += '<div class="cmd-panel-item" data-cmd-index="' + i + '" data-cmd-scope="global" onclick="selectCommandFromPanel(this)">' +
+            '<span class="cmd-panel-item-name">/' + escapeHtml(globalCmds[i].name) + '</span>' +
+            '<span class="cmd-panel-item-desc">' + escapeHtml(globalCmds[i].description || '') + '</span>' +
+          '</div>';
+        }
+      }
+      if (projectCmds.length > 0) {
+        html += '<div class="cmd-panel-scope">Project Commands</div>';
+        for (var j = 0; j < projectCmds.length; j++) {
+          html += '<div class="cmd-panel-item" data-cmd-index="' + j + '" data-cmd-scope="project" onclick="selectCommandFromPanel(this)">' +
+            '<span class="cmd-panel-item-name">/' + escapeHtml(projectCmds[j].name) + '</span>' +
+            '<span class="cmd-panel-item-desc">' + escapeHtml(projectCmds[j].description || '') + '</span>' +
+          '</div>';
+        }
+      }
+
+      panel.innerHTML = html;
+      // Panel is hidden by default; it appears when user types '/' in the chat input
+      panel.classList.remove('active');
+    }
+
+    /**
+     * Select a command from the clickable panel.
+     * Populates the chat input with the command's prompt.
+     */
+    // Track which scope's command is currently selected (for mutual exclusion)
+    var selectedCommandScope = null;
+
+    function selectCommandFromPanel(element) {
+      var scope = element.getAttribute('data-cmd-scope');
+      var index = parseInt(element.getAttribute('data-cmd-index'), 10);
+      var cmds = scope === 'global' ? settingsCommandsCache.global : settingsCommandsCache.project;
+
+      if (!cmds || index < 0 || index >= cmds.length) return;
+
+      var cmd = cmds[index];
+      var chatInput = document.getElementById('chat-input');
+      if (chatInput) {
+        // For slash commands, prefix with the command name
+        if (cmd.isSlashCommand) {
+          chatInput.value = '/' + cmd.name + ' ';
+        } else {
+          chatInput.value = cmd.prompt;
+        }
+        chatInput.focus();
+        var panel = document.getElementById('cmd-panel');
+        var projectIdAttr = panel ? panel.getAttribute('data-project-id') : null;
+        if (projectIdAttr) {
+          chatInputDrafts[projectIdAttr] = chatInput.value;
+        }
+      }
+
+      // Set mutual exclusion: selecting a command from one scope disables the other
+      selectedCommandScope = scope;
+      updateCommandScopeExclusion();
+
+      // Collapse the panel after selection
+      var panel = document.getElementById('cmd-panel');
+      if (panel) panel.classList.remove('active');
+    }
+
+    /**
+     * Update mutual exclusion: when one scope is selected, disable the other.
+     * When input is cleared, re-enable both.
+     */
+    function updateCommandScopeExclusion() {
+      var globalToggle = document.getElementById('cmd-toggle-global');
+      var projectToggle = document.getElementById('cmd-toggle-project');
+      if (!globalToggle || !projectToggle) return;
+
+      if (selectedCommandScope === 'global') {
+        projectToggle.disabled = true;
+        projectToggle.title = 'Clear input to switch to project commands';
+        globalToggle.disabled = settingsCommandsCache.global.length === 0;
+      } else if (selectedCommandScope === 'project') {
+        globalToggle.disabled = true;
+        globalToggle.title = 'Clear input to switch to global commands';
+        projectToggle.disabled = settingsCommandsCache.project.length === 0;
+      } else {
+        // No selection — restore based on command availability
+        globalToggle.disabled = settingsCommandsCache.global.length === 0;
+        globalToggle.title = settingsCommandsCache.global.length === 0 ? 'No global custom commands' : '';
+        projectToggle.disabled = settingsCommandsCache.project.length === 0;
+        projectToggle.title = settingsCommandsCache.project.length === 0 ? 'No project custom commands' : '';
+      }
+    }
+
+    /**
+     * Toggle the command panel visibility (used by the Commands bar button).
+     */
+    function toggleCommandPanel() {
+      var panel = document.getElementById('cmd-panel');
+      if (!panel) return;
+      panel.classList.toggle('active');
+    }
+
+    /**
+     * Handle slash-command input filtering.
+     * When user types '/' at the start, show the command panel filtered by the typed prefix.
+     * When input doesn't start with '/', hide the panel.
+     */
+    function handleSlashCommandInput(value) {
+      var panel = document.getElementById('cmd-panel');
+      if (!panel) return;
+
+      // Reset mutual exclusion when input is cleared
+      if (!value || value.trim() === '') {
+        selectedCommandScope = null;
+        updateCommandScopeExclusion();
+      }
+
+      var globalCmds = settingsCommandsCache.global || [];
+      var projectCmds = settingsCommandsCache.project || [];
+      if (globalCmds.length === 0 && projectCmds.length === 0) return;
+
+      // Only trigger when input starts with '/'
+      if (!value.startsWith('/')) {
+        panel.classList.remove('active');
+        return;
+      }
+
+      // Extract the filter text after '/'
+      var filter = value.substring(1).toLowerCase().trim();
+
+      // Filter commands by name prefix
+      var filteredGlobal = globalCmds.filter(function(cmd) {
+        return cmd.name.toLowerCase().startsWith(filter) || filter === '';
+      });
+      var filteredProject = projectCmds.filter(function(cmd) {
+        return cmd.name.toLowerCase().startsWith(filter) || filter === '';
+      });
+
+      if (filteredGlobal.length === 0 && filteredProject.length === 0) {
+        panel.classList.remove('active');
+        return;
+      }
+
+      // Build filtered panel HTML
+      var html = '';
+      if (filteredGlobal.length > 0) {
+        html += '<div class="cmd-panel-scope">Global Commands</div>';
+        for (var i = 0; i < filteredGlobal.length; i++) {
+          var gIdx = globalCmds.indexOf(filteredGlobal[i]);
+          html += '<div class="cmd-panel-item" data-cmd-index="' + gIdx + '" data-cmd-scope="global" onclick="selectCommandFromPanel(this)">' +
+            '<span class="cmd-panel-item-name">/' + escapeHtml(filteredGlobal[i].name) + '</span>' +
+            '<span class="cmd-panel-item-desc">' + escapeHtml(filteredGlobal[i].description || '') + '</span>' +
+          '</div>';
+        }
+      }
+      if (filteredProject.length > 0) {
+        html += '<div class="cmd-panel-scope">Project Commands</div>';
+        for (var j = 0; j < filteredProject.length; j++) {
+          var pIdx = projectCmds.indexOf(filteredProject[j]);
+          html += '<div class="cmd-panel-item" data-cmd-index="' + pIdx + '" data-cmd-scope="project" onclick="selectCommandFromPanel(this)">' +
+            '<span class="cmd-panel-item-name">/' + escapeHtml(filteredProject[j].name) + '</span>' +
+            '<span class="cmd-panel-item-desc">' + escapeHtml(filteredProject[j].description || '') + '</span>' +
+          '</div>';
+        }
+      }
+
+      panel.innerHTML = html;
+      panel.classList.add('active');
     }
 
     // Handle file selection from file input
@@ -7344,10 +8127,24 @@
           currentChatTaskGroupId = data.taskGroupId;
         }
 
+        // Show template injection indicators if applicable
+        var injectionParts = [];
+        if (data.inputTemplateInjected && data.inputTemplateName) injectionParts.push('Input: ' + data.inputTemplateName);
+        if (data.outputTemplateInjected && data.outputTemplateName) injectionParts.push('Output: ' + data.outputTemplateName);
+        if (data.bootstrapInjected) injectionParts.push('Bootstrap');
+        if (injectionParts.length > 0) {
+          showToast('Templates injected: ' + injectionParts.join(', '), 'info');
+        }
+
         // Clear input, attachments, and draft on success
         input.value = '';
         chatAttachments = [];
         delete chatInputDrafts[projectId];
+
+        // Re-enable input
+        input.disabled = false;
+        sendBtn.disabled = false;
+        sendBtn.textContent = isRespond ? 'Respond' : 'Send';
 
         // Refresh chat
         renderChat(projectId);
@@ -7366,17 +8163,38 @@
         var res = await fetch('/api/projects/' + encodeURIComponent(projectId)).then(function(r) { return r.json(); });
         if (res.error) throw new Error(res.message);
 
+        // Load templates for dropdowns
+        var templates = [];
+        try {
+          var tplRes = await fetch('/api/templates');
+          if (tplRes.ok) {
+            var tplData = await tplRes.json();
+            templates = tplData.templates || [];
+          }
+        } catch(e) { /* proceed without templates */ }
+
         var project = res.project;
         var bootstrapPrompt = project.bootstrapPrompt || '';
         var projectType = project.projectType || 'normal';
         var currentProjectStatus = project.projectStatus || 'active';
+        var inputTemplateId = project.inputTemplateId || '';
+        var outputTemplateId = project.outputTemplateId || '';
+
+        // Build template option HTML
+        var inputOptions = '<option value="">None (no input template)</option>';
+        var outputOptions = '<option value="">None (no output template)</option>';
+        templates.forEach(function(t) {
+          var label = escapeHtml(t.name) + (t.isBuiltIn ? ' (built-in)' : '');
+          inputOptions += '<option value="' + escapeHtml(t.id) + '"' + (t.id === inputTemplateId ? ' selected' : '') + '>' + label + '</option>';
+          outputOptions += '<option value="' + escapeHtml(t.id) + '"' + (t.id === outputTemplateId ? ' selected' : '') + '>' + label + '</option>';
+        });
 
         // Create modal
         var modal = document.createElement('div');
         modal.id = 'settings-modal';
         modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;';
         modal.innerHTML =
-          '<div style="background: white; padding: 24px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;">' +
+          '<div style="background: var(--bg-primary, #1a1a2e); color: var(--text-primary, #e0e0e0); padding: 24px; border-radius: 12px; max-width: 650px; width: 95%; max-height: 85vh; overflow-y: auto;">' +
             '<h3 style="margin-bottom: 16px;">Project Settings</h3>' +
             '<div class="form-group">' +
               '<label>Project Status</label>' +
@@ -7394,9 +8212,26 @@
                 '<option value="runner-dev"' + (projectType === 'runner-dev' ? ' selected' : '') + '>Runner Dev (Self-modification)</option>' +
               '</select>' +
             '</div>' +
+
+            '<hr style="border-color: var(--border-color, #2a2a4a); margin: 16px 0;" />' +
+            '<h4 style="margin-bottom: 8px;">Prompt Templates</h4>' +
+            '<p style="font-size: 0.8rem; color: #9ca3af; margin-bottom: 12px;">Select templates to automatically inject rules into every task for this project. Manage templates in Settings &gt; Templates.</p>' +
+
             '<div class="form-group">' +
-              '<label>Bootstrap Prompt (injected at the start of every task)</label>' +
-              '<textarea id="bootstrap-prompt-input" rows="6" style="font-family: monospace;">' + escapeHtml(bootstrapPrompt) + '</textarea>' +
+              '<label>Input Template (rules injected before user prompt)</label>' +
+              '<select id="input-template-select">' + inputOptions + '</select>' +
+            '</div>' +
+            '<div class="form-group">' +
+              '<label>Output Template (format rules injected after user prompt)</label>' +
+              '<select id="output-template-select">' + outputOptions + '</select>' +
+            '</div>' +
+
+            '<hr style="border-color: var(--border-color, #2a2a4a); margin: 16px 0;" />' +
+
+            '<div class="form-group">' +
+              '<label>Bootstrap Prompt (raw text, injected in addition to templates)</label>' +
+              '<textarea id="bootstrap-prompt-input" rows="4" style="font-family: monospace;">' + escapeHtml(bootstrapPrompt) + '</textarea>' +
+              '<span style="font-size: 0.75rem; color: #9ca3af;">Legacy field. If templates are selected above, this is injected between input template and user prompt.</span>' +
             '</div>' +
             '<div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">' +
               '<button class="btn btn-secondary" onclick="closeSettingsModal()">Cancel</button>' +
@@ -7427,6 +8262,10 @@
       var projectType = document.getElementById('project-type-select').value;
       var projectStatus = document.getElementById('project-status-select').value;
       var bootstrapPrompt = document.getElementById('bootstrap-prompt-input').value;
+      var inputTemplateEl = document.getElementById('input-template-select');
+      var outputTemplateEl = document.getElementById('output-template-select');
+      var inputTemplateId = inputTemplateEl ? (inputTemplateEl.value || null) : null;
+      var outputTemplateId = outputTemplateEl ? (outputTemplateEl.value || null) : null;
 
       try {
         var response = await fetch('/api/projects/' + encodeURIComponent(projectId), {
@@ -7435,7 +8274,9 @@
           body: JSON.stringify({
             projectType: projectType,
             projectStatus: projectStatus,
-            bootstrapPrompt: bootstrapPrompt
+            bootstrapPrompt: bootstrapPrompt,
+            inputTemplateId: inputTemplateId,
+            outputTemplateId: outputTemplateId
           })
         });
 
@@ -8196,7 +9037,7 @@
         var resp = await fetch('/api/projects');
         var data = await resp.json();
         projectListCache = (data.projects || []).map(function(p) {
-          return { id: p.projectId, path: p.projectPath, alias: p.alias || p.projectPath };
+          return { id: p.projectId, path: p.projectPath, alias: p.alias || p.projectPath, projectStatus: p.projectStatus || 'active' };
         });
         projectListCacheTime = now;
       } catch(e) {
@@ -8279,16 +9120,20 @@
         '<button class="ctx-btn' + (claudeCodeContext.scope === 'project' ? ' active' : '') + '" data-testid="context-scope-project" onclick="switchClaudeCodeScope(\'project\')">Project</button>' +
         '</div>';
       if (claudeCodeContext.scope === 'project') {
-        var validProjects = (projectListCache || []).filter(function(p) { return p.path && p.path.charAt(0) === '/'; });
+        // Only show active projects (projectStatus === 'active' or undefined/missing defaults to 'active')
+        var validProjects = (projectListCache || []).filter(function(p) {
+          return p.path && p.path.charAt(0) === '/' && (p.projectStatus || 'active') === 'active';
+        });
         if (validProjects.length > 0) {
           var opts = validProjects.map(function(p) {
-            var label = p.alias !== p.path ? p.alias : shortenPath(p.path);
+            // Show alias only; fall back to shortened path only when no alias is set
+            var label = (p.alias && p.alias !== p.path) ? p.alias : shortenPath(p.path);
             var sel = p.path === claudeCodeContext.projectPath ? ' selected' : '';
-            return '<option value="' + escapeHtml(p.path) + '"' + sel + '>' + escapeHtml(label) + '</option>';
+            return '<option value="' + escapeHtml(p.path) + '"' + sel + ' data-testid="context-project-option">' + escapeHtml(label) + '</option>';
           }).join('');
           html += '<select class="ctx-select" data-testid="context-project-select" onchange="switchClaudeCodeProject(this.value)">' + opts + '</select>';
         } else {
-          html += '<div style="font-size:0.7rem;color:rgba(255,255,255,0.5);padding:2px 0;">No projects</div>';
+          html += '<div style="font-size:0.7rem;color:rgba(255,255,255,0.5);padding:2px 0;">No active projects</div>';
         }
       }
       el.innerHTML = html;

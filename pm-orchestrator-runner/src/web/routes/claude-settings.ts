@@ -9,6 +9,7 @@ import { Router, Request, Response } from "express";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { parseSettingsCommands } from "../services/settings-command-parser";
 
 /**
  * Global Claude directory path (~/.claude)
@@ -233,6 +234,81 @@ export function createClaudeSettingsRoutes(config: ClaudeSettingsConfig): Router
       const message = error instanceof Error ? error.message : "Unknown error";
       res.status(500).json({ error: "WRITE_FAILED", message });
     }
+  });
+
+  // --- Custom commands from settings.json ---
+
+  /**
+   * GET /api/claude-settings/custom-commands
+   * Extract custom commands from both global and project settings.json files.
+   * Returns separate arrays for global and project commands.
+   *
+   * Query params:
+   *   projectPath (optional) - override project root
+   */
+  router.get("/custom-commands", (req: Request, res: Response) => {
+    const effectiveProjectRoot = resolveProjectRoot(req);
+    const projectSettingsPath = path.join(effectiveProjectRoot, ".claude", "settings.json");
+    const globalSettingsPath = path.join(globalDir, "settings.json");
+
+    const globalSettings = readJsonFile(globalSettingsPath);
+    const projectSettings = readJsonFile(projectSettingsPath);
+
+    const result = parseSettingsCommands(globalSettings, projectSettings);
+
+    res.json({
+      global: result.global,
+      project: result.project,
+      paths: {
+        global: globalSettingsPath,
+        project: projectSettingsPath,
+      },
+    });
+  });
+
+  /**
+   * GET /api/claude-settings/slash-commands
+   * List Claude Code slash commands from .claude/commands/*.md files.
+   * Returns global (~/.claude/commands/) and project (.claude/commands/) commands.
+   *
+   * Query params:
+   *   projectPath (optional) - override project root
+   */
+  router.get("/slash-commands", (req: Request, res: Response) => {
+    const effectiveProjectRoot = resolveProjectRoot(req);
+    const globalCmdsDir = path.join(globalDir, "commands");
+    const projectCmdsDir = path.join(effectiveProjectRoot, ".claude", "commands");
+
+    function listCommands(dir: string): Array<{ name: string; description: string; path: string }> {
+      try {
+        if (!fs.existsSync(dir)) return [];
+        const files = fs.readdirSync(dir).filter((f: string) => f.endsWith(".md"));
+        return files.map((f: string) => {
+          const name = f.replace(/\.md$/, "");
+          let description = "";
+          try {
+            const content = fs.readFileSync(path.join(dir, f), "utf-8");
+            // Extract first non-empty, non-heading line as description
+            const lines = content.split("\n");
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed && !trimmed.startsWith("#") && !trimmed.startsWith("---")) {
+                description = trimmed.substring(0, 120);
+                break;
+              }
+            }
+          } catch { /* ignore read errors */ }
+          return { name: "/" + name, description, path: path.join(dir, f) };
+        });
+      } catch {
+        return [];
+      }
+    }
+
+    res.json({
+      global: listCommands(globalCmdsDir),
+      project: listCommands(projectCmdsDir),
+    });
   });
 
   return router;

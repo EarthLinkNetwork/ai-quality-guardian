@@ -40,6 +40,7 @@ import { createClaudeFilesRoutes } from './routes/claude-files';
 import { createClaudeHooksRoutes } from './routes/claude-hooks';
 import { createAssistantRoutes } from './routes/assistant';
 import { createRepoProfileRoutes } from './routes/repo-profile';
+import { createTemplateRoutes } from './routes/templates';
 import { detectTaskType } from '../utils/task-type-detector';
 import { detectQuestionsWithLlm } from '../utils/question-detector';
 import { isNoDynamoInitialized, getNoDynamo } from './dal/no-dynamo';
@@ -204,6 +205,9 @@ export function createApp(config: WebServerConfig): Express {
     app.use("/api/repo", createRepoProfileRoutes({
       projectRoot: projectRoot || process.cwd(),
     }));
+
+    // Template routes (CRUD for input/output templates)
+    app.use("/api/templates", createTemplateRoutes({ stateDir }));
   }
 
   // ===================
