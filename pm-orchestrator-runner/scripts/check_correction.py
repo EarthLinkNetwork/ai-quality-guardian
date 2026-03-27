@@ -8,7 +8,8 @@ def check_correction(original_text: str, corrected_text: str) -> bool:
 
     A correction is considered accurate when:
     - The corrected text differs from the original (a change was actually made).
-    - The corrected text is not empty (unless the original was also empty).
+    - The original text must be non-empty.
+    - The corrected text must be non-empty.
     - The corrected text preserves the general meaning by maintaining a high
       similarity ratio (>= 0.3) with the original — i.e. it is a correction,
       not a completely unrelated replacement.
@@ -33,10 +34,20 @@ def check_correction(original_text: str, corrected_text: str) -> bool:
     if not corrected_text.strip():
         return False
 
-    # For very short texts (5 chars or fewer), any non-empty change counts
-    # as a valid correction since similarity metrics are unreliable.
-    if len(original_text.strip()) <= 5:
+    original_clean = original_text.strip()
+    corrected_clean = corrected_text.strip()
+
+    # For single-character texts, any non-empty change counts as valid.
+    if len(original_clean) == 1:
         return True
+
+    # For very short texts (2-5 chars), apply a relaxed similarity threshold
+    # since standard metrics are less reliable at this length.
+    if len(original_clean) <= 5:
+        short_similarity = difflib.SequenceMatcher(
+            None, original_clean.lower(), corrected_clean.lower()
+        ).ratio()
+        return short_similarity >= 0.3
 
     # The corrected text must be similar enough to the original to count
     # as a correction rather than a complete replacement.  We compare
