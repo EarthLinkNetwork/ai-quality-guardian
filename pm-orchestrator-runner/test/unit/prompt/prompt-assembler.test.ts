@@ -542,8 +542,8 @@ describe('PromptAssembler (spec/17_PROMPT_TEMPLATE.md)', () => {
       assert.ok(DEFAULT_MANDATORY_RULES.length > 0);
     });
 
-    it('should include all 5 mandatory rules in DEFAULT_MANDATORY_RULES', () => {
-      // Per spec/17 L69-95: 5 mandatory rules
+    it('should include all 6 mandatory rules in DEFAULT_MANDATORY_RULES', () => {
+      // Per spec/17 L69-95: 6 mandatory rules
       assert.ok(DEFAULT_MANDATORY_RULES.includes('省略禁止'),
         'Should include rule 1: No Omission');
       assert.ok(DEFAULT_MANDATORY_RULES.includes('不完全禁止'),
@@ -554,6 +554,8 @@ describe('PromptAssembler (spec/17_PROMPT_TEMPLATE.md)', () => {
         'Should include rule 4: No Early Termination');
       assert.ok(DEFAULT_MANDATORY_RULES.includes('Fail-Closed'),
         'Should include rule 5: Fail-Closed');
+      assert.ok(DEFAULT_MANDATORY_RULES.includes('言語の一致'),
+        'Should include rule 6: Language Match');
     });
 
     it('should always inject mandatory rules into global prelude', () => {

@@ -47,7 +47,12 @@ export const DEFAULT_MANDATORY_RULES = `## 絶対厳守ルール（Mandatory Rul
 5. **Fail-Closed 原則**
    - 不明な場合は安全側に倒す
    - 推測で進めない
-   - 確認が必要な場合は明示する`;
+   - 確認が必要な場合は明示する
+
+6. **言語の一致（Language Match）**
+   - ユーザーの入力言語と同じ言語で回答すること
+   - 日本語で入力された場合は日本語で回答する
+   - 英語で入力された場合は英語で回答する`;
 
 /**
  * Modification Prompt Template

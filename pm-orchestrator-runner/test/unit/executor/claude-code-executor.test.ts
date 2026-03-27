@@ -358,7 +358,7 @@ exit 0
     });
 
     it('should timeout and fail-closed on long-running tasks', async function() {
-      this.timeout(10000);  // 10 seconds for timeout test
+      this.timeout(30000);  // 30 seconds: checkAuthStatus() has 15s internal timeout + execution
       const shortTimeoutExecutor = new ClaudeCodeExecutor({
         projectPath: tempDir,
         timeout: 100,  // Very short timeout

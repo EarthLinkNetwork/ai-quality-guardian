@@ -142,6 +142,24 @@ npm run lint         # Lint
 npm run gate:all     # 全 gate チェック
 ```
 
+### コミット検証手順
+
+コミット後、push 前に以下の手順でコミット状態と品質を確認する。
+
+```bash
+# 1. コミットが完了していることを確認
+git log --oneline -1          # 最新コミットのハッシュとメッセージ
+git status                    # staged/unstaged の残りがないこと
+
+# 2. テスト実行（push 前の必須チェック）
+npm test                      # 全テスト実行
+npm run typecheck             # 型チェック
+npm run lint                  # Lint チェック
+
+# 3. push は明示的な指示があるまで行わない
+# git push は別途確認後に実行する
+```
+
 ## Requirements
 
 - Node.js >= 18.0.0
