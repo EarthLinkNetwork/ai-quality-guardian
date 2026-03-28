@@ -317,7 +317,8 @@ export class FileQueueStore implements IQueueStore {
     prompt: string,
     taskId?: string,
     taskType?: TaskTypeValue,
-    projectPath?: string
+    projectPath?: string,
+    parentTaskId?: string
   ): Promise<QueueItem> {
     const now = new Date().toISOString();
     const item: QueueItem = {
@@ -331,6 +332,7 @@ export class FileQueueStore implements IQueueStore {
       updated_at: now,
       task_type: taskType,
       ...(projectPath ? { project_path: projectPath } : {}),
+      ...(parentTaskId ? { parent_task_id: parentTaskId } : {}),
     };
 
     this.tasks.set(this.getTaskKey(item.task_id), item);

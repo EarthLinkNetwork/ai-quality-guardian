@@ -52,6 +52,7 @@ import { ensureDistFresh, checkPublicFilesCopied } from '../utils/dist-freshness
 import { runSelftest, SELFTEST_CASES, runSelftestWithAIJudge } from '../selftest/selftest-runner';
 import { hasUnansweredQuestions, extractQuestionSummary, detectQuestionsWithLlm, tryAutoAnswerQuestion, generateMetaPrompt, evaluateOutputQuality } from '../utils/question-detector';
 import { estimateTaskSize } from '../utils/task-size-estimator';
+import { analyzeTaskForChunking } from '../task-chunking';
 import {
   runPreflightChecks,
   enforcePreflightCheck,
@@ -538,7 +539,7 @@ function truncateForLog(input: string | undefined, maxLen: number): string {
  *
  * Per user insight: "LLM Layer should answer clarification questions"
  */
-function createTaskExecutor(projectPath: string): TaskExecutor {
+function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskExecutor {
   return async (item: QueueItem): Promise<{ status: 'COMPLETE' | 'ERROR'; errorMessage?: string; output?: string }> => {
     console.log(`[Runner] Executing task: ${item.task_id}`);
     console.log(`[Runner] Prompt: ${item.prompt.substring(0, 100)}${item.prompt.length > 100 ? '...' : ''}`);
@@ -653,6 +654,41 @@ function createTaskExecutor(projectPath: string): TaskExecutor {
       'system',
       `[llm] prompt->claude_code len=${enrichedPrompt.length} history=${item.conversation_history?.length ?? 0} cwd=${effectiveWorkingDir} metaPrompt=${metaPromptUsed} preview="${promptPreview}"`
     );
+
+      // ── Task Decomposition Check ──
+      // Only for initial execution (not re-runs after reply) and not for subtasks
+      if (!item.conversation_history?.length && !item.parent_task_id) {
+        try {
+          const analysis = analyzeTaskForChunking(enrichedPrompt);
+          if (analysis.is_decomposable && analysis.suggested_subtasks && analysis.suggested_subtasks.length >= 2) {
+            console.log(`[Runner] Task ${item.task_id} decomposed into ${analysis.suggested_subtasks.length} subtasks`);
+            stateStream.emit(item.task_id, 'system', `[decomposition] Splitting into ${analysis.suggested_subtasks.length} subtasks`);
+
+            // Enqueue each subtask in the same task_group_id
+            const subtaskIds: string[] = [];
+            for (let i = 0; i < analysis.suggested_subtasks.length; i++) {
+              const subtask = analysis.suggested_subtasks[i];
+              const subtaskPrompt = `[Subtask ${i + 1}/${analysis.suggested_subtasks.length} of parent task ${item.task_id}]\n\n${subtask.prompt}`;
+              const subtaskId = `${item.task_id}-sub-${i + 1}`;
+              await queueStore.enqueue(
+                item.session_id,
+                item.task_group_id,
+                subtaskPrompt,
+                subtaskId,
+                item.task_type,
+                item.project_path,
+                item.task_id,
+              );
+              subtaskIds.push(subtaskId);
+            }
+
+            const summary = `Task decomposed into ${subtaskIds.length} subtasks:\n${subtaskIds.map((id, i) => `  ${i + 1}. ${id}: ${analysis.suggested_subtasks![i].prompt.substring(0, 100)}`).join('\n')}`;
+            return { status: 'COMPLETE' as const, output: summary };
+          }
+        } catch (decompErr) {
+          console.warn('[Runner] Task decomposition check failed, proceeding with single execution:', decompErr);
+        }
+      }
 
     try {
       // Check for test executor mode (for E2E testing of INCOMPLETE handling)
@@ -1365,7 +1401,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   }
 
   // Create TaskExecutor and QueuePoller
-  const taskExecutor = createTaskExecutor(projectPath);
+  const taskExecutor = createTaskExecutor(projectPath, queueStore);
   const poller = new QueuePoller(queueStore, taskExecutor, {
     pollIntervalMs: 1000,
     recoverOnStartup: true,
@@ -1950,7 +1986,7 @@ async function startAgentOnly(agentArgs: AgentArguments): Promise<void> {
   }
 
   // Create TaskExecutor and QueuePoller
-  const taskExecutor = createTaskExecutor(projectPath);
+  const taskExecutor = createTaskExecutor(projectPath, queueStore);
   const outputStream = getExecutorOutputStream();
   const detachPersistence = attachQueueProgressPersistence(queueStore, outputStream);
 

@@ -9,8 +9,27 @@ Claude Code を制御・実行する CLI + Web UI ツールで、タスク管理
 ```bash
 cd pm-orchestrator-runner
 npm run build
-node dist/cli/index.js web --port 3456
+node dist/cli/index.js web --port 5678 --dynamodb --api-key <YOUR_API_KEY>
 ```
+
+### AWS Configuration
+
+- AWS Profile: **`berry`** (hardcoded in `src/config/aws-config.ts`)
+- AWS Account: `076056289841` (cdkAdmin)
+- Region: `us-east-1`
+- DynamoDB Tables: `pm-runner-queue`, `pm-runner-api-keys`, `pm-runner-runners`
+
+AWS CLI で確認する場合は必ず `--profile berry` を指定すること:
+```bash
+AWS_PROFILE=berry aws dynamodb list-tables --region us-east-1
+```
+
+### Build & Restart の動作
+
+Web UI から Build & Restart を実行すると:
+1. 新しいプロセスが `detached: true` でバックグラウンドに spawn される
+2. 元のプロセスは `process.exit(0)` で終了する
+3. ターミナルを閉じても新プロセスには影響しない
 
 ## Legacy (archived)
 

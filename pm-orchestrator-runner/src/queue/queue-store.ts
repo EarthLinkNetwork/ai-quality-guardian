@@ -178,6 +178,8 @@ export interface QueueItem {
   command_preview?: string;
   /** Project working directory (absolute path). When set, executor uses this as cwd instead of runner's own directory. */
   project_path?: string;
+  /** Parent task ID when this is a subtask created by task decomposition */
+  parent_task_id?: string;
 }
 
 /**
@@ -295,7 +297,7 @@ export interface IQueueStore {
   runnersTableExists(): Promise<boolean>;
   ensureTable(): Promise<void>;
   deleteTable(): Promise<void>;
-  enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string, taskType?: TaskTypeValue, projectPath?: string): Promise<QueueItem>;
+  enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string, taskType?: TaskTypeValue, projectPath?: string, parentTaskId?: string): Promise<QueueItem>;
   getItem(taskId: string, targetNamespace?: string): Promise<QueueItem | null>;
   claim(): Promise<ClaimResult>;
   updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string, output?: string): Promise<void>;
@@ -570,7 +572,8 @@ export class QueueStore implements IQueueStore {
     prompt: string,
     taskId?: string,
     taskType?: TaskTypeValue,
-    projectPath?: string
+    projectPath?: string,
+    parentTaskId?: string
   ): Promise<QueueItem> {
     const now = new Date().toISOString();
     const item: QueueItem = {
@@ -584,6 +587,7 @@ export class QueueStore implements IQueueStore {
       updated_at: now,
       task_type: taskType,
       ...(projectPath ? { project_path: projectPath } : {}),
+      ...(parentTaskId ? { parent_task_id: parentTaskId } : {}),
     };
 
     await this.docClient.send(
