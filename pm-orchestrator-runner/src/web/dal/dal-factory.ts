@@ -13,7 +13,7 @@
 import type { IDataAccessLayer } from "./dal-interface";
 import { NoDynamoDALWithConversations } from "./no-dynamo";
 import { DynamoDAL } from "./dynamo-dal";
-import { initDocClient } from "./client";
+import { initDocClient, resetDocClient } from "./client";
 
 export interface DALConfig {
   /** Whether to use DynamoDB for supported operations */
@@ -83,4 +83,5 @@ export function isDALInitialized(): boolean {
  */
 export function resetDAL(): void {
   globalDAL = null;
+  resetDocClient();
 }

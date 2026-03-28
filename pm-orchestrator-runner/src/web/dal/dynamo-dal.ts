@@ -39,6 +39,22 @@ import * as projectIndexDAL from "./project-index-dal";
  * All other operations delegate to the file-based NoDynamo implementation
  * until they are migrated to DynamoDB.
  */
+/** Transient DynamoDB errors that should allow retry on next call */
+const TRANSIENT_ERRORS = new Set([
+  "TimeoutError",
+  "NetworkingError",
+  "ThrottlingException",
+  "ProvisionedThroughputExceededException",
+  "RequestLimitExceeded",
+  "InternalServerError",
+  "ServiceUnavailable",
+]);
+
+function isTransientError(err: unknown): boolean {
+  const name = (err as { name?: string })?.name;
+  return name != null && TRANSIENT_ERRORS.has(name);
+}
+
 export class DynamoDAL implements IDataAccessLayer {
   private readonly fallback: NoDynamoDALWithConversations;
   private readonly orgId: string;
@@ -51,16 +67,17 @@ export class DynamoDAL implements IDataAccessLayer {
   }
 
   /**
-   * Ensure DynamoDB table exists, create if needed, migrate local data
+   * Ensure DynamoDB table exists, create if needed, migrate local data.
+   * On transient failures, the check is retried on next call.
    */
   private async ensureTable(): Promise<boolean> {
     if (this.tableEnsured) return this.dynamoAvailable;
-    this.tableEnsured = true;
 
     try {
       // Test if table exists by doing a small query
       await projectIndexDAL.listProjectIndexes(this.orgId, { limit: 1 });
       this.dynamoAvailable = true;
+      this.tableEnsured = true;
 
       // Migrate local data to DynamoDB if DynamoDB is empty
       await this.migrateLocalData();
@@ -72,16 +89,24 @@ export class DynamoDAL implements IDataAccessLayer {
         try {
           await this.createTable();
           this.dynamoAvailable = true;
+          this.tableEnsured = true;
           await this.migrateLocalData();
           return true;
-        } catch {
-          console.warn("[DynamoDAL] Failed to create table, falling back to local files");
+        } catch (createErr) {
+          console.warn("[DynamoDAL] Failed to create table, falling back to local files:", (createErr as Error).message);
           this.dynamoAvailable = false;
+          this.tableEnsured = true; // Permanent failure
           return false;
         }
       }
+      if (isTransientError(err)) {
+        // Don't set tableEnsured — retry on next call
+        console.warn("[DynamoDAL] Transient DynamoDB error, will retry:", (err as Error).message);
+        return false;
+      }
       console.warn("[DynamoDAL] DynamoDB unavailable, falling back to local files:", (err as Error).message);
       this.dynamoAvailable = false;
+      this.tableEnsured = true; // Permanent failure
       return false;
     }
   }
@@ -90,12 +115,8 @@ export class DynamoDAL implements IDataAccessLayer {
    * Create the DynamoDB project-indexes table
    */
   private async createTable(): Promise<void> {
-    const { CreateTableCommand } = await import("@aws-sdk/client-dynamodb");
-    const { getDocClient, TABLES } = await import("./client");
-    const client = (getDocClient() as any).__client || getDocClient();
-
-    // Need the raw DynamoDB client for CreateTable
-    const { DynamoDBClient } = await import("@aws-sdk/client-dynamodb");
+    const { CreateTableCommand, DescribeTableCommand, DynamoDBClient } = await import("@aws-sdk/client-dynamodb");
+    const { TABLES } = await import("./client");
     const { getAwsCredentials, getAwsRegion } = await import("../../config/aws-config");
     const rawClient = new DynamoDBClient({
       region: getAwsRegion(),
@@ -128,16 +149,16 @@ export class DynamoDAL implements IDataAccessLayer {
     console.log("[DynamoDAL] Table pm-project-indexes created");
 
     // Wait for table to be active
-    const { DescribeTableCommand } = await import("@aws-sdk/client-dynamodb");
     for (let i = 0; i < 30; i++) {
       const desc = await rawClient.send(new DescribeTableCommand({ TableName: TABLES.PROJECT_INDEXES }));
       if (desc.Table?.TableStatus === "ACTIVE") break;
       await new Promise(r => setTimeout(r, 1000));
     }
+    rawClient.destroy();
   }
 
   /**
-   * Migrate local file-based projects to DynamoDB
+   * Migrate local file-based projects to DynamoDB, preserving all metadata fields
    */
   private async migrateLocalData(): Promise<void> {
     try {
@@ -150,7 +171,7 @@ export class DynamoDAL implements IDataAccessLayer {
       console.log(`[DynamoDAL] Migrating ${localResult.items.length} projects from local files to DynamoDB...`);
       for (const project of localResult.items) {
         try {
-          await projectIndexDAL.createProjectIndex({
+          const created = await projectIndexDAL.createProjectIndex({
             orgId: project.orgId || this.orgId,
             projectPath: project.projectPath,
             alias: project.alias,
@@ -158,65 +179,96 @@ export class DynamoDAL implements IDataAccessLayer {
             notes: project.notes,
             tags: project.tags,
           });
-        } catch {
-          // Ignore duplicates
+          // Preserve additional metadata fields not covered by createProjectIndex
+          const metadataUpdates: Partial<Record<string, unknown>> = {};
+          const src = project as unknown as Record<string, unknown>;
+          const extraFields = [
+            "favorite", "archived", "projectStatus", "bootstrapPrompt",
+            "projectType", "inputTemplateId", "outputTemplateId",
+            "aiModel", "aiProvider",
+          ];
+          for (const field of extraFields) {
+            if (src[field] != null) metadataUpdates[field] = src[field];
+          }
+          if (Object.keys(metadataUpdates).length > 0) {
+            await projectIndexDAL.updateProjectIndex(
+              this.orgId, created.projectId, metadataUpdates as UpdateProjectIndexInput,
+            );
+          }
+        } catch (err) {
+          console.warn(`[DynamoDAL] Failed to migrate project ${project.projectId}:`, (err as Error).message);
         }
       }
       console.log(`[DynamoDAL] Migration complete`);
-    } catch {
-      // Non-fatal: migration is best-effort
+    } catch (err) {
+      console.warn("[DynamoDAL] Migration failed (non-fatal):", (err as Error).message);
     }
   }
 
   // ==================== Project Index (DynamoDB with fallback) ====================
 
-  async createProjectIndex(input: CreateProjectIndexInput): Promise<ProjectIndex> {
+  private async dynamoProjectOp<T>(op: () => Promise<T>, fallbackOp: () => Promise<T>): Promise<T> {
     if (await this.ensureTable()) {
-      try { return await projectIndexDAL.createProjectIndex(input); } catch {}
+      try {
+        return await op();
+      } catch (err) {
+        if (isTransientError(err)) {
+          console.warn("[DynamoDAL] Transient error in project operation, falling back:", (err as Error).message);
+        } else {
+          console.error("[DynamoDAL] DynamoDB project operation failed:", (err as Error).message);
+        }
+      }
     }
-    return this.fallback.createProjectIndex(input);
+    return fallbackOp();
+  }
+
+  async createProjectIndex(input: CreateProjectIndexInput): Promise<ProjectIndex> {
+    return this.dynamoProjectOp(
+      () => projectIndexDAL.createProjectIndex(input),
+      () => this.fallback.createProjectIndex(input),
+    );
   }
 
   async getProjectIndex(projectId: string): Promise<ProjectIndex | null> {
-    if (await this.ensureTable()) {
-      try { return await projectIndexDAL.getProjectIndex(this.orgId, projectId); } catch {}
-    }
-    return this.fallback.getProjectIndex(projectId);
+    return this.dynamoProjectOp(
+      () => projectIndexDAL.getProjectIndex(this.orgId, projectId),
+      () => this.fallback.getProjectIndex(projectId),
+    );
   }
 
   async getProjectIndexByPath(projectPath: string): Promise<ProjectIndex | null> {
-    if (await this.ensureTable()) {
-      try { return await projectIndexDAL.getProjectIndexByPath(this.orgId, projectPath); } catch {}
-    }
-    return this.fallback.getProjectIndexByPath(projectPath);
+    return this.dynamoProjectOp(
+      () => projectIndexDAL.getProjectIndexByPath(this.orgId, projectPath),
+      () => this.fallback.getProjectIndexByPath(projectPath),
+    );
   }
 
   async listProjectIndexes(options?: ListProjectIndexOptions): Promise<PaginatedResult<ProjectIndex>> {
-    if (await this.ensureTable()) {
-      try { return await projectIndexDAL.listProjectIndexes(this.orgId, options); } catch {}
-    }
-    return this.fallback.listProjectIndexes(options);
+    return this.dynamoProjectOp(
+      () => projectIndexDAL.listProjectIndexes(this.orgId, options),
+      () => this.fallback.listProjectIndexes(options),
+    );
   }
 
   async updateProjectIndex(projectId: string, updates: UpdateProjectIndexInput): Promise<ProjectIndex | null> {
-    if (await this.ensureTable()) {
-      try { return await projectIndexDAL.updateProjectIndex(this.orgId, projectId, updates); } catch {}
-    }
-    return this.fallback.updateProjectIndex(projectId, updates);
+    return this.dynamoProjectOp(
+      () => projectIndexDAL.updateProjectIndex(this.orgId, projectId, updates),
+      () => this.fallback.updateProjectIndex(projectId, updates),
+    );
   }
 
   async archiveProject(projectId: string): Promise<ProjectIndex | null> {
-    if (await this.ensureTable()) {
-      try { return await projectIndexDAL.archiveProject(this.orgId, projectId); } catch {}
-    }
-    return this.fallback.archiveProject(projectId);
+    return this.dynamoProjectOp(
+      () => projectIndexDAL.archiveProject(this.orgId, projectId),
+      () => this.fallback.archiveProject(projectId),
+    );
   }
 
   async unarchiveProject(projectId: string): Promise<ProjectIndex | null> {
-    if (await this.ensureTable()) {
-      try { return await projectIndexDAL.unarchiveProject(this.orgId, projectId); } catch {}
-    }
-    return this.fallback.unarchiveProject(projectId);
+    return this.dynamoProjectOp(
+      () => projectIndexDAL.unarchiveProject(this.orgId, projectId),
+      () => this.fallback.unarchiveProject(projectId),
+    );
   }
 
   async getOrCreateProjectIndex(input: CreateProjectIndexInput): Promise<ProjectIndex> {
