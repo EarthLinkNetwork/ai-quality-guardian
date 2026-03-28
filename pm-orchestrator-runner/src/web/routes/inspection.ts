@@ -6,10 +6,8 @@
 import { Router, Request, Response } from 'express';
 import {
   InspectionPacket,
-  getNoDynamo,
-  initNoDynamo,
-  isNoDynamoInitialized,
 } from '../dal/no-dynamo';
+import { initDAL, getDAL, isDALInitialized } from '../dal/dal-factory';
 
 /**
  * Error response format
@@ -25,9 +23,9 @@ interface ErrorResponse {
 export function createInspectionRoutes(stateDir: string): Router {
   const router = Router();
 
-  // Ensure NoDynamo is initialized
-  if (!isNoDynamoInitialized()) {
-    initNoDynamo(stateDir);
+  // Ensure DAL is initialized
+  if (!isDALInitialized()) {
+    initDAL({ useDynamoDB: false, stateDir });
   }
 
   /**
@@ -36,7 +34,7 @@ export function createInspectionRoutes(stateDir: string): Router {
    */
   router.post('/run/:runId', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const runId = req.params.runId as string;
       const { generatedBy, includeAllLogs } = req.body;
 
@@ -66,7 +64,7 @@ export function createInspectionRoutes(stateDir: string): Router {
    */
   router.get('/:packetId', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const packet = await dal.getInspectionPacket(req.params.packetId as string);
 
       if (!packet) {
@@ -90,7 +88,7 @@ export function createInspectionRoutes(stateDir: string): Router {
    */
   router.get('/:packetId/markdown', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const packet = await dal.getInspectionPacket(req.params.packetId as string);
 
       if (!packet) {
@@ -116,7 +114,7 @@ export function createInspectionRoutes(stateDir: string): Router {
    */
   router.get('/:packetId/clipboard', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const packet = await dal.getInspectionPacket(req.params.packetId as string);
 
       if (!packet) {
@@ -142,7 +140,7 @@ export function createInspectionRoutes(stateDir: string): Router {
    */
   router.get('/', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const runId = req.query.runId as string | undefined;
       const packets = await dal.listInspectionPackets(runId);
 

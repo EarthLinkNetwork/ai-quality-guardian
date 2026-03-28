@@ -50,6 +50,7 @@ import {
   UpdatePlanInput,
   PluginDefinition,
 } from "./types";
+import type { IDataAccessLayer } from "./dal-interface";
 
 /**
  * Run entity for NoDynamo storage
@@ -1256,7 +1257,7 @@ export function resetNoDynamo(): void {
 /**
  * Extended NoDynamo DAL with conversation support
  */
-export class NoDynamoDALWithConversations extends NoDynamoDAL {
+export class NoDynamoDALWithConversations extends NoDynamoDAL implements IDataAccessLayer {
   private readonly conversationsDir: string;
   private readonly extStateDir: string;
 

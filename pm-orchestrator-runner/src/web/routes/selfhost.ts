@@ -11,11 +11,7 @@ import { Router, Request, Response } from "express";
 import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
-import {
-  getNoDynamoExtended,
-  initNoDynamoExtended,
-  isNoDynamoExtendedInitialized,
-} from "../dal/no-dynamo";
+import { initDAL, getDAL, isDALInitialized } from '../dal/dal-factory';
 
 /**
  * Selfhost status response
@@ -171,9 +167,9 @@ function checkEvidencePresent(devDir: string): { present: boolean; path: string 
 export function createSelfhostRoutes(stateDir: string): Router {
   const router = Router();
 
-  // Ensure NoDynamoExtended is initialized
-  if (!isNoDynamoExtendedInitialized()) {
-    initNoDynamoExtended(stateDir);
+  // Ensure DAL is initialized
+  if (!isDALInitialized()) {
+    initDAL({ useDynamoDB: false, stateDir });
   }
 
   /**
@@ -184,7 +180,7 @@ export function createSelfhostRoutes(stateDir: string): Router {
     "/projects/:projectId/selfhost/status",
     async (req: Request, res: Response) => {
       try {
-        const dal = getNoDynamoExtended();
+        const dal = getDAL();
         const projectId = req.params.projectId as string;
 
         // Get project
@@ -296,7 +292,7 @@ export function createSelfhostRoutes(stateDir: string): Router {
     "/projects/:projectId/selfhost/apply",
     async (req: Request, res: Response) => {
       try {
-        const dal = getNoDynamoExtended();
+        const dal = getDAL();
         const projectId = req.params.projectId as string;
 
         // Get project
@@ -486,7 +482,7 @@ export function createSelfhostRoutes(stateDir: string): Router {
     "/projects/:projectId/selfhost/resume/:applyId",
     async (req: Request, res: Response) => {
       try {
-        const dal = getNoDynamoExtended();
+        const dal = getDAL();
         const projectId = req.params.projectId as string;
         const applyId = req.params.applyId as string;
 

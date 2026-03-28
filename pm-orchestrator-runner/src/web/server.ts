@@ -43,7 +43,7 @@ import { createRepoProfileRoutes } from './routes/repo-profile';
 import { createTemplateRoutes } from './routes/templates';
 import { detectTaskType } from '../utils/task-type-detector';
 import { detectQuestionsWithLlm } from '../utils/question-detector';
-import { isNoDynamoInitialized, getNoDynamo } from './dal/no-dynamo';
+import { initDAL, isDALInitialized, getDAL } from './dal/dal-factory';
 
 /**
  * Derive namespace from folder path (same logic as CLI)
@@ -144,6 +144,14 @@ export function createApp(config: WebServerConfig): Express {
   // Settings Routes (API Key persistence)
   // ===================
   if (stateDir) {
+    // Initialize DAL factory (unified data access layer)
+    if (!isDALInitialized()) {
+      initDAL({
+        useDynamoDB: queueStoreType === 'dynamodb',
+        stateDir,
+      });
+    }
+
     app.use('/api/settings', createSettingsRoutes(stateDir));
     // Dashboard routes (projects, activity, runs)
     app.use("/api/dashboard", createDashboardRoutes({ stateDir, queueStore }));
@@ -269,11 +277,11 @@ export function createApp(config: WebServerConfig): Express {
         queueStore.getByStatus('ERROR'),
       ]);
 
-      // Build project lookup from activity events if NoDynamo is available
+      // Build project lookup from activity events if DAL is available
       let projectLookup: Map<string, { projectId: string; projectAlias?: string; projectPath?: string }> = new Map();
-      if (isNoDynamoInitialized()) {
+      if (isDALInitialized()) {
         try {
-          const dal = getNoDynamo();
+          const dal = getDAL();
           const activityResult = await dal.listActivityEvents({ limit: 200 });
           for (const evt of activityResult.items) {
             if (evt.taskGroupId && evt.projectId) {
@@ -363,9 +371,9 @@ export function createApp(config: WebServerConfig): Express {
 
       // Enrich with project info from activity events
       let projectLookup: Map<string, { projectId: string; projectAlias?: string; projectPath?: string }> = new Map();
-      if (isNoDynamoInitialized()) {
+      if (isDALInitialized()) {
         try {
-          const dal = getNoDynamo();
+          const dal = getDAL();
           const activityResult = await dal.listActivityEvents({ limit: 200 });
           for (const evt of activityResult.items) {
             if (evt.taskGroupId && evt.projectId) {
@@ -903,9 +911,9 @@ export function createApp(config: WebServerConfig): Express {
 
       // Emit task_updated activity event on meaningful state transitions
       const meaningfulStatuses: QueueItemStatus[] = ['COMPLETE', 'ERROR', 'AWAITING_RESPONSE', 'CANCELLED'];
-      if (meaningfulStatuses.includes(status as QueueItemStatus) && isNoDynamoInitialized()) {
+      if (meaningfulStatuses.includes(status as QueueItemStatus) && isDALInitialized()) {
         try {
-          const dal = getNoDynamo();
+          const dal = getDAL();
           // Determine activity event type based on new status
           const activityType = status === 'COMPLETE' ? 'task_completed' as const
             : status === 'ERROR' ? 'task_failed' as const
@@ -1098,9 +1106,9 @@ export function createApp(config: WebServerConfig): Express {
       }
 
       // Emit task_updated activity event for reply (AWAITING_RESPONSE -> QUEUED)
-      if (isNoDynamoInitialized()) {
+      if (isDALInitialized()) {
         try {
-          const dal = getNoDynamo();
+          const dal = getDAL();
           let projectId: string | undefined;
           let projectPath: string | undefined;
           let projectAlias: string | undefined;

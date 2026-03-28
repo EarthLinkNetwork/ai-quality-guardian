@@ -30,6 +30,7 @@ import {
 } from '../config/namespace';
 import { getApiKey } from '../config/global-config';
 import { getAwsProfile } from '../config/aws-config';
+import { initDAL } from '../web/dal/dal-factory';
 import { ApiKeyManager, initApiKeyManager } from '../auth/api-key-manager';
 import type { AuthConfig } from '../web/middleware/auth';
 import {
@@ -61,11 +62,7 @@ import {
 } from '../diagnostics/executor-preflight';
 import { getExecutorOutputStream } from '../executor/executor-output-stream';
 import type { ExecutorOutputStream, ExecutorOutputChunk } from '../executor/executor-output-stream';
-import {
-  getNoDynamoExtended,
-  initNoDynamoExtended,
-  isNoDynamoExtendedInitialized,
-} from '../web/dal/no-dynamo';
+import { getDAL } from '../web/dal/dal-factory';
 
 /**
  * Help text
@@ -1297,6 +1294,16 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   }
 
   // =========================================================================
+  // Initialize DAL (Data Access Layer) - unified abstraction over NoDynamo/DynamoDB
+  // =========================================================================
+  const useLocalDynamodbForDAL = webArgs.localDynamodb || process.env.PM_LOCAL_DYNAMODB === '1';
+  initDAL({
+    useDynamoDB: queueStoreType === 'dynamodb',
+    stateDir: effectiveStateDir,
+    localDynamodb: useLocalDynamodbForDAL,
+  });
+
+  // =========================================================================
   // PREFLIGHT CHECK: Fail-fast executor configuration validation
   // Per spec: All auth/config issues must fail fast, not timeout
   // =========================================================================
@@ -1498,10 +1505,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     }
   };
 
-  // Ensure NoDynamo DAL is initialized for conversation updates
-  if (!isNoDynamoExtendedInitialized()) {
-    initNoDynamoExtended(effectiveStateDir);
-  }
+  // DAL is already initialized above via initDAL()
 
   /**
    * Update conversation message after task completion/error.
@@ -1509,7 +1513,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
    */
   const updateConversationFromTask = async (item: QueueItem, status: 'complete' | 'error', errorMessage?: string) => {
     try {
-      const dal = getNoDynamoExtended();
+      const dal = getDAL();
       // Extract raw taskRunId from namespaced task_id (e.g. "ns:task_abc" → "task_abc")
       const rawTaskRunId = item.task_id.includes(':')
         ? item.task_id.split(':').slice(1).join(':')
