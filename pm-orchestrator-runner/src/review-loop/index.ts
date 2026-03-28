@@ -5,7 +5,7 @@
  *
  * Exports:
  * - ReviewLoopExecutorWrapper: Main class for wrapping IExecutor
- * - Quality criteria checkers (Q1-Q6)
+ * - Quality criteria checkers (Q1-Q6, Q10-Q12)
  * - Goal Drift Guard evaluator (GD1-GD5)
  * - Goal Drift Guard integration with Review Loop
  * - Types and interfaces
@@ -23,6 +23,9 @@ export {
   checkQ4NoIncompleteSyntax,
   checkQ5EvidencePresent,
   checkQ6NoEarlyTermination,
+  checkQ10TautologicalTest,
+  checkQ11SpecTraceability,
+  checkQ12ImplementationIsolation,
 
   // Core functions
   performQualityJudgment,

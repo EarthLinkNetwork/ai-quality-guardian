@@ -27,7 +27,7 @@ import { ConversationTracer, CriteriaResult as TraceCriteriaResult } from '../tr
 /**
  * Quality Criteria IDs (per spec 25_REVIEW_LOOP.md Section 3)
  */
-export type QualityCriteriaId = 'Q1' | 'Q2' | 'Q3' | 'Q4' | 'Q5' | 'Q6' | 'Q7' | 'Q8' | 'Q9';
+export type QualityCriteriaId = 'Q1' | 'Q2' | 'Q3' | 'Q4' | 'Q5' | 'Q6' | 'Q7' | 'Q8' | 'Q9' | 'Q10' | 'Q11' | 'Q12';
 
 /**
  * Review Loop configuration
@@ -69,7 +69,7 @@ export interface CriteriaResult {
  * Issue detected during quality check
  */
 export interface IssueDetail {
-  type: 'omission' | 'incomplete' | 'missing_file' | 'early_termination' | 'syntax_error' | 'todo_left';
+  type: 'omission' | 'incomplete' | 'missing_file' | 'early_termination' | 'syntax_error' | 'todo_left' | 'tautological_test' | 'missing_spec_traceability' | 'isolation_violation';
   location?: string;
   description: string;
   suggestion?: string;
@@ -193,6 +193,9 @@ function getCriteriaName(criteriaId: QualityCriteriaId): string {
     case 'Q7': return 'Lint Pass';
     case 'Q8': return 'Test Pass';
     case 'Q9': return 'Build Pass';
+    case 'Q10': return 'No Tautological Tests';
+    case 'Q11': return 'Spec Traceability';
+    case 'Q12': return 'Implementation Isolation Compliance';
     default: return `Criteria ${criteriaId}`;
   }
 }
@@ -465,6 +468,207 @@ export function checkQ6NoEarlyTermination(
 }
 
 // ============================================================================
+// Q10-Q12: Tautological Test Detection Patterns
+// ============================================================================
+
+/**
+ * Patterns indicating tautological tests (expect value mirrors implementation)
+ * Detects when test assertions simply recompute the same logic as the source.
+ */
+const TAUTOLOGICAL_TEST_PATTERNS: RegExp[] = [
+  // expect(fn(x)).toBe(fn(x)) or expect(fn(x)).toEqual(fn(x)) style
+  /expect\(\s*(\w+)\(([^)]*)\)\s*\)\s*\.(?:toBe|toEqual|toStrictEqual)\(\s*\1\(\2\)\s*\)/,
+  // Direct copy of implementation logic in assertions: result === somePrivateFunction(input)
+  /expect\(.*\)\.(?:toBe|toEqual)\(\s*(?:src|impl|internal|private)\w*\(/i,
+];
+
+/**
+ * Patterns indicating spec traceability in test descriptions
+ */
+const SPEC_REFERENCE_PATTERNS: RegExp[] = [
+  /(?:spec|req|AC|acceptance[- ]?criteria|requirement|user[- ]?story)[\s]*:/i,
+  /\b(?:given|when|then)\b/i,
+  /\bUS-\d+/i,
+  /\b(?:REQ|SPEC|AC)-?\d+/i,
+];
+
+/**
+ * Pattern to detect TEST ISOLATION MODE marker in task prompt
+ */
+const TEST_ISOLATION_MODE_PATTERN = /\[TEST ISOLATION MODE\]/;
+
+/**
+ * Patterns detecting src/ imports in test files
+ */
+const SRC_IMPORT_PATTERNS: RegExp[] = [
+  /import\s+.*from\s+['"](?:\.\.\/)*src\//,
+  /require\(\s*['"](?:\.\.\/)*src\//,
+  /import\(.*['"](?:\.\.\/)*src\//,
+];
+
+/**
+ * Q10: Tautological Test Detection
+ * Check if test assertions mirror implementation logic instead of verifying behavior.
+ *
+ * Detection: Checks verified file content previews and output for patterns where
+ * expect() values are computed using the same logic as the source.
+ */
+export function checkQ10TautologicalTest(result: ExecutorResult): CriteriaResult {
+  const sources: string[] = [];
+
+  // Collect test-like content from output
+  if (result.output) {
+    sources.push(result.output);
+  }
+
+  // Collect test-like content from verified files
+  for (const vf of result.verified_files) {
+    if (vf.content_preview && /\.test\.|\.spec\./i.test(vf.path)) {
+      sources.push(vf.content_preview);
+    }
+  }
+
+  const violations: string[] = [];
+
+  for (const source of sources) {
+    for (const pattern of TAUTOLOGICAL_TEST_PATTERNS) {
+      const match = source.match(pattern);
+      if (match) {
+        violations.push(match[0]);
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    return {
+      criteria_id: 'Q10',
+      passed: false,
+      details: `Tautological test detected: assertions mirror implementation logic. Found ${violations.length} violation(s): ${violations.slice(0, 3).join('; ')}${violations.length > 3 ? '...' : ''}`,
+    };
+  }
+
+  return {
+    criteria_id: 'Q10',
+    passed: true,
+    details: 'No tautological test patterns detected',
+  };
+}
+
+/**
+ * Q11: Spec Traceability
+ * Check if test descriptions reference specifications or requirements.
+ *
+ * Detection: Checks for spec references like "spec:", "req:", "AC:", or Given/When/Then format
+ * in test description strings within verified test files and output.
+ */
+export function checkQ11SpecTraceability(result: ExecutorResult): CriteriaResult {
+  const testSources: string[] = [];
+
+  // Collect test-like content from verified files
+  for (const vf of result.verified_files) {
+    if (vf.content_preview && /\.test\.|\.spec\./i.test(vf.path)) {
+      testSources.push(vf.content_preview);
+    }
+  }
+
+  // Also check output for test descriptions
+  if (result.output) {
+    // Look for describe/it/test blocks in the output
+    const testBlockPattern = /(?:describe|it|test)\s*\(\s*['"`]/g;
+    if (testBlockPattern.test(result.output)) {
+      testSources.push(result.output);
+    }
+  }
+
+  // If no test sources found, pass (not applicable)
+  if (testSources.length === 0) {
+    return {
+      criteria_id: 'Q11',
+      passed: true,
+      details: 'No test files detected - spec traceability check not applicable',
+    };
+  }
+
+  // Check if any test descriptions contain spec references
+  for (const source of testSources) {
+    for (const pattern of SPEC_REFERENCE_PATTERNS) {
+      if (pattern.test(source)) {
+        return {
+          criteria_id: 'Q11',
+          passed: true,
+          details: 'Test descriptions contain spec/requirement references',
+        };
+      }
+    }
+  }
+
+  return {
+    criteria_id: 'Q11',
+    passed: false,
+    details: 'Test descriptions lack spec references. Add "spec:", "req:", "AC:", or Given/When/Then format to trace tests back to requirements.',
+  };
+}
+
+/**
+ * Q12: Implementation Isolation Compliance
+ * When task prompt contains [TEST ISOLATION MODE], verify test files don't import from src/ paths.
+ *
+ * Detection: If [TEST ISOLATION MODE] is present in the task prompt, scan verified test files
+ * and output for import statements referencing src/ paths.
+ *
+ * @param result - Executor result to check
+ * @param taskPrompt - Original task prompt (checked for [TEST ISOLATION MODE] marker)
+ */
+export function checkQ12ImplementationIsolation(result: ExecutorResult, taskPrompt: string): CriteriaResult {
+  // Only enforce when TEST ISOLATION MODE is active
+  if (!TEST_ISOLATION_MODE_PATTERN.test(taskPrompt)) {
+    return {
+      criteria_id: 'Q12',
+      passed: true,
+      details: 'TEST ISOLATION MODE not active - implementation isolation check skipped',
+    };
+  }
+
+  const violations: string[] = [];
+
+  // Check output for src/ imports
+  if (result.output) {
+    for (const pattern of SRC_IMPORT_PATTERNS) {
+      const match = result.output.match(pattern);
+      if (match) {
+        violations.push(`Output: ${match[0]}`);
+      }
+    }
+  }
+
+  // Check verified test files for src/ imports
+  for (const vf of result.verified_files) {
+    if (vf.content_preview && /\.test\.|\.spec\./i.test(vf.path)) {
+      for (const pattern of SRC_IMPORT_PATTERNS) {
+        const match = vf.content_preview.match(pattern);
+        if (match) {
+          violations.push(`${vf.path}: ${match[0]}`);
+        }
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    return {
+      criteria_id: 'Q12',
+      passed: false,
+      details: `TEST ISOLATION MODE violation: test files import from src/ paths. Found ${violations.length} violation(s): ${violations.slice(0, 3).join('; ')}${violations.length > 3 ? '...' : ''}`,
+    };
+  }
+
+  return {
+    criteria_id: 'Q12',
+    passed: true,
+    details: 'TEST ISOLATION MODE: no src/ imports detected in test files',
+  };
+}
+
+// ============================================================================
 // Quality Judgment Engine
 // ============================================================================
 
@@ -478,7 +682,8 @@ export function checkQ6NoEarlyTermination(
  */
 export function performQualityJudgment(
   result: ExecutorResult,
-  config: ReviewLoopConfig
+  config: ReviewLoopConfig,
+  taskPrompt?: string
 ): {
   judgment: JudgmentResult;
   criteria_results: CriteriaResult[];
@@ -534,6 +739,15 @@ export function performQualityJudgment(
         break;
       case 'Q6':
         result_ = checkQ6NoEarlyTermination(result, config.early_termination_patterns);
+        break;
+      case 'Q10':
+        result_ = checkQ10TautologicalTest(result);
+        break;
+      case 'Q11':
+        result_ = checkQ11SpecTraceability(result);
+        break;
+      case 'Q12':
+        result_ = checkQ12ImplementationIsolation(result, taskPrompt || '');
         break;
       default:
         // Q7-Q9 are optional and need external validation
@@ -653,6 +867,15 @@ export function generateIssuesFromCriteria(
       case 'Q6':
         type = 'early_termination';
         break;
+      case 'Q10':
+        type = 'tautological_test';
+        break;
+      case 'Q11':
+        type = 'missing_spec_traceability';
+        break;
+      case 'Q12':
+        type = 'isolation_violation';
+        break;
       default:
         type = 'incomplete';
     }
@@ -751,7 +974,8 @@ export class ReviewLoopExecutorWrapper {
       // Perform quality judgment
       const { judgment, criteria_results, failed_criteria } = performQualityJudgment(
         lastResult,
-        this.config
+        this.config,
+        task.prompt
       );
 
       // Emit QUALITY_JUDGMENT event

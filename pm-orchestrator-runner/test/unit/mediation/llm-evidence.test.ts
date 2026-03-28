@@ -16,6 +16,7 @@ import * as os from 'os';
 import {
   LLMEvidenceManager,
   LLMEvidence,
+  TestQualityEvidence,
   hashRequest,
   hashResponse,
 } from '../../../src/mediation/llm-evidence-manager';
@@ -398,6 +399,105 @@ describe('Evidence No Raw Data (Property 24 - API keys NEVER in logs)', () => {
     // Verify integrity_hash is sha256 format (64 hex chars)
     assert.equal(fileContent.integrity_hash.length, 64, 'integrity_hash must be 64 hex chars');
     assert.ok(/^[a-f0-9]{64}$/.test(fileContent.integrity_hash), 'integrity_hash must be valid hex');
+  });
+});
+
+describe('LLMEvidenceManager - Test Quality Recording', () => {
+  let tempDir: string;
+  let evidenceManager: LLMEvidenceManager;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'llm-testquality-test-'));
+    evidenceManager = new LLMEvidenceManager(tempDir);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('should store test quality evidence on an existing evidence record', () => {
+    const evidence: LLMEvidence = {
+      call_id: 'tq-001',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      request_hash: 'sha256:abc123',
+      response_hash: 'sha256:def456',
+      timestamp: new Date().toISOString(),
+      duration_ms: 1234,
+      success: true,
+    };
+
+    evidenceManager.recordEvidence(evidence);
+
+    const testQuality: TestQualityEvidence = {
+      implementation_isolation: true,
+      spec_traceability: true,
+      tautological_detected: false,
+      mutation_score: 85,
+      test_count: 12,
+      spec_sources: ['docs/specs/feature-a.md', 'docs/specs/feature-b.md'],
+    };
+
+    evidenceManager.recordTestQuality('tq-001', testQuality);
+
+    // Verify in-memory
+    const retrieved = evidenceManager.getEvidence('tq-001');
+    assert.ok(retrieved !== null);
+    assert.deepEqual(retrieved!.test_quality, testQuality);
+
+    // Verify on disk
+    const filePath = path.join(evidenceManager.getEvidenceDir(), 'tq-001.json');
+    const fileContent = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    assert.deepEqual(fileContent.evidence.test_quality, testQuality);
+    // Verify integrity hash was recomputed
+    assert.ok(fileContent.integrity_hash);
+    assert.equal(fileContent.integrity_hash.length, 64);
+  });
+
+  it('should warn and do nothing when callId does not exist', () => {
+    const testQuality: TestQualityEvidence = {
+      implementation_isolation: true,
+      spec_traceability: false,
+      tautological_detected: false,
+      test_count: 5,
+      spec_sources: [],
+    };
+
+    // Should not throw
+    evidenceManager.recordTestQuality('non-existent-id', testQuality);
+
+    // Verify no file was created
+    const filePath = path.join(evidenceManager.getEvidenceDir(), 'non-existent-id.json');
+    assert.equal(fs.existsSync(filePath), false);
+  });
+
+  it('should maintain valid integrity hash after recording test quality', () => {
+    const evidence: LLMEvidence = {
+      call_id: 'tq-integrity',
+      provider: 'anthropic',
+      model: 'claude-3-haiku',
+      request_hash: 'sha256:xyz',
+      response_hash: 'sha256:uvw',
+      timestamp: new Date().toISOString(),
+      duration_ms: 200,
+      success: true,
+    };
+
+    evidenceManager.recordEvidence(evidence);
+
+    const testQuality: TestQualityEvidence = {
+      implementation_isolation: false,
+      spec_traceability: true,
+      tautological_detected: true,
+      mutation_score: 40,
+      test_count: 3,
+      spec_sources: ['docs/specs/api.md'],
+    };
+
+    evidenceManager.recordTestQuality('tq-integrity', testQuality);
+
+    // Integrity check should still pass
+    assert.ok(evidenceManager.verifyIntegrity('tq-integrity'));
   });
 });
 

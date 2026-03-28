@@ -5,6 +5,7 @@
  *
  * Tests cover:
  * - Q1-Q6 quality criteria checkers
+ * - Q10-Q12 tautological test detection criteria
  * - Quality judgment engine (performQualityJudgment)
  * - Modification prompt generation
  * - ReviewLoopExecutorWrapper PASS/REJECT/RETRY flows
@@ -22,6 +23,9 @@ import {
   checkQ4NoIncompleteSyntax,
   checkQ5EvidencePresent,
   checkQ6NoEarlyTermination,
+  checkQ10TautologicalTest,
+  checkQ11SpecTraceability,
+  checkQ12ImplementationIsolation,
   performQualityJudgment,
   generateModificationPrompt,
   generateIssuesFromCriteria,
@@ -469,6 +473,340 @@ describe('Review Loop - Q6: No Early Termination', () => {
     const criteria = checkQ6NoEarlyTermination(result, patterns);
 
     assert.strictEqual(criteria.passed, false);
+  });
+});
+
+// ============================================================================
+// Q10: Tautological Test Detection Tests
+// ============================================================================
+
+describe('Review Loop - Q10: Tautological Test Detection', () => {
+  it('should PASS when test assertions do not mirror implementation logic', () => {
+    const result = createTestResult({
+      output: 'expect(add(1, 2)).toBe(3)',
+      verified_files: [
+        {
+          path: '/tmp/test/math.test.ts',
+          exists: true,
+          size: 200,
+          content_preview: 'expect(add(1, 2)).toBe(3); // spec: simple addition',
+        },
+      ],
+    });
+
+    const criteria = checkQ10TautologicalTest(result);
+
+    assert.strictEqual(criteria.passed, true);
+    assert.strictEqual(criteria.criteria_id, 'Q10');
+    assert.ok(criteria.details?.includes('No tautological test patterns detected'));
+  });
+
+  it('should FAIL when expect value mirrors implementation: expect(fn(x)).toBe(fn(x))', () => {
+    const result = createTestResult({
+      output: '',
+      verified_files: [
+        {
+          path: '/tmp/test/calculator.test.ts',
+          exists: true,
+          size: 300,
+          content_preview: 'expect(calculate(input)).toBe(calculate(input))',
+        },
+      ],
+    });
+
+    const criteria = checkQ10TautologicalTest(result);
+
+    assert.strictEqual(criteria.passed, false);
+    assert.strictEqual(criteria.criteria_id, 'Q10');
+    assert.ok(criteria.details?.includes('Tautological test detected'));
+  });
+
+  it('should FAIL when expect calls private/internal implementation functions', () => {
+    const result = createTestResult({
+      output: 'expect(result).toBe(privateHelper(input))',
+      verified_files: [],
+    });
+
+    const criteria = checkQ10TautologicalTest(result);
+
+    assert.strictEqual(criteria.passed, false);
+    assert.ok(criteria.details?.includes('Tautological test detected'));
+  });
+
+  it('should PASS when no test files in verified files', () => {
+    const result = createTestResult({
+      output: 'Implementation complete.',
+      verified_files: [
+        {
+          path: '/tmp/test/utils.ts',
+          exists: true,
+          size: 100,
+          content_preview: 'export function add(a: number, b: number): number { return a + b; }',
+        },
+      ],
+    });
+
+    const criteria = checkQ10TautologicalTest(result);
+
+    assert.strictEqual(criteria.passed, true);
+  });
+
+  it('should detect tautological pattern with toEqual', () => {
+    const result = createTestResult({
+      output: '',
+      verified_files: [
+        {
+          path: '/tmp/test/transform.spec.ts',
+          exists: true,
+          size: 400,
+          content_preview: 'expect(transform(data)).toEqual(transform(data))',
+        },
+      ],
+    });
+
+    const criteria = checkQ10TautologicalTest(result);
+
+    assert.strictEqual(criteria.passed, false);
+    assert.ok(criteria.details?.includes('Tautological test detected'));
+  });
+});
+
+// ============================================================================
+// Q11: Spec Traceability Tests
+// ============================================================================
+
+describe('Review Loop - Q11: Spec Traceability', () => {
+  it('should PASS when test descriptions contain spec: references', () => {
+    const result = createTestResult({
+      output: '',
+      verified_files: [
+        {
+          path: '/tmp/test/auth.test.ts',
+          exists: true,
+          size: 500,
+          content_preview: 'describe("spec: user authentication", () => { it("spec: should validate JWT", () => {}) })',
+        },
+      ],
+    });
+
+    const criteria = checkQ11SpecTraceability(result);
+
+    assert.strictEqual(criteria.passed, true);
+    assert.strictEqual(criteria.criteria_id, 'Q11');
+    assert.ok(criteria.details?.includes('spec/requirement references'));
+  });
+
+  it('should PASS when test descriptions use Given/When/Then format', () => {
+    const result = createTestResult({
+      output: '',
+      verified_files: [
+        {
+          path: '/tmp/test/login.test.ts',
+          exists: true,
+          size: 400,
+          content_preview: 'it("given valid credentials, when login is called, then returns token", () => {})',
+        },
+      ],
+    });
+
+    const criteria = checkQ11SpecTraceability(result);
+
+    assert.strictEqual(criteria.passed, true);
+  });
+
+  it('should PASS when test descriptions contain AC: references', () => {
+    const result = createTestResult({
+      output: '',
+      verified_files: [
+        {
+          path: '/tmp/test/payment.test.ts',
+          exists: true,
+          size: 300,
+          content_preview: 'describe("AC: payment processing", () => {})',
+        },
+      ],
+    });
+
+    const criteria = checkQ11SpecTraceability(result);
+
+    assert.strictEqual(criteria.passed, true);
+  });
+
+  it('should FAIL when no spec references in test descriptions', () => {
+    const result = createTestResult({
+      output: '',
+      verified_files: [
+        {
+          path: '/tmp/test/utils.test.ts',
+          exists: true,
+          size: 200,
+          content_preview: 'describe("utility functions", () => { it("should add numbers", () => {}) })',
+        },
+      ],
+    });
+
+    const criteria = checkQ11SpecTraceability(result);
+
+    assert.strictEqual(criteria.passed, false);
+    assert.strictEqual(criteria.criteria_id, 'Q11');
+    assert.ok(criteria.details?.includes('lack spec references'));
+  });
+
+  it('should PASS when no test files detected (not applicable)', () => {
+    const result = createTestResult({
+      output: 'Implementation complete.',
+      verified_files: [
+        {
+          path: '/tmp/test/utils.ts',
+          exists: true,
+          size: 100,
+          content_preview: 'export function add(a: number, b: number): number { return a + b; }',
+        },
+      ],
+    });
+
+    const criteria = checkQ11SpecTraceability(result);
+
+    assert.strictEqual(criteria.passed, true);
+    assert.ok(criteria.details?.includes('not applicable'));
+  });
+
+  it('should PASS when output contains test descriptions with spec references', () => {
+    const result = createTestResult({
+      output: 'describe("req: API rate limiting", () => { it("req: should throttle after 100 requests", () => {}) })',
+      verified_files: [],
+    });
+
+    const criteria = checkQ11SpecTraceability(result);
+
+    assert.strictEqual(criteria.passed, true);
+  });
+
+  it('should PASS when test descriptions contain REQ-123 style references', () => {
+    const result = createTestResult({
+      output: '',
+      verified_files: [
+        {
+          path: '/tmp/test/feature.test.ts',
+          exists: true,
+          size: 300,
+          content_preview: 'it("REQ-42: validates input schema", () => {})',
+        },
+      ],
+    });
+
+    const criteria = checkQ11SpecTraceability(result);
+
+    assert.strictEqual(criteria.passed, true);
+  });
+});
+
+// ============================================================================
+// Q12: Implementation Isolation Compliance Tests
+// ============================================================================
+
+describe('Review Loop - Q12: Implementation Isolation Compliance', () => {
+  it('should PASS when not in TEST ISOLATION MODE (no check)', () => {
+    const result = createTestResult({
+      output: 'import { add } from "../src/utils";\nexpect(add(1, 2)).toBe(3)',
+      verified_files: [
+        {
+          path: '/tmp/test/utils.test.ts',
+          exists: true,
+          size: 200,
+          content_preview: 'import { add } from "../src/utils";\nexpect(add(1, 2)).toBe(3)',
+        },
+      ],
+    });
+
+    const criteria = checkQ12ImplementationIsolation(result, 'Write tests for the calculator module');
+
+    assert.strictEqual(criteria.passed, true);
+    assert.strictEqual(criteria.criteria_id, 'Q12');
+    assert.ok(criteria.details?.includes('TEST ISOLATION MODE not active'));
+  });
+
+  it('should FAIL when TEST ISOLATION MODE active and test imports from src/', () => {
+    const result = createTestResult({
+      output: '',
+      verified_files: [
+        {
+          path: '/tmp/test/calculator.test.ts',
+          exists: true,
+          size: 300,
+          content_preview: 'import { Calculator } from "../src/calculator";\ndescribe("Calculator", () => {})',
+        },
+      ],
+    });
+
+    const criteria = checkQ12ImplementationIsolation(
+      result,
+      '[TEST ISOLATION MODE] Write tests for calculator based on spec only'
+    );
+
+    assert.strictEqual(criteria.passed, false);
+    assert.strictEqual(criteria.criteria_id, 'Q12');
+    assert.ok(criteria.details?.includes('TEST ISOLATION MODE violation'));
+    assert.ok(criteria.details?.includes('src/'));
+  });
+
+  it('should FAIL when TEST ISOLATION MODE active and output contains src/ import', () => {
+    const result = createTestResult({
+      output: 'import { helper } from "../../src/utils/helper";\nconst result = helper();',
+      verified_files: [],
+    });
+
+    const criteria = checkQ12ImplementationIsolation(
+      result,
+      '[TEST ISOLATION MODE] Generate spec-only tests'
+    );
+
+    assert.strictEqual(criteria.passed, false);
+    assert.ok(criteria.details?.includes('TEST ISOLATION MODE violation'));
+  });
+
+  it('should PASS when TEST ISOLATION MODE active and no src/ imports', () => {
+    const result = createTestResult({
+      output: '',
+      verified_files: [
+        {
+          path: '/tmp/test/calculator.test.ts',
+          exists: true,
+          size: 300,
+          content_preview: 'describe("Calculator - spec: basic arithmetic", () => { it("given 1+2, then returns 3", () => {}) })',
+        },
+      ],
+    });
+
+    const criteria = checkQ12ImplementationIsolation(
+      result,
+      '[TEST ISOLATION MODE] Write specification-driven tests'
+    );
+
+    assert.strictEqual(criteria.passed, true);
+    assert.ok(criteria.details?.includes('no src/ imports detected'));
+  });
+
+  it('should detect require() style src/ imports in TEST ISOLATION MODE', () => {
+    const result = createTestResult({
+      output: '',
+      verified_files: [
+        {
+          path: '/tmp/test/parser.test.ts',
+          exists: true,
+          size: 200,
+          content_preview: 'const parser = require("../src/parser");',
+        },
+      ],
+    });
+
+    const criteria = checkQ12ImplementationIsolation(
+      result,
+      '[TEST ISOLATION MODE] Create parser tests from specification'
+    );
+
+    assert.strictEqual(criteria.passed, false);
+    assert.ok(criteria.details?.includes('TEST ISOLATION MODE violation'));
   });
 });
 

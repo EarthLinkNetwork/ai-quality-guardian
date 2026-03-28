@@ -14,7 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { LLMSentinel, verifyLLMEvidence, createSentinel } from '../../../src/mediation/llm-sentinel';
-import { LLMEvidenceManager, LLMEvidence } from '../../../src/mediation/llm-evidence-manager';
+import { LLMEvidenceManager, LLMEvidence, TestQualityEvidence } from '../../../src/mediation/llm-evidence-manager';
 
 describe('LLMSentinel - File Evidence Verification', () => {
   let tempDir: string;
@@ -236,6 +236,80 @@ describe('LLMSentinel - File Evidence Verification', () => {
 
       assert.ok(report.includes('Overall Result: FAIL'));
       assert.ok(report.includes('Failure Reason:'));
+    });
+  });
+
+  describe('Test Quality Summary', () => {
+    it('should include test_quality_summary when test quality evidence exists', () => {
+      // Record evidence with test quality
+      evidenceManager.recordEvidence({
+        call_id: 'tq-sentinel-1',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        request_hash: 'sha256:a',
+        response_hash: 'sha256:b',
+        timestamp: new Date().toISOString(),
+        duration_ms: 100,
+        success: true,
+      });
+
+      const testQuality1: TestQualityEvidence = {
+        implementation_isolation: true,
+        spec_traceability: true,
+        tautological_detected: false,
+        test_count: 10,
+        spec_sources: ['docs/specs/a.md'],
+      };
+      evidenceManager.recordTestQuality('tq-sentinel-1', testQuality1);
+
+      // Record another with different quality metrics
+      evidenceManager.recordEvidence({
+        call_id: 'tq-sentinel-2',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        request_hash: 'sha256:c',
+        response_hash: 'sha256:d',
+        timestamp: new Date().toISOString(),
+        duration_ms: 200,
+        success: true,
+      });
+
+      const testQuality2: TestQualityEvidence = {
+        implementation_isolation: false,
+        spec_traceability: true,
+        tautological_detected: true,
+        test_count: 5,
+        spec_sources: ['docs/specs/b.md'],
+      };
+      evidenceManager.recordTestQuality('tq-sentinel-2', testQuality2);
+
+      const sentinel = LLMSentinel.fromEvidenceManager(evidenceManager);
+      const result = sentinel.verify();
+
+      assert.ok(result.test_quality_summary);
+      assert.equal(result.test_quality_summary!.total_test_tasks, 2);
+      assert.equal(result.test_quality_summary!.isolated_tests, 1);
+      assert.equal(result.test_quality_summary!.spec_traced_tests, 2);
+      assert.equal(result.test_quality_summary!.tautological_detected, 1);
+    });
+
+    it('should omit test_quality_summary when no test quality evidence exists', () => {
+      // Record evidence WITHOUT test quality
+      evidenceManager.recordEvidence({
+        call_id: 'no-tq-1',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        request_hash: 'sha256:a',
+        response_hash: 'sha256:b',
+        timestamp: new Date().toISOString(),
+        duration_ms: 100,
+        success: true,
+      });
+
+      const sentinel = LLMSentinel.fromEvidenceManager(evidenceManager);
+      const result = sentinel.verify();
+
+      assert.equal(result.test_quality_summary, undefined);
     });
   });
 

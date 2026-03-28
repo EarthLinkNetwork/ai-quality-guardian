@@ -18,6 +18,25 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 
 /**
+ * Evidence for test quality verification.
+ * Tracks whether tests were generated with proper isolation and spec-first methodology.
+ */
+export interface TestQualityEvidence {
+  /** Whether tests were generated in isolation from implementation code */
+  implementation_isolation: boolean;
+  /** Whether test descriptions reference specifications */
+  spec_traceability: boolean;
+  /** Whether tautological test patterns were detected */
+  tautological_detected: boolean;
+  /** Mutation score if available (0-100) */
+  mutation_score?: number;
+  /** Number of test cases generated */
+  test_count: number;
+  /** Source of test specifications (spec file paths) */
+  spec_sources: string[];
+}
+
+/**
  * LLM Evidence structure
  * Records proof of a real LLM API call
  */
@@ -40,6 +59,8 @@ export interface LLMEvidence {
   success: boolean;
   /** Error message if failed */
   error?: string;
+  /** Optional test quality evidence (only for test generation tasks) */
+  test_quality?: TestQualityEvidence;
 }
 
 /**
@@ -233,6 +254,30 @@ export class LLMEvidenceManager {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Record test quality evidence for a specific LLM call.
+   * Called after test generation to attach quality metrics to the evidence.
+   */
+  recordTestQuality(callId: string, testQuality: TestQualityEvidence): void {
+    const evidence = this.getEvidence(callId);
+    if (!evidence) {
+      console.warn(`[EvidenceManager] No evidence found for callId: ${callId}`);
+      return;
+    }
+
+    evidence.test_quality = testQuality;
+
+    // Update in-memory map
+    this.evidenceMap.set(callId, evidence);
+
+    // Re-write evidence file with updated data and recomputed integrity hash
+    const filePath = path.join(this.evidenceDir, `${callId}.json`);
+    const evidenceJson = JSON.stringify(evidence);
+    const integrityHash = crypto.createHash('sha256').update(evidenceJson).digest('hex');
+    const evidenceFile: EvidenceFile = { evidence, integrity_hash: integrityHash };
+    fs.writeFileSync(filePath, JSON.stringify(evidenceFile, null, 2));
   }
 
   /**

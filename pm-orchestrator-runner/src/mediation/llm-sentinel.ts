@@ -39,6 +39,13 @@ export interface SentinelVerificationResult {
   can_assert_complete: boolean;
   /** Reason if verification failed */
   failure_reason?: string;
+  /** Test quality summary (only present when test quality evidence exists) */
+  test_quality_summary?: {
+    total_test_tasks: number;
+    isolated_tests: number;
+    spec_traced_tests: number;
+    tautological_detected: number;
+  };
 }
 
 /**
@@ -127,6 +134,18 @@ export class LLMSentinel {
       failureReason = 'No successful LLM calls found (all calls failed)';
     }
 
+    // Aggregate test quality evidence
+    const testQualityEvidence = allEvidence.filter(e => e.test_quality);
+    let testQualitySummary: SentinelVerificationResult['test_quality_summary'];
+    if (testQualityEvidence.length > 0) {
+      testQualitySummary = {
+        total_test_tasks: testQualityEvidence.length,
+        isolated_tests: testQualityEvidence.filter(e => e.test_quality!.implementation_isolation).length,
+        spec_traced_tests: testQualityEvidence.filter(e => e.test_quality!.spec_traceability).length,
+        tautological_detected: testQualityEvidence.filter(e => e.test_quality!.tautological_detected).length,
+      };
+    }
+
     return {
       passed: canAssertComplete,
       timestamp,
@@ -138,6 +157,7 @@ export class LLMSentinel {
       integrity_passed: integrityPassed,
       can_assert_complete: canAssertComplete,
       failure_reason: failureReason,
+      test_quality_summary: testQualitySummary,
     };
   }
 
