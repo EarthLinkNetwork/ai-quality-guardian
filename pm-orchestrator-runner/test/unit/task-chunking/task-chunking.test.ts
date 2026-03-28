@@ -20,6 +20,7 @@ import {
 
   // Analysis functions
   analyzeTaskForChunking,
+  detectTestIsolationNeed,
 
   // Retry functions
   calculateRetryDelay,
@@ -275,6 +276,137 @@ describe('Task Chunking Module', () => {
       const result = analyzeTaskForChunking(prompt, config);
 
       assert.strictEqual(result.is_decomposable, false);
+    });
+  });
+
+  describe('detectTestIsolationNeed', () => {
+    it('should detect need for isolation when prompt has both impl and test', () => {
+      const result = detectTestIsolationNeed('Implement the user authentication module and write tests for it');
+
+      assert.strictEqual(result.needsIsolation, true);
+      assert.ok(result.implPart.length > 0);
+      assert.ok(result.testPart.length > 0);
+    });
+
+    it('should NOT trigger when prompt only has implementation keywords', () => {
+      const result = detectTestIsolationNeed('Implement the user authentication module');
+
+      assert.strictEqual(result.needsIsolation, false);
+      assert.strictEqual(result.implPart, '');
+      assert.strictEqual(result.testPart, '');
+    });
+
+    it('should NOT trigger when prompt only has test keywords', () => {
+      const result = detectTestIsolationNeed('Write tests for the authentication module');
+
+      assert.strictEqual(result.needsIsolation, false);
+      assert.strictEqual(result.implPart, '');
+      assert.strictEqual(result.testPart, '');
+    });
+
+    it('should detect Japanese prompts with impl and test keywords', () => {
+      const result = detectTestIsolationNeed('ユーザー認証モジュールを実装してテストも書いて');
+
+      assert.strictEqual(result.needsIsolation, true);
+      assert.ok(result.implPart.length > 0);
+      assert.ok(result.testPart.length > 0);
+    });
+
+    it('should split on "and" connector when possible', () => {
+      const result = detectTestIsolationNeed('Create the API endpoint and write tests for it');
+
+      assert.strictEqual(result.needsIsolation, true);
+      assert.ok(result.implPart.includes('Create the API endpoint'));
+      assert.ok(result.testPart.includes('test'));
+    });
+
+    it('should use fallback split when no connector found', () => {
+      const prompt = 'Implement the feature with test coverage';
+      const result = detectTestIsolationNeed(prompt);
+
+      assert.strictEqual(result.needsIsolation, true);
+      // Fallback: implPart is the full prompt
+      assert.strictEqual(result.implPart, prompt);
+      // Fallback: testPart wraps with instruction
+      assert.ok(result.testPart.includes('DO NOT read implementation source code'));
+    });
+  });
+
+  describe('analyzeTaskForChunking - test isolation', () => {
+    it('should decompose task with "implement X and write tests" into 2 subtasks', () => {
+      const prompt = 'Implement the validation module and also write tests for it';
+      const result = analyzeTaskForChunking(prompt, DEFAULT_TASK_CHUNKING_CONFIG);
+
+      assert.strictEqual(result.is_decomposable, true);
+      assert.ok(result.reason.includes('Test isolation'));
+      assert.ok(Array.isArray(result.suggested_subtasks));
+      assert.strictEqual(result.suggested_subtasks!.length, 2);
+      assert.strictEqual(result.execution_mode, 'sequential');
+    });
+
+    it('should include [TEST ISOLATION MODE] in the test subtask prompt', () => {
+      const prompt = 'Build the parser and then write tests for it';
+      const result = analyzeTaskForChunking(prompt, DEFAULT_TASK_CHUNKING_CONFIG);
+
+      assert.strictEqual(result.is_decomposable, true);
+      const testSubtask = result.suggested_subtasks![1];
+      assert.ok(testSubtask.prompt.includes('[TEST ISOLATION MODE]'));
+      assert.ok(testSubtask.prompt.includes('Do NOT read implementation source code'));
+    });
+
+    it('should NOT trigger test isolation for implementation-only tasks', () => {
+      const prompt = 'Implement the validation module';
+      const result = analyzeTaskForChunking(prompt, DEFAULT_TASK_CHUNKING_CONFIG);
+
+      // Should fall through to normal decomposition logic (which may or may not decompose)
+      if (result.is_decomposable) {
+        assert.ok(!result.reason.includes('Test isolation'));
+      }
+    });
+
+    it('should NOT trigger test isolation for test-only tasks', () => {
+      const prompt = 'Write unit tests for the parser module';
+      const result = analyzeTaskForChunking(prompt, DEFAULT_TASK_CHUNKING_CONFIG);
+
+      if (result.is_decomposable) {
+        assert.ok(!result.reason.includes('Test isolation'));
+      }
+    });
+
+    it('should decompose Japanese prompt with impl and test', () => {
+      const prompt = 'バリデーションモジュールを作成してテストも書いてください';
+      const result = analyzeTaskForChunking(prompt, DEFAULT_TASK_CHUNKING_CONFIG);
+
+      assert.strictEqual(result.is_decomposable, true);
+      assert.ok(result.reason.includes('Test isolation'));
+      assert.strictEqual(result.suggested_subtasks!.length, 2);
+    });
+
+    it('should NOT trigger test isolation when chunking is disabled', () => {
+      const config: TaskChunkingConfig = {
+        ...DEFAULT_TASK_CHUNKING_CONFIG,
+        enabled: false,
+      };
+
+      const prompt = 'Implement the feature and write tests for it';
+      const result = analyzeTaskForChunking(prompt, config);
+
+      assert.strictEqual(result.is_decomposable, false);
+    });
+
+    it('should take priority over other decomposition criteria', () => {
+      // This prompt has both test isolation triggers AND enumeration triggers
+      const prompt = `Implement the complete module:
+1. Create the validator
+2. Create the parser
+And also write tests for all of it`;
+
+      const result = analyzeTaskForChunking(prompt, DEFAULT_TASK_CHUNKING_CONFIG);
+
+      assert.strictEqual(result.is_decomposable, true);
+      // Test isolation should win (checked first)
+      assert.ok(result.reason.includes('Test isolation'));
+      assert.strictEqual(result.suggested_subtasks!.length, 2);
     });
   });
 

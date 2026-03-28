@@ -196,6 +196,51 @@ export const DEFAULT_TASK_CHUNKING_CONFIG: TaskChunkingConfig = {
 };
 
 // ============================================================================
+// Test Isolation Detection
+// ============================================================================
+
+/**
+ * Detect if a task contains both implementation and test generation.
+ * If so, recommend splitting to prevent tautological tests.
+ * (Based on: "AI Test Cheating" pattern - tests should not see implementation)
+ */
+export function detectTestIsolationNeed(prompt: string): { needsIsolation: boolean; implPart: string; testPart: string } {
+  // Detect implementation + test patterns
+  // Note: "write" is excluded from impl keywords because "write tests" is a test action, not implementation.
+  // Instead, we check for "write" only when NOT followed by test-related words.
+  const hasImplExcludingWrite = /(?:implement|create|build|add|develop|make|construct|setup|set up|作成|実装|追加|構築|開発|作る)/i.test(prompt);
+  const hasWriteNotTest = /\bwrite\b(?!\s+(?:(?:unit\s+|integration\s+|e2e\s+)?test|spec|テスト))/i.test(prompt);
+  const hasImpl = hasImplExcludingWrite || hasWriteNotTest;
+  const hasTest = /(?:test|テスト|spec|検証|\bUT\b|unit test|integration test|e2e)/i.test(prompt);
+
+  if (!hasImpl || !hasTest) {
+    return { needsIsolation: false, implPart: '', testPart: '' };
+  }
+
+  // Try to split the prompt into implementation and test parts
+  // Look for connectors like "and", "also", "then", "そして", "また"
+  const splitPatterns = [
+    /(.+?)(?:\s+(?:and|also|then|after that)\s+)(.+test.+)/i,
+    /(.+?)(?:\s+(?:そして|また|さらに|その後)\s+)(.+テスト.+)/i,
+    /(.+?)(?:\.\s+)(.+(?:test|テスト).+)/i,
+  ];
+
+  for (const pattern of splitPatterns) {
+    const match = prompt.match(pattern);
+    if (match) {
+      return { needsIsolation: true, implPart: match[1].trim(), testPart: match[2].trim() };
+    }
+  }
+
+  // Fallback: if both keywords exist, split generically
+  return {
+    needsIsolation: true,
+    implPart: prompt,
+    testPart: `Write tests for the following task (DO NOT read implementation source code, base tests ONLY on specifications and requirements):\n\n${prompt}`,
+  };
+}
+
+// ============================================================================
 // Task Analysis Functions
 // ============================================================================
 
@@ -217,6 +262,29 @@ export function analyzeTaskForChunking(
     return {
       is_decomposable: false,
       reason: 'Task chunking disabled or auto-detect disabled',
+    };
+  }
+
+  // Test isolation check (prevent tautological tests)
+  // This is checked FIRST as it has higher priority than other decomposition criteria
+  const testIsolation = detectTestIsolationNeed(prompt);
+  if (testIsolation.needsIsolation) {
+    return {
+      is_decomposable: true,
+      reason: 'Test isolation: separating implementation from test generation to prevent tautological tests',
+      suggested_subtasks: [
+        {
+          prompt: testIsolation.implPart,
+          dependencies: [],
+          execution_order: 1,
+        },
+        {
+          prompt: `[TEST ISOLATION MODE]\n\nIMPORTANT: Do NOT read implementation source code (src/ directory). Base your tests ONLY on specifications, requirements, and public interfaces.\n\n${testIsolation.testPart}`,
+          dependencies: [],
+          execution_order: 2,
+        },
+      ],
+      execution_mode: 'sequential',
     };
   }
 

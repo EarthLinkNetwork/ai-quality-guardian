@@ -1023,4 +1023,204 @@ Only use ONE of:
     });
 
   });
+
+  describe('Spec-First Injection for Test Generation Tasks', () => {
+    it('should not inject spec content for non-test-generation tasks', () => {
+      // Create a spec file
+      fs.writeFileSync(path.join(tempDir, 'spec.md'), '# My Spec\nSome specification content');
+
+      const result = assembler.assemble('Implement feature X');
+
+      // Spec injection should NOT be present for non-test tasks
+      assert.strictEqual(result.sections.specInjection, undefined,
+        'specInjection should be undefined for non-test tasks');
+      assert.ok(!result.prompt.includes('Specifications (Base your tests'),
+        'Should not contain spec injection header');
+    });
+
+    it('should inject spec content when user input contains [TEST ISOLATION MODE]', () => {
+      fs.writeFileSync(path.join(tempDir, 'spec.md'), '# API Spec\nEndpoint: GET /users');
+
+      const result = assembler.assemble('[TEST ISOLATION MODE] Generate tests for user API');
+
+      assert.ok(result.sections.specInjection, 'specInjection should be defined');
+      assert.ok(result.sections.specInjection!.includes('Specifications (Base your tests'),
+        'Should contain spec injection header');
+      assert.ok(result.sections.specInjection!.includes('Endpoint: GET /users'),
+        'Should contain spec file content');
+    });
+
+    it('should inject spec content when user input contains "generate test"', () => {
+      fs.writeFileSync(path.join(tempDir, 'spec.md'), '# Test Spec');
+
+      const result = assembler.assemble('Please generate test for the login module');
+
+      assert.ok(result.sections.specInjection, 'specInjection should be defined');
+    });
+
+    it('should inject spec content when user input contains "test generation"', () => {
+      fs.writeFileSync(path.join(tempDir, 'spec.md'), '# Test Spec');
+
+      const result = assembler.assemble('Run test generation for all modules');
+
+      assert.ok(result.sections.specInjection, 'specInjection should be defined');
+    });
+
+    it('should inject spec content when user input contains "write test"', () => {
+      fs.writeFileSync(path.join(tempDir, 'spec.md'), '# Test Spec');
+
+      const result = assembler.assemble('Write test cases for the payment service');
+
+      assert.ok(result.sections.specInjection, 'specInjection should be defined');
+    });
+
+    it('should inject spec content for Japanese test generation phrases', () => {
+      fs.writeFileSync(path.join(tempDir, 'spec.md'), '# Test Spec');
+
+      const result1 = assembler.assemble('ユーザーモジュールのテスト生成をしてください');
+      assert.ok(result1.sections.specInjection, 'specInjection should be defined for テスト生成');
+
+      const result2 = assembler.assemble('テスト作成してください');
+      assert.ok(result2.sections.specInjection, 'specInjection should be defined for テスト作成');
+    });
+
+    it('should not inject when no spec files exist', () => {
+      // No spec files created
+      const result = assembler.assemble('[TEST ISOLATION MODE] Generate tests');
+
+      assert.strictEqual(result.sections.specInjection, undefined,
+        'specInjection should be undefined when no spec files exist');
+    });
+
+    it('should load spec.md from project root', () => {
+      fs.writeFileSync(path.join(tempDir, 'spec.md'), 'Root spec content');
+
+      const result = assembler.assemble('[TEST ISOLATION MODE] Generate tests');
+
+      assert.ok(result.sections.specInjection!.includes('Root spec content'),
+        'Should include root spec.md content');
+      assert.ok(result.sections.specInjection!.includes('### spec.md'),
+        'Should include spec.md header');
+    });
+
+    it('should load SPEC.md from project root', () => {
+      fs.writeFileSync(path.join(tempDir, 'SPEC.md'), 'Uppercase SPEC content');
+
+      const result = assembler.assemble('[TEST ISOLATION MODE] Generate tests');
+
+      assert.ok(result.sections.specInjection!.includes('Uppercase SPEC content'),
+        'Should include SPEC.md content');
+    });
+
+    it('should load spec.md from docs/ directory', () => {
+      const docsDir = path.join(tempDir, 'docs');
+      fs.mkdirSync(docsDir, { recursive: true });
+      fs.writeFileSync(path.join(docsDir, 'spec.md'), 'Docs spec content');
+
+      const result = assembler.assemble('[TEST ISOLATION MODE] Generate tests');
+
+      assert.ok(result.sections.specInjection!.includes('Docs spec content'),
+        'Should include docs/spec.md content');
+    });
+
+    it('should load *.spec.md files from docs/ directory', () => {
+      const docsDir = path.join(tempDir, 'docs');
+      fs.mkdirSync(docsDir, { recursive: true });
+      fs.writeFileSync(path.join(docsDir, 'api.spec.md'), 'API spec from docs');
+      fs.writeFileSync(path.join(docsDir, 'auth.spec.md'), 'Auth spec from docs');
+
+      const result = assembler.assemble('[TEST ISOLATION MODE] Generate tests');
+
+      assert.ok(result.sections.specInjection!.includes('API spec from docs'),
+        'Should include api.spec.md content');
+      assert.ok(result.sections.specInjection!.includes('Auth spec from docs'),
+        'Should include auth.spec.md content');
+    });
+
+    it('should load *.md files from .claude/specs/ directory', () => {
+      const specsDir = path.join(tempDir, '.claude', 'specs');
+      fs.mkdirSync(specsDir, { recursive: true });
+      fs.writeFileSync(path.join(specsDir, 'feature-x.md'), 'Feature X specification');
+
+      const result = assembler.assemble('[TEST ISOLATION MODE] Generate tests');
+
+      assert.ok(result.sections.specInjection!.includes('Feature X specification'),
+        'Should include .claude/specs content');
+    });
+
+    it('should combine multiple spec files', () => {
+      fs.writeFileSync(path.join(tempDir, 'spec.md'), 'Root spec');
+      const docsDir = path.join(tempDir, 'docs');
+      fs.mkdirSync(docsDir, { recursive: true });
+      fs.writeFileSync(path.join(docsDir, 'api.spec.md'), 'API spec');
+      const specsDir = path.join(tempDir, '.claude', 'specs');
+      fs.mkdirSync(specsDir, { recursive: true });
+      fs.writeFileSync(path.join(specsDir, 'extra.md'), 'Extra spec');
+
+      const result = assembler.assemble('[TEST ISOLATION MODE] Generate tests');
+
+      assert.ok(result.sections.specInjection!.includes('Root spec'),
+        'Should include root spec');
+      assert.ok(result.sections.specInjection!.includes('API spec'),
+        'Should include API spec');
+      assert.ok(result.sections.specInjection!.includes('Extra spec'),
+        'Should include extra spec');
+    });
+
+    it('should place spec injection after global prelude in the prompt', () => {
+      fs.writeFileSync(path.join(tempDir, 'spec.md'), 'Spec content here');
+
+      const result = assembler.assemble('[TEST ISOLATION MODE] Generate tests');
+
+      // Spec injection should come after global prelude (mandatory rules)
+      const mandatoryIndex = result.prompt.indexOf('省略禁止');
+      const specIndex = result.prompt.indexOf('Specifications (Base your tests');
+      const userInputIndex = result.prompt.indexOf('[TEST ISOLATION MODE]');
+
+      assert.ok(mandatoryIndex >= 0, 'Should contain mandatory rules');
+      assert.ok(specIndex >= 0, 'Should contain spec injection');
+      assert.ok(userInputIndex >= 0, 'Should contain user input');
+      assert.ok(mandatoryIndex < specIndex,
+        'Spec injection should come after mandatory rules (global prelude)');
+      assert.ok(specIndex < userInputIndex,
+        'Spec injection should come before user input');
+    });
+
+    it('should preserve existing assembly order when spec is injected', () => {
+      fs.writeFileSync(path.join(templateDir, 'global-prelude.md'), '# Global Rules');
+      fs.writeFileSync(path.join(templateDir, 'project-prelude.md'), '# Project Constraints');
+      fs.writeFileSync(path.join(templateDir, 'output-epilogue.md'), '# Output Format');
+      fs.writeFileSync(path.join(tempDir, 'spec.md'), '# My Spec');
+
+      const result = assembler.assemble('[TEST ISOLATION MODE] Generate tests');
+
+      // Verify full order: global prelude < spec injection < project prelude < user input < epilogue
+      const globalIndex = result.prompt.indexOf('# Global Rules');
+      const specIndex = result.prompt.indexOf('Specifications (Base your tests');
+      const projectIndex = result.prompt.indexOf('# Project Constraints');
+      const userInputIndex = result.prompt.indexOf('[TEST ISOLATION MODE]');
+      const epilogueIndex = result.prompt.indexOf('# Output Format');
+
+      assert.ok(globalIndex >= 0, 'Should contain global prelude');
+      assert.ok(specIndex >= 0, 'Should contain spec injection');
+      assert.ok(projectIndex >= 0, 'Should contain project prelude');
+      assert.ok(userInputIndex >= 0, 'Should contain user input');
+      assert.ok(epilogueIndex >= 0, 'Should contain epilogue');
+
+      assert.ok(globalIndex < specIndex, 'Global prelude should come before spec injection');
+      assert.ok(specIndex < projectIndex, 'Spec injection should come before project prelude');
+      assert.ok(projectIndex < userInputIndex, 'Project prelude should come before user input');
+      assert.ok(userInputIndex < epilogueIndex, 'User input should come before epilogue');
+    });
+
+    it('should be case-insensitive for test generation detection', () => {
+      fs.writeFileSync(path.join(tempDir, 'spec.md'), '# Spec');
+
+      const result1 = assembler.assemble('GENERATE TEST for module');
+      assert.ok(result1.sections.specInjection, 'Should detect uppercase GENERATE TEST');
+
+      const result2 = assembler.assemble('Write Test for the API');
+      assert.ok(result2.sections.specInjection, 'Should detect mixed-case Write Test');
+    });
+  });
 });

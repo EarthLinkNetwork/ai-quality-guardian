@@ -17,6 +17,7 @@ export {
 
   // Analysis functions
   analyzeTaskForChunking,
+  detectTestIsolationNeed,
 
   // Retry functions
   calculateRetryDelay,

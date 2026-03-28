@@ -118,6 +118,8 @@ export interface AssemblyResult {
     templateRules?: string;
     /** Injected output format (only present when template is active) per spec 32 */
     templateOutputFormat?: string;
+    /** Injected spec content (only present for test generation tasks) */
+    specInjection?: string;
   };
 }
 
@@ -233,8 +235,41 @@ export class PromptAssembler {
       parts.push(sections.outputEpilogue);
     }
 
+    let prompt = parts.join('\n\n');
+
+    // Spec-First injection for test generation tasks
+    if (this.isTestGenerationTask(userInput)) {
+      const specContent = this.loadSpecFiles();
+      if (specContent) {
+        sections.specInjection = `\n\n## Specifications (Base your tests on these, NOT on implementation code)\n\n${specContent}\n`;
+        // Rebuild prompt: insert spec after global prelude
+        const rebuildParts: string[] = [];
+        if (sections.globalPrelude) {
+          rebuildParts.push(sections.globalPrelude);
+        }
+        rebuildParts.push(sections.specInjection.trim());
+        if (templateRules) {
+          rebuildParts.push(templateRules);
+        }
+        if (sections.projectPrelude) {
+          rebuildParts.push(sections.projectPrelude);
+        }
+        if (sections.taskGroupPrelude) {
+          rebuildParts.push(sections.taskGroupPrelude);
+        }
+        rebuildParts.push(sections.userInput);
+        if (templateOutputFormat) {
+          rebuildParts.push(templateOutputFormat);
+        }
+        if (sections.outputEpilogue) {
+          rebuildParts.push(sections.outputEpilogue);
+        }
+        prompt = rebuildParts.join('\n\n');
+      }
+    }
+
     return {
-      prompt: parts.join('\n\n'),
+      prompt,
       sections,
     };
   }
@@ -463,6 +498,67 @@ export class PromptAssembler {
    */
   loadOutputEpilogue(): string {
     return this.loadTemplateFile('output-epilogue.md');
+  }
+
+  /**
+   * Find and load spec files from the project directory.
+   * Looks for spec.md, SPEC.md, docs/spec.md, docs/*.spec.md, .claude/specs/*.md
+   * Returns combined spec content or empty string.
+   */
+  private loadSpecFiles(): string {
+    const specPaths = [
+      path.join(this.projectPath, 'spec.md'),
+      path.join(this.projectPath, 'SPEC.md'),
+      path.join(this.projectPath, 'docs', 'spec.md'),
+    ];
+
+    const specs: string[] = [];
+
+    for (const specPath of specPaths) {
+      try {
+        if (fs.existsSync(specPath)) {
+          const content = fs.readFileSync(specPath, 'utf-8');
+          specs.push(`### ${path.basename(specPath)}\n${content}`);
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Also search for *.spec.md files in docs/ directory
+    try {
+      const docsDir = path.join(this.projectPath, 'docs');
+      if (fs.existsSync(docsDir)) {
+        const files = fs.readdirSync(docsDir).filter(f => f.endsWith('.spec.md'));
+        for (const file of files) {
+          try {
+            const content = fs.readFileSync(path.join(docsDir, file), 'utf-8');
+            specs.push(`### ${file}\n${content}`);
+          } catch { /* ignore */ }
+        }
+      }
+    } catch { /* ignore */ }
+
+    // Search in .claude/specs/ directory
+    try {
+      const specsDir = path.join(this.projectPath, '.claude', 'specs');
+      if (fs.existsSync(specsDir)) {
+        const files = fs.readdirSync(specsDir).filter(f => f.endsWith('.md'));
+        for (const file of files) {
+          try {
+            const content = fs.readFileSync(path.join(specsDir, file), 'utf-8');
+            specs.push(`### ${file}\n${content}`);
+          } catch { /* ignore */ }
+        }
+      }
+    } catch { /* ignore */ }
+
+    return specs.length > 0 ? specs.join('\n\n') : '';
+  }
+
+  /**
+   * Detect if the user input is a test generation task.
+   */
+  private isTestGenerationTask(userInput: string): boolean {
+    return /\[TEST ISOLATION MODE\]|test.*generat|generate.*test|テスト.*生成|テスト.*作成|write.*test/i.test(userInput);
   }
 
   /**
