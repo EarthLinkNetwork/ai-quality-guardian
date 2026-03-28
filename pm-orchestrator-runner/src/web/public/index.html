@@ -16,6 +16,7 @@
       background: #f5f5f5;
       color: #333;
       line-height: 1.6;
+      padding-bottom: 56px;
     }
 
     .container {
@@ -2726,6 +2727,62 @@
     .sidebar-context .ctx-select option { background:#1e293b; color:#fff; }
     .sidebar.collapsed .sidebar-context { display:none; }
 
+    /* Global Command Bar */
+    .global-cmd-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg-secondary, #16213e);
+      border-top: 2px solid var(--border-color, #2a2a4a);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 1000;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+    }
+    .global-cmd-bar select {
+      background: var(--bg-primary, #1a1a2e);
+      color: var(--text-primary, #e0e0e0);
+      border: 1px solid var(--border-color, #2a2a4a);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 0.85rem;
+      min-width: 120px;
+    }
+    .global-cmd-bar input {
+      flex: 1;
+      background: var(--bg-primary, #1a1a2e);
+      color: var(--text-primary, #e0e0e0);
+      border: 1px solid var(--border-color, #2a2a4a);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 0.9rem;
+    }
+    .global-cmd-bar input:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+    .global-cmd-bar button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    .global-cmd-bar button:hover { background: #2563eb; }
+    .global-cmd-bar button:disabled { background: #4b5563; cursor: not-allowed; }
+    .global-cmd-bar .cmd-bar-toggle {
+      background: transparent;
+      color: #9ca3af;
+      padding: 4px 8px;
+      font-size: 0.75rem;
+    }
+
   </style>
 </head>
 <body>
@@ -4513,6 +4570,27 @@
           </div>
           ` : ''}
 
+          ${task.status === 'COMPLETE' ? `
+          <div class="card" style="border-left: 4px solid #2563eb; margin-top: 0;">
+            <h3>Continue from this task</h3>
+            <p style="font-size: 0.85rem; color: #6b7280; margin-bottom: 12px;">
+              Send a follow-up message in the same task group with previous context.
+            </p>
+            <form id="followup-form" data-task-id="${escapeHtml(task.task_id)}" data-task-group-id="${escapeHtml(task.task_group_id)}" data-project-id="${taskProjectId ? escapeHtml(taskProjectId) : ''}">
+              <div class="form-group">
+                <textarea id="followupBox" name="followupPrompt" rows="3"
+                  placeholder="Type follow-up instructions..."
+                  style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; resize: vertical; min-height: 80px;"
+                  required></textarea>
+              </div>
+              <div id="followup-message"></div>
+              <button type="submit" id="followup-btn" class="btn btn-primary" style="margin-top: 10px;">
+                Send Follow-up
+              </button>
+            </form>
+          </div>
+          ` : ''}
+
           ${task.status === 'AWAITING_RESPONSE' || task.show_reply_ui ? `
           <div class="card" style="border-left: 4px solid #3b82f6;">
             <h3>Reply</h3>
@@ -4707,6 +4785,66 @@
             } finally {
               continueBtn.disabled = false;
               continueBtn.textContent = 'Continue Task';
+            }
+          });
+        }
+
+        // Setup follow-up form for COMPLETE tasks
+        const followupForm = document.getElementById('followup-form');
+        if (followupForm) {
+          const followupBox = document.getElementById('followupBox');
+          const followupBtn = document.getElementById('followup-btn');
+          const followupMessage = document.getElementById('followup-message');
+          const followupProjectId = followupForm.dataset.projectId;
+          const followupTaskGroupId = followupForm.dataset.taskGroupId;
+
+          followupBox.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              followupForm.dispatchEvent(new Event('submit', { cancelable: true }));
+            }
+          });
+
+          followupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const content = followupBox.value.trim();
+
+            if (!content) {
+              followupMessage.innerHTML = '<div class="error-message">Please enter follow-up instructions.</div>';
+              return;
+            }
+
+            if (!followupProjectId) {
+              followupMessage.innerHTML = '<div class="error-message">No project associated with this task group. Cannot send follow-up.</div>';
+              return;
+            }
+
+            followupBtn.disabled = true;
+            followupBtn.textContent = 'Sending...';
+
+            try {
+              const data = await api('/projects/' + encodeURIComponent(followupProjectId) + '/chat', {
+                method: 'POST',
+                body: JSON.stringify({
+                  content: content,
+                  taskGroupId: followupTaskGroupId
+                }),
+              });
+
+              followupMessage.innerHTML = '<div class="success-message">Follow-up task created in same group!</div>';
+              followupBox.value = '';
+
+              showToast('Follow-up task created', 'success');
+
+              // Navigate to the chat view for this project with the task group
+              setTimeout(() => {
+                navigate('/chat/' + encodeURIComponent(followupProjectId) + '?taskGroupId=' + encodeURIComponent(followupTaskGroupId));
+              }, 1000);
+            } catch (error) {
+              followupMessage.innerHTML = '<div class="error-message">Error: ' + escapeHtml(error.message) + '</div>';
+            } finally {
+              followupBtn.disabled = false;
+              followupBtn.textContent = 'Send Follow-up';
             }
           });
         }
@@ -6812,7 +6950,15 @@
             ${activityItems}
             ${recentActivity.length > 5 ? '<a href="/activity" onclick="event.preventDefault(); navigate(\'/activity\')" style="display: block; text-align: center; margin-top: 12px;">View All Activity</a>' : ''}
           </div>
+
+          <div style="margin-top:24px;">
+            <h3 style="margin-bottom:12px; color:#1f2937;">Live Projects</h3>
+            <div id="live-projects"><div style="color:#6b7280; text-align:center; padding:20px;">Loading...</div></div>
+          </div>
         `;
+
+        renderLiveProjects();
+        startLiveProjectsRefresh();
       } catch (error) {
         app.innerHTML = `
           <div class="card">
@@ -6820,6 +6966,137 @@
             <button class="btn btn-secondary" onclick="renderDashboard()">Retry</button>
           </div>
         `;
+      }
+    }
+
+    // ===== Live Projects View =====
+    var liveProjectsTimer = null;
+
+    function startLiveProjectsRefresh() {
+      stopLiveProjectsRefresh();
+      liveProjectsTimer = setInterval(function() {
+        if (currentPath === '/dashboard') {
+          renderLiveProjects();
+        }
+      }, 10000);
+    }
+
+    function stopLiveProjectsRefresh() {
+      if (liveProjectsTimer) {
+        clearInterval(liveProjectsTimer);
+        liveProjectsTimer = null;
+      }
+    }
+
+    async function renderLiveProjects() {
+      var container = document.getElementById('live-projects');
+      if (!container) return;
+
+      try {
+        // Fetch projects and task groups in parallel
+        var results = await Promise.all([
+          api('/dashboard'),
+          api('/task-groups')
+        ]);
+        var dashboardData = results[0];
+        var taskGroupsData = results[1];
+
+        var projects = dashboardData.projects || [];
+        var taskGroups = taskGroupsData.task_groups || [];
+
+        // Group active task groups by project_id
+        var projectTasks = {};
+        taskGroups.forEach(function(tg) {
+          var pid = tg.project_id || '';
+          if (!projectTasks[pid]) projectTasks[pid] = [];
+          var sc = tg.status_counts || {};
+          var hasActive = (sc.RUNNING || 0) + (sc.QUEUED || 0) + (sc.AWAITING_RESPONSE || 0);
+          if (hasActive > 0 || tg.group_status === 'active') {
+            projectTasks[pid].push(tg);
+          }
+        });
+
+        // Filter to active projects or those with running tasks
+        var activeProjects = projects.filter(function(p) {
+          var pid = p.projectId;
+          var tasks = projectTasks[pid] || [];
+          return p.status === 'running' || tasks.length > 0;
+        });
+
+        // If no active projects, show the most recent ones
+        if (activeProjects.length === 0) {
+          activeProjects = projects.slice(0, 5);
+        }
+
+        if (activeProjects.length === 0) {
+          container.innerHTML = '<div style="color:#6b7280; text-align:center; padding:20px;">No active projects</div>';
+          return;
+        }
+
+        var html = '';
+        activeProjects.forEach(function(project) {
+          var pid = project.projectId;
+          var tasks = projectTasks[pid] || [];
+          var label = project.alias || project.projectPath || pid;
+          if (label.length > 50) label = '...' + label.slice(-47);
+
+          // Count running/queued tasks across groups
+          var runningCount = 0;
+          var queuedCount = 0;
+          var awaitingCount = 0;
+          tasks.forEach(function(tg) {
+            var sc = tg.status_counts || {};
+            runningCount += sc.RUNNING || 0;
+            queuedCount += sc.QUEUED || 0;
+            awaitingCount += sc.AWAITING_RESPONSE || 0;
+          });
+
+          var statusBadge = '';
+          if (runningCount > 0) {
+            statusBadge = '<span class="badge badge-running" style="font-size:0.7rem;">' + runningCount + ' running</span>';
+          } else if (awaitingCount > 0) {
+            statusBadge = '<span class="badge" style="font-size:0.7rem; background:#f59e0b; color:white;">' + awaitingCount + ' awaiting</span>';
+          } else if (queuedCount > 0) {
+            statusBadge = '<span class="badge badge-queued" style="font-size:0.7rem;">' + queuedCount + ' queued</span>';
+          } else {
+            statusBadge = '<span style="font-size:0.75rem; color:#6b7280;">idle</span>';
+          }
+
+          html += '<div class="card" style="margin-bottom:12px; padding:12px 16px;">';
+          html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">';
+          html += '<div style="font-weight:600; cursor:pointer;" onclick="navigate(\'/projects/' + encodeURIComponent(pid) + '\')">' + escapeHtml(label) + '</div>';
+          html += '<div style="display:flex; gap:8px; align-items:center;">' + statusBadge;
+          html += '<button class="btn btn-sm" style="font-size:0.75rem; padding:4px 10px;" onclick="navigate(\'/chat/' + encodeURIComponent(pid) + '\')">+ Task</button>';
+          html += '</div></div>';
+
+          // Show active task groups
+          if (tasks.length > 0) {
+            tasks.forEach(function(tg) {
+              var sc = tg.status_counts || {};
+              var running = sc.RUNNING || 0;
+              var awaiting = sc.AWAITING_RESPONSE || 0;
+              var tgLabel = tg.first_prompt || tg.task_group_id;
+              if (tgLabel.length > 60) tgLabel = tgLabel.substring(0, 57) + '...';
+
+              var statusIndicator = running > 0 ? '<span class="badge badge-running" style="font-size:0.65rem;">RUN</span>'
+                : awaiting > 0 ? '<span class="badge" style="font-size:0.65rem; background:#f59e0b; color:white;">WAIT</span>'
+                : '<span class="badge badge-queued" style="font-size:0.65rem;">Q</span>';
+
+              html += '<div style="padding:6px 8px; margin:2px 0; background:#f9fafb; border-radius:4px; display:flex; justify-content:space-between; align-items:center; cursor:pointer; font-size:0.85rem;" onclick="navigate(\'/task-groups/' + encodeURIComponent(tg.task_group_id) + '\')">';
+              html += '<span style="display:flex; align-items:center; gap:6px;">' + statusIndicator + ' ' + escapeHtml(tgLabel) + '</span>';
+              html += '<span style="font-size:0.75rem; color:#6b7280;">' + tg.task_count + ' task(s)</span>';
+              html += '</div>';
+            });
+          } else {
+            html += '<div style="font-size:0.8rem; color:#6b7280; padding:4px 8px;">No active tasks</div>';
+          }
+
+          html += '</div>';
+        });
+
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = '<div class="error-message">Failed to load live projects: ' + escapeHtml(e.message) + '</div>';
       }
     }
 
@@ -10845,6 +11122,11 @@
       currentPath = path;
       updateNav(path);
 
+      // Stop live projects refresh when navigating away from dashboard
+      if (path !== '/dashboard') {
+        stopLiveProjectsRefresh();
+      }
+
       if (path === '/dashboard') {
         renderDashboard();
       } else if (path === '/projects') {
@@ -12123,6 +12405,92 @@
     // End Dev Console Functions
     // =========================================================================
 
+    // ── Global Command Bar ──
+
+    var globalCmdBarVisible = true;
+
+    function toggleGlobalCmdBar() {
+      var bar = document.getElementById('global-cmd-bar');
+      if (!bar) return;
+      globalCmdBarVisible = !globalCmdBarVisible;
+      bar.style.display = globalCmdBarVisible ? 'flex' : 'none';
+      document.body.style.paddingBottom = globalCmdBarVisible ? '56px' : '0';
+    }
+
+    async function loadGlobalCmdProjects() {
+      var select = document.getElementById('gcmd-project');
+      if (!select) return;
+      try {
+        var data = await api('/projects');
+        var projects = data.projects || data;
+        var html = '<option value="">Project...</option>';
+        projects.forEach(function(p) {
+          var label = p.alias || p.projectPath || p.projectId;
+          if (label.length > 30) label = '...' + label.slice(-27);
+          html += '<option value="' + escapeHtml(p.projectId) + '">' + escapeHtml(label) + '</option>';
+        });
+        select.innerHTML = html;
+
+        // Auto-select current project if on a project/chat page
+        var path = window.location.pathname;
+        var match = path.match(/\/(projects|chat)\/([^\/\?]+)/);
+        if (match) {
+          select.value = decodeURIComponent(match[2]);
+        }
+      } catch (e) {
+        console.warn('[GlobalCmd] Failed to load projects:', e);
+      }
+    }
+
+    function updateGlobalCmdGroups() {
+      // Future: could load task groups for selected project
+    }
+
+    async function sendGlobalCmd() {
+      var projectSelect = document.getElementById('gcmd-project');
+      var input = document.getElementById('gcmd-input');
+      var sendBtn = document.getElementById('gcmd-send');
+
+      if (!input || !input.value.trim()) return;
+
+      var projectId = projectSelect ? projectSelect.value : '';
+      if (!projectId) {
+        showToast('Select a project first', 'warning');
+        projectSelect.focus();
+        return;
+      }
+
+      var content = input.value.trim();
+      input.disabled = true;
+      sendBtn.disabled = true;
+      sendBtn.textContent = '...';
+
+      try {
+        var data = await api('/projects/' + encodeURIComponent(projectId) + '/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: content })
+        });
+
+        if (data.error) throw new Error(data.message);
+
+        input.value = '';
+        showToast('Task submitted', 'success');
+
+        // Refresh current page if on dashboard or task groups
+        var path = window.location.pathname;
+        if (path === '/' || path === '/dashboard' || path.startsWith('/projects/')) {
+          router();
+        }
+      } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+      } finally {
+        input.disabled = false;
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send';
+      }
+    }
+
     // Show/hide logout button based on stored API key
     function updateLogoutButton() {
       const btn = document.getElementById('logout-btn');
@@ -12133,6 +12501,16 @@
     // Initial load
     renderSidebarContext();
     router();
+    loadGlobalCmdProjects();
   </script>
+
+  <div class="global-cmd-bar" id="global-cmd-bar">
+    <select id="gcmd-project" onchange="updateGlobalCmdGroups()" title="Select project">
+      <option value="">Project...</option>
+    </select>
+    <input type="text" id="gcmd-input" placeholder="Quick task... (Enter to send)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendGlobalCmd();}">
+    <button onclick="sendGlobalCmd()" id="gcmd-send">Send</button>
+    <button class="cmd-bar-toggle" onclick="toggleGlobalCmdBar()" title="Hide command bar">&times;</button>
+  </div>
 </body>
 </html>
