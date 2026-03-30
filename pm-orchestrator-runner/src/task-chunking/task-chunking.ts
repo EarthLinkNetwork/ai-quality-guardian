@@ -244,6 +244,56 @@ export function detectTestIsolationNeed(prompt: string): { needsIsolation: boole
 // Task Analysis Functions
 // ============================================================================
 
+
+/**
+ * Detect if a prompt is a question, investigation, or read-only inquiry
+ * that should NOT be decomposed into subtasks.
+ *
+ * Returns true for prompts like:
+ * - "What is X?", "How does Y work?", "Explain Z"
+ * - "Investigate the cause of ...", "Analyze why ..."
+ * - "Show me ...", "List all ...", "Check if ..."
+ * - Japanese equivalents: "〜とは？", "〜を調べて", "〜を確認して"
+ */
+export function isQuestionOrInvestigationPrompt(prompt: string): boolean {
+  const lowerPrompt = prompt.toLowerCase();
+
+  // English question/investigation patterns
+  const questionPatterns = [
+    /^(?:what|why|how|where|when|who|which)\s/i,
+    /\?$/m,
+    /^(?:explain|describe|investigate|analyze|analyse|check|verify|show|list|find|search|look\s+(?:at|into|for)|tell\s+me)/i,
+    /^(?:is|are|does|do|can|could|should|would|will)\s+(?:you|we|they|it|this|that|the|any|there)\s/i,
+  ];
+
+  // Japanese question/investigation patterns
+  const japanesePatterns = [
+    /(?:とは|って何|ですか|でしょうか|かな|だろう|のか)[？?]?\s*$/m,
+    /(?:調べ|調査|確認|検証|分析|説明|教えて|見て|探して|チェック)/,
+    /(?:原因|理由|仕組み|方法|状況|状態)(?:を|は|が|の)/,
+  ];
+
+  // Short prompt heuristic: prompts under 200 chars with question marks
+  // are very likely pure questions
+  if (prompt.length < 200 && /[？?]/.test(prompt)) {
+    return true;
+  }
+
+  for (const pattern of questionPatterns) {
+    if (pattern.test(prompt)) {
+      return true;
+    }
+  }
+
+  for (const pattern of japanesePatterns) {
+    if (pattern.test(prompt)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Analyze a task to determine if it should be decomposed
  * Per spec/26_TASK_CHUNKING.md Section 2.2
@@ -262,6 +312,14 @@ export function analyzeTaskForChunking(
     return {
       is_decomposable: false,
       reason: 'Task chunking disabled or auto-detect disabled',
+    };
+  }
+
+  // Question/investigation prompt guard - skip decomposition for read-only queries
+  if (isQuestionOrInvestigationPrompt(prompt)) {
+    return {
+      is_decomposable: false,
+      reason: 'Prompt is a question or investigation - decomposition skipped',
     };
   }
 
