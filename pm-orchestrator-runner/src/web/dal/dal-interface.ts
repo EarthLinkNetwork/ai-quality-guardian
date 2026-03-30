@@ -36,6 +36,15 @@ import type {
   CreateTaskSnapshotInput,
   CreateTaskSummaryInput,
 } from "./task-tracker-types";
+import type {
+  PRReviewState,
+  PRReviewComment,
+  PRReviewCycle,
+  PRReviewStatus,
+  CommentJudgment,
+  CreatePRReviewStateInput,
+  UpdatePRReviewStateInput,
+} from "./pr-review-types";
 
 /**
  * IDataAccessLayer - Complete interface for all data access operations
@@ -51,6 +60,7 @@ import type {
  * - Conversations (chat.ts, selfhost.ts, devconsole.ts)
  * - Plugins (devconsole.ts)
  * - TaskTracker (task tracker persistence)
+ * - PRReview (PR review automation)
  */
 export interface IDataAccessLayer {
   // ==================== Project Index ====================
@@ -180,6 +190,67 @@ export interface IDataAccessLayer {
   createTaskSummary(input: CreateTaskSummaryInput): Promise<TaskSummary>;
   getTaskSummary(projectId: string, taskId: string): Promise<TaskSummary | null>;
   listTaskSummaries(projectId: string): Promise<TaskSummary[]>;
+
+  // ==================== PR Review State ====================
+
+  createPRReviewState(input: CreatePRReviewStateInput): Promise<PRReviewState>;
+  getPRReviewState(projectId: string, prNumber: number): Promise<PRReviewState | null>;
+  updatePRReviewState(
+    projectId: string,
+    prNumber: number,
+    updates: UpdatePRReviewStateInput & { version: number }
+  ): Promise<PRReviewState>;
+  listPRReviewStates(
+    projectId: string,
+    options?: { status?: PRReviewStatus; limit?: number }
+  ): Promise<PRReviewState[]>;
+  deletePRReviewState(projectId: string, prNumber: number): Promise<void>;
+
+  // ==================== PR Review Comments ====================
+
+  batchCreatePRReviewComments(comments: PRReviewComment[]): Promise<void>;
+  getPRReviewComment(
+    projectId: string,
+    prNumber: number,
+    commentId: string
+  ): Promise<PRReviewComment | null>;
+  listPRReviewComments(
+    projectId: string,
+    prNumber: number,
+    filter?: { judgment?: CommentJudgment; fixApplied?: boolean; cycle?: number }
+  ): Promise<PRReviewComment[]>;
+  updatePRReviewComment(
+    projectId: string,
+    prNumber: number,
+    commentId: string,
+    updates: Partial<
+      Pick<
+        PRReviewComment,
+        | "judgment"
+        | "judgmentReason"
+        | "fixApplied"
+        | "fixCommitHash"
+        | "fixDescription"
+        | "userOverride"
+      >
+    >
+  ): Promise<PRReviewComment>;
+
+  // ==================== PR Review Cycles ====================
+
+  createPRReviewCycle(input: PRReviewCycle): Promise<PRReviewCycle>;
+  getPRReviewCycle(
+    projectId: string,
+    prNumber: number,
+    cycleNumber: number
+  ): Promise<PRReviewCycle | null>;
+  listPRReviewCycles(projectId: string, prNumber: number): Promise<PRReviewCycle[]>;
+  updatePRReviewCycle(
+    projectId: string,
+    prNumber: number,
+    cycleNumber: number,
+    updates: Partial<PRReviewCycle>
+  ): Promise<PRReviewCycle>;
 
   // ==================== Utility ====================
 

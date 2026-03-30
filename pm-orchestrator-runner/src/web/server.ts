@@ -42,6 +42,9 @@ import { createAssistantRoutes } from './routes/assistant';
 import { createRepoProfileRoutes } from './routes/repo-profile';
 import { createTemplateRoutes } from './routes/templates';
 import { createTaskTrackerRoutes } from './routes/task-tracker';
+import { createPRReviewRoutes } from './routes/pr-review';
+import { GhCliGitHubAdapter } from './github/gh-cli-adapter';
+import type { ReviewJudgeLLMClient } from '../pr-review/review-judge';
 import { detectTaskType } from '../utils/task-type-detector';
 import { detectQuestionsWithLlm } from '../utils/question-detector';
 import { initDAL, isDALInitialized, getDAL } from './dal/dal-factory';
@@ -221,6 +224,19 @@ export function createApp(config: WebServerConfig): Express {
     // Task Tracker routes (task persistence, snapshots, recovery)
     // Per spec/34_TASK_TRACKER_PERSISTENCE.md Section 11
     app.use("/api/tracker", createTaskTrackerRoutes({ dal: getDAL() }));
+
+    // PR Review Automation routes (review automation, dashboard API)
+    // Per spec/35_PR_REVIEW_AUTOMATION.md Section 10
+    const prReviewGitHub = new GhCliGitHubAdapter();
+    const prReviewLLM: ReviewJudgeLLMClient = {
+      generate: async () => ({ content: "[]", model: "stub" }),
+    };
+    app.use("/api/pr-reviews", createPRReviewRoutes({
+      dal: getDAL(),
+      github: prReviewGitHub,
+      llmClient: prReviewLLM,
+      orgId: "default",
+    }));
   }
 
   // ===================

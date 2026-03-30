@@ -2875,6 +2875,7 @@
         <div class="nav-section-label">Management</div>
         <a href="/backup" data-nav="backup"><span class="nav-icon">&#128190;</span><span class="nav-label">Backup</span></a>
         <a href="/task-tracker" data-nav="task-tracker" data-testid="nav-task-tracker"><span class="nav-icon">&#9776;</span><span class="nav-label">Task Tracker</span></a>
+        <a href="/pr-reviews" data-nav="pr-reviews" data-testid="nav-pr-reviews"><span class="nav-icon">&#128269;</span><span class="nav-label">PR Reviews</span></a>
         <div class="nav-divider"></div>
         <a href="/settings" data-nav="settings"><span class="nav-icon">&#9881;</span><span class="nav-label">Settings</span></a>
       </nav>
@@ -10471,6 +10472,7 @@
     // Task Tracker Page
     // =========================================================================
     var taskTrackerState = { tracker: null, snapshots: [], loading: false, projectId: null };
+    var prReviewState = { reviews: [], detail: null, comments: [], cycles: [], loading: false, projectId: null, currentPr: null };
 
     async function renderTaskTrackerPage() {
       // Determine projectId from current project context
@@ -10671,6 +10673,405 @@
     // =========================================================================
     // Assistant Page
     // =========================================================================
+    // =========================================================================
+    // PR Review Dashboard Page
+    // =========================================================================
+
+    async function renderPRReviewsPage() {
+      var projectInfo = document.getElementById('sidebar-project-info');
+      var projectName = projectInfo ? projectInfo.querySelector('.project-name') : null;
+      var projectId = projectName ? projectName.textContent : 'default';
+      prReviewState.projectId = projectId;
+      prReviewState.loading = true;
+
+      app.innerHTML =
+        '<div class="page-header"><h2>PR Reviews</h2>' +
+          '<button class="btn btn-primary" onclick="prReviewShowRegisterForm()">Register PR</button>' +
+        '</div>' +
+        '<div class="card"><p style="color:#9ca3af;text-align:center;padding:20px;">Loading PR reviews...</p></div>';
+
+      try {
+        var data = await api('/pr-reviews/' + encodeURIComponent(projectId));
+        prReviewState.reviews = data.reviews || [];
+        prReviewState.loading = false;
+        renderPRReviewsList();
+      } catch (err) {
+        prReviewState.reviews = [];
+        prReviewState.loading = false;
+        renderPRReviewsEmpty(err.message || 'Failed to load PR reviews');
+      }
+    }
+
+    function renderPRReviewsEmpty(message) {
+      app.innerHTML =
+        '<div class="page-header"><h2>PR Reviews</h2>' +
+          '<button class="btn btn-primary" onclick="prReviewShowRegisterForm()">Register PR</button>' +
+        '</div>' +
+        '<div class="card">' +
+          '<p style="color:#9ca3af;text-align:center;padding:20px;">' +
+            escapeHtml(message || 'No PR reviews found for this project.') +
+          '</p>' +
+        '</div>';
+    }
+
+    function prReviewStatusBadgeClass(status) {
+      var map = {
+        'REVIEW_PENDING': 'badge-queued',
+        'REVIEW_ARRIVED': 'badge-awaiting',
+        'ANALYZING': 'badge-running',
+        'AWAITING_APPROVAL': 'badge-awaiting',
+        'FIXING': 'badge-running',
+        'FIX_PUSHED': 'badge-running',
+        'REVIEW_COMPLETE': 'badge-complete',
+        'ESCALATED': 'badge-error',
+        'CYCLE_LIMIT_REACHED': 'badge-error',
+        'ERROR': 'badge-error'
+      };
+      return map[status] || 'badge-queued';
+    }
+
+    function renderPRReviewsList() {
+      var reviews = prReviewState.reviews;
+      if (!reviews || reviews.length === 0) {
+        return renderPRReviewsEmpty('No PR reviews found. Register a PR to get started.');
+      }
+
+      var items = reviews.map(function(pr) {
+        var badge = '<span class="badge ' + prReviewStatusBadgeClass(pr.status) + '">' + escapeHtml(pr.status) + '</span>';
+        var cycleBadge = '<span style="font-size:0.75rem;color:#6b7280;margin-left:8px;">C:' + (pr.currentCycle || 0) + '/' + (pr.maxCycles || 5) + '</span>';
+        var commentSummary = '';
+        if (pr.totalComments > 0) {
+          var parts = [];
+          if (pr.acceptedComments) parts.push(pr.acceptedComments + ' accepted');
+          if (pr.rejectedComments) parts.push(pr.rejectedComments + ' rejected');
+          if (pr.escalatedComments) parts.push(pr.escalatedComments + ' escalated');
+          if (pr.pendingComments) parts.push(pr.pendingComments + ' pending');
+          commentSummary = '<div style="font-size:0.8rem;color:#6b7280;margin-top:4px;">' + parts.join(' / ') + '</div>';
+        }
+        return '<div class="list-item" style="padding:12px 0;border-bottom:1px solid #f3f4f6;cursor:pointer;" onclick="navigate(\'/pr-reviews/' + encodeURIComponent(pr.projectId) + '/' + pr.prNumber + '\')">' +
+          '<div style="flex:1;">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+              '<strong>#' + pr.prNumber + '</strong>' +
+              '<span style="font-size:0.9rem;">' + escapeHtml(pr.prTitle || '') + '</span>' +
+              badge + cycleBadge +
+            '</div>' +
+            commentSummary +
+            '<div style="font-size:0.75rem;color:#9ca3af;margin-top:2px;">' + escapeHtml(pr.repository || '') + ' &middot; ' + escapeHtml(pr.headBranch || '') + '</div>' +
+          '</div>' +
+          '<span class="list-item-arrow">&rsaquo;</span>' +
+        '</div>';
+      }).join('');
+
+      app.innerHTML =
+        '<div class="page-header"><h2>PR Reviews (' + reviews.length + ')</h2>' +
+          '<button class="btn btn-primary" onclick="prReviewShowRegisterForm()">Register PR</button>' +
+        '</div>' +
+        '<div class="card">' + items + '</div>';
+    }
+
+    // ==================== PR Review Detail Page ====================
+
+    async function renderPRReviewDetailPage(projectId, prNumber) {
+      prReviewState.projectId = projectId;
+      prReviewState.currentPr = prNumber;
+      prReviewState.loading = true;
+
+      app.innerHTML =
+        '<div class="page-header">' +
+          '<h2>PR #' + prNumber + '</h2>' +
+          '<button class="btn btn-secondary" onclick="navigate(\'/pr-reviews\')">Back to List</button>' +
+        '</div>' +
+        '<div class="card"><p style="color:#9ca3af;text-align:center;padding:20px;">Loading PR detail...</p></div>';
+
+      try {
+        var data = await api('/pr-reviews/' + encodeURIComponent(projectId) + '/' + prNumber);
+        prReviewState.detail = data.state;
+        prReviewState.comments = data.comments || [];
+        prReviewState.cycles = data.cycles || [];
+        prReviewState.loading = false;
+        renderPRReviewDetail();
+      } catch (err) {
+        prReviewState.loading = false;
+        app.innerHTML =
+          '<div class="page-header">' +
+            '<h2>PR #' + prNumber + '</h2>' +
+            '<button class="btn btn-secondary" onclick="navigate(\'/pr-reviews\')">Back to List</button>' +
+          '</div>' +
+          '<div class="card"><p style="color:#ef4444;text-align:center;padding:20px;">' + escapeHtml(err.message || 'Failed to load') + '</p></div>';
+      }
+    }
+
+    function renderPRReviewDetail() {
+      var pr = prReviewState.detail;
+      if (!pr) return;
+
+      var projectId = prReviewState.projectId;
+      var prNumber = pr.prNumber;
+
+      // Header info card
+      var badge = '<span class="badge ' + prReviewStatusBadgeClass(pr.status) + '">' + escapeHtml(pr.status) + '</span>';
+      var headerHtml =
+        '<div class="card">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+            '<div>' +
+              '<h3 style="margin:0;">PR #' + prNumber + ': ' + escapeHtml(pr.prTitle || '') + '</h3>' +
+              '<div style="margin-top:4px;font-size:0.85rem;color:#6b7280;">' +
+                escapeHtml(pr.repository || '') + ' &middot; ' +
+                escapeHtml(pr.headBranch || '') + ' &rarr; ' + escapeHtml(pr.baseBranch || '') +
+              '</div>' +
+              '<div style="margin-top:4px;">' + badge +
+                '<span style="font-size:0.85rem;color:#6b7280;margin-left:12px;">Cycle: ' + (pr.currentCycle || 0) + '/' + (pr.maxCycles || 5) + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div>' +
+              (pr.prUrl ? '<a href="' + escapeHtml(pr.prUrl) + '" target="_blank" class="btn btn-secondary" style="font-size:0.8rem;">View on GitHub</a>' : '') +
+            '</div>' +
+          '</div>' +
+        '</div>';
+
+      // Action buttons
+      var actionsHtml =
+        '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">' +
+          '<button class="btn btn-primary" onclick="prReviewMarkArrived(\'' + escapeHtml(projectId) + '\',' + prNumber + ')">Mark Review Arrived</button>' +
+          '<button class="btn btn-primary" onclick="prReviewStartCycle(\'' + escapeHtml(projectId) + '\',' + prNumber + ')">Start Review Cycle</button>' +
+          '<button class="btn btn-secondary" onclick="prReviewComplete(\'' + escapeHtml(projectId) + '\',' + prNumber + ')">Complete Without Fix</button>' +
+        '</div>';
+
+      // Comments grouped by judgment
+      var comments = prReviewState.comments;
+      var grouped = { ACCEPT: [], REJECT: [], ESCALATE: [], ALREADY_FIXED: [], DUPLICATE: [], PENDING: [] };
+      comments.forEach(function(c) {
+        var key = c.judgment || 'PENDING';
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(c);
+      });
+
+      var commentsHtml = '';
+      var judgmentOrder = ['ACCEPT', 'REJECT', 'ESCALATE', 'ALREADY_FIXED', 'DUPLICATE', 'PENDING'];
+      var judgmentColors = {
+        ACCEPT: '#059669', REJECT: '#dc2626', ESCALATE: '#d97706',
+        ALREADY_FIXED: '#6b7280', DUPLICATE: '#6b7280', PENDING: '#3b82f6'
+      };
+
+      judgmentOrder.forEach(function(judgment) {
+        var group = grouped[judgment];
+        if (!group || group.length === 0) return;
+        var items = group.map(function(c) {
+          var overrideHtml = '';
+          if (c.userOverride) {
+            overrideHtml = '<div style="margin-top:4px;font-size:0.75rem;color:#7c3aed;">User override: ' + escapeHtml(c.userOverride.action) +
+              (c.userOverride.reason ? ' - ' + escapeHtml(c.userOverride.reason) : '') + '</div>';
+          }
+          var overrideButtons = '';
+          if (judgment === 'ESCALATE' || judgment === 'PENDING') {
+            overrideButtons =
+              '<div style="margin-top:6px;display:flex;gap:4px;">' +
+                '<button class="btn btn-secondary" style="font-size:0.7rem;padding:2px 8px;" onclick="prReviewOverride(\'' + escapeHtml(projectId) + '\',' + prNumber + ',\'' + escapeHtml(c.commentId) + '\',\'ACCEPT\')">Accept</button>' +
+                '<button class="btn btn-secondary" style="font-size:0.7rem;padding:2px 8px;" onclick="prReviewOverride(\'' + escapeHtml(projectId) + '\',' + prNumber + ',\'' + escapeHtml(c.commentId) + '\',\'REJECT\')">Reject</button>' +
+              '</div>';
+          } else if (judgment === 'REJECT') {
+            overrideButtons =
+              '<div style="margin-top:6px;">' +
+                '<button class="btn btn-secondary" style="font-size:0.7rem;padding:2px 8px;" onclick="prReviewOverride(\'' + escapeHtml(projectId) + '\',' + prNumber + ',\'' + escapeHtml(c.commentId) + '\',\'ACCEPT\')">Override: Accept</button>' +
+              '</div>';
+          }
+          return '<div style="padding:8px 0;border-bottom:1px solid #f3f4f6;">' +
+            '<div style="display:flex;align-items:center;gap:6px;">' +
+              '<span style="font-size:0.75rem;font-weight:600;color:#6b7280;">[' + escapeHtml(c.category || 'OTHER') + '/' + escapeHtml(c.severity || 'INFO') + ']</span>' +
+              '<span style="font-size:0.85rem;color:#374151;">' + escapeHtml(c.filePath || '') + (c.lineRange ? ':' + c.lineRange.start : '') + '</span>' +
+            '</div>' +
+            '<div style="font-size:0.85rem;margin-top:2px;">' + escapeHtml(c.body || '') + '</div>' +
+            (c.judgmentReason ? '<div style="font-size:0.8rem;color:#6b7280;margin-top:2px;font-style:italic;">' + escapeHtml(c.judgmentReason) + '</div>' : '') +
+            (c.suggestedFix ? '<div style="font-size:0.8rem;color:#059669;margin-top:2px;">Fix: ' + escapeHtml(c.suggestedFix) + '</div>' : '') +
+            (c.judgmentConfidence ? '<div style="font-size:0.7rem;color:#9ca3af;margin-top:1px;">Confidence: ' + (c.judgmentConfidence * 100).toFixed(0) + '%</div>' : '') +
+            overrideHtml +
+            overrideButtons +
+          '</div>';
+        }).join('');
+
+        commentsHtml +=
+          '<div class="card">' +
+            '<h3 style="color:' + judgmentColors[judgment] + ';">' + judgment + ' (' + group.length + ')</h3>' +
+            items +
+          '</div>';
+      });
+
+      if (comments.length === 0) {
+        commentsHtml = '<div class="card"><p style="color:#9ca3af;text-align:center;padding:12px;">No review comments yet.</p></div>';
+      }
+
+      // Cycle history
+      var cyclesHtml = '';
+      var cycles = prReviewState.cycles;
+      if (cycles && cycles.length > 0) {
+        var cycleItems = cycles.map(function(cy) {
+          var decBadge = cy.llmContinueDecision ? '<span class="badge ' +
+            (cy.llmContinueDecision === 'COMPLETE' ? 'badge-complete' : cy.llmContinueDecision === 'ESCALATE' ? 'badge-error' : 'badge-running') +
+            '">' + escapeHtml(cy.llmContinueDecision) + '</span>' : '';
+          return '<div style="padding:8px 0;border-bottom:1px solid #f3f4f6;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<strong>Cycle ' + cy.cycleNumber + '</strong>' +
+              decBadge +
+            '</div>' +
+            '<div style="font-size:0.8rem;color:#6b7280;margin-top:2px;">' +
+              'New: ' + (cy.newCommentCount || 0) + ' / Resolved: ' + (cy.resolvedCommentCount || 0) + ' / Dup: ' + (cy.duplicateCommentCount || 0) +
+            '</div>' +
+            (cy.llmCycleSummary ? '<div style="font-size:0.8rem;margin-top:2px;">' + escapeHtml(cy.llmCycleSummary) + '</div>' : '') +
+            (cy.filesModified && cy.filesModified.length > 0 ? '<div style="font-size:0.75rem;color:#9ca3af;margin-top:2px;">Files: ' + cy.filesModified.map(escapeHtml).join(', ') + '</div>' : '') +
+          '</div>';
+        }).join('');
+        cyclesHtml = '<div class="card"><h3>Cycle History</h3>' + cycleItems + '</div>';
+      }
+
+      // Comment summary bar
+      var summaryHtml = '';
+      if (pr.totalComments > 0) {
+        summaryHtml =
+          '<div class="card" style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 16px;">' +
+            '<span style="font-size:0.85rem;"><strong>' + pr.totalComments + '</strong> total</span>' +
+            '<span style="font-size:0.85rem;color:#059669;"><strong>' + (pr.acceptedComments || 0) + '</strong> accepted</span>' +
+            '<span style="font-size:0.85rem;color:#dc2626;"><strong>' + (pr.rejectedComments || 0) + '</strong> rejected</span>' +
+            '<span style="font-size:0.85rem;color:#d97706;"><strong>' + (pr.escalatedComments || 0) + '</strong> escalated</span>' +
+            '<span style="font-size:0.85rem;color:#3b82f6;"><strong>' + (pr.pendingComments || 0) + '</strong> pending</span>' +
+          '</div>';
+      }
+
+      app.innerHTML =
+        '<div class="page-header">' +
+          '<h2>PR #' + prNumber + '</h2>' +
+          '<button class="btn btn-secondary" onclick="navigate(\'/pr-reviews\')">Back to List</button>' +
+        '</div>' +
+        actionsHtml + headerHtml + summaryHtml + commentsHtml + cyclesHtml;
+    }
+
+    // ==================== PR Review Registration Form ====================
+
+    function prReviewShowRegisterForm() {
+      var projectInfo = document.getElementById('sidebar-project-info');
+      var projectName = projectInfo ? projectInfo.querySelector('.project-name') : null;
+      var projectId = projectName ? projectName.textContent : 'default';
+
+      app.innerHTML =
+        '<div class="page-header">' +
+          '<h2>Register PR for Review</h2>' +
+          '<button class="btn btn-secondary" onclick="renderPRReviewsPage()">Cancel</button>' +
+        '</div>' +
+        '<div class="card">' +
+          '<div class="form-group">' +
+            '<label>Repository (owner/repo)</label>' +
+            '<input type="text" id="pr-reg-repo" class="form-control" placeholder="owner/repo" />' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label>PR Number</label>' +
+            '<input type="number" id="pr-reg-number" class="form-control" placeholder="42" />' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label>PR Title</label>' +
+            '<input type="text" id="pr-reg-title" class="form-control" placeholder="feat: Add feature" />' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label>PR URL</label>' +
+            '<input type="text" id="pr-reg-url" class="form-control" placeholder="https://github.com/owner/repo/pull/42" />' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label>Base Branch</label>' +
+            '<input type="text" id="pr-reg-base" class="form-control" value="main" />' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label>Head Branch</label>' +
+            '<input type="text" id="pr-reg-head" class="form-control" placeholder="feature/something" />' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label>Max Cycles (default: 5)</label>' +
+            '<input type="number" id="pr-reg-max-cycles" class="form-control" value="5" />' +
+          '</div>' +
+          '<button class="btn btn-primary" onclick="prReviewRegister(\'' + escapeHtml(projectId) + '\')">Register</button>' +
+        '</div>';
+    }
+
+    async function prReviewRegister(projectId) {
+      var repo = document.getElementById('pr-reg-repo').value;
+      var prNumber = parseInt(document.getElementById('pr-reg-number').value, 10);
+      var prTitle = document.getElementById('pr-reg-title').value;
+      var prUrl = document.getElementById('pr-reg-url').value;
+      var baseBranch = document.getElementById('pr-reg-base').value;
+      var headBranch = document.getElementById('pr-reg-head').value;
+      var maxCycles = parseInt(document.getElementById('pr-reg-max-cycles').value, 10) || 5;
+
+      if (!repo || !prNumber || !prTitle || !prUrl || !baseBranch || !headBranch) {
+        showToast('All fields are required', 'error');
+        return;
+      }
+
+      try {
+        await api('/pr-reviews/register', {
+          method: 'POST',
+          body: JSON.stringify({
+            projectId: projectId,
+            orgId: 'default',
+            prNumber: prNumber,
+            prTitle: prTitle,
+            prUrl: prUrl,
+            baseBranch: baseBranch,
+            headBranch: headBranch,
+            repository: repo,
+            maxCycles: maxCycles
+          })
+        });
+        showToast('PR registered successfully', 'success');
+        renderPRReviewsPage();
+      } catch (err) {
+        showToast('Failed to register PR: ' + err.message, 'error');
+      }
+    }
+
+    // ==================== PR Review Actions ====================
+
+    async function prReviewStartCycle(projectId, prNumber) {
+      try {
+        await api('/pr-reviews/' + encodeURIComponent(projectId) + '/' + prNumber + '/start-cycle', { method: 'POST', body: JSON.stringify({}) });
+        showToast('Review cycle started', 'success');
+        renderPRReviewDetailPage(projectId, prNumber);
+      } catch (err) {
+        showToast('Failed to start cycle: ' + err.message, 'error');
+      }
+    }
+
+    async function prReviewMarkArrived(projectId, prNumber) {
+      try {
+        await api('/pr-reviews/' + encodeURIComponent(projectId) + '/' + prNumber + '/mark-review-arrived', { method: 'POST', body: JSON.stringify({}) });
+        showToast('Review marked as arrived', 'success');
+        renderPRReviewDetailPage(projectId, prNumber);
+      } catch (err) {
+        showToast('Failed to mark arrived: ' + err.message, 'error');
+      }
+    }
+
+    async function prReviewComplete(projectId, prNumber) {
+      if (!confirm('Complete this PR review without further fixes?')) return;
+      try {
+        await api('/pr-reviews/' + encodeURIComponent(projectId) + '/' + prNumber + '/complete', { method: 'POST', body: JSON.stringify({}) });
+        showToast('PR review completed', 'success');
+        renderPRReviewDetailPage(projectId, prNumber);
+      } catch (err) {
+        showToast('Failed to complete: ' + err.message, 'error');
+      }
+    }
+
+    async function prReviewOverride(projectId, prNumber, commentId, action) {
+      var reason = prompt('Reason for ' + action + ' (optional):');
+      try {
+        await api('/pr-reviews/' + encodeURIComponent(projectId) + '/' + prNumber + '/comments/' + encodeURIComponent(commentId), {
+          method: 'PATCH',
+          body: JSON.stringify({ action: action, reason: reason || '' })
+        });
+        showToast('Comment overridden to ' + action, 'success');
+        renderPRReviewDetailPage(projectId, prNumber);
+      } catch (err) {
+        showToast('Failed to override: ' + err.message, 'error');
+      }
+    }
+
     var assistantState = { messages: [], proposals: null, loading: false, planSet: null, repoProfile: null, lastApplyResult: null, activeTab: 'propose' };
 
     function renderAssistantPage() {
@@ -11525,6 +11926,15 @@
         renderBackupPage();
       } else if (path === '/task-tracker') {
         renderTaskTrackerPage();
+      } else if (path === '/pr-reviews') {
+        renderPRReviewsPage();
+      } else if (path.startsWith('/pr-reviews/')) {
+        var prParts = path.replace('/pr-reviews/', '').split('/');
+        if (prParts.length >= 2) {
+          renderPRReviewDetailPage(decodeURIComponent(prParts[0]), parseInt(prParts[1], 10));
+        } else {
+          renderPRReviewsPage();
+        }
       } else if (path === '/assistant' || path === '/ai-generate') {
         renderAssistantPage();
       } else if (path === '/plugins') {
