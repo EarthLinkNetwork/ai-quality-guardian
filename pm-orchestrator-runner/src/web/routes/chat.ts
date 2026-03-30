@@ -12,12 +12,7 @@
  */
 
 import { Router, Request, Response } from "express";
-import {
-  getNoDynamoExtended,
-  initNoDynamoExtended,
-  isNoDynamoExtendedInitialized,
-  NoDynamoDALWithConversations,
-} from "../dal/no-dynamo";
+import { initDAL, getDAL, isDALInitialized } from '../dal/dal-factory';
 import {
   ChatImageAttachment,
   ConversationMessage,
@@ -69,9 +64,9 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
 
   const { stateDir, queueStore, sessionId } = config;
 
-  // Ensure NoDynamoExtended is initialized
-  if (!isNoDynamoExtendedInitialized()) {
-    initNoDynamoExtended(stateDir);
+  // Ensure DAL is initialized
+  if (!isDALInitialized()) {
+    initDAL({ useDynamoDB: false, stateDir });
   }
 
   /**
@@ -100,7 +95,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
     "/projects/:projectId/conversation",
     async (req: Request, res: Response) => {
       try {
-        const dal = getNoDynamoExtended();
+        const dal = getDAL();
         const projectId = req.params.projectId as string;
         const limit = parseInt(req.query.limit as string) || 50;
 
@@ -130,7 +125,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
     "/projects/:projectId/conversation/status",
     async (req: Request, res: Response) => {
       try {
-        const dal = getNoDynamoExtended();
+        const dal = getDAL();
         const projectId = req.params.projectId as string;
 
         const awaitingMessage = await dal.getAwaitingResponseMessage(projectId);
@@ -158,7 +153,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
   router.post(
     "/projects/:projectId/chat",
     async (req: Request, res: Response) => {
-      const dal = getNoDynamoExtended();
+      const dal = getDAL();
       const projectId = req.params.projectId as string;
       const orgId = "default"; // Default org for single-tenant mode
       let activityId: string | undefined;
@@ -554,7 +549,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
     "/projects/:projectId/respond",
     async (req: Request, res: Response) => {
       try {
-        const dal = getNoDynamoExtended();
+        const dal = getDAL();
         const projectId = req.params.projectId as string;
         const { content, messageId } = req.body;
 
@@ -629,7 +624,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
     "/projects/:projectId/conversation",
     async (req: Request, res: Response) => {
       try {
-        const dal = getNoDynamoExtended();
+        const dal = getDAL();
         const projectId = req.params.projectId as string;
 
         await dal.clearConversationHistory(projectId);
@@ -655,7 +650,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
     "/projects/:projectId/conversation/:messageId",
     async (req: Request, res: Response) => {
       try {
-        const dal = getNoDynamoExtended();
+        const dal = getDAL();
         const projectId = req.params.projectId as string;
         const messageId = req.params.messageId as string;
         const { status, content, metadata } = req.body;

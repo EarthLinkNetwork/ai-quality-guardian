@@ -19,11 +19,7 @@
 import { Router, Request, Response } from "express";
 import * as fs from "fs";
 import * as path from "path";
-import {
-  getNoDynamoExtended,
-  initNoDynamoExtended,
-  isNoDynamoExtendedInitialized,
-} from "../dal/no-dynamo";
+import { initDAL, getDAL, isDALInitialized } from '../dal/dal-factory';
 
 /**
  * Session info for tree display
@@ -358,8 +354,8 @@ function buildSessionTree(
 export function createSessionLogsRoutes(stateDir: string): Router {
   const router = Router();
 
-  if (!isNoDynamoExtendedInitialized()) {
-    initNoDynamoExtended(stateDir);
+  if (!isDALInitialized()) {
+    initDAL({ useDynamoDB: false, stateDir });
   }
 
   /**
@@ -371,7 +367,7 @@ export function createSessionLogsRoutes(stateDir: string): Router {
     next: () => void
   ): Promise<void> {
     try {
-      const dal = getNoDynamoExtended();
+      const dal = getDAL();
       const projectId = req.params.projectId as string;
 
       const project = await dal.getProjectIndex(projectId);

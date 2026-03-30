@@ -5,12 +5,9 @@
 
 import { Router, Request, Response } from 'express';
 import {
-  NoDynamoDAL,
   InspectionPacket,
-  initNoDynamo,
-  getNoDynamo,
-  isNoDynamoInitialized,
 } from '../dal/no-dynamo';
+import { initDAL, getDAL, isDALInitialized } from '../dal/dal-factory';
 import type { IQueueStore } from '../../queue/queue-store';
 import { buildProjectCostInfo, getAllModelCostInfo } from '../services/ai-cost-service';
 
@@ -41,9 +38,9 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
   const { stateDir, queueStore } = config;
   const router = Router();
 
-  // Ensure NoDynamo is initialized
-  if (!isNoDynamoInitialized()) {
-    initNoDynamo(stateDir);
+  // Ensure DAL is initialized
+  if (!isDALInitialized()) {
+    initDAL({ useDynamoDB: false, stateDir });
   }
 
   /**
@@ -52,7 +49,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.get('/', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const projectStatus = (req.query.projectStatus as string) || 'active';
       const [projectsResult, activityResult, stats] = await Promise.all([
         dal.listProjectIndexes({ limit: 10, projectStatus: projectStatus === 'all' ? undefined : projectStatus as any }),
@@ -78,7 +75,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.get('/projects', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const includeArchived = req.query.includeArchived === 'true';
       const status = req.query.status as string | undefined;
       const projectStatus = req.query.projectStatus as string | undefined;
@@ -126,7 +123,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.post('/projects', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const { projectPath, alias, description, notes, tags, projectType, aiModel, aiProvider } = req.body;
 
       if (!projectPath || typeof projectPath !== 'string') {
@@ -165,7 +162,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.get('/projects/:projectId', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const projectId = req.params.projectId as string;
       const project = await dal.getProjectIndex(projectId);
 
@@ -333,7 +330,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.patch('/projects/:projectId', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const { favorite, alias, description, notes, tags, bootstrapPrompt, projectType, projectStatus, inputTemplateId, outputTemplateId, aiModel, aiProvider } = req.body;
 
       const project = await dal.updateProjectIndex(req.params.projectId as string, {
@@ -372,7 +369,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.post('/projects/:projectId/archive', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const project = await dal.archiveProject(req.params.projectId as string);
 
       if (!project) {
@@ -396,7 +393,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.post('/projects/:projectId/unarchive', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const project = await dal.unarchiveProject(req.params.projectId as string);
 
       if (!project) {
@@ -424,7 +421,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.get('/activity', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const projectId = req.query.projectId as string;
       const limit = parseInt(req.query.limit as string) || 50;
       const since = req.query.since as string;
@@ -508,7 +505,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.get('/runs', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const sessionId = req.query.sessionId as string;
       const runs = await dal.listRuns(sessionId);
 
@@ -525,7 +522,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.get('/runs/:runId', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const run = await dal.getRun(req.params.runId as string);
 
       if (!run) {
@@ -555,7 +552,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.get('/runs/:runId/logs', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const events = await dal.listEvents(req.params.runId as string);
 
       // Filter to log-type events
@@ -581,7 +578,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.get('/sessions', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const projectId = req.query.projectId as string;
       const sessions = await dal.listSessions(projectId);
 
@@ -598,7 +595,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
    */
   router.get('/sessions/:sessionId', async (req: Request, res: Response) => {
     try {
-      const dal = getNoDynamo();
+      const dal = getDAL();
       const session = await dal.getSession(req.params.sessionId as string);
 
       if (!session) {

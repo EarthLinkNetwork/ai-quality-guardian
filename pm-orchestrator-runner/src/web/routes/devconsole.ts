@@ -11,11 +11,7 @@ import { Router, Request, Response } from "express";
 import * as fs from "fs";
 import * as path from "path";
 import { spawn, execSync, SpawnOptions } from "child_process";
-import {
-  getNoDynamoExtended,
-  initNoDynamoExtended,
-  isNoDynamoExtendedInitialized,
-} from "../dal/no-dynamo";
+import { initDAL, getDAL, isDALInitialized } from '../dal/dal-factory';
 
 /**
  * File entry in directory listing
@@ -295,8 +291,8 @@ function findLatestGateAllPass(logDir: string): GatePassInfo | null {
 export function createDevconsoleRoutes(stateDir: string): Router {
   const router = Router();
 
-  if (!isNoDynamoExtendedInitialized()) {
-    initNoDynamoExtended(stateDir);
+  if (!isDALInitialized()) {
+    initDAL({ useDynamoDB: false, stateDir });
   }
 
   /**
@@ -308,7 +304,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     next: () => void
   ): Promise<void> {
     try {
-      const dal = getNoDynamoExtended();
+      const dal = getDAL();
       const projectId = req.params.projectId as string;
 
       const project = await dal.getProjectIndex(projectId);
