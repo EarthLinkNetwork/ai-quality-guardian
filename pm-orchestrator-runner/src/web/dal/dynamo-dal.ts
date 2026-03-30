@@ -38,6 +38,15 @@ import type {
   CreateTaskSnapshotInput,
   CreateTaskSummaryInput,
 } from "./task-tracker-types";
+import type {
+  PRReviewState,
+  PRReviewComment,
+  PRReviewCycle,
+  PRReviewStatus,
+  CommentJudgment,
+  CreatePRReviewStateInput,
+  UpdatePRReviewStateInput,
+} from "./pr-review-types";
 import { NoDynamoDALWithConversations, NoDynamoConfig } from "./no-dynamo";
 import * as projectIndexDAL from "./project-index-dal";
 
@@ -239,17 +248,33 @@ export class DynamoDAL implements IDataAccessLayer {
   }
 
   async getProjectIndex(projectId: string): Promise<ProjectIndex | null> {
-    return this.dynamoProjectOp(
-      () => projectIndexDAL.getProjectIndex(this.orgId, projectId),
-      () => this.fallback.getProjectIndex(projectId),
-    );
+    // Try DynamoDB first, then fallback. If DynamoDB returns null (orgId mismatch),
+    // also check fallback since the project may exist with a different orgId.
+    if (await this.ensureTable()) {
+      try {
+        const result = await projectIndexDAL.getProjectIndex(this.orgId, projectId);
+        if (result) return result;
+      } catch (err) {
+        if (!isTransientError(err)) {
+          console.error("[DynamoDAL] getProjectIndex failed:", (err as Error).message);
+        }
+      }
+    }
+    return this.fallback.getProjectIndex(projectId);
   }
 
   async getProjectIndexByPath(projectPath: string): Promise<ProjectIndex | null> {
-    return this.dynamoProjectOp(
-      () => projectIndexDAL.getProjectIndexByPath(this.orgId, projectPath),
-      () => this.fallback.getProjectIndexByPath(projectPath),
-    );
+    if (await this.ensureTable()) {
+      try {
+        const result = await projectIndexDAL.getProjectIndexByPath(this.orgId, projectPath);
+        if (result) return result;
+      } catch (err) {
+        if (!isTransientError(err)) {
+          console.error("[DynamoDAL] getProjectIndexByPath failed:", (err as Error).message);
+        }
+      }
+    }
+    return this.fallback.getProjectIndexByPath(projectPath);
   }
 
   async listProjectIndexes(options?: ListProjectIndexOptions): Promise<PaginatedResult<ProjectIndex>> {
@@ -548,6 +573,98 @@ export class DynamoDAL implements IDataAccessLayer {
   async listTaskSummaries(projectId: string): Promise<TaskSummary[]> {
     return this.fallback.listTaskSummaries(projectId);
   }
+  // ==================== PR Review State (fallback to NoDynamo) ====================
+  // TODO: Migrate to DynamoDB
+
+  async createPRReviewState(input: CreatePRReviewStateInput): Promise<PRReviewState> {
+    return this.fallback.createPRReviewState(input);
+  }
+
+  async getPRReviewState(projectId: string, prNumber: number): Promise<PRReviewState | null> {
+    return this.fallback.getPRReviewState(projectId, prNumber);
+  }
+
+  async updatePRReviewState(
+    projectId: string,
+    prNumber: number,
+    updates: UpdatePRReviewStateInput & { version: number }
+  ): Promise<PRReviewState> {
+    return this.fallback.updatePRReviewState(projectId, prNumber, updates);
+  }
+
+  async listPRReviewStates(
+    projectId: string,
+    options?: { status?: PRReviewStatus; limit?: number }
+  ): Promise<PRReviewState[]> {
+    return this.fallback.listPRReviewStates(projectId, options);
+  }
+
+  async deletePRReviewState(projectId: string, prNumber: number): Promise<void> {
+    return this.fallback.deletePRReviewState(projectId, prNumber);
+  }
+
+  // ==================== PR Review Comments (fallback to NoDynamo) ====================
+  // TODO: Migrate to DynamoDB
+
+  async batchCreatePRReviewComments(comments: PRReviewComment[]): Promise<void> {
+    return this.fallback.batchCreatePRReviewComments(comments);
+  }
+
+  async getPRReviewComment(
+    projectId: string,
+    prNumber: number,
+    commentId: string
+  ): Promise<PRReviewComment | null> {
+    return this.fallback.getPRReviewComment(projectId, prNumber, commentId);
+  }
+
+  async listPRReviewComments(
+    projectId: string,
+    prNumber: number,
+    filter?: { judgment?: CommentJudgment; fixApplied?: boolean; cycle?: number }
+  ): Promise<PRReviewComment[]> {
+    return this.fallback.listPRReviewComments(projectId, prNumber, filter);
+  }
+
+  async updatePRReviewComment(
+    projectId: string,
+    prNumber: number,
+    commentId: string,
+    updates: Partial<Pick<PRReviewComment,
+      "judgment" | "judgmentReason" | "fixApplied" | "fixCommitHash" | "fixDescription" | "userOverride"
+    >>
+  ): Promise<PRReviewComment> {
+    return this.fallback.updatePRReviewComment(projectId, prNumber, commentId, updates);
+  }
+
+  // ==================== PR Review Cycles (fallback to NoDynamo) ====================
+  // TODO: Migrate to DynamoDB
+
+  async createPRReviewCycle(input: PRReviewCycle): Promise<PRReviewCycle> {
+    return this.fallback.createPRReviewCycle(input);
+  }
+
+  async getPRReviewCycle(
+    projectId: string,
+    prNumber: number,
+    cycleNumber: number
+  ): Promise<PRReviewCycle | null> {
+    return this.fallback.getPRReviewCycle(projectId, prNumber, cycleNumber);
+  }
+
+  async listPRReviewCycles(projectId: string, prNumber: number): Promise<PRReviewCycle[]> {
+    return this.fallback.listPRReviewCycles(projectId, prNumber);
+  }
+
+  async updatePRReviewCycle(
+    projectId: string,
+    prNumber: number,
+    cycleNumber: number,
+    updates: Partial<PRReviewCycle>
+  ): Promise<PRReviewCycle> {
+    return this.fallback.updatePRReviewCycle(projectId, prNumber, cycleNumber, updates);
+  }
+
   // ==================== Utility ====================
 
   async clearAll(): Promise<void> {

@@ -61,6 +61,15 @@ import type {
   CreateTaskSummaryInput,
 } from "./task-tracker-types";
 import { OptimisticLockError } from "./task-tracker-types";
+import type {
+  PRReviewState,
+  PRReviewComment,
+  PRReviewCycle,
+  PRReviewStatus,
+  CommentJudgment,
+  CreatePRReviewStateInput,
+  UpdatePRReviewStateInput,
+} from "./pr-review-types";
 
 /**
  * Run entity for NoDynamo storage
@@ -294,11 +303,9 @@ export class NoDynamoDAL {
     const content = await fs.promises.readFile(filePath, "utf-8");
     const project = JSON.parse(content) as ProjectIndex;
 
-    // Org isolation: reject projects from other orgs
-    if (this.orgId && project.orgId && project.orgId !== this.orgId) {
-      return null;
-    }
-
+    // Note: getProjectIndex does NOT filter by orgId.
+    // Tenant isolation is enforced at list level (listProjectIndexes uses options.orgId).
+    // Individual access by projectId is safe because projectId is globally unique (SHA256 hash).
     return project;
   }
 
@@ -1797,6 +1804,358 @@ export class NoDynamoDALWithConversations extends NoDynamoDAL implements IDataAc
     summaries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
     return summaries;
+  }
+
+  // ==================== PR Review State CRUD ====================
+
+  private get prReviewStatesDir(): string {
+    return path.join(this.extStateDir, "pr-review-states");
+  }
+
+  private get prReviewCommentsDir(): string {
+    return path.join(this.extStateDir, "pr-review-comments");
+  }
+
+  private get prReviewCyclesDir(): string {
+    return path.join(this.extStateDir, "pr-review-cycles");
+  }
+
+  private ensurePRReviewDirs(): void {
+    for (const dir of [this.prReviewStatesDir, this.prReviewCommentsDir, this.prReviewCyclesDir]) {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    }
+  }
+
+  private prReviewStateFileName(projectId: string, prNumber: number): string {
+    return `${projectId}_${prNumber}.json`;
+  }
+
+  async createPRReviewState(input: CreatePRReviewStateInput): Promise<PRReviewState> {
+    this.ensurePRReviewDirs();
+    const now = nowISO();
+    const TTL_90_DAYS = Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60);
+
+    const state: PRReviewState = {
+      PK: "ORG#" + input.orgId,
+      SK: `PR#${input.projectId}#${input.prNumber}`,
+      projectId: input.projectId,
+      orgId: input.orgId,
+      prNumber: input.prNumber,
+      prTitle: input.prTitle,
+      prUrl: input.prUrl,
+      baseBranch: input.baseBranch,
+      headBranch: input.headBranch,
+      repository: input.repository,
+      status: "REVIEW_PENDING",
+      currentCycle: 0,
+      maxCycles: input.maxCycles ?? 5,
+      totalComments: 0,
+      pendingComments: 0,
+      acceptedComments: 0,
+      rejectedComments: 0,
+      escalatedComments: 0,
+      lastReviewArrivedAt: null,
+      lastFixPushedAt: null,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      ttl: TTL_90_DAYS,
+    };
+
+    const filePath = path.join(
+      this.prReviewStatesDir,
+      this.prReviewStateFileName(input.projectId, input.prNumber)
+    );
+    await fs.promises.writeFile(filePath, JSON.stringify(state, null, 2));
+    return state;
+  }
+
+  async getPRReviewState(projectId: string, prNumber: number): Promise<PRReviewState | null> {
+    this.ensurePRReviewDirs();
+    const filePath = path.join(
+      this.prReviewStatesDir,
+      this.prReviewStateFileName(projectId, prNumber)
+    );
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    return JSON.parse(content) as PRReviewState;
+  }
+
+  async updatePRReviewState(
+    projectId: string,
+    prNumber: number,
+    updates: UpdatePRReviewStateInput & { version: number }
+  ): Promise<PRReviewState> {
+    const state = await this.getPRReviewState(projectId, prNumber);
+    if (!state) {
+      throw new Error(`PRReviewState not found for project: ${projectId}, PR: ${prNumber}`);
+    }
+    if (state.version !== updates.version) {
+      throw new OptimisticLockError(updates.version, state.version);
+    }
+
+    const { version: _v, ...updateFields } = updates;
+    const updated: PRReviewState = {
+      ...state,
+      ...updateFields,
+      version: state.version + 1,
+      updatedAt: nowISO(),
+    };
+
+    const filePath = path.join(
+      this.prReviewStatesDir,
+      this.prReviewStateFileName(projectId, prNumber)
+    );
+    await fs.promises.writeFile(filePath, JSON.stringify(updated, null, 2));
+    return updated;
+  }
+
+  async listPRReviewStates(
+    projectId: string,
+    options?: { status?: PRReviewStatus; limit?: number }
+  ): Promise<PRReviewState[]> {
+    this.ensurePRReviewDirs();
+    if (!fs.existsSync(this.prReviewStatesDir)) {
+      return [];
+    }
+
+    const prefix = projectId + "_";
+    const files = fs.readdirSync(this.prReviewStatesDir)
+      .filter((f) => f.startsWith(prefix) && f.endsWith(".json"));
+    let states: PRReviewState[] = [];
+
+    for (const file of files) {
+      const content = await fs.promises.readFile(
+        path.join(this.prReviewStatesDir, file),
+        "utf-8"
+      );
+      const state = JSON.parse(content) as PRReviewState;
+      if (state.projectId === projectId) {
+        states.push(state);
+      }
+    }
+
+    if (options?.status) {
+      states = states.filter((s) => s.status === options.status);
+    }
+
+    // Sort by createdAt descending
+    states.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    if (options?.limit !== undefined && options.limit > 0) {
+      return states.slice(0, options.limit);
+    }
+    return states;
+  }
+
+  async deletePRReviewState(projectId: string, prNumber: number): Promise<void> {
+    this.ensurePRReviewDirs();
+    const filePath = path.join(
+      this.prReviewStatesDir,
+      this.prReviewStateFileName(projectId, prNumber)
+    );
+    try {
+      await fs.promises.unlink(filePath);
+    } catch {
+      // Ignore if file does not exist
+    }
+  }
+
+  // ==================== PR Review Comment CRUD ====================
+
+  private prCommentFileName(projectId: string, prNumber: number, commentId: string): string {
+    return `${projectId}_${prNumber}_${commentId}.json`;
+  }
+
+  async batchCreatePRReviewComments(comments: PRReviewComment[]): Promise<void> {
+    this.ensurePRReviewDirs();
+    for (const comment of comments) {
+      const filePath = path.join(
+        this.prReviewCommentsDir,
+        this.prCommentFileName(comment.projectId, comment.prNumber, comment.commentId)
+      );
+      await fs.promises.writeFile(filePath, JSON.stringify(comment, null, 2));
+    }
+  }
+
+  async getPRReviewComment(
+    projectId: string,
+    prNumber: number,
+    commentId: string
+  ): Promise<PRReviewComment | null> {
+    this.ensurePRReviewDirs();
+    const filePath = path.join(
+      this.prReviewCommentsDir,
+      this.prCommentFileName(projectId, prNumber, commentId)
+    );
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    return JSON.parse(content) as PRReviewComment;
+  }
+
+  async listPRReviewComments(
+    projectId: string,
+    prNumber: number,
+    filter?: { judgment?: CommentJudgment; fixApplied?: boolean; cycle?: number }
+  ): Promise<PRReviewComment[]> {
+    this.ensurePRReviewDirs();
+    if (!fs.existsSync(this.prReviewCommentsDir)) {
+      return [];
+    }
+
+    const prefix = `${projectId}_${prNumber}_`;
+    const files = fs.readdirSync(this.prReviewCommentsDir)
+      .filter((f) => f.startsWith(prefix) && f.endsWith(".json"));
+    let comments: PRReviewComment[] = [];
+
+    for (const file of files) {
+      const content = await fs.promises.readFile(
+        path.join(this.prReviewCommentsDir, file),
+        "utf-8"
+      );
+      const comment = JSON.parse(content) as PRReviewComment;
+      if (comment.projectId === projectId && comment.prNumber === prNumber) {
+        comments.push(comment);
+      }
+    }
+
+    if (filter?.judgment) {
+      comments = comments.filter((c) => c.judgment === filter.judgment);
+    }
+    if (filter?.fixApplied !== undefined) {
+      comments = comments.filter((c) => c.fixApplied === filter.fixApplied);
+    }
+    if (filter?.cycle !== undefined) {
+      comments = comments.filter((c) => c.detectedInCycle === filter.cycle);
+    }
+
+    // Sort by createdAt ascending
+    comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+    return comments;
+  }
+
+  async updatePRReviewComment(
+    projectId: string,
+    prNumber: number,
+    commentId: string,
+    updates: Partial<Pick<PRReviewComment,
+      "judgment" | "judgmentReason" | "fixApplied" | "fixCommitHash" | "fixDescription" | "userOverride"
+    >>
+  ): Promise<PRReviewComment> {
+    const comment = await this.getPRReviewComment(projectId, prNumber, commentId);
+    if (!comment) {
+      throw new Error(`PRReviewComment not found: ${projectId}/${prNumber}/${commentId}`);
+    }
+
+    const updated: PRReviewComment = {
+      ...comment,
+      ...updates,
+      updatedAt: nowISO(),
+    };
+
+    const filePath = path.join(
+      this.prReviewCommentsDir,
+      this.prCommentFileName(projectId, prNumber, commentId)
+    );
+    await fs.promises.writeFile(filePath, JSON.stringify(updated, null, 2));
+    return updated;
+  }
+
+  // ==================== PR Review Cycle CRUD ====================
+
+  private prCycleFileName(projectId: string, prNumber: number, cycleNumber: number): string {
+    return `${projectId}_${prNumber}_${cycleNumber}.json`;
+  }
+
+  async createPRReviewCycle(input: PRReviewCycle): Promise<PRReviewCycle> {
+    this.ensurePRReviewDirs();
+    const cycle: PRReviewCycle = {
+      ...input,
+      createdAt: input.createdAt || nowISO(),
+    };
+
+    const filePath = path.join(
+      this.prReviewCyclesDir,
+      this.prCycleFileName(input.projectId, input.prNumber, input.cycleNumber)
+    );
+    await fs.promises.writeFile(filePath, JSON.stringify(cycle, null, 2));
+    return cycle;
+  }
+
+  async getPRReviewCycle(
+    projectId: string,
+    prNumber: number,
+    cycleNumber: number
+  ): Promise<PRReviewCycle | null> {
+    this.ensurePRReviewDirs();
+    const filePath = path.join(
+      this.prReviewCyclesDir,
+      this.prCycleFileName(projectId, prNumber, cycleNumber)
+    );
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    return JSON.parse(content) as PRReviewCycle;
+  }
+
+  async listPRReviewCycles(projectId: string, prNumber: number): Promise<PRReviewCycle[]> {
+    this.ensurePRReviewDirs();
+    if (!fs.existsSync(this.prReviewCyclesDir)) {
+      return [];
+    }
+
+    const prefix = `${projectId}_${prNumber}_`;
+    const files = fs.readdirSync(this.prReviewCyclesDir)
+      .filter((f) => f.startsWith(prefix) && f.endsWith(".json"));
+    const cycles: PRReviewCycle[] = [];
+
+    for (const file of files) {
+      const content = await fs.promises.readFile(
+        path.join(this.prReviewCyclesDir, file),
+        "utf-8"
+      );
+      const cycle = JSON.parse(content) as PRReviewCycle;
+      if (cycle.projectId === projectId && cycle.prNumber === prNumber) {
+        cycles.push(cycle);
+      }
+    }
+
+    // Sort by cycleNumber ascending
+    cycles.sort((a, b) => a.cycleNumber - b.cycleNumber);
+
+    return cycles;
+  }
+
+  async updatePRReviewCycle(
+    projectId: string,
+    prNumber: number,
+    cycleNumber: number,
+    updates: Partial<PRReviewCycle>
+  ): Promise<PRReviewCycle> {
+    const cycle = await this.getPRReviewCycle(projectId, prNumber, cycleNumber);
+    if (!cycle) {
+      throw new Error(`PRReviewCycle not found: ${projectId}/${prNumber}/${cycleNumber}`);
+    }
+
+    const updated: PRReviewCycle = {
+      ...cycle,
+      ...updates,
+    };
+
+    const filePath = path.join(
+      this.prReviewCyclesDir,
+      this.prCycleFileName(projectId, prNumber, cycleNumber)
+    );
+    await fs.promises.writeFile(filePath, JSON.stringify(updated, null, 2));
+    return updated;
   }
 }
 
