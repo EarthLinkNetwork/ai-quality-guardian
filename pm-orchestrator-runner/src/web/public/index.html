@@ -5527,24 +5527,35 @@
     // ===================
     // Templates section (Input/Output template management)
     // ===================
+    var templateViewMode = 'input'; // 'input' or 'output'
+
     function renderTemplatesSettings(container) {
       const templates = settingsData.templates || [];
       const userTemplates = templates.filter(t => !t.isBuiltIn);
       const builtInTemplates = templates.filter(t => t.isBuiltIn);
 
+      const inputActive = templateViewMode === 'input' ? 'active' : '';
+      const outputActive = templateViewMode === 'output' ? 'active' : '';
+
       container.innerHTML = `
         <div class="card settings-section">
           <h3>Template Management</h3>
           <p class="settings-hint">
-            Create and manage input/output templates. Input templates inject rules at the start of every task prompt.
-            Output templates define the expected response format. Assign templates to projects in the Project Settings modal.
+            Input templates inject rules at the start of every task prompt.
+            Output templates define the expected response format.
+            Assign templates to projects in Project Settings.
           </p>
-          <button class="btn btn-primary" onclick="openTemplateEditor()" style="margin-bottom: 16px;">+ New Template</button>
+          <div style="display:flex; gap:8px; margin-bottom:16px;">
+            <button class="template-tab ${inputActive}" onclick="templateViewMode='input'; renderTemplatesSettings(this.closest('.settings-section').parentElement)">Input Templates</button>
+            <button class="template-tab ${outputActive}" onclick="templateViewMode='output'; renderTemplatesSettings(this.closest('.settings-section').parentElement)">Output Templates</button>
+            <div style="flex:1;"></div>
+            <button class="btn btn-primary btn-sm" onclick="openTemplateEditor()">+ New Template</button>
+          </div>
         </div>
 
         <!-- User Templates -->
         <div class="card settings-section">
-          <h3>Custom Templates (${userTemplates.length})</h3>
+          <h3>Custom ${templateViewMode === 'input' ? 'Input' : 'Output'} Templates (${userTemplates.length})</h3>
           ${userTemplates.length === 0 ? '<p class="settings-hint">No custom templates yet. Click "+ New Template" to create one.</p>' : ''}
           <div class="template-list">
             ${userTemplates.map(t => renderTemplateCard(t, false)).join('')}
@@ -5553,7 +5564,7 @@
 
         <!-- Built-in Templates -->
         <div class="card settings-section">
-          <h3>Built-in Templates (${builtInTemplates.length})</h3>
+          <h3>Built-in ${templateViewMode === 'input' ? 'Input' : 'Output'} Templates (${builtInTemplates.length})</h3>
           <p class="settings-hint">Built-in templates are read-only. Copy them to create a customizable version.</p>
           <div class="template-list">
             ${builtInTemplates.map(t => renderTemplateCard(t, true)).join('')}
@@ -5567,51 +5578,39 @@
       const outputText = template.outputFormatText || '';
       const cardId = 'tpl-card-' + template.id.replace(/[^a-zA-Z0-9_-]/g, '_');
       const escapedId = escapeHtml(template.id);
-      const rulesLineCount = rulesText.split('\n').length;
-      const outputLineCount = outputText.split('\n').length;
+
+      // Show only the field matching the current view mode
+      const isInput = templateViewMode === 'input';
+      const text = isInput ? rulesText : outputText;
+      const label = isInput ? 'Input Rules' : 'Output Format';
+      const fieldId = isInput ? (cardId + '-rules') : (cardId + '-output');
+      const lineCount = text.split('\n').length;
+      const charInfo = text ? '<span style="font-weight:normal;color:#6b7280;font-size:0.75rem;">(' + text.length + ' chars, ' + lineCount + ' lines)</span>' : '<span style="color:#6b7280;font-size:0.75rem;">(empty)</span>';
 
       return `
         <div class="template-card" data-template-id="${escapedId}">
           <div class="template-card-header">
             <span class="template-name">${escapeHtml(template.name)}</span>
             ${isBuiltIn ? '<span class="badge badge-builtin">Built-in</span>' : ''}
-            <button class="btn btn-sm template-expand-btn" onclick="toggleTemplateContent('${cardId}')" data-testid="tpl-expand-${escapedId}">Hide Content</button>
+            ${charInfo}
           </div>
           <div class="template-full-content" id="${cardId}" style="display:block;">
-            <div class="template-tabs">
-              <button class="template-tab active" onclick="switchTemplateTab(this, 'input')">Input Rules <span style="font-weight:normal;color:#9ca3af;font-size:0.7rem;">(${rulesLineCount} lines)</span></button>
-              <button class="template-tab" onclick="switchTemplateTab(this, 'output')">Output Format <span style="font-weight:normal;color:#9ca3af;font-size:0.7rem;">(${outputLineCount} lines)</span></button>
-            </div>
-            <div class="template-tab-content" data-tab="input" style="display:block;">
-              <div class="template-full-section">
-                <div class="template-full-label" style="display:flex; justify-content:space-between; align-items:center;">
-                  <span>Input Rules ${rulesText ? '<span style="font-weight:normal;color:#6b7280;font-size:0.75rem;">(' + rulesText.length + ' chars)</span>' : ''}</span>
-                  <button class="btn btn-sm" style="font-size:0.7rem; padding:2px 8px;" onclick="openTemplateFullView('Input Rules - ${escapeHtml(template.name)}', document.getElementById('${cardId}-rules').value)">View Full</button>
-                </div>
-                ${isBuiltIn
-                  ? '<textarea class="template-full-textarea" id="' + cardId + '-rules" rows="' + Math.max(8, rulesLineCount + 2) + '" readonly style="opacity:0.8;cursor:default;">' + escapeHtml(rulesText || '(empty)') + '</textarea>'
-                  : '<textarea class="template-full-textarea" id="' + cardId + '-rules" rows="' + Math.max(8, rulesLineCount + 2) + '">' + escapeHtml(rulesText) + '</textarea>'
-                }
+            <div class="template-full-section">
+              <div class="template-full-label" style="display:flex; justify-content:space-between; align-items:center;">
+                <span>${label}</span>
+                <button class="btn btn-sm" style="font-size:0.7rem; padding:2px 8px;" onclick="openTemplateFullView('${label} - ${escapeHtml(template.name)}', document.getElementById('${fieldId}').value)">View Full</button>
               </div>
-            </div>
-            <div class="template-tab-content" data-tab="output" style="display:none;">
-              <div class="template-full-section">
-                <div class="template-full-label" style="display:flex; justify-content:space-between; align-items:center;">
-                  <span>Output Format ${outputText ? '<span style="font-weight:normal;color:#6b7280;font-size:0.75rem;">(' + outputText.length + ' chars)</span>' : ''}</span>
-                  <button class="btn btn-sm" style="font-size:0.7rem; padding:2px 8px;" onclick="openTemplateFullView('Output Format - ${escapeHtml(template.name)}', document.getElementById('${cardId}-output').value)">View Full</button>
-                </div>
-                ${isBuiltIn
-                  ? '<textarea class="template-full-textarea" id="' + cardId + '-output" rows="' + Math.max(6, outputLineCount + 2) + '" readonly style="opacity:0.8;cursor:default;">' + escapeHtml(outputText || '(empty)') + '</textarea>'
-                  : '<textarea class="template-full-textarea" id="' + cardId + '-output" rows="' + Math.max(6, outputLineCount + 2) + '">' + escapeHtml(outputText) + '</textarea>'
-                }
-              </div>
+              ${isBuiltIn
+                ? '<textarea class="template-full-textarea" id="' + fieldId + '" rows="' + Math.max(6, Math.min(lineCount + 2, 15)) + '" readonly style="opacity:0.8;cursor:default;">' + escapeHtml(text || '(empty)') + '</textarea>'
+                : '<textarea class="template-full-textarea" id="' + fieldId + '" rows="' + Math.max(6, Math.min(lineCount + 2, 15)) + '">' + escapeHtml(text) + '</textarea>'
+              }
             </div>
             ${!isBuiltIn ? '<div style="margin-top:8px;text-align:right;"><button class="btn btn-primary btn-sm" onclick="saveTemplateInline(\'' + escapedId + '\', \'' + cardId + '\')">Save Changes</button></div>' : ''}
           </div>
           <div class="template-card-actions">
             ${isBuiltIn
               ? '<button class="btn btn-sm" onclick="copyTemplate(\'' + escapedId + '\', \'' + escapeHtml(template.name) + '\')">Copy</button>'
-              : '<button class="btn btn-sm" onclick="openTemplateEditor(\'' + escapedId + '\')">Edit in Modal</button>' +
+              : '<button class="btn btn-sm" onclick="openTemplateEditor(\'' + escapedId + '\')">Edit</button>' +
                 '<button class="btn btn-sm btn-danger" onclick="deleteTemplate(\'' + escapedId + '\', \'' + escapeHtml(template.name) + '\')">Delete</button>'
             }
           </div>
@@ -5663,18 +5662,28 @@
      * Save template content inline from the expanded card view.
      */
     async function saveTemplateInline(templateId, cardId) {
+      // Find the current template data to preserve the field not being edited
+      var existingTemplate = (settingsData.templates || []).find(function(t) { return t.id === templateId; });
       var rulesEl = document.getElementById(cardId + '-rules');
       var outputEl = document.getElementById(cardId + '-output');
-      if (!rulesEl || !outputEl) return;
+
+      // Build update: use the visible field's value, preserve the other from existing data
+      var updateBody = {};
+      if (templateViewMode === 'input' && rulesEl) {
+        updateBody.rulesText = rulesEl.value;
+        updateBody.outputFormatText = existingTemplate ? existingTemplate.outputFormatText : '';
+      } else if (templateViewMode === 'output' && outputEl) {
+        updateBody.rulesText = existingTemplate ? existingTemplate.rulesText : '';
+        updateBody.outputFormatText = outputEl.value;
+      } else {
+        return;
+      }
 
       try {
         var response = await fetch('/api/templates/' + encodeURIComponent(templateId), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            rulesText: rulesEl.value,
-            outputFormatText: outputEl.value,
-          }),
+          body: JSON.stringify(updateBody),
         });
         var data = await response.json();
         if (data.error) throw new Error(data.message);
