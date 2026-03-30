@@ -5578,19 +5578,33 @@
             <button class="btn btn-sm template-expand-btn" onclick="toggleTemplateContent('${cardId}')" data-testid="tpl-expand-${escapedId}">Hide Content</button>
           </div>
           <div class="template-full-content" id="${cardId}" style="display:block;">
-            <div class="template-full-section">
-              <div class="template-full-label">Input Rules ${rulesText ? '<span style="font-weight:normal;color:#6b7280;font-size:0.75rem;">(' + rulesText.length + ' chars, ' + rulesLineCount + ' lines)</span>' : ''}</div>
-              ${isBuiltIn
-                ? '<textarea class="template-full-textarea" id="' + cardId + '-rules" rows="' + Math.max(8, rulesLineCount + 2) + '" readonly style="opacity:0.8;cursor:default;">' + escapeHtml(rulesText || '(empty)') + '</textarea>'
-                : '<textarea class="template-full-textarea" id="' + cardId + '-rules" rows="' + Math.max(8, rulesLineCount + 2) + '">' + escapeHtml(rulesText) + '</textarea>'
-              }
+            <div class="template-tabs">
+              <button class="template-tab active" onclick="switchTemplateTab(this, 'input')">Input Rules <span style="font-weight:normal;color:#9ca3af;font-size:0.7rem;">(${rulesLineCount} lines)</span></button>
+              <button class="template-tab" onclick="switchTemplateTab(this, 'output')">Output Format <span style="font-weight:normal;color:#9ca3af;font-size:0.7rem;">(${outputLineCount} lines)</span></button>
             </div>
-            <div class="template-full-section">
-              <div class="template-full-label">Output Format ${outputText ? '<span style="font-weight:normal;color:#6b7280;font-size:0.75rem;">(' + outputText.length + ' chars, ' + outputLineCount + ' lines)</span>' : ''}</div>
-              ${isBuiltIn
-                ? '<textarea class="template-full-textarea" id="' + cardId + '-output" rows="' + Math.max(6, outputLineCount + 2) + '" readonly style="opacity:0.8;cursor:default;">' + escapeHtml(outputText || '(empty)') + '</textarea>'
-                : '<textarea class="template-full-textarea" id="' + cardId + '-output" rows="' + Math.max(6, outputLineCount + 2) + '">' + escapeHtml(outputText) + '</textarea>'
-              }
+            <div class="template-tab-content" data-tab="input" style="display:block;">
+              <div class="template-full-section">
+                <div class="template-full-label" style="display:flex; justify-content:space-between; align-items:center;">
+                  <span>Input Rules ${rulesText ? '<span style="font-weight:normal;color:#6b7280;font-size:0.75rem;">(' + rulesText.length + ' chars)</span>' : ''}</span>
+                  <button class="btn btn-sm" style="font-size:0.7rem; padding:2px 8px;" onclick="openTemplateFullView('Input Rules - ${escapeHtml(template.name)}', document.getElementById('${cardId}-rules').value)">View Full</button>
+                </div>
+                ${isBuiltIn
+                  ? '<textarea class="template-full-textarea" id="' + cardId + '-rules" rows="' + Math.max(8, rulesLineCount + 2) + '" readonly style="opacity:0.8;cursor:default;">' + escapeHtml(rulesText || '(empty)') + '</textarea>'
+                  : '<textarea class="template-full-textarea" id="' + cardId + '-rules" rows="' + Math.max(8, rulesLineCount + 2) + '">' + escapeHtml(rulesText) + '</textarea>'
+                }
+              </div>
+            </div>
+            <div class="template-tab-content" data-tab="output" style="display:none;">
+              <div class="template-full-section">
+                <div class="template-full-label" style="display:flex; justify-content:space-between; align-items:center;">
+                  <span>Output Format ${outputText ? '<span style="font-weight:normal;color:#6b7280;font-size:0.75rem;">(' + outputText.length + ' chars)</span>' : ''}</span>
+                  <button class="btn btn-sm" style="font-size:0.7rem; padding:2px 8px;" onclick="openTemplateFullView('Output Format - ${escapeHtml(template.name)}', document.getElementById('${cardId}-output').value)">View Full</button>
+                </div>
+                ${isBuiltIn
+                  ? '<textarea class="template-full-textarea" id="' + cardId + '-output" rows="' + Math.max(6, outputLineCount + 2) + '" readonly style="opacity:0.8;cursor:default;">' + escapeHtml(outputText || '(empty)') + '</textarea>'
+                  : '<textarea class="template-full-textarea" id="' + cardId + '-output" rows="' + Math.max(6, outputLineCount + 2) + '">' + escapeHtml(outputText) + '</textarea>'
+                }
+              </div>
             </div>
             ${!isBuiltIn ? '<div style="margin-top:8px;text-align:right;"><button class="btn btn-primary btn-sm" onclick="saveTemplateInline(\'' + escapedId + '\', \'' + cardId + '\')">Save Changes</button></div>' : ''}
           </div>
@@ -5616,6 +5630,33 @@
         el.style.display = 'none';
         if (btn) btn.textContent = 'Show Content';
       }
+    }
+
+    function switchTemplateTab(btn, tabName) {
+      var card = btn.closest('.template-card');
+      if (!card) return;
+      card.querySelectorAll('.template-tab').forEach(function(t) { t.classList.remove('active'); });
+      card.querySelectorAll('.template-tab-content').forEach(function(c) { c.style.display = 'none'; });
+      btn.classList.add('active');
+      var content = card.querySelector('.template-tab-content[data-tab="' + tabName + '"]');
+      if (content) content.style.display = 'block';
+    }
+
+    function openTemplateFullView(title, content) {
+      var modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;';
+      modal.onclick = function(e) { if (e.target === modal) document.body.removeChild(modal); };
+
+      var dialog = document.createElement('div');
+      dialog.style.cssText = 'background:var(--bg-secondary,#16213e);border-radius:12px;padding:24px;max-width:800px;width:90%;max-height:80vh;overflow-y:auto;';
+      dialog.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+        '<h3 style="color:var(--text-primary,#e0e0e0);">' + escapeHtml(title) + '</h3>' +
+        '<button onclick="this.closest(\'div[style*=fixed]\').remove()" style="background:none;border:none;color:#9ca3af;font-size:1.5rem;cursor:pointer;">&times;</button>' +
+        '</div>' +
+        '<pre style="white-space:pre-wrap;word-break:break-word;font-family:monospace;font-size:0.85rem;color:#e0e0e0;line-height:1.6;padding:12px;background:var(--bg-primary,#1a1a2e);border-radius:6px;border:1px solid var(--border-color,#2a2a4a);">' + escapeHtml(content) + '</pre>';
+
+      modal.appendChild(dialog);
+      document.body.appendChild(modal);
     }
 
     /**
@@ -6181,7 +6222,11 @@
           .template-full-section:last-child { margin-bottom: 0; }
           .template-full-label { font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; color: var(--text-primary, #e0e0e0); }
           .template-full-text { font-family: monospace; font-size: 0.82rem; white-space: pre-wrap; word-break: break-word; color: #9ca3af; background: transparent; border: none; padding: 8px; margin: 0; overflow-y: auto; }
-          .template-full-textarea { font-family: monospace; font-size: 0.82rem; width: 100%; min-height: 100px; background: var(--bg-primary, #1a1a2e); color: var(--text-primary, #e0e0e0); border: 1px solid var(--border-color, #2a2a4a); border-radius: 6px; padding: 8px; resize: vertical; line-height: 1.5; }
+          .template-full-textarea { font-family: monospace; font-size: 0.82rem; width: 100%; min-height: 100px; max-height: 150px; overflow-y: auto; background: var(--bg-primary, #1a1a2e); color: var(--text-primary, #e0e0e0); border: 1px solid var(--border-color, #2a2a4a); border-radius: 6px; padding: 8px; resize: vertical; line-height: 1.5; }
+          .template-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+          .template-tab { background: transparent; border: 1px solid var(--border-color, #2a2a4a); color: #9ca3af; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+          .template-tab.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+          .template-tab:hover:not(.active) { background: rgba(59,130,246,0.1); }
           /* Template injection badge in chat */
           .tpl-badge { display: inline-block; font-size: 0.7rem; padding: 1px 6px; border-radius: 3px; margin-right: 4px; }
           .tpl-badge-input { background: #818cf8; color: white; }
@@ -6945,6 +6990,12 @@
 
           ${requiredActionsHtml}
 
+          <div id="active-projects-section" style="margin-bottom:20px;">
+            <h3 style="margin-bottom:4px; color:#1f2937;">Active Projects</h3>
+            <div style="font-size:0.85rem; color:#6b7280; margin-bottom:12px;">Projects with running or queued tasks</div>
+            <div id="live-projects"><div style="color:#6b7280; text-align:center; padding:20px;">Loading...</div></div>
+          </div>
+
           <div class="detail-grid" style="margin-bottom: 20px;">
             <div class="card" style="text-align: center;">
               <div style="font-size: 2rem; font-weight: bold; color: #2563eb;">${stats.projects || 0}</div>
@@ -6976,11 +7027,6 @@
             <h3>Recent Activity</h3>
             ${activityItems}
             ${recentActivity.length > 5 ? '<a href="/activity" onclick="event.preventDefault(); navigate(\'/activity\')" style="display: block; text-align: center; margin-top: 12px;">View All Activity</a>' : ''}
-          </div>
-
-          <div style="margin-top:24px;">
-            <h3 style="margin-bottom:12px; color:#1f2937;">Live Projects</h3>
-            <div id="live-projects"><div style="color:#6b7280; text-align:center; padding:20px;">Loading...</div></div>
           </div>
         `;
 
@@ -7078,21 +7124,24 @@
             awaitingCount += sc.AWAITING_RESPONSE || 0;
           });
 
-          var statusBadge = '';
+          var statusBadges = '';
           if (runningCount > 0) {
-            statusBadge = '<span class="badge badge-running" style="font-size:0.7rem;">' + runningCount + ' running</span>';
-          } else if (awaitingCount > 0) {
-            statusBadge = '<span class="badge" style="font-size:0.7rem; background:#f59e0b; color:white;">' + awaitingCount + ' awaiting</span>';
-          } else if (queuedCount > 0) {
-            statusBadge = '<span class="badge badge-queued" style="font-size:0.7rem;">' + queuedCount + ' queued</span>';
-          } else {
-            statusBadge = '<span style="font-size:0.75rem; color:#6b7280;">idle</span>';
+            statusBadges += '<span class="badge badge-running" style="font-size:0.7rem;">' + runningCount + ' running</span>';
+          }
+          if (queuedCount > 0) {
+            statusBadges += '<span class="badge badge-queued" style="font-size:0.7rem;">' + queuedCount + ' queued</span>';
+          }
+          if (awaitingCount > 0) {
+            statusBadges += '<span class="badge" style="font-size:0.7rem; background:#f59e0b; color:white;">' + awaitingCount + ' awaiting</span>';
+          }
+          if (!statusBadges) {
+            statusBadges = '<span style="font-size:0.75rem; color:#6b7280;">idle</span>';
           }
 
           html += '<div class="card" style="margin-bottom:12px; padding:12px 16px;">';
           html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">';
           html += '<div style="font-weight:600; cursor:pointer;" onclick="navigate(\'/projects/' + encodeURIComponent(pid) + '\')">' + escapeHtml(label) + '</div>';
-          html += '<div style="display:flex; gap:8px; align-items:center;">' + statusBadge;
+          html += '<div style="display:flex; gap:8px; align-items:center;">' + statusBadges;
           html += '<button class="btn btn-sm" style="font-size:0.75rem; padding:4px 10px;" onclick="navigate(\'/chat/' + encodeURIComponent(pid) + '\')">+ Task</button>';
           html += '</div></div>';
 
@@ -7123,7 +7172,7 @@
 
         container.innerHTML = html;
       } catch (e) {
-        container.innerHTML = '<div class="error-message">Failed to load live projects: ' + escapeHtml(e.message) + '</div>';
+        container.innerHTML = '<div class="error-message">Failed to load active projects: ' + escapeHtml(e.message) + '</div>';
       }
     }
 
@@ -12595,7 +12644,9 @@
     // Initial load
     renderSidebarContext();
     router();
-    loadGlobalCmdProjects();
+    // Delay loadGlobalCmdProjects so the <select id="gcmd-project"> element
+    // (defined after this script block) is in the DOM when we query it.
+    setTimeout(loadGlobalCmdProjects, 0);
     updateSidebarCost();
     setInterval(updateSidebarCost, 30000);
   </script>
