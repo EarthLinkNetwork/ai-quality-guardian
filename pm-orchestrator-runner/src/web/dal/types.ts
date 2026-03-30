@@ -583,6 +583,8 @@ export interface ListProjectIndexOptions {
   sortDirection?: SortDirection;
   limit?: number;
   cursor?: string;
+  /** Filter by organization ID (for tenant isolation) */
+  orgId?: string;
 }
 
 // ==========================================

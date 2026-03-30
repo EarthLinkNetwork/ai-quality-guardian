@@ -21,6 +21,8 @@ export interface AuthenticatedRequest extends Request {
   userId?: string;
   deviceName?: string;
   role?: UserRole;
+  /** Organization ID for tenant isolation (derived from userId) */
+  orgId?: string;
 }
 
 /**
@@ -45,6 +47,7 @@ export function createApiKeyAuth(config: AuthConfig) {
       // Local dev mode: skip authentication
       req.userId = 'local';
       req.deviceName = 'local';
+      req.orgId = process.env.ORG_ID || 'local';
       return next();
     }
 
@@ -67,6 +70,7 @@ export function createApiKeyAuth(config: AuthConfig) {
 
       req.userId = apiKeyData.userId;
       req.deviceName = apiKeyData.deviceName;
+      req.orgId = apiKeyData.userId; // orgId = userId for tenant isolation
       next();
     } catch (error) {
       console.error('[Auth] API key validation error:', error);

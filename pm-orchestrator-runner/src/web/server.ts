@@ -925,6 +925,7 @@ export function createApp(config: WebServerConfig): Express {
           let projectId: string | undefined;
           let projectPath: string | undefined;
           let projectAlias: string | undefined;
+          let projectOrgId = 'default';
           const taskGroupId = taskItem?.task_group_id;
 
           if (taskGroupId) {
@@ -934,13 +935,14 @@ export function createApp(config: WebServerConfig): Express {
                 projectId = evt.projectId;
                 projectPath = evt.projectPath;
                 projectAlias = evt.projectAlias;
+                if (evt.orgId) projectOrgId = evt.orgId;
                 break;
               }
             }
           }
 
           await dal.createActivityEvent({
-            orgId: 'default',
+            orgId: projectOrgId,
             type: activityType,
             projectId,
             projectPath,
@@ -1112,6 +1114,7 @@ export function createApp(config: WebServerConfig): Express {
           let projectId: string | undefined;
           let projectPath: string | undefined;
           let projectAlias: string | undefined;
+          let replyOrgId = 'default';
           const taskGroupId = task.task_group_id;
 
           if (taskGroupId) {
@@ -1121,13 +1124,14 @@ export function createApp(config: WebServerConfig): Express {
                 projectId = evt.projectId;
                 projectPath = evt.projectPath;
                 projectAlias = evt.projectAlias;
+                if (evt.orgId) replyOrgId = evt.orgId;
                 break;
               }
             }
           }
 
           await dal.createActivityEvent({
-            orgId: 'default',
+            orgId: replyOrgId,
             type: 'task_updated' as const,
             projectId,
             projectPath,

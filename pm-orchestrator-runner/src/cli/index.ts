@@ -31,6 +31,7 @@ import {
 import { getApiKey } from '../config/global-config';
 import { getAwsProfile } from '../config/aws-config';
 import { initDAL } from '../web/dal/dal-factory';
+import { getNoDynamoExtended, isNoDynamoExtendedInitialized } from '../web/dal/no-dynamo';
 import { ApiKeyManager, initApiKeyManager } from '../auth/api-key-manager';
 import type { AuthConfig } from '../web/middleware/auth';
 import {
@@ -703,7 +704,9 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
       // Only for initial execution (not re-runs after reply) and not for subtasks
       if (!item.conversation_history?.length && !item.parent_task_id) {
         try {
-          const analysis = analyzeTaskForChunking(enrichedPrompt);
+          // Use raw prompt (item.prompt) instead of enrichedPrompt to prevent
+          // template-injected text from triggering false decomposition
+          const analysis = analyzeTaskForChunking(item.prompt);
           if (analysis.is_decomposable && analysis.suggested_subtasks && analysis.suggested_subtasks.length >= 2) {
             console.log(`[Runner] Task ${item.task_id} decomposed into ${analysis.suggested_subtasks.length} subtasks`);
             stateStream.emit(item.task_id, 'system', `[decomposition] Splitting into ${analysis.suggested_subtasks.length} subtasks`);
