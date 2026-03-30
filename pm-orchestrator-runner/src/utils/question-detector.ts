@@ -1093,6 +1093,156 @@ Respond in this exact JSON format (no markdown):
 
 
 // ============================================================
+// Claim Verification: Detect unverified technical claims
+// ============================================================
+
+/**
+ * Result of claim verification
+ */
+export interface ClaimVerificationResult {
+  /** Whether unverified claims were detected */
+  hasUnverifiedClaims: boolean;
+  /** List of detected unverified claims */
+  claims: Array<{
+    claim: string;
+    reason: string;
+  }>;
+}
+
+/**
+ * Build the system prompt for claim verification
+ */
+function buildClaimVerificationSystemPrompt(): string {
+  return `You are a fact-checker for AI-generated technical responses.
+
+Analyze the assistant's output and identify UNVERIFIED TECHNICAL CLAIMS.
+
+An unverified claim is a statement that:
+1. States a technical limitation or capability without evidence (e.g. "X does not support Y")
+2. Proposes a cause/diagnosis without having checked (e.g. "The reason is X" without running a diagnostic command)
+3. Recommends an action based on assumption (e.g. "Clear your browser cache" without checking HTTP headers)
+
+Do NOT flag:
+- Code explanations (explaining what code does is fine)
+- General programming knowledge (well-known facts)
+- Statements with evidence (showed a command output, read a file, etc.)
+- Opinions clearly marked as uncertain ("I think", "probably", "might be")
+
+Respond in JSON format:
+{
+  "claims": [
+    { "claim": "the exact claim text", "reason": "why it's unverified" }
+  ]
+}
+
+If no unverified claims are found, respond with: { "claims": [] }`;
+}
+
+/**
+ * Verify claims in Claude Code output.
+ * Detects unverified technical claims (statements not backed by evidence).
+ *
+ * Returns a list of unverified claims detected in the output.
+ * This is a best-effort check: failures are silently swallowed.
+ *
+ * @param output - Claude Code's output text
+ * @param originalPrompt - The user's original prompt for context
+ * @param config - Optional provider/model override
+ * @param stateDir - Optional state directory for reading api-keys.json
+ * @returns Claim verification result
+ */
+export async function verifyClaimsWithLlm(
+  output: string,
+  originalPrompt: string,
+  config?: LlmProviderConfig,
+  stateDir?: string,
+): Promise<ClaimVerificationResult> {
+  // Only check outputs longer than 200 chars (short outputs unlikely to have claims)
+  if (!output || output.length <= 200) {
+    return { hasUnverifiedClaims: false, claims: [] };
+  }
+
+  try {
+    const resolved = await resolveProvider(config, stateDir);
+    if (!resolved) {
+      return { hasUnverifiedClaims: false, claims: [] };
+    }
+
+    // Truncate output if very long to save API costs
+    const truncatedOutput = output.length > 3000
+      ? output.substring(0, 3000) + '\n...(truncated)'
+      : output;
+
+    const systemPrompt = buildClaimVerificationSystemPrompt();
+    const userPrompt = `Original task: ${originalPrompt.substring(0, 500)}\n\nAssistant's output to verify:\n${truncatedOutput}`;
+
+    console.log(`[claim-verify] Using ${resolved.provider}/${resolved.model} for claim verification`);
+
+    let parsed: { claims: Array<{ claim: string; reason: string }> };
+
+    if (resolved.provider === 'openai') {
+      const { default: OpenAI } = await import('openai');
+      const client = new OpenAI({ apiKey: resolved.apiKey });
+      const response = await client.chat.completions.create({
+        model: resolved.model,
+        max_tokens: 512,
+        temperature: 0.3,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+      });
+      if (response.usage) {
+        _pendingUsage.push({
+          provider: 'openai', model: resolved.model,
+          prompt_tokens: response.usage.prompt_tokens || 0,
+          completion_tokens: response.usage.completion_tokens || 0,
+          total_tokens: response.usage.total_tokens || 0,
+        });
+      }
+      const text = response.choices[0]?.message?.content || '{"claims":[]}';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { claims: [] };
+    } else if (resolved.provider === 'anthropic') {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: resolved.apiKey });
+      const response = await client.messages.create({
+        model: resolved.model,
+        max_tokens: 512,
+        temperature: 0.3,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      });
+      if (response.usage) {
+        _pendingUsage.push({
+          provider: 'anthropic', model: resolved.model,
+          prompt_tokens: response.usage.input_tokens || 0,
+          completion_tokens: response.usage.output_tokens || 0,
+          total_tokens: (response.usage.input_tokens || 0) + (response.usage.output_tokens || 0),
+        });
+      }
+      const text = response.content[0].type === 'text' ? response.content[0].text : '{"claims":[]}';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { claims: [] };
+    } else {
+      throw new Error(`Unsupported provider: ${resolved.provider}`);
+    }
+
+    const claims = Array.isArray(parsed.claims) ? parsed.claims.slice(0, 5) : [];
+
+    return {
+      hasUnverifiedClaims: claims.length > 0,
+      claims,
+    };
+  } catch (error) {
+    // Silently fail - claim verification is best-effort
+    console.warn('[claim-verify] Claim verification failed:', error instanceof Error ? error.message : String(error));
+    return { hasUnverifiedClaims: false, claims: [] };
+  }
+}
+
+
+// ============================================================
 // RED Blast Radius Operation Detection
 // ============================================================
 

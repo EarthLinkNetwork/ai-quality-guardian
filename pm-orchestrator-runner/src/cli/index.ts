@@ -77,7 +77,7 @@ import {
 } from '../web/background';
 import { ensureDistFresh, checkPublicFilesCopied } from '../utils/dist-freshness';
 import { runSelftest, SELFTEST_CASES, runSelftestWithAIJudge } from '../selftest/selftest-runner';
-import { hasUnansweredQuestions, extractQuestionSummary, detectQuestionsWithLlm, tryAutoAnswerQuestion, generateMetaPrompt, evaluateOutputQuality, getPendingUsage, detectRedOperation } from '../utils/question-detector';
+import { hasUnansweredQuestions, extractQuestionSummary, detectQuestionsWithLlm, tryAutoAnswerQuestion, generateMetaPrompt, evaluateOutputQuality, verifyClaimsWithLlm, getPendingUsage, detectRedOperation } from '../utils/question-detector';
 import { calculateTokenCost } from '../web/services/ai-cost-service';
 import { estimateTaskSize } from '../utils/task-size-estimator';
 import { analyzeTaskForChunking } from '../task-chunking';
@@ -971,6 +971,23 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
           }
         } catch (qaErr) {
           console.warn('[Runner] QA evaluation failed, skipping:', qaErr instanceof Error ? qaErr.message : String(qaErr));
+        }
+      }
+
+      // ── Claim Verification: check for unverified technical claims ──
+      // This is a WARNING only, not a blocker. Output is still returned as COMPLETE.
+      if (cleanOutput && cleanOutput.trim().length > 0 && result.status !== 'ERROR') {
+        try {
+          const claimCheck = await verifyClaimsWithLlm(cleanOutput, enrichedPrompt);
+          if (claimCheck.hasUnverifiedClaims) {
+            const claimWarnings = claimCheck.claims.map(c => `  - "${c.claim}" (${c.reason})`).join('\n');
+            console.log(`[Runner] Unverified claims detected:\n${claimWarnings}`);
+            stateStream.emit(item.task_id, 'system', `[claim-check] Unverified claims detected:\n${claimWarnings}`);
+            // Append warning to output (don't block, just warn)
+            cleanOutput += '\n\n---\n[claim-check] The following statements may need verification:\n' + claimWarnings;
+          }
+        } catch (claimErr) {
+          // Claim verification is best-effort, don't block on failure
         }
       }
 

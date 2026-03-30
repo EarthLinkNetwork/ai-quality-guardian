@@ -45,6 +45,7 @@ import { createTaskTrackerRoutes } from './routes/task-tracker';
 import { createPRReviewRoutes } from './routes/pr-review';
 import { GhCliGitHubAdapter } from './github/gh-cli-adapter';
 import type { ReviewJudgeLLMClient } from '../pr-review/review-judge';
+import { createSkillsRoutes } from './routes/skills';
 import { detectTaskType } from '../utils/task-type-detector';
 import { detectQuestionsWithLlm } from '../utils/question-detector';
 import { initDAL, isDALInitialized, getDAL } from './dal/dal-factory';
@@ -221,6 +222,7 @@ export function createApp(config: WebServerConfig): Express {
     // Template routes (CRUD for input/output templates)
     app.use("/api/templates", createTemplateRoutes({ stateDir }));
 
+<<<<<<< HEAD
     // Task Tracker routes (task persistence, snapshots, recovery)
     // Per spec/34_TASK_TRACKER_PERSISTENCE.md Section 11
     app.use("/api/tracker", createTaskTrackerRoutes({ dal: getDAL() }));
@@ -236,6 +238,11 @@ export function createApp(config: WebServerConfig): Express {
       github: prReviewGitHub,
       llmClient: prReviewLLM,
       orgId: "default",
+    }));
+
+    // Skills routes (project scanner + skill auto-generation)
+    app.use("/api/skills", createSkillsRoutes({
+      projectRoot: projectRoot || process.cwd(),
     }));
   }
 

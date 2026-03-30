@@ -18,7 +18,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ConversationEntry, TaskResult } from '../models/task-group';
 import { Template, formatRulesInjection, formatOutputInjection } from '../template';
-import { generateSafetyRules, DEFAULT_BLAST_RADIUS_CONFIG } from '../safety';
+// Safety rules are now in .claude/skills/safety/SKILL.md (auto-loaded by Claude Code).
+// Only a minimal reminder is injected into the prompt. Full rules live in the Skills system.
+// The blast-radius module (classifyCommand, classifyFileOperation) remains intact for executor use.
+const MINIMAL_SAFETY_REMINDER = '[Safety: RED operations (delete .env/credentials/keys, cloud resource deletion, git push --force) require user confirmation. See .claude/skills/safety/ for full rules.]';
 
 /**
  * Default Mandatory Rules
@@ -195,9 +198,6 @@ export class PromptAssembler {
     const templateRules = activeTemplate ? formatRulesInjection(activeTemplate) : '';
     const templateOutputFormat = activeTemplate ? formatOutputInjection(activeTemplate) : '';
 
-    // Inject blast radius safety rules
-    const safetyRules = generateSafetyRules(DEFAULT_BLAST_RADIUS_CONFIG);
-
     // Load/build each section (no caching per spec)
     const sections: AssemblyResult['sections'] = {
       globalPrelude: this.loadGlobalPrelude(),
@@ -207,7 +207,7 @@ export class PromptAssembler {
       outputEpilogue: this.loadOutputEpilogue(),
       templateRules: templateRules || undefined,
       templateOutputFormat: templateOutputFormat || undefined,
-      safetyRules,
+      safetyRules: MINIMAL_SAFETY_REMINDER,
     };
 
     // Assemble in fixed order per spec 17 and 32
@@ -322,9 +322,6 @@ export class PromptAssembler {
     const templateRules = activeTemplate ? formatRulesInjection(activeTemplate) : '';
     const templateOutputFormat = activeTemplate ? formatOutputInjection(activeTemplate) : '';
 
-    // Inject blast radius safety rules
-    const safetyRules = generateSafetyRules(DEFAULT_BLAST_RADIUS_CONFIG);
-
     // Load/build each section (no caching per spec)
     const sections: AssemblyResult['sections'] = {
       globalPrelude: this.loadGlobalPrelude(),
@@ -335,7 +332,7 @@ export class PromptAssembler {
       modificationPrompt,
       templateRules: templateRules || undefined,
       templateOutputFormat: templateOutputFormat || undefined,
-      safetyRules,
+      safetyRules: MINIMAL_SAFETY_REMINDER,
     };
 
     // Assemble in fixed order with modification prompt
