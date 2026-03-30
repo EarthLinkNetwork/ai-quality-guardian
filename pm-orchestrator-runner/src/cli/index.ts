@@ -15,6 +15,31 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+
+// Load .env file if present (lightweight, no dotenv dependency)
+function loadEnvFile() {
+  const envPath = path.join(process.cwd(), '.env');
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, 'utf-8').split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx < 0) continue;
+    const key = trimmed.substring(0, eqIdx).trim();
+    let val = trimmed.substring(eqIdx + 1).trim();
+    // Remove surrounding quotes
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    // Don't overwrite existing env vars
+    if (!process.env[key]) {
+      process.env[key] = val;
+    }
+  }
+}
+loadEnvFile();
+
 import { CLI, CLIError } from './cli-interface';
 import { REPLInterface, ProjectMode } from '../repl/repl-interface';
 import { WebServer } from '../web/server';
@@ -117,12 +142,14 @@ Web Options:
   --background           Start server in background (detached) mode
   --local-dynamodb       Use DynamoDB Local (localhost:8000) instead of AWS
   --file                 Use file-based persistent store instead of DynamoDB
-  --api-key <key>        API key for authenticated mode (multi-user)
+  --auth                 Enable authentication mode (uses DynamoDB API keys)
+  --api-key <key>        API key for authenticated mode (legacy, same as --auth)
 
 Agent Options:
   --namespace <name>     Namespace for state separation
   --local-dynamodb       Use DynamoDB Local instead of AWS
-  --api-key <key>        API key for authenticated mode
+  --auth                 Enable authentication mode
+  --api-key <key>        API key for authenticated mode (legacy)
 
 Key Options:
   pm key generate --user <userId> --device <name>  Generate API key
@@ -362,8 +389,10 @@ interface WebArguments {
   storeMode?: QueueStoreMode;
   /** Use DynamoDB Local (localhost:8000) instead of AWS */
   localDynamodb?: boolean;
-  /** API key for authenticated mode */
+  /** API key for authenticated mode (legacy) */
   apiKey?: string;
+  /** Enable authentication mode (no specific key needed) */
+  authEnabled?: boolean;
 }
 
 /**
@@ -421,9 +450,14 @@ function parseWebArgs(args: string[]): WebArguments {
       result.localDynamodb = true;
       result.storeMode = 'dynamodb';
     }
-    // API key for authenticated mode
+    // Enable authentication mode (flag only, no key needed)
+    else if (arg === '--auth') {
+      result.authEnabled = true;
+    }
+    // API key for authenticated mode (legacy: implies --auth)
     else if (arg === '--api-key' && args[i + 1]) {
       result.apiKey = args[++i];
+      result.authEnabled = true;
     }
   }
 
@@ -1755,22 +1789,30 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   const detachProgressPersistence = attachQueueProgressPersistence(queueStore, outputStream);
   detachProgressPersistenceRef = detachProgressPersistence;
 
-  // Set up API key authentication if --api-key is provided
+  // Set up API key authentication
+  // Supports: --auth (flag only), --api-key <key> (legacy), AUTH_ENABLED=true (.env)
+  const authRequested = webArgs.authEnabled || webArgs.apiKey || process.env.AUTH_ENABLED === 'true';
   let authConfig: AuthConfig | undefined;
-  if (webArgs.apiKey) {
+  if (authRequested) {
     const useLocalDynamodb = webArgs.localDynamodb || process.env.PM_LOCAL_DYNAMODB === '1';
     const apiKeyManager = initApiKeyManager({ localDynamodb: useLocalDynamodb });
     try {
       await apiKeyManager.ensureTable();
-      const keyData = await apiKeyManager.validateApiKey(webArgs.apiKey);
-      if (!keyData) {
-        console.error(`[Auth] Invalid API key: ${webArgs.apiKey.substring(0, 8)}...`);
-        process.exit(1);
+
+      // Legacy: if --api-key was provided, validate it at startup
+      if (webArgs.apiKey) {
+        const keyData = await apiKeyManager.validateApiKey(webArgs.apiKey);
+        if (!keyData) {
+          console.error(`[Auth] Invalid API key: ${webArgs.apiKey.substring(0, 8)}...`);
+          process.exit(1);
+        }
+        console.log(`[Auth] Authenticated as userId="${keyData.userId}", device="${keyData.deviceName}"`);
+      } else {
+        console.log('[Auth] Authentication enabled. Users must provide API key via WebUI login.');
       }
-      console.log(`[Auth] Authenticated as userId="${keyData.userId}", device="${keyData.deviceName}"`);
       authConfig = { enabled: true, apiKeyManager };
     } catch (error) {
-      console.warn(`[Auth] API key validation failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[Auth] Auth setup failed: ${error instanceof Error ? error.message : String(error)}`);
       console.warn('[Auth] Running without authentication (local dev mode)');
       authConfig = { enabled: false };
     }

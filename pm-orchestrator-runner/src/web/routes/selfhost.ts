@@ -197,9 +197,10 @@ export function createSelfhostRoutes(stateDir: string): Router {
         const extendedProject = project as unknown as { projectType?: string };
         const isRunnerDev = extendedProject.projectType === "runner-dev";
 
-        // Get directories from environment or defaults
+        // Get directories: devDir from project's projectPath, or env var as fallback
         const prodDir = process.env.PM_RUNNER_PROD_DIR || process.cwd();
-        const devDir = process.env.PM_RUNNER_DEV_DIR || null;
+        const selfhostDevEnabled = process.env.PM_SELFHOST_DEV === 'true' || !!process.env.PM_RUNNER_DEV_DIR;
+        const devDir = process.env.PM_RUNNER_DEV_DIR || (selfhostDevEnabled ? project.projectPath : null);
 
         // For non-runner-dev projects, return minimal status
         if (!isRunnerDev) {
@@ -317,16 +318,17 @@ export function createSelfhostRoutes(stateDir: string): Router {
           return;
         }
 
-        // Get directories
+        // Get directories: devDir from project's projectPath, or env var as fallback
         const prodDir = process.env.PM_RUNNER_PROD_DIR || process.cwd();
-        const devDir = process.env.PM_RUNNER_DEV_DIR || null;
+        const selfhostDevEnabled2 = process.env.PM_SELFHOST_DEV === 'true' || !!process.env.PM_RUNNER_DEV_DIR;
+        const devDir = process.env.PM_RUNNER_DEV_DIR || (selfhostDevEnabled2 ? project.projectPath : null);
 
         // Validate preconditions
         const devDirExists = devDir !== null && fs.existsSync(devDir);
         if (!devDirExists || !devDir) {
           res.status(409).json({
             error: "DEV_DIR_MISSING",
-            message: "PM_RUNNER_DEV_DIR not set or directory does not exist",
+            message: "Set PM_SELFHOST_DEV=true in .env or PM_RUNNER_DEV_DIR to the dev directory",
             checks: {
               devDirExists: false,
               gateAllPass: false,
