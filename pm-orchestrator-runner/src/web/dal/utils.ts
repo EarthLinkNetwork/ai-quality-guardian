@@ -49,3 +49,25 @@ export function decodeCursor(cursor: string | undefined): Record<string, unknown
     return undefined;
   }
 }
+
+// ==================== Task Tracker SK helpers ====================
+
+export function taskTrackerSK(projectId: string): string {
+  return `TRACKER#${projectId}`;
+}
+
+export function taskSnapshotSK(projectId: string, snapshotId: string): string {
+  return `TSNAP#${projectId}#${snapshotId}`;
+}
+
+export function taskSnapshotSKPrefix(projectId: string): string {
+  return `TSNAP#${projectId}#`;
+}
+
+export function taskSummarySK(projectId: string, taskId: string): string {
+  return `TSUM#${projectId}#${taskId}`;
+}
+
+export function taskSummarySKPrefix(projectId: string): string {
+  return `TSUM#${projectId}#`;
+}

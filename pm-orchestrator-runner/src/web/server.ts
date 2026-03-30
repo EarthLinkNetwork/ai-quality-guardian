@@ -41,6 +41,7 @@ import { createClaudeHooksRoutes } from './routes/claude-hooks';
 import { createAssistantRoutes } from './routes/assistant';
 import { createRepoProfileRoutes } from './routes/repo-profile';
 import { createTemplateRoutes } from './routes/templates';
+import { createTaskTrackerRoutes } from './routes/task-tracker';
 import { detectTaskType } from '../utils/task-type-detector';
 import { detectQuestionsWithLlm } from '../utils/question-detector';
 import { initDAL, isDALInitialized, getDAL } from './dal/dal-factory';
@@ -216,6 +217,10 @@ export function createApp(config: WebServerConfig): Express {
 
     // Template routes (CRUD for input/output templates)
     app.use("/api/templates", createTemplateRoutes({ stateDir }));
+
+    // Task Tracker routes (task persistence, snapshots, recovery)
+    // Per spec/34_TASK_TRACKER_PERSISTENCE.md Section 11
+    app.use("/api/tracker", createTaskTrackerRoutes({ dal: getDAL() }));
   }
 
   // ===================

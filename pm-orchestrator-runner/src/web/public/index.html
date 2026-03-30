@@ -2874,6 +2874,7 @@
         <div class="nav-divider"></div>
         <div class="nav-section-label">Management</div>
         <a href="/backup" data-nav="backup"><span class="nav-icon">&#128190;</span><span class="nav-label">Backup</span></a>
+        <a href="/task-tracker" data-nav="task-tracker" data-testid="nav-task-tracker"><span class="nav-icon">&#9776;</span><span class="nav-label">Task Tracker</span></a>
         <div class="nav-divider"></div>
         <a href="/settings" data-nav="settings"><span class="nav-icon">&#9881;</span><span class="nav-label">Settings</span></a>
       </nav>
@@ -10467,6 +10468,207 @@
     }
 
     // =========================================================================
+    // Task Tracker Page
+    // =========================================================================
+    var taskTrackerState = { tracker: null, snapshots: [], loading: false, projectId: null };
+
+    async function renderTaskTrackerPage() {
+      // Determine projectId from current project context
+      var projectInfo = document.getElementById('sidebar-project-info');
+      var projectName = projectInfo ? projectInfo.querySelector('.project-name') : null;
+      var projectId = projectName ? projectName.textContent : 'default';
+
+      taskTrackerState.projectId = projectId;
+      taskTrackerState.loading = true;
+
+      app.innerHTML = '<div class="page-header"><h2>Task Tracker</h2></div>' +
+        '<div class="card"><p style="color:#9ca3af;text-align:center;padding:20px;">Loading task tracker...</p></div>';
+
+      try {
+        var data = await api('/tracker/' + encodeURIComponent(projectId));
+        taskTrackerState.tracker = data;
+        taskTrackerState.loading = false;
+        renderTaskTrackerContent();
+      } catch (err) {
+        taskTrackerState.tracker = null;
+        taskTrackerState.loading = false;
+        renderTaskTrackerEmpty(err.message || 'Failed to load tracker');
+      }
+
+      // Load snapshots in parallel
+      try {
+        var snaps = await api('/tracker/' + encodeURIComponent(projectId) + '/snapshots');
+        taskTrackerState.snapshots = snaps.snapshots || snaps || [];
+        if (taskTrackerState.tracker) renderTaskTrackerContent();
+      } catch (e) {
+        taskTrackerState.snapshots = [];
+      }
+    }
+
+    function renderTaskTrackerEmpty(message) {
+      app.innerHTML =
+        '<div class="page-header"><h2>Task Tracker</h2></div>' +
+        '<div class="card">' +
+          '<p style="color:#9ca3af;text-align:center;padding:20px;">' +
+            escapeHtml(message || 'No active task tracker for this project.') +
+          '</p>' +
+          '<p style="text-align:center;padding-bottom:16px;">' +
+            '<button class="btn btn-primary" onclick="taskTrackerInitProject()">Initialize Tracker</button>' +
+          '</p>' +
+        '</div>';
+    }
+
+    function renderTaskTrackerContent() {
+      var t = taskTrackerState.tracker;
+      if (!t) return renderTaskTrackerEmpty('No tracker data');
+
+      var plan = t.currentPlan;
+      var planHtml = '';
+      if (plan) {
+        var doneCount = plan.subtasks.filter(function(s) { return s.status === 'DONE'; }).length;
+        var totalCount = plan.subtasks.length;
+        var pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+        var subtasksHtml = plan.subtasks.map(function(s) {
+          var statusClass = s.status === 'DONE' ? 'status-done' : s.status === 'IN_PROGRESS' ? 'status-running' : 'status-pending';
+          var statusLabel = s.status === 'DONE' ? 'Done' : s.status === 'IN_PROGRESS' ? 'Running' : s.status === 'SKIPPED' ? 'Skipped' : 'Pending';
+          return '<div class="list-item" style="padding:8px 0;border-bottom:1px solid #f3f4f6;">' +
+            '<span>' + escapeHtml(s.description || s.subtaskId) + '</span>' +
+            '<span class="badge ' + statusClass + '">' + statusLabel + '</span>' +
+          '</div>';
+        }).join('');
+
+        planHtml =
+          '<div class="card">' +
+            '<h3>Current Plan: ' + escapeHtml(plan.title || plan.originalPrompt || 'Untitled') + '</h3>' +
+            '<div style="margin-bottom:12px;">' +
+              '<div style="display:flex;justify-content:space-between;margin-bottom:4px;">' +
+                '<span style="font-size:0.85rem;color:#6b7280;">Progress</span>' +
+                '<span style="font-size:0.85rem;font-weight:600;">' + doneCount + '/' + totalCount + ' (' + pct + '%)</span>' +
+              '</div>' +
+              '<div style="background:#e5e7eb;border-radius:4px;height:8px;overflow:hidden;">' +
+                '<div style="background:#3b82f6;height:100%;width:' + pct + '%;transition:width 0.3s;"></div>' +
+              '</div>' +
+            '</div>' +
+            subtasksHtml +
+          '</div>';
+      } else {
+        planHtml = '<div class="card"><h3>Current Plan</h3><p style="color:#9ca3af;text-align:center;padding:12px;">No active plan</p></div>';
+      }
+
+      // Active tasks
+      var tasksHtml = '';
+      if (t.activeTasks && t.activeTasks.length > 0) {
+        var taskItems = t.activeTasks.map(function(task) {
+          var statusLabel = task.status || 'UNKNOWN';
+          return '<div class="list-item" style="padding:8px 0;border-bottom:1px solid #f3f4f6;">' +
+            '<div><strong>' + escapeHtml(task.title || task.taskId) + '</strong>' +
+              (task.description ? '<br><span style="font-size:0.8rem;color:#6b7280;">' + escapeHtml(task.description) + '</span>' : '') +
+            '</div>' +
+            '<span class="badge status-' + statusLabel.toLowerCase() + '">' + statusLabel + '</span>' +
+          '</div>';
+        }).join('');
+
+        tasksHtml = '<div class="card"><h3>Active Tasks (' + t.activeTasks.length + ')</h3>' + taskItems + '</div>';
+      }
+
+      // Context summary
+      var contextHtml = '';
+      if (t.lastContextSummary) {
+        contextHtml = '<div class="card"><h3>Context Summary</h3>' +
+          '<p style="white-space:pre-wrap;font-size:0.9rem;color:#374151;">' + escapeHtml(t.lastContextSummary) + '</p></div>';
+      }
+
+      // Snapshots
+      var snapshotsHtml = '';
+      if (taskTrackerState.snapshots.length > 0) {
+        var snapItems = taskTrackerState.snapshots.slice(0, 10).map(function(snap) {
+          var date = snap.createdAt ? new Date(snap.createdAt).toLocaleString() : '?';
+          return '<div class="list-item" style="padding:8px 0;border-bottom:1px solid #f3f4f6;">' +
+            '<div><span style="font-size:0.85rem;">' + escapeHtml(snap.trigger || 'MANUAL') + '</span>' +
+              '<br><span style="font-size:0.75rem;color:#9ca3af;">' + date + '</span>' +
+            '</div>' +
+            '<span style="font-size:0.75rem;color:#6b7280;">' + escapeHtml(snap.snapshotId || '') + '</span>' +
+          '</div>';
+        }).join('');
+
+        snapshotsHtml = '<div class="card"><h3>Recent Snapshots</h3>' + snapItems + '</div>';
+      }
+
+      // Recovery section
+      var recoveryHtml = '';
+      if (t.recoveryHint) {
+        recoveryHtml =
+          '<div class="card" style="border-left:4px solid #f59e0b;">' +
+            '<h3>Recovery Available</h3>' +
+            '<p style="font-size:0.9rem;color:#374151;">' + escapeHtml(t.recoveryHint) + '</p>' +
+            '<button class="btn btn-primary" onclick="taskTrackerRecover()" style="margin-top:8px;">Recover Session</button>' +
+          '</div>';
+      }
+
+      // Actions
+      var actionsHtml =
+        '<div style="display:flex;gap:8px;margin-bottom:16px;">' +
+          '<button class="btn btn-secondary" onclick="taskTrackerSnapshot()">Create Snapshot</button>' +
+          '<button class="btn btn-secondary" style="color:#ef4444;" onclick="taskTrackerReset()">Reset Tracker</button>' +
+        '</div>';
+
+      app.innerHTML =
+        '<div class="page-header"><h2>Task Tracker</h2>' + actionsHtml + '</div>' +
+        recoveryHtml + planHtml + tasksHtml + contextHtml + snapshotsHtml;
+    }
+
+    async function taskTrackerInitProject() {
+      var projectId = taskTrackerState.projectId || 'default';
+      try {
+        await api('/tracker/' + encodeURIComponent(projectId), {
+          method: 'PUT',
+          body: JSON.stringify({ orgId: 'default', projectId: projectId }),
+        });
+        showToast('Tracker initialized', 'success');
+        renderTaskTrackerPage();
+      } catch (err) {
+        showToast('Failed to initialize: ' + err.message, 'error');
+      }
+    }
+
+    async function taskTrackerSnapshot() {
+      var projectId = taskTrackerState.projectId || 'default';
+      try {
+        await api('/tracker/' + encodeURIComponent(projectId) + '/snapshots', { method: 'POST', body: JSON.stringify({}) });
+        showToast('Snapshot created', 'success');
+        renderTaskTrackerPage();
+      } catch (err) {
+        showToast('Failed: ' + err.message, 'error');
+      }
+    }
+
+    async function taskTrackerRecover() {
+      var projectId = taskTrackerState.projectId || 'default';
+      try {
+        var result = await api('/tracker/' + encodeURIComponent(projectId) + '/recover', { method: 'POST', body: JSON.stringify({}) });
+        showToast('Recovery complete', 'success');
+        renderTaskTrackerPage();
+      } catch (err) {
+        showToast('Recovery failed: ' + err.message, 'error');
+      }
+    }
+
+    async function taskTrackerReset() {
+      if (!confirm('Reset the task tracker? This will clear all plans and tasks.')) return;
+      var projectId = taskTrackerState.projectId || 'default';
+      try {
+        await api('/tracker/' + encodeURIComponent(projectId), { method: 'DELETE' });
+        showToast('Tracker reset', 'success');
+        taskTrackerState.tracker = null;
+        taskTrackerState.snapshots = [];
+        renderTaskTrackerPage();
+      } catch (err) {
+        showToast('Reset failed: ' + err.message, 'error');
+      }
+    }
+
+    // =========================================================================
     // Assistant Page
     // =========================================================================
     var assistantState = { messages: [], proposals: null, loading: false, planSet: null, repoProfile: null, lastApplyResult: null, activeTab: 'propose' };
@@ -11321,6 +11523,8 @@
         renderMcpServersPage();
       } else if (path === '/backup') {
         renderBackupPage();
+      } else if (path === '/task-tracker') {
+        renderTaskTrackerPage();
       } else if (path === '/assistant' || path === '/ai-generate') {
         renderAssistantPage();
       } else if (path === '/plugins') {
