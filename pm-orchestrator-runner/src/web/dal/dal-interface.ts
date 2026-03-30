@@ -27,6 +27,15 @@ import {
   PluginDefinition,
 } from "./types";
 import type { NoDynamoRun, NoDynamoEvent, InspectionPacket } from "./no-dynamo";
+import type {
+  TaskTracker,
+  TaskPlan,
+  TrackedTask,
+  TaskSnapshot,
+  TaskSummary,
+  CreateTaskSnapshotInput,
+  CreateTaskSummaryInput,
+} from "./task-tracker-types";
 
 /**
  * IDataAccessLayer - Complete interface for all data access operations
@@ -41,6 +50,7 @@ import type { NoDynamoRun, NoDynamoEvent, InspectionPacket } from "./no-dynamo";
  * - Plans (dashboard.ts)
  * - Conversations (chat.ts, selfhost.ts, devconsole.ts)
  * - Plugins (devconsole.ts)
+ * - TaskTracker (task tracker persistence)
  */
 export interface IDataAccessLayer {
   // ==================== Project Index ====================
@@ -137,10 +147,44 @@ export interface IDataAccessLayer {
   updatePlugin(pluginId: string, updates: Partial<PluginDefinition>): Promise<PluginDefinition | null>;
   deletePlugin(pluginId: string): Promise<boolean>;
 
+  // ==================== Task Tracker ====================
+
+  getTaskTracker(projectId: string): Promise<TaskTracker | null>;
+  upsertTaskTracker(tracker: TaskTracker): Promise<TaskTracker>;
+  updateTaskTrackerPlan(
+    projectId: string,
+    plan: TaskPlan,
+    expectedVersion: number
+  ): Promise<TaskTracker>;
+  updateTaskTrackerTasks(
+    projectId: string,
+    tasks: TrackedTask[],
+    expectedVersion: number
+  ): Promise<TaskTracker>;
+  updateTaskTrackerContext(
+    projectId: string,
+    contextSummary: string,
+    recoveryHint: string | null,
+    expectedVersion: number
+  ): Promise<TaskTracker>;
+  deleteTaskTracker(projectId: string): Promise<void>;
+
+  // ==================== Task Snapshots ====================
+
+  createTaskSnapshot(input: CreateTaskSnapshotInput): Promise<TaskSnapshot>;
+  getLatestTaskSnapshot(projectId: string): Promise<TaskSnapshot | null>;
+  listTaskSnapshots(projectId: string, limit?: number): Promise<TaskSnapshot[]>;
+
+  // ==================== Task Summaries ====================
+
+  createTaskSummary(input: CreateTaskSummaryInput): Promise<TaskSummary>;
+  getTaskSummary(projectId: string, taskId: string): Promise<TaskSummary | null>;
+  listTaskSummaries(projectId: string): Promise<TaskSummary[]>;
+
   // ==================== Utility ====================
 
   clearAll(): Promise<void>;
-  getStats(): Promise<{
+  getStats(orgId?: string): Promise<{
     projects: number;
     sessions: number;
     runs: number;

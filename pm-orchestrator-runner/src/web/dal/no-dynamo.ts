@@ -1195,7 +1195,7 @@ export class NoDynamoDAL {
   /**
    * Get stats
    */
-  async getStats(): Promise<{
+  async getStats(orgId?: string): Promise<{
     projects: number;
     sessions: number;
     runs: number;
@@ -1203,9 +1203,24 @@ export class NoDynamoDAL {
     packets: number;
     plans: number;
   }> {
-    const projectCount = fs.existsSync(this.projectsDir)
-      ? fs.readdirSync(this.projectsDir).filter((f) => f.endsWith(".json")).length
-      : 0;
+    // Use orgId filter for accurate tenant-scoped stats
+    const effectiveOrgId = orgId || this.orgId;
+
+    // Count projects with orgId filter
+    let projectCount = 0;
+    if (fs.existsSync(this.projectsDir)) {
+      const files = fs.readdirSync(this.projectsDir).filter((f) => f.endsWith(".json"));
+      for (const file of files) {
+        try {
+          const content = fs.readFileSync(path.join(this.projectsDir, file), "utf-8");
+          const project = JSON.parse(content);
+          if (!effectiveOrgId || !project.orgId || project.orgId === effectiveOrgId) {
+            projectCount++;
+          }
+        } catch { /* skip malformed */ }
+      }
+    }
+
     const sessionCount = fs.existsSync(this.sessionsDir)
       ? fs.readdirSync(this.sessionsDir).filter((f) => f.endsWith(".json")).length
       : 0;
@@ -1219,7 +1234,15 @@ export class NoDynamoDAL {
     let eventCount = 0;
     for (const file of eventFiles) {
       const content = fs.readFileSync(path.join(this.eventsDir, file), "utf-8");
-      eventCount += content.trim().split("\n").filter((l) => l.length > 0).length;
+      const lines = content.trim().split("\n").filter((l) => l.length > 0);
+      for (const line of lines) {
+        try {
+          const evt = JSON.parse(line);
+          if (!effectiveOrgId || !evt.orgId || evt.orgId === effectiveOrgId) {
+            eventCount++;
+          }
+        } catch { /* skip malformed */ }
+      }
     }
 
     const packetCount = fs.existsSync(this.packetsDir)

@@ -554,7 +554,7 @@ export class DynamoDAL implements IDataAccessLayer {
     return this.fallback.clearAll();
   }
 
-  async getStats(): Promise<{
+  async getStats(orgId?: string): Promise<{
     projects: number;
     sessions: number;
     runs: number;
@@ -563,6 +563,6 @@ export class DynamoDAL implements IDataAccessLayer {
     plans: number;
   }> {
     // TODO: For projects count, query DynamoDB instead of fallback
-    return this.fallback.getStats();
+    return this.fallback.getStats(orgId || this.orgId);
   }
 }
