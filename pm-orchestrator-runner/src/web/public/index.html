@@ -805,6 +805,34 @@
       font-weight: 500;
     }
 
+    .cmd-selected-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      background: #dbeafe;
+      color: #1d4ed8;
+      border: 1px solid #93c5fd;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .cmd-selected-badge button {
+      background: none;
+      border: none;
+      color: #1d4ed8;
+      cursor: pointer;
+      padding: 0 2px;
+      font-size: 0.85rem;
+      line-height: 1;
+    }
+
+    .cmd-selected-badge button:hover {
+      color: #dc2626;
+    }
+
     .cmd-panel {
       display: none;
       width: 100%;
@@ -7914,6 +7942,7 @@
                 '<select class="cmd-dropdown-select" id="cmd-select-project" data-testid="cmd-select-project" style="display:none;" onchange="selectSettingsCommand(this, \'' + escapeHtml(projectId) + '\')"><option value="">-- select --</option></select>' +
               '</div>' +
               '<div id="cmd-panel" class="cmd-panel" data-project-id="' + escapeHtml(projectId) + '"></div>' +
+              '<div id="cmd-selected-container" style="display:none;"></div>' +
               '<div class="chat-input-area">' +
                 '<div class="chat-attachments" id="chat-attachments"></div>' +
                 '<div class="chat-input-wrapper">' +
@@ -8121,17 +8150,16 @@
       if (!selectedOption || !selectedOption.value) return;
 
       var prompt = selectedOption.getAttribute('data-prompt');
+      var name = selectedOption.value;
       if (!prompt) return;
 
+      // Store command instead of overwriting input
+      selectedChatCommand = { name: name, prompt: prompt, isSlashCommand: false };
+      updateSelectedCommandBadge();
+
+      // Focus input without changing its value
       var chatInput = document.getElementById('chat-input');
-      if (chatInput) {
-        chatInput.value = prompt;
-        chatInput.focus();
-        // Save as draft
-        if (projectId) {
-          chatInputDrafts[projectId] = prompt;
-        }
-      }
+      if (chatInput) chatInput.focus();
 
       // Reset selection back to placeholder
       selectElement.selectedIndex = 0;
@@ -8184,6 +8212,8 @@
      */
     // Track which scope's command is currently selected (for mutual exclusion)
     var selectedCommandScope = null;
+    // Currently selected command for chat input (prepended on send)
+    var selectedChatCommand = null; // { name: string, prompt: string, isSlashCommand: boolean }
 
     function selectCommandFromPanel(element) {
       var scope = element.getAttribute('data-cmd-scope');
@@ -8193,21 +8223,18 @@
       if (!cmds || index < 0 || index >= cmds.length) return;
 
       var cmd = cmds[index];
-      var chatInput = document.getElementById('chat-input');
-      if (chatInput) {
-        // For slash commands, prefix with the command name
-        if (cmd.isSlashCommand) {
-          chatInput.value = '/' + cmd.name + ' ';
-        } else {
-          chatInput.value = cmd.prompt;
-        }
-        chatInput.focus();
-        var panel = document.getElementById('cmd-panel');
-        var projectIdAttr = panel ? panel.getAttribute('data-project-id') : null;
-        if (projectIdAttr) {
-          chatInputDrafts[projectIdAttr] = chatInput.value;
-        }
+
+      // Store command instead of overwriting input
+      if (cmd.isSlashCommand) {
+        selectedChatCommand = { name: '/' + cmd.name, prompt: '/' + cmd.name + ' ', isSlashCommand: true };
+      } else {
+        selectedChatCommand = { name: cmd.name, prompt: cmd.prompt, isSlashCommand: false };
       }
+      updateSelectedCommandBadge();
+
+      // Focus input without changing its value
+      var chatInput = document.getElementById('chat-input');
+      if (chatInput) chatInput.focus();
 
       // Set mutual exclusion: selecting a command from one scope disables the other
       selectedCommandScope = scope;
@@ -8216,6 +8243,29 @@
       // Collapse the panel after selection
       var panel = document.getElementById('cmd-panel');
       if (panel) panel.classList.remove('active');
+    }
+
+    function updateSelectedCommandBadge() {
+      var container = document.getElementById('cmd-selected-container');
+      if (!container) return;
+
+      if (selectedChatCommand) {
+        container.style.display = '';
+        container.innerHTML = '<span class="cmd-selected-badge">' +
+          '<span>Command: ' + escapeHtml(selectedChatCommand.name) + '</span>' +
+          '<button onclick="clearSelectedCommand()" title="Remove command">&times;</button>' +
+          '</span>';
+      } else {
+        container.style.display = 'none';
+        container.innerHTML = '';
+      }
+    }
+
+    function clearSelectedCommand() {
+      selectedChatCommand = null;
+      selectedCommandScope = null;
+      updateSelectedCommandBadge();
+      updateCommandScopeExclusion();
     }
 
     /**
@@ -8448,6 +8498,17 @@
       var sendBtn = document.getElementById('chat-send-btn');
       var content = input.value.trim();
 
+      // Prepend selected command if any
+      if (selectedChatCommand && content) {
+        if (selectedChatCommand.isSlashCommand) {
+          content = selectedChatCommand.prompt + content;
+        } else {
+          content = selectedChatCommand.prompt + '\n\n' + content;
+        }
+      } else if (selectedChatCommand && !content) {
+        content = selectedChatCommand.prompt;
+      }
+
       if (!content && chatAttachments.length === 0) return;
 
       // Disable input while sending
@@ -8498,10 +8559,14 @@
           showToast('Templates injected: ' + injectionParts.join(', '), 'info');
         }
 
-        // Clear input, attachments, and draft on success
+        // Clear input, attachments, draft, and selected command on success
         input.value = '';
         chatAttachments = [];
         delete chatInputDrafts[projectId];
+        selectedChatCommand = null;
+        selectedCommandScope = null;
+        updateSelectedCommandBadge();
+        updateCommandScopeExclusion();
 
         // Re-enable input
         input.disabled = false;
@@ -12537,6 +12602,43 @@
       // Future: could load task groups for selected project
     }
 
+    async function loadGlobalCmdCommands() {
+      var projectSelect = document.getElementById('gcmd-project');
+      var cmdSelect = document.getElementById('gcmd-command');
+      if (!cmdSelect) return;
+
+      var projectId = projectSelect ? projectSelect.value : '';
+      if (!projectId) {
+        cmdSelect.innerHTML = '<option value="">No command</option>';
+        return;
+      }
+
+      try {
+        var data = await api('/projects/' + encodeURIComponent(projectId) + '/settings-commands');
+        var globalCmds = data.global || [];
+        var projectCmds = data.project || [];
+
+        var html = '<option value="">No command</option>';
+        if (globalCmds.length > 0) {
+          html += '<optgroup label="Global">';
+          globalCmds.forEach(function(c) {
+            html += '<option value="' + escapeHtml(c.prompt || '') + '">' + escapeHtml(c.name) + '</option>';
+          });
+          html += '</optgroup>';
+        }
+        if (projectCmds.length > 0) {
+          html += '<optgroup label="Project">';
+          projectCmds.forEach(function(c) {
+            html += '<option value="' + escapeHtml(c.prompt || '') + '">' + escapeHtml(c.name) + '</option>';
+          });
+          html += '</optgroup>';
+        }
+        cmdSelect.innerHTML = html;
+      } catch (e) {
+        console.warn('[GlobalCmd] Failed to load commands:', e);
+      }
+    }
+
     async function sendGlobalCmd() {
       var projectSelect = document.getElementById('gcmd-project');
       var input = document.getElementById('gcmd-input');
@@ -12552,6 +12654,15 @@
       }
 
       var content = input.value.trim();
+
+      // Prepend selected command if any
+      var cmdSelect = document.getElementById('gcmd-command');
+      var cmdPrompt = cmdSelect ? cmdSelect.value : '';
+      if (cmdPrompt && content) {
+        content = cmdPrompt + '\n\n' + content;
+      } else if (cmdPrompt && !content) {
+        content = cmdPrompt;
+      }
       input.disabled = true;
       sendBtn.disabled = true;
       sendBtn.textContent = '...';
@@ -12566,6 +12677,7 @@
         if (data.error) throw new Error(data.message);
 
         input.value = '';
+        if (cmdSelect) cmdSelect.selectedIndex = 0;
         showToast('Task submitted', 'success');
 
         // Refresh current page if on dashboard or task groups
@@ -12661,8 +12773,11 @@
   </script>
 
   <div class="global-cmd-bar" id="global-cmd-bar">
-    <select id="gcmd-project" onchange="updateGlobalCmdGroups()" title="Select project">
+    <select id="gcmd-project" onchange="updateGlobalCmdGroups();loadGlobalCmdCommands();" title="Select project">
       <option value="">Project...</option>
+    </select>
+    <select id="gcmd-command" title="Select command" style="max-width:150px;">
+      <option value="">No command</option>
     </select>
     <input type="text" id="gcmd-input" placeholder="Quick task... (Enter to send)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendGlobalCmd();}">
     <button onclick="sendGlobalCmd()" id="gcmd-send">Send</button>
