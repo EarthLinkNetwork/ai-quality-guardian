@@ -14,17 +14,62 @@ LLM の上に被せる品質矯正レイヤー。省略・TODO残し・早期完
 npm install -g pm-orchestrator-runner
 ```
 
-### API Key 設定
+### .env ファイル設定（推奨）
+
+プロジェクトルートに `.env` ファイルを作成すると、起動コマンドを大幅に簡素化できます。
+
+```env
+# .env
+PORT=5678
+AUTH_ENABLED=true
+OPENAI_API_KEY=sk-proj-...
+PM_SELFHOST_DEV=true
+```
+
+| 変数 | 説明 | デフォルト |
+|------|------|-----------|
+| `PORT` | Web UI ポート | namespace に応じて自動割当 |
+| `AUTH_ENABLED` | 認証モード有効化 | false |
+| `OPENAI_API_KEY` | OpenAI API Key | - |
+| `ANTHROPIC_API_KEY` | Anthropic API Key | - |
+| `PM_SELFHOST_DEV` | セルフホスト開発モード（プロジェクトの projectPath を devDir として使用） | false |
+
+`.env` は `.gitignore` に含まれているため、シークレットを安全に管理できます。
+
+### Web UI モード
 
 ```bash
-# 方法A: 環境変数（推奨）
-export OPENAI_API_KEY=sk-...
-# または
-export ANTHROPIC_API_KEY=sk-ant-...
+# .env 設定済みなら：
+pm web                                      # これだけで起動
 
-# 方法B: 対話式（初回起動時に自動開始）
-pm
+# オプション指定も可能：
+pm web --port 5678                          # ポート指定
+pm web --auth                               # 認証モード有効化（.env の AUTH_ENABLED=true と同等）
+pm web --background                         # バックグラウンド起動
+pm web --namespace stable                   # namespace 指定
+pm web-stop --namespace stable              # バックグラウンド停止
 ```
+
+### 認証（マルチユーザー対応）
+
+認証が有効な場合、WebUI へのアクセスには API Key が必要です。
+
+```bash
+# 方法1: .env で有効化（推奨）
+AUTH_ENABLED=true
+
+# 方法2: CLI フラグ
+pm web --auth
+
+# 方法3: レガシー（後方互換）
+pm web --api-key pmr_xxxxx
+```
+
+初回アクセス時にブラウザのログイン画面で API Key を入力します。キーは `localStorage` に保存されるため、2回目以降は自動ログインされます。
+
+API Key の管理は WebUI の Settings 画面または REPL の `/keys` コマンドで行えます。キーは DynamoDB テーブル `pm-runner-api-keys` に保存されます。
+
+マルチテナント分離: API Key の `userId` が `orgId` として使用され、プロジェクト・アクティビティが自動的にテナント分離されます。
 
 ### REPL モード
 
@@ -47,16 +92,7 @@ REPL 内コマンド:
 | `/keys` | API Key 管理 |
 | `/exit` | 終了 |
 
-### Web UI モード
-
-```bash
-pm web --port 5678                          # フォアグラウンド起動
-pm web --port 5678 --background             # バックグラウンド起動
-pm web --port 5678 --namespace stable       # namespace 指定
-pm web-stop --namespace stable              # バックグラウンド停止
-```
-
-API 確認:
+### API 確認
 
 ```bash
 curl http://localhost:5678/api/health
@@ -160,9 +196,37 @@ npm run lint                  # Lint チェック
 # git push は別途確認後に実行する
 ```
 
+## アーキテクチャ
+
+### データアクセスレイヤー (DAL)
+
+ハイブリッド構成: DynamoDB + ローカルファイル。
+
+| データ | DynamoDB | ローカルファイル |
+|--------|----------|-----------------|
+| ProjectIndex | Primary | Fallback |
+| Sessions | - | Primary |
+| Runs | - | Primary |
+| ActivityEvents | - | Primary |
+| Conversations | - | Primary |
+| API Keys | Primary | - |
+
+DynamoDB が利用不可の場合、ProjectIndex もローカルファイルにフォールバックします。
+
+### マルチテナント分離
+
+- DynamoDB: `PK = ORG#{orgId}` でパーティション分離
+- ローカルファイル: `orgId` フィールドでフィルタリング
+- `orgId` は認証済みユーザーの `userId` から自動導出
+
+### セルフホスト
+
+プロジェクトの `projectType` を `runner-dev` に設定し、`.env` に `PM_SELFHOST_DEV=true` を追加すると、プロジェクトの `projectPath` が開発ディレクトリとして自動使用されます。
+
 ## Requirements
 
 - Node.js >= 18.0.0
+- AWS アカウント（DynamoDB 用、プロファイル `berry`）
 - API Key (OpenAI or Anthropic) or Claude Code CLI
 
 ## License
