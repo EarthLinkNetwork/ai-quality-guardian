@@ -1090,3 +1090,61 @@ Respond in this exact JSON format (no markdown):
     return { passed: true, issues: [] };
   }
 }
+
+
+// ============================================================
+// RED Blast Radius Operation Detection
+// ============================================================
+
+/**
+ * Result of RED operation detection
+ */
+export interface RedOperationDetectionResult {
+  /** Whether destructive operations were detected */
+  detected: boolean;
+  /** List of detected destructive operations */
+  operations: string[];
+}
+
+/**
+ * Detect RED blast radius operations in Claude Code output.
+ * Returns true if output contains indicators of destructive operations.
+ *
+ * Checks for:
+ * 1. [RED OPERATION] markers (injected by safety rules prompt)
+ * 2. Actual destructive command execution patterns (executing:/running:/executed:)
+ *
+ * @param output - Claude Code output text to scan
+ * @returns Detection result with list of destructive operations found
+ */
+export function detectRedOperation(output: string): RedOperationDetectionResult {
+  if (!output || typeof output !== 'string') {
+    return { detected: false, operations: [] };
+  }
+
+  const operations: string[] = [];
+
+  // Check for [RED OPERATION] markers (injected by safety rules)
+  const redMarkerRegex = /\[RED OPERATION\]\s*(.+)/gi;
+  let match;
+  while ((match = redMarkerRegex.exec(output)) !== null) {
+    operations.push(match[1].trim());
+  }
+
+  // Also check for actual destructive command execution patterns
+  const destructivePatterns = [
+    /(?:executing|running|executed):\s*(rm\s+-rf\s+[^$\n]+)/gi,
+    /(?:executing|running|executed):\s*(aws\s+\S+\s+delete\S*[^$\n]+)/gi,
+    /(?:executing|running|executed):\s*(gcloud\s+\S+\s+delete[^$\n]+)/gi,
+    /(?:executing|running|executed):\s*(drop\s+(?:table|database)[^$\n]+)/gi,
+    /(?:executing|running|executed):\s*(git\s+push\s+--force[^$\n]+)/gi,
+  ];
+
+  for (const pattern of destructivePatterns) {
+    while ((match = pattern.exec(output)) !== null) {
+      operations.push(match[1].trim());
+    }
+  }
+
+  return { detected: operations.length > 0, operations };
+}

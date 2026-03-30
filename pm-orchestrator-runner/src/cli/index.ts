@@ -50,7 +50,7 @@ import {
 } from '../web/background';
 import { ensureDistFresh, checkPublicFilesCopied } from '../utils/dist-freshness';
 import { runSelftest, SELFTEST_CASES, runSelftestWithAIJudge } from '../selftest/selftest-runner';
-import { hasUnansweredQuestions, extractQuestionSummary, detectQuestionsWithLlm, tryAutoAnswerQuestion, generateMetaPrompt, evaluateOutputQuality, getPendingUsage } from '../utils/question-detector';
+import { hasUnansweredQuestions, extractQuestionSummary, detectQuestionsWithLlm, tryAutoAnswerQuestion, generateMetaPrompt, evaluateOutputQuality, getPendingUsage, detectRedOperation } from '../utils/question-detector';
 import { calculateTokenCost } from '../web/services/ai-cost-service';
 import { estimateTaskSize } from '../utils/task-size-estimator';
 import { analyzeTaskForChunking } from '../task-chunking';
@@ -1038,6 +1038,19 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
       }
 
       if (result.status === 'COMPLETE') {
+        // Check for RED blast radius operations in output (takes priority over question detection)
+        if (cleanOutput) {
+          const redCheck = detectRedOperation(cleanOutput);
+          if (redCheck.detected) {
+            console.log(`[Runner] RED operations detected: ${redCheck.operations.join(', ')}`);
+            stateStream.emit(item.task_id, 'system', `[safety] RED operations detected: ${redCheck.operations.join('; ')}`);
+            return {
+              status: 'ERROR',
+              errorMessage: 'AWAITING_CLARIFICATION:[SAFETY] Destructive operations detected. Please review: ' + redCheck.operations.join('; '),
+              output: cleanOutput,
+            };
+          }
+        }
         // Per COMPLETION_JUDGMENT.md: Questions in output -> AWAITING_RESPONSE (not COMPLETE)
         if (hasQuestions) {
           console.log(`[Runner] COMPLETE but has questions -> AWAITING_RESPONSE`);

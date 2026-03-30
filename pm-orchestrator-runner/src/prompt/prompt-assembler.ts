@@ -18,6 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ConversationEntry, TaskResult } from '../models/task-group';
 import { Template, formatRulesInjection, formatOutputInjection } from '../template';
+import { generateSafetyRules, DEFAULT_BLAST_RADIUS_CONFIG } from '../safety';
 
 /**
  * Default Mandatory Rules
@@ -120,6 +121,8 @@ export interface AssemblyResult {
     templateOutputFormat?: string;
     /** Injected spec content (only present for test generation tasks) */
     specInjection?: string;
+    /** Blast radius safety rules (always injected) */
+    safetyRules?: string;
   };
 }
 
@@ -192,6 +195,9 @@ export class PromptAssembler {
     const templateRules = activeTemplate ? formatRulesInjection(activeTemplate) : '';
     const templateOutputFormat = activeTemplate ? formatOutputInjection(activeTemplate) : '';
 
+    // Inject blast radius safety rules
+    const safetyRules = generateSafetyRules(DEFAULT_BLAST_RADIUS_CONFIG);
+
     // Load/build each section (no caching per spec)
     const sections: AssemblyResult['sections'] = {
       globalPrelude: this.loadGlobalPrelude(),
@@ -201,6 +207,7 @@ export class PromptAssembler {
       outputEpilogue: this.loadOutputEpilogue(),
       templateRules: templateRules || undefined,
       templateOutputFormat: templateOutputFormat || undefined,
+      safetyRules,
     };
 
     // Assemble in fixed order per spec 17 and 32
@@ -208,6 +215,11 @@ export class PromptAssembler {
 
     if (sections.globalPrelude) {
       parts.push(sections.globalPrelude);
+    }
+
+    // Safety rules injection (after global prelude, before template rules)
+    if (sections.safetyRules) {
+      parts.push(sections.safetyRules);
     }
 
     // Template rules injection (after global prelude) per spec 32
@@ -246,6 +258,9 @@ export class PromptAssembler {
         const rebuildParts: string[] = [];
         if (sections.globalPrelude) {
           rebuildParts.push(sections.globalPrelude);
+        }
+        if (sections.safetyRules) {
+          rebuildParts.push(sections.safetyRules);
         }
         rebuildParts.push(sections.specInjection.trim());
         if (templateRules) {
@@ -307,6 +322,9 @@ export class PromptAssembler {
     const templateRules = activeTemplate ? formatRulesInjection(activeTemplate) : '';
     const templateOutputFormat = activeTemplate ? formatOutputInjection(activeTemplate) : '';
 
+    // Inject blast radius safety rules
+    const safetyRules = generateSafetyRules(DEFAULT_BLAST_RADIUS_CONFIG);
+
     // Load/build each section (no caching per spec)
     const sections: AssemblyResult['sections'] = {
       globalPrelude: this.loadGlobalPrelude(),
@@ -317,6 +335,7 @@ export class PromptAssembler {
       modificationPrompt,
       templateRules: templateRules || undefined,
       templateOutputFormat: templateOutputFormat || undefined,
+      safetyRules,
     };
 
     // Assemble in fixed order with modification prompt
@@ -325,6 +344,11 @@ export class PromptAssembler {
 
     if (sections.globalPrelude) {
       parts.push(sections.globalPrelude);
+    }
+
+    // Safety rules injection (after global prelude, before template rules)
+    if (sections.safetyRules) {
+      parts.push(sections.safetyRules);
     }
 
     // Template rules injection (after global prelude) per spec 32
