@@ -53,6 +53,7 @@ import { runSelftest, SELFTEST_CASES, runSelftestWithAIJudge } from '../selftest
 import { hasUnansweredQuestions, extractQuestionSummary, detectQuestionsWithLlm, tryAutoAnswerQuestion, generateMetaPrompt, evaluateOutputQuality } from '../utils/question-detector';
 import { estimateTaskSize } from '../utils/task-size-estimator';
 import { analyzeTaskForChunking } from '../task-chunking';
+import { createCheckpoint, rollback, cleanupCheckpoint, Checkpoint } from '../checkpoint';
 import {
   runPreflightChecks,
   enforcePreflightCheck,
@@ -690,6 +691,20 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
         }
       }
 
+    // ── Checkpoint (Rollback Safety Net) ──
+    // Create checkpoint before Claude Code execution for rollback on failure
+    let checkpoint: Checkpoint | undefined;
+    try {
+      const checkpointResult = await createCheckpoint(effectiveWorkingDir, item.task_id);
+      checkpoint = checkpointResult.checkpoint;
+      if (checkpoint && checkpoint.type !== 'none') {
+        console.log(`[Runner] Checkpoint created: ${checkpoint.type} for task ${item.task_id}`);
+        stateStream.emit(item.task_id, 'system', `[checkpoint] ${checkpoint.type} checkpoint created`);
+      }
+    } catch (cpErr) {
+      console.warn('[Runner] Checkpoint creation failed, proceeding without rollback safety:', cpErr);
+    }
+
     try {
       // Check for test executor mode (for E2E testing of INCOMPLETE handling)
       const testMode = getTestExecutorMode();
@@ -962,6 +977,7 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
 
               console.log(`[Runner] Auto-answer retry succeeded -> COMPLETE`);
               stateStream.emit(item.task_id, 'state', `[state] COMPLETE (auto-answer resolved)`);
+              if (checkpoint) { await cleanupCheckpoint(checkpoint); }
               return { status: 'COMPLETE', output: reClean };
             } else {
               // Retry produced no output — fall through to normal status handling
@@ -988,9 +1004,22 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
         }
         // Return output for visibility in UI (AC-CHAT-001, AC-CHAT-002)
         stateStream.emit(item.task_id, 'state', `[state] COMPLETE`);
+        // Clean up checkpoint on success
+        if (checkpoint) { await cleanupCheckpoint(checkpoint); }
         return { status: 'COMPLETE', output: cleanOutput || undefined };
       } else if (result.status === 'ERROR') {
         stateStream.emit(item.task_id, 'state', `[state] ERROR`);
+        // Rollback on failure
+        if (checkpoint && checkpoint.type !== 'none') {
+          console.log(`[Runner] Rolling back checkpoint for failed task ${item.task_id}`);
+          stateStream.emit(item.task_id, 'system', `[checkpoint] Rolling back changes...`);
+          const rbResult = await rollback(checkpoint);
+          if (rbResult.success) {
+            stateStream.emit(item.task_id, 'system', `[checkpoint] Rollback successful`);
+          } else {
+            console.warn(`[Runner] Rollback failed: ${rbResult.error}`);
+          }
+        }
         return { status: 'ERROR', errorMessage: result.error || 'Task failed', output: cleanOutput || undefined };
       } else if (isReadInfoOrReport) {
         // READ_INFO/REPORT: output is the deliverable, not file evidence
@@ -1008,6 +1037,7 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
           // Output exists, no questions -> task succeeded (COMPLETE)
           console.log(`[Runner] READ_INFO/REPORT ${result.status} with output -> COMPLETE`);
           stateStream.emit(item.task_id, 'state', `[state] COMPLETE (${result.status} with output)`);
+          if (checkpoint) { await cleanupCheckpoint(checkpoint); }
           return { status: 'COMPLETE', output: cleanOutput };
         } else {
           // No output -> needs clarification (AWAITING_RESPONSE, never ERROR)
@@ -1037,12 +1067,24 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
         if (result.executed && hasOutput) {
           console.log(`[Runner] ${taskType} ${result.status} but exit=0 + output -> COMPLETE (file verification override)`);
           stateStream.emit(item.task_id, 'state', `[state] COMPLETE (${taskType} ${result.status}, exit=0 override)`);
+          if (checkpoint) { await cleanupCheckpoint(checkpoint); }
           return { status: 'COMPLETE', output: cleanOutput };
         }
         // Non-COMPLETE with no output or non-zero exit -> ERROR
         const outputPreview = cleanOutput ? cleanOutput.substring(0, 150) : '(no output)';
         console.log(`[Runner] ${taskType} ${result.status} -> ERROR (output preserved: ${hasOutput}, outputLen=${cleanOutput?.length ?? 0}, preview="${outputPreview}")`);
         stateStream.emit(item.task_id, 'state', `[state] ERROR (${taskType} ${result.status}, outputLen=${cleanOutput?.length ?? 0})`);
+        // Rollback on failure
+        if (checkpoint && checkpoint.type !== 'none') {
+          console.log(`[Runner] Rolling back checkpoint for failed task ${item.task_id}`);
+          stateStream.emit(item.task_id, 'system', `[checkpoint] Rolling back changes...`);
+          const rbResult = await rollback(checkpoint);
+          if (rbResult.success) {
+            stateStream.emit(item.task_id, 'system', `[checkpoint] Rollback successful`);
+          } else {
+            console.warn(`[Runner] Rollback failed: ${rbResult.error}`);
+          }
+        }
         return {
           status: 'ERROR',
           errorMessage: `Task ended with status: ${result.status}. Executor exit code: ${result.executed ? '0' : 'non-zero'}. Output length: ${cleanOutput?.length ?? 0}`,
@@ -1053,6 +1095,21 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`[Runner] Task ${item.task_id} failed:`, errorMessage);
       stateStream.emit(item.task_id, 'state', `[state] ERROR (catch: ${errorMessage.substring(0, 100)})`);
+      // Rollback on failure
+      if (checkpoint && checkpoint.type !== 'none') {
+        console.log(`[Runner] Rolling back checkpoint for failed task ${item.task_id}`);
+        stateStream.emit(item.task_id, 'system', `[checkpoint] Rolling back changes...`);
+        try {
+          const rbResult = await rollback(checkpoint);
+          if (rbResult.success) {
+            stateStream.emit(item.task_id, 'system', `[checkpoint] Rollback successful`);
+          } else {
+            console.warn(`[Runner] Rollback failed: ${rbResult.error}`);
+          }
+        } catch (rbErr) {
+          console.warn(`[Runner] Rollback failed with exception:`, rbErr);
+        }
+      }
       return { status: 'ERROR', errorMessage };
     }
   };
