@@ -12553,15 +12553,21 @@
 
         for (var i = 0; i < events.length; i++) {
           var ev = events[i];
+          var cost = 0;
           if (ev.cost_usd) {
-            totalCost += ev.cost_usd;
+            cost = ev.cost_usd;
+          } else if (ev.type === 'llm_cost' && ev.details && ev.details.total_cost_usd) {
+            cost = ev.details.total_cost_usd;
+          }
+          if (cost > 0) {
+            totalCost += cost;
             var ts = ev.timestamp || '';
             if (ts.startsWith(today)) {
-              todayCost += ev.cost_usd;
+              todayCost += cost;
               todayTasks++;
             }
             if (ts.startsWith(thisMonth)) {
-              monthCost += ev.cost_usd;
+              monthCost += cost;
             }
           }
         }

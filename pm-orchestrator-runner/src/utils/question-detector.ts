@@ -8,6 +8,32 @@
  */
 
 /**
+ * LLM usage information for cost tracking.
+ * Accumulated per-call and retrieved via getPendingUsage().
+ */
+export interface LlmUsageInfo {
+  provider: string;
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+// Module-level accumulator for LLM usage in the current task.
+// Safe in single-threaded Node.js where tasks execute sequentially.
+let _pendingUsage: LlmUsageInfo[] = [];
+
+/**
+ * Retrieve and clear accumulated LLM usage data.
+ * Call this after task execution to collect all usage from LLM calls.
+ */
+export function getPendingUsage(): LlmUsageInfo[] {
+  const result = [..._pendingUsage];
+  _pendingUsage = [];
+  return result;
+}
+
+/**
  * Question detection result
  */
 export interface QuestionDetectionResult {
@@ -421,6 +447,17 @@ async function callOpenAI(apiKey: string, model: string, prompt: string): Promis
     messages: [{ role: 'user', content: prompt }],
   });
 
+  // Track usage for cost calculation
+  if (response.usage) {
+    _pendingUsage.push({
+      provider: 'openai',
+      model,
+      prompt_tokens: response.usage.prompt_tokens || 0,
+      completion_tokens: response.usage.completion_tokens || 0,
+      total_tokens: response.usage.total_tokens || 0,
+    });
+  }
+
   const text = response.choices[0]?.message?.content || '';
   const parsed = JSON.parse(text);
   return {
@@ -444,6 +481,17 @@ async function callAnthropic(apiKey: string, model: string, prompt: string): Pro
     max_tokens: 300,
     messages: [{ role: 'user', content: prompt }],
   });
+
+  // Track usage for cost calculation
+  if (response.usage) {
+    _pendingUsage.push({
+      provider: 'anthropic',
+      model,
+      prompt_tokens: response.usage.input_tokens || 0,
+      completion_tokens: response.usage.output_tokens || 0,
+      total_tokens: (response.usage.input_tokens || 0) + (response.usage.output_tokens || 0),
+    });
+  }
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '';
   const parsed = JSON.parse(text);
@@ -600,6 +648,14 @@ export async function detectFileChangeClaimsWithLlm(
         max_tokens: 200,
         messages: [{ role: 'user', content: prompt }],
       });
+      if (response.usage) {
+        _pendingUsage.push({
+          provider: 'openai', model: resolved.model,
+          prompt_tokens: response.usage.prompt_tokens || 0,
+          completion_tokens: response.usage.completion_tokens || 0,
+          total_tokens: response.usage.total_tokens || 0,
+        });
+      }
       const text = response.choices[0]?.message?.content || '';
       parsed = JSON.parse(text);
     } else if (resolved.provider === 'anthropic') {
@@ -610,6 +666,14 @@ export async function detectFileChangeClaimsWithLlm(
         max_tokens: 200,
         messages: [{ role: 'user', content: prompt }],
       });
+      if (response.usage) {
+        _pendingUsage.push({
+          provider: 'anthropic', model: resolved.model,
+          prompt_tokens: response.usage.input_tokens || 0,
+          completion_tokens: response.usage.output_tokens || 0,
+          total_tokens: (response.usage.input_tokens || 0) + (response.usage.output_tokens || 0),
+        });
+      }
       const text = response.content[0].type === 'text' ? response.content[0].text : '';
       parsed = JSON.parse(text);
     } else {
@@ -728,6 +792,14 @@ export async function tryAutoAnswerQuestion(
         max_tokens: 500,
         messages: [{ role: 'user', content: prompt }],
       });
+      if (response.usage) {
+        _pendingUsage.push({
+          provider: 'openai', model: resolved.model,
+          prompt_tokens: response.usage.prompt_tokens || 0,
+          completion_tokens: response.usage.completion_tokens || 0,
+          total_tokens: response.usage.total_tokens || 0,
+        });
+      }
       const text = response.choices[0]?.message?.content || '';
       parsed = JSON.parse(text);
     } else if (resolved.provider === 'anthropic') {
@@ -738,6 +810,14 @@ export async function tryAutoAnswerQuestion(
         max_tokens: 500,
         messages: [{ role: 'user', content: prompt }],
       });
+      if (response.usage) {
+        _pendingUsage.push({
+          provider: 'anthropic', model: resolved.model,
+          prompt_tokens: response.usage.input_tokens || 0,
+          completion_tokens: response.usage.output_tokens || 0,
+          total_tokens: (response.usage.input_tokens || 0) + (response.usage.output_tokens || 0),
+        });
+      }
       const text = response.content[0].type === 'text' ? response.content[0].text : '';
       parsed = JSON.parse(text);
     } else {
@@ -843,6 +923,14 @@ Respond in this exact JSON format (no markdown):
         max_tokens: 1000,
         messages: [{ role: 'user', content: prompt }],
       });
+      if (response.usage) {
+        _pendingUsage.push({
+          provider: 'openai', model: resolved.model,
+          prompt_tokens: response.usage.prompt_tokens || 0,
+          completion_tokens: response.usage.completion_tokens || 0,
+          total_tokens: response.usage.total_tokens || 0,
+        });
+      }
       const text = response.choices[0]?.message?.content || '';
       parsed = JSON.parse(text);
     } else if (resolved.provider === 'anthropic') {
@@ -853,6 +941,14 @@ Respond in this exact JSON format (no markdown):
         max_tokens: 1000,
         messages: [{ role: 'user', content: prompt }],
       });
+      if (response.usage) {
+        _pendingUsage.push({
+          provider: 'anthropic', model: resolved.model,
+          prompt_tokens: response.usage.input_tokens || 0,
+          completion_tokens: response.usage.output_tokens || 0,
+          total_tokens: (response.usage.input_tokens || 0) + (response.usage.output_tokens || 0),
+        });
+      }
       const text = response.content[0].type === 'text' ? response.content[0].text : '';
       parsed = JSON.parse(text);
     } else {
@@ -949,6 +1045,14 @@ Respond in this exact JSON format (no markdown):
         max_tokens: 500,
         messages: [{ role: 'user', content: prompt }],
       });
+      if (response.usage) {
+        _pendingUsage.push({
+          provider: 'openai', model: resolved.model,
+          prompt_tokens: response.usage.prompt_tokens || 0,
+          completion_tokens: response.usage.completion_tokens || 0,
+          total_tokens: response.usage.total_tokens || 0,
+        });
+      }
       const text = response.choices[0]?.message?.content || '';
       parsed = JSON.parse(text);
     } else if (resolved.provider === 'anthropic') {
@@ -959,6 +1063,14 @@ Respond in this exact JSON format (no markdown):
         max_tokens: 500,
         messages: [{ role: 'user', content: prompt }],
       });
+      if (response.usage) {
+        _pendingUsage.push({
+          provider: 'anthropic', model: resolved.model,
+          prompt_tokens: response.usage.input_tokens || 0,
+          completion_tokens: response.usage.output_tokens || 0,
+          total_tokens: (response.usage.input_tokens || 0) + (response.usage.output_tokens || 0),
+        });
+      }
       const text = response.content[0].type === 'text' ? response.content[0].text : '';
       parsed = JSON.parse(text);
     } else {

@@ -368,7 +368,8 @@ export type ActivityEventType =
   | "chat_received"
   | "chat_error"
   | "session_ended"
-  | "error";
+  | "error"
+  | "llm_cost";
 
 // Activity event importance
 export type ActivityEventImportance = "high" | "normal" | "low";

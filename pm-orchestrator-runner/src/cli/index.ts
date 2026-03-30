@@ -50,7 +50,8 @@ import {
 } from '../web/background';
 import { ensureDistFresh, checkPublicFilesCopied } from '../utils/dist-freshness';
 import { runSelftest, SELFTEST_CASES, runSelftestWithAIJudge } from '../selftest/selftest-runner';
-import { hasUnansweredQuestions, extractQuestionSummary, detectQuestionsWithLlm, tryAutoAnswerQuestion, generateMetaPrompt, evaluateOutputQuality } from '../utils/question-detector';
+import { hasUnansweredQuestions, extractQuestionSummary, detectQuestionsWithLlm, tryAutoAnswerQuestion, generateMetaPrompt, evaluateOutputQuality, getPendingUsage } from '../utils/question-detector';
+import { calculateTokenCost } from '../web/services/ai-cost-service';
 import { estimateTaskSize } from '../utils/task-size-estimator';
 import { analyzeTaskForChunking } from '../task-chunking';
 import { createCheckpoint, rollback, cleanupCheckpoint, Checkpoint } from '../checkpoint';
@@ -540,8 +541,53 @@ function truncateForLog(input: string | undefined, maxLen: number): string {
  *
  * Per user insight: "LLM Layer should answer clarification questions"
  */
+/**
+ * Record accumulated LLM usage from the current task execution as an activity event.
+ * Collects pending usage from question-detector module, calculates cost, and writes
+ * an llm_cost activity event to the DAL.
+ */
+async function recordTaskLlmCost(item: QueueItem): Promise<void> {
+  const taskUsage = getPendingUsage();
+  if (taskUsage.length === 0) return;
+
+  let totalCostUsd = 0;
+  for (const u of taskUsage) {
+    const cost = calculateTokenCost(u.model, u.prompt_tokens, u.completion_tokens);
+    if (cost) totalCostUsd += cost.totalCost;
+  }
+
+  if (totalCostUsd > 0 || taskUsage.length > 0) {
+    console.log(`[Runner] LLM usage: ${taskUsage.length} calls, $${totalCostUsd.toFixed(4)}`);
+  }
+
+  if (isNoDynamoExtendedInitialized()) {
+    try {
+      const dal = getNoDynamoExtended();
+      await dal.createActivityEvent({
+        orgId: 'default',
+        type: 'llm_cost',
+        summary: `LLM cost: $${totalCostUsd.toFixed(4)} (${taskUsage.length} calls)`,
+        importance: 'low',
+        details: {
+          llm_usage: taskUsage,
+          total_cost_usd: totalCostUsd,
+          calls: taskUsage.length,
+        },
+        taskId: item.task_id,
+        taskGroupId: item.task_group_id,
+      });
+    } catch {
+      // Silently ignore activity event write failures
+    }
+  }
+}
+
 function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskExecutor {
   return async (item: QueueItem): Promise<{ status: 'COMPLETE' | 'ERROR'; errorMessage?: string; output?: string }> => {
+    // Clear any stale pending usage from a previous task
+    getPendingUsage();
+
+    try {
     console.log(`[Runner] Executing task: ${item.task_id}`);
     console.log(`[Runner] Prompt: ${item.prompt.substring(0, 100)}${item.prompt.length > 100 ? '...' : ''}`);
 
@@ -1111,6 +1157,10 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
         }
       }
       return { status: 'ERROR', errorMessage };
+    }
+    } finally {
+      // Record accumulated LLM usage regardless of success/failure
+      await recordTaskLlmCost(item).catch(() => {});
     }
   };
 }
