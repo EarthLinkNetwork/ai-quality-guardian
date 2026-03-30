@@ -1329,7 +1329,7 @@ async function startWebServerBackground(webArgs: WebArguments): Promise<void> {
     port: webArgs.port,
   });
 
-  const port = webArgs.port || namespaceConfig.port;
+  const port = webArgs.port || (process.env.PORT ? parseInt(process.env.PORT, 10) : undefined) || namespaceConfig.port;
 
   const serverProcess = new WebServerProcess({
     projectRoot: projectPath,
@@ -1406,7 +1406,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     port: webArgs.port,
   });
 
-  const port = webArgs.port || namespaceConfig.port;
+  const port = webArgs.port || (process.env.PORT ? parseInt(process.env.PORT, 10) : undefined) || namespaceConfig.port;
 
   // E2E isolation: override stateDir if PM_E2E_STATE_DIR is set
   // This prevents E2E tests from polluting real user state
