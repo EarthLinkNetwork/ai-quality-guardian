@@ -327,6 +327,174 @@ describe('Blast Radius Classifier', () => {
     });
   });
 
+  describe('classifyCommand – edge cases', () => {
+    it('should return GREEN for empty string', () => {
+      assert.strictEqual(classifyCommand(''), 'GREEN');
+    });
+
+    it('should return GREEN for whitespace-only input', () => {
+      assert.strictEqual(classifyCommand('   '), 'GREEN');
+    });
+
+    it('should classify "rm server.key" as RED (glob *.key match)', () => {
+      assert.strictEqual(classifyCommand('rm server.key'), 'RED');
+    });
+
+    it('should classify "rm cert.pem" as RED (glob *.pem match)', () => {
+      assert.strictEqual(classifyCommand('rm cert.pem'), 'RED');
+    });
+
+    it('should classify "rm serviceAccountKey.json" as RED', () => {
+      assert.strictEqual(classifyCommand('rm serviceAccountKey.json'), 'RED');
+    });
+
+    it('should classify "rm id_rsa" as RED', () => {
+      assert.strictEqual(classifyCommand('rm id_rsa'), 'RED');
+    });
+
+    it('should classify "unlink .env.staging" as RED (unlink triggers file deletion)', () => {
+      assert.strictEqual(classifyCommand('unlink .env.staging'), 'RED');
+    });
+
+    it('should classify "delete .env.test" as RED (delete keyword)', () => {
+      assert.strictEqual(classifyCommand('delete .env.test'), 'RED');
+    });
+
+    it('should classify "az resource delete" as RED (az.*delete pattern)', () => {
+      assert.strictEqual(classifyCommand('az resource delete --ids /sub/rg/res'), 'RED');
+    });
+
+    it('RED should take priority over YELLOW for "git push --force"', () => {
+      // "git push --force" matches both redCommands and yellowCommands ("git push")
+      // RED must win
+      assert.strictEqual(classifyCommand('git push --force origin main'), 'RED');
+    });
+
+    it('should classify command with leading/trailing spaces correctly', () => {
+      assert.strictEqual(classifyCommand('  rm -rf /  '), 'RED');
+      assert.strictEqual(classifyCommand('  npm test  '), 'GREEN');
+    });
+
+    it('should use custom yellowCommands', () => {
+      const config: BlastRadiusConfig = {
+        ...DEFAULT_BLAST_RADIUS_CONFIG,
+        yellowCommands: ['my-notify-cmd'],
+      };
+      assert.strictEqual(classifyCommand('my-notify-cmd --channel general', config), 'YELLOW');
+    });
+
+    it('should use custom protectedPaths', () => {
+      const config: BlastRadiusConfig = {
+        ...DEFAULT_BLAST_RADIUS_CONFIG,
+        protectedPaths: ['/opt/secrets'],
+      };
+      assert.strictEqual(classifyCommand('rm /opt/secrets/key.pem', config), 'RED');
+    });
+  });
+
+  describe('classifyFileOperation – edge cases', () => {
+    it('should classify move of "credentials.json" as RED', () => {
+      assert.strictEqual(classifyFileOperation('move', 'credentials.json'), 'RED');
+    });
+
+    it('should classify move of file in /etc as RED', () => {
+      assert.strictEqual(classifyFileOperation('move', '/etc/passwd'), 'RED');
+    });
+
+    it('should classify delete of "app.secret" as RED (glob *.secret match)', () => {
+      assert.strictEqual(classifyFileOperation('delete', 'app.secret'), 'RED');
+    });
+
+    it('should classify delete of "server.p12" as RED (glob *.p12 match)', () => {
+      assert.strictEqual(classifyFileOperation('delete', 'server.p12'), 'RED');
+    });
+
+    it('should classify delete of "cert.pfx" as RED (glob *.pfx match)', () => {
+      assert.strictEqual(classifyFileOperation('delete', 'cert.pfx'), 'RED');
+    });
+
+    it('should classify delete of "id_ed25519" as RED', () => {
+      assert.strictEqual(classifyFileOperation('delete', 'id_ed25519'), 'RED');
+    });
+
+    it('should classify create of ".env" as GREEN (create is never destructive)', () => {
+      assert.strictEqual(classifyFileOperation('create', '.env'), 'GREEN');
+    });
+
+    it('should classify create of "credentials.json" as GREEN', () => {
+      assert.strictEqual(classifyFileOperation('create', 'credentials.json'), 'GREEN');
+    });
+
+    it('should classify edit of "server.key" as GREEN (edit is not destructive)', () => {
+      assert.strictEqual(classifyFileOperation('edit', 'server.key'), 'GREEN');
+    });
+
+    it('should handle nested path with protected basename', () => {
+      assert.strictEqual(classifyFileOperation('delete', 'config/.env.production'), 'RED');
+    });
+
+    it('should classify delete in ~/.aws as RED', () => {
+      assert.strictEqual(classifyFileOperation('delete', '~/.aws/credentials'), 'RED');
+    });
+
+    it('should classify delete in ~/.gcloud as RED', () => {
+      assert.strictEqual(classifyFileOperation('delete', '~/.gcloud/application_default_credentials.json'), 'RED');
+    });
+
+    it('should use custom config for file operations', () => {
+      const config: BlastRadiusConfig = {
+        ...DEFAULT_BLAST_RADIUS_CONFIG,
+        protectedFiles: ['custom-secret.yaml'],
+      };
+      assert.strictEqual(classifyFileOperation('delete', 'custom-secret.yaml', config), 'RED');
+      assert.strictEqual(classifyFileOperation('delete', 'other-file.yaml', config), 'GREEN');
+    });
+  });
+
+  describe('generateSafetyRules – additional coverage', () => {
+    it('should include custom red commands in generated rules', () => {
+      const config: BlastRadiusConfig = {
+        ...DEFAULT_BLAST_RADIUS_CONFIG,
+        redCommands: ['custom-destroy-all'],
+      };
+      const rules = generateSafetyRules(config);
+      assert.ok(rules.includes('custom-destroy-all'));
+    });
+
+    it('should include custom yellow commands in generated rules', () => {
+      const config: BlastRadiusConfig = {
+        ...DEFAULT_BLAST_RADIUS_CONFIG,
+        yellowCommands: ['custom-deploy'],
+      };
+      const rules = generateSafetyRules(config);
+      assert.ok(rules.includes('custom-deploy'));
+    });
+
+    it('should not include AWS/GCP sections when lists are empty', () => {
+      const config: BlastRadiusConfig = {
+        ...DEFAULT_BLAST_RADIUS_CONFIG,
+        allowedAwsAccounts: [],
+        allowedGcpProjects: [],
+      };
+      const rules = generateSafetyRules(config);
+      assert.ok(!rules.includes('accounts OTHER than'));
+      assert.ok(!rules.includes('projects OTHER than'));
+    });
+
+    it('should contain explicit stop instruction for RED operations', () => {
+      const rules = generateSafetyRules(DEFAULT_BLAST_RADIUS_CONFIG);
+      assert.ok(rules.includes('Do NOT execute RED operations'));
+    });
+
+    it('should contain all default red command patterns', () => {
+      const rules = generateSafetyRules(DEFAULT_BLAST_RADIUS_CONFIG);
+      assert.ok(rules.includes('rm -rf /'));
+      assert.ok(rules.includes('drop table'));
+      assert.ok(rules.includes('git push --force'));
+      assert.ok(rules.includes('kubectl delete'));
+    });
+  });
+
   describe('detectRedOperation', () => {
     it('should detect [RED OPERATION] marker', () => {
       const output = 'Processing task...\n[RED OPERATION] Attempting to delete production database\nStopping.';
@@ -391,6 +559,56 @@ describe('Blast Radius Classifier', () => {
       const output = 'You could use rm -rf to clean up, but that would be dangerous.';
       const result = detectRedOperation(output);
       assert.strictEqual(result.detected, false);
+    });
+
+    it('should handle null/undefined-like input gracefully', () => {
+      const result = detectRedOperation(undefined as unknown as string);
+      assert.strictEqual(result.detected, false);
+      assert.strictEqual(result.operations.length, 0);
+    });
+
+    it('should handle non-string input gracefully', () => {
+      const result = detectRedOperation(123 as unknown as string);
+      assert.strictEqual(result.detected, false);
+      assert.strictEqual(result.operations.length, 0);
+    });
+
+    it('should detect [RED OPERATION] with varying whitespace', () => {
+      const output = '[RED OPERATION]   Deleting protected resource   ';
+      const result = detectRedOperation(output);
+      assert.strictEqual(result.detected, true);
+      assert.ok(result.operations[0].includes('Deleting protected resource'));
+    });
+
+    it('should detect case-insensitive [RED OPERATION] markers', () => {
+      const output = '[red operation] force pushing to main';
+      const result = detectRedOperation(output);
+      assert.strictEqual(result.detected, true);
+    });
+
+    it('should detect "executed:" prefix pattern', () => {
+      const output = 'executed: rm -rf /tmp/important-data';
+      const result = detectRedOperation(output);
+      assert.strictEqual(result.detected, true);
+      assert.ok(result.operations[0].includes('rm -rf'));
+    });
+
+    it('should not detect commands in normal explanatory text', () => {
+      const output = 'The git push --force command should never be used without review.';
+      const result = detectRedOperation(output);
+      assert.strictEqual(result.detected, false);
+    });
+
+    it('should detect interleaved RED markers and execution patterns', () => {
+      const output = [
+        'Starting task...',
+        '[RED OPERATION] About to delete database',
+        'executing: DROP TABLE users CASCADE',
+        'Task aborted.',
+      ].join('\n');
+      const result = detectRedOperation(output);
+      assert.strictEqual(result.detected, true);
+      assert.ok(result.operations.length >= 2);
     });
   });
 });
