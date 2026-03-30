@@ -4,6 +4,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import type { AuthenticatedRequest } from '../middleware/auth';
 import {
   InspectionPacket,
 } from '../dal/no-dynamo';
@@ -50,10 +51,11 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
   router.get('/', async (req: Request, res: Response) => {
     try {
       const dal = getDAL();
+      const authReq = req as AuthenticatedRequest;
       const projectStatus = (req.query.projectStatus as string) || 'active';
       const [projectsResult, activityResult, stats] = await Promise.all([
-        dal.listProjectIndexes({ limit: 10, projectStatus: projectStatus === 'all' ? undefined : projectStatus as any }),
-        dal.listActivityEvents({ limit: 20 }),
+        dal.listProjectIndexes({ limit: 10, projectStatus: projectStatus === 'all' ? undefined : projectStatus as any, orgId: authReq.orgId }),
+        dal.listActivityEvents({ limit: 20, orgId: authReq.orgId } as any),
         dal.getStats(),
       ]);
 
@@ -76,6 +78,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
   router.get('/projects', async (req: Request, res: Response) => {
     try {
       const dal = getDAL();
+      const authReq = req as AuthenticatedRequest;
       const includeArchived = req.query.includeArchived === 'true';
       const status = req.query.status as string | undefined;
       const projectStatus = req.query.projectStatus as string | undefined;
@@ -93,6 +96,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         sortBy: sortBy as any,
         sortDirection: sortDirection as any,
         limit: 50,
+        orgId: authReq.orgId,
       });
 
       // Enrich projects with cost info
@@ -124,6 +128,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
   router.post('/projects', async (req: Request, res: Response) => {
     try {
       const dal = getDAL();
+      const authReq = req as AuthenticatedRequest;
       const { projectPath, alias, description, notes, tags, projectType, aiModel, aiProvider } = req.body;
 
       if (!projectPath || typeof projectPath !== 'string') {
@@ -135,7 +140,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
       }
 
       const project = await dal.createProjectIndex({
-        orgId: 'default',
+        orgId: authReq.orgId || 'default',
         projectPath,
         alias,
         description,
@@ -422,6 +427,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
   router.get('/activity', async (req: Request, res: Response) => {
     try {
       const dal = getDAL();
+      const authReq = req as AuthenticatedRequest;
       const projectId = req.query.projectId as string;
       const limit = parseInt(req.query.limit as string) || 50;
       const since = req.query.since as string;
@@ -430,7 +436,8 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         projectId,
         limit,
         since,
-      });
+        orgId: authReq.orgId,
+      } as any);
 
       // Build lookup from runs for identifier recovery
       let runLookup: Map<string, { sessionId: string; projectId: string; taskRunId: string }> = new Map();

@@ -29,6 +29,15 @@ import {
   PluginDefinition,
 } from "./types";
 import type { NoDynamoRun, NoDynamoEvent, InspectionPacket } from "./no-dynamo";
+import type {
+  TaskTracker,
+  TaskPlan,
+  TrackedTask,
+  TaskSnapshot,
+  TaskSummary,
+  CreateTaskSnapshotInput,
+  CreateTaskSummaryInput,
+} from "./task-tracker-types";
 import { NoDynamoDALWithConversations, NoDynamoConfig } from "./no-dynamo";
 import * as projectIndexDAL from "./project-index-dal";
 
@@ -244,8 +253,10 @@ export class DynamoDAL implements IDataAccessLayer {
   }
 
   async listProjectIndexes(options?: ListProjectIndexOptions): Promise<PaginatedResult<ProjectIndex>> {
+    // Use request-level orgId if provided, otherwise use DAL-level orgId
+    const effectiveOrgId = options?.orgId || this.orgId;
     return this.dynamoProjectOp(
-      () => projectIndexDAL.listProjectIndexes(this.orgId, options),
+      () => projectIndexDAL.listProjectIndexes(effectiveOrgId, options),
       () => this.fallback.listProjectIndexes(options),
     );
   }
@@ -467,6 +478,76 @@ export class DynamoDAL implements IDataAccessLayer {
     return this.fallback.deletePlugin(pluginId);
   }
 
+
+  // ==================== Task Tracker (fallback to NoDynamo) ====================
+  // TODO: Migrate to DynamoDB with optimistic locking
+
+  async getTaskTracker(projectId: string): Promise<TaskTracker | null> {
+    return this.fallback.getTaskTracker(projectId);
+  }
+
+  async upsertTaskTracker(tracker: TaskTracker): Promise<TaskTracker> {
+    return this.fallback.upsertTaskTracker(tracker);
+  }
+
+  async updateTaskTrackerPlan(
+    projectId: string,
+    plan: TaskPlan,
+    expectedVersion: number
+  ): Promise<TaskTracker> {
+    return this.fallback.updateTaskTrackerPlan(projectId, plan, expectedVersion);
+  }
+
+  async updateTaskTrackerTasks(
+    projectId: string,
+    tasks: TrackedTask[],
+    expectedVersion: number
+  ): Promise<TaskTracker> {
+    return this.fallback.updateTaskTrackerTasks(projectId, tasks, expectedVersion);
+  }
+
+  async updateTaskTrackerContext(
+    projectId: string,
+    contextSummary: string,
+    recoveryHint: string | null,
+    expectedVersion: number
+  ): Promise<TaskTracker> {
+    return this.fallback.updateTaskTrackerContext(projectId, contextSummary, recoveryHint, expectedVersion);
+  }
+
+  async deleteTaskTracker(projectId: string): Promise<void> {
+    return this.fallback.deleteTaskTracker(projectId);
+  }
+
+  // ==================== Task Snapshots (fallback to NoDynamo) ====================
+  // TODO: Migrate to DynamoDB
+
+  async createTaskSnapshot(input: CreateTaskSnapshotInput): Promise<TaskSnapshot> {
+    return this.fallback.createTaskSnapshot(input);
+  }
+
+  async getLatestTaskSnapshot(projectId: string): Promise<TaskSnapshot | null> {
+    return this.fallback.getLatestTaskSnapshot(projectId);
+  }
+
+  async listTaskSnapshots(projectId: string, limit?: number): Promise<TaskSnapshot[]> {
+    return this.fallback.listTaskSnapshots(projectId, limit);
+  }
+
+  // ==================== Task Summaries (fallback to NoDynamo) ====================
+  // TODO: Migrate to DynamoDB
+
+  async createTaskSummary(input: CreateTaskSummaryInput): Promise<TaskSummary> {
+    return this.fallback.createTaskSummary(input);
+  }
+
+  async getTaskSummary(projectId: string, taskId: string): Promise<TaskSummary | null> {
+    return this.fallback.getTaskSummary(projectId, taskId);
+  }
+
+  async listTaskSummaries(projectId: string): Promise<TaskSummary[]> {
+    return this.fallback.listTaskSummaries(projectId);
+  }
   // ==================== Utility ====================
 
   async clearAll(): Promise<void> {

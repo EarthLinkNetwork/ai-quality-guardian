@@ -12,6 +12,7 @@
  */
 
 import { Router, Request, Response } from "express";
+import type { AuthenticatedRequest } from '../middleware/auth';
 import { initDAL, getDAL, isDALInitialized } from '../dal/dal-factory';
 import {
   ChatImageAttachment,
@@ -155,7 +156,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
     async (req: Request, res: Response) => {
       const dal = getDAL();
       const projectId = req.params.projectId as string;
-      const orgId = "default"; // Default org for single-tenant mode
+      const orgId = (req as AuthenticatedRequest).orgId || "default";
       let activityId: string | undefined;
       let taskGroupId: string | undefined;
 

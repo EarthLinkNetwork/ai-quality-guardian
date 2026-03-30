@@ -51,6 +51,16 @@ import {
   PluginDefinition,
 } from "./types";
 import type { IDataAccessLayer } from "./dal-interface";
+import type {
+  TaskTracker,
+  TaskPlan,
+  TrackedTask,
+  TaskSnapshot,
+  TaskSummary,
+  CreateTaskSnapshotInput,
+  CreateTaskSummaryInput,
+} from "./task-tracker-types";
+import { OptimisticLockError } from "./task-tracker-types";
 
 /**
  * Run entity for NoDynamo storage
@@ -317,9 +327,10 @@ export class NoDynamoDAL {
       projects.push(JSON.parse(content) as ProjectIndex);
     }
 
-    // Apply org isolation: only return projects matching this DAL's orgId
-    if (this.orgId) {
-      projects = projects.filter((p) => !p.orgId || p.orgId === this.orgId);
+    // Apply org isolation: use options.orgId if provided, otherwise fall back to this.orgId
+    const effectiveOrgId = options.orgId || this.orgId;
+    if (effectiveOrgId) {
+      projects = projects.filter((p) => !p.orgId || p.orgId === effectiveOrgId);
     }
 
     // Apply filters
@@ -807,6 +818,12 @@ export class NoDynamoDAL {
           // Skip malformed
         }
       }
+    }
+
+    // Apply org isolation for activity events
+    const activityOrgId = (options as any).orgId || this.orgId;
+    if (activityOrgId) {
+      events = events.filter((e) => !e.orgId || e.orgId === activityOrgId);
     }
 
     // Apply filters
@@ -1514,6 +1531,249 @@ export class NoDynamoDALWithConversations extends NoDynamoDAL implements IDataAc
     } catch {
       return false;
     }
+  }
+
+  // ==================== Task Tracker CRUD ====================
+
+  private get trackersDir(): string {
+    return path.join(this.extStateDir, "trackers");
+  }
+
+  private get taskSnapshotsDir(): string {
+    return path.join(this.extStateDir, "task-snapshots");
+  }
+
+  private get taskSummariesDir(): string {
+    return path.join(this.extStateDir, "task-summaries");
+  }
+
+  private ensureTrackerDirs(): void {
+    for (const dir of [this.trackersDir, this.taskSnapshotsDir, this.taskSummariesDir]) {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    }
+  }
+
+  async getTaskTracker(projectId: string): Promise<TaskTracker | null> {
+    this.ensureTrackerDirs();
+    const filePath = path.join(this.trackersDir, projectId + ".json");
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    return JSON.parse(content) as TaskTracker;
+  }
+
+  async upsertTaskTracker(tracker: TaskTracker): Promise<TaskTracker> {
+    this.ensureTrackerDirs();
+    const filePath = path.join(this.trackersDir, tracker.projectId + ".json");
+    await fs.promises.writeFile(filePath, JSON.stringify(tracker, null, 2));
+    return tracker;
+  }
+
+  async updateTaskTrackerPlan(
+    projectId: string,
+    plan: TaskPlan,
+    expectedVersion: number
+  ): Promise<TaskTracker> {
+    const tracker = await this.getTaskTracker(projectId);
+    if (!tracker) {
+      throw new Error(`TaskTracker not found for project: ${projectId}`);
+    }
+    if (tracker.version !== expectedVersion) {
+      throw new OptimisticLockError(expectedVersion, tracker.version);
+    }
+    const updated: TaskTracker = {
+      ...tracker,
+      currentPlan: plan,
+      version: tracker.version + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    return this.upsertTaskTracker(updated);
+  }
+
+  async updateTaskTrackerTasks(
+    projectId: string,
+    tasks: TrackedTask[],
+    expectedVersion: number
+  ): Promise<TaskTracker> {
+    const tracker = await this.getTaskTracker(projectId);
+    if (!tracker) {
+      throw new Error(`TaskTracker not found for project: ${projectId}`);
+    }
+    if (tracker.version !== expectedVersion) {
+      throw new OptimisticLockError(expectedVersion, tracker.version);
+    }
+    const updated: TaskTracker = {
+      ...tracker,
+      activeTasks: tasks,
+      version: tracker.version + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    return this.upsertTaskTracker(updated);
+  }
+
+  async updateTaskTrackerContext(
+    projectId: string,
+    contextSummary: string,
+    recoveryHint: string | null,
+    expectedVersion: number
+  ): Promise<TaskTracker> {
+    const tracker = await this.getTaskTracker(projectId);
+    if (!tracker) {
+      throw new Error(`TaskTracker not found for project: ${projectId}`);
+    }
+    if (tracker.version !== expectedVersion) {
+      throw new OptimisticLockError(expectedVersion, tracker.version);
+    }
+    const updated: TaskTracker = {
+      ...tracker,
+      lastContextSummary: contextSummary,
+      recoveryHint: recoveryHint,
+      lastCheckpointAt: new Date().toISOString(),
+      version: tracker.version + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    return this.upsertTaskTracker(updated);
+  }
+
+  async deleteTaskTracker(projectId: string): Promise<void> {
+    this.ensureTrackerDirs();
+    const filePath = path.join(this.trackersDir, projectId + ".json");
+    try {
+      await fs.promises.unlink(filePath);
+    } catch {
+      // Ignore if file does not exist
+    }
+  }
+
+  // ==================== Task Snapshot CRUD ====================
+
+  async createTaskSnapshot(input: CreateTaskSnapshotInput): Promise<TaskSnapshot> {
+    this.ensureTrackerDirs();
+    const snapshotId = "snap_" + new Date().toISOString().replace(/[:.]/g, "-") + "_" + Math.random().toString(36).substring(2, 8);
+    const now = nowISO();
+    const TTL_30_DAYS = Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60);
+
+    const snapshot: TaskSnapshot = {
+      PK: "ORG#" + input.orgId,
+      SK: "TSNAP#" + input.projectId + "#" + snapshotId,
+      snapshotId,
+      projectId: input.projectId,
+      orgId: input.orgId,
+      trigger: input.trigger,
+      trackerState: input.trackerState,
+      contextSummary: input.contextSummary,
+      filesModified: input.filesModified,
+      gitState: input.gitState,
+      createdAt: now,
+      ttl: TTL_30_DAYS,
+    };
+
+    const filePath = path.join(this.taskSnapshotsDir, snapshotId + ".json");
+    await fs.promises.writeFile(filePath, JSON.stringify(snapshot, null, 2));
+
+    return snapshot;
+  }
+
+  async getLatestTaskSnapshot(projectId: string): Promise<TaskSnapshot | null> {
+    const snapshots = await this.listTaskSnapshots(projectId, 1);
+    return snapshots.length > 0 ? snapshots[0] : null;
+  }
+
+  async listTaskSnapshots(projectId: string, limit?: number): Promise<TaskSnapshot[]> {
+    this.ensureTrackerDirs();
+    if (!fs.existsSync(this.taskSnapshotsDir)) {
+      return [];
+    }
+
+    const files = fs.readdirSync(this.taskSnapshotsDir).filter((f) => f.endsWith(".json"));
+    const snapshots: TaskSnapshot[] = [];
+
+    for (const file of files) {
+      const content = await fs.promises.readFile(
+        path.join(this.taskSnapshotsDir, file),
+        "utf-8"
+      );
+      const snapshot = JSON.parse(content) as TaskSnapshot;
+      if (snapshot.projectId === projectId) {
+        snapshots.push(snapshot);
+      }
+    }
+
+    // Sort by createdAt descending (most recent first)
+    snapshots.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    if (limit !== undefined && limit > 0) {
+      return snapshots.slice(0, limit);
+    }
+    return snapshots;
+  }
+
+  // ==================== Task Summary CRUD ====================
+
+  async createTaskSummary(input: CreateTaskSummaryInput): Promise<TaskSummary> {
+    this.ensureTrackerDirs();
+    const now = nowISO();
+    const TTL_90_DAYS = Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60);
+
+    const summary: TaskSummary = {
+      PK: "ORG#" + input.orgId,
+      SK: "TSUM#" + input.projectId + "#" + input.taskId,
+      taskId: input.taskId,
+      projectId: input.projectId,
+      orgId: input.orgId,
+      title: input.title,
+      summary: input.summary,
+      keyDecisions: input.keyDecisions,
+      filesChanged: input.filesChanged,
+      testResults: input.testResults,
+      generatedBy: input.generatedBy,
+      generatedAt: now,
+      createdAt: now,
+      ttl: TTL_90_DAYS,
+    };
+
+    const filePath = path.join(this.taskSummariesDir, input.projectId + "_" + input.taskId + ".json");
+    await fs.promises.writeFile(filePath, JSON.stringify(summary, null, 2));
+
+    return summary;
+  }
+
+  async getTaskSummary(projectId: string, taskId: string): Promise<TaskSummary | null> {
+    this.ensureTrackerDirs();
+    const filePath = path.join(this.taskSummariesDir, projectId + "_" + taskId + ".json");
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    return JSON.parse(content) as TaskSummary;
+  }
+
+  async listTaskSummaries(projectId: string): Promise<TaskSummary[]> {
+    this.ensureTrackerDirs();
+    if (!fs.existsSync(this.taskSummariesDir)) {
+      return [];
+    }
+
+    const prefix = projectId + "_";
+    const files = fs.readdirSync(this.taskSummariesDir)
+      .filter((f) => f.startsWith(prefix) && f.endsWith(".json"));
+    const summaries: TaskSummary[] = [];
+
+    for (const file of files) {
+      const content = await fs.promises.readFile(
+        path.join(this.taskSummariesDir, file),
+        "utf-8"
+      );
+      summaries.push(JSON.parse(content) as TaskSummary);
+    }
+
+    // Sort by createdAt descending
+    summaries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    return summaries;
   }
 }
 
