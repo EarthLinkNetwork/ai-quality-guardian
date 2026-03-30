@@ -282,7 +282,14 @@ export class NoDynamoDAL {
       return null;
     }
     const content = await fs.promises.readFile(filePath, "utf-8");
-    return JSON.parse(content) as ProjectIndex;
+    const project = JSON.parse(content) as ProjectIndex;
+
+    // Org isolation: reject projects from other orgs
+    if (this.orgId && project.orgId && project.orgId !== this.orgId) {
+      return null;
+    }
+
+    return project;
   }
 
   /**
@@ -308,6 +315,11 @@ export class NoDynamoDAL {
         "utf-8"
       );
       projects.push(JSON.parse(content) as ProjectIndex);
+    }
+
+    // Apply org isolation: only return projects matching this DAL's orgId
+    if (this.orgId) {
+      projects = projects.filter((p) => !p.orgId || p.orgId === this.orgId);
     }
 
     // Apply filters
