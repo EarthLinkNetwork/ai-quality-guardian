@@ -4,6 +4,56 @@
 
 These features are intentionally excluded from the initial implementation but planned for future phases.
 
+## Priority: Critical (Immediate)
+
+### B-016: タスク分解時の注入テキストフィルタリング（残存タスク）
+
+**Description:** `extractSubtasksFromPrompt()` で acceptance criteria や OutputRules のような注入テキストをサブタスクとして抽出しないフィルタリングを追加する。
+
+**背景:**
+- 2026-03-30 にタスク分解の根本原因分析を実施
+- 即効修正（生プロンプトを分解に渡す）と中期修正（質問系ガード）は実装済み
+- 本項目は「長期修正」として残存
+
+**実装済み（参考）:**
+- `cli/index.ts`: `enrichedPrompt` → `item.prompt` に変更済み
+- `task-chunking.ts`: `isQuestionOrInvestigationPrompt()` ガード追加済み
+- テスト: 12ケース追加済み（68 passing）
+
+**残作業:**
+- `extractSubtasksFromPrompt()` 内で `[TaskContext]`, `[OutputRules]`, `[InputRules]` 等のテンプレートセクションを検出し、その中のリスト構造をサブタスクとして抽出しない
+- metaPrompt が生成した acceptance criteria をサブタスクと誤認しないフィルタ
+
+**Estimated Effort:** 1-2 days
+
+---
+
+### B-017: プロジェクト単位のタスク管理永続化（DynamoDB）
+
+**Description:** コンテキスト消失時にタスク情報が失われないよう、プロジェクトごとのタスク管理をDynamoDBに永続化する仕組みを追加する。
+
+**背景:**
+- 現在のタスク管理はClaude Codeのセッション内コンテキストに依存
+- セッションが終了・コンテキストが圧縮されると残存タスク情報が消失
+- ユーザーから「コンテキストがなくなったら記録が消える。DynamoDBで保存できないか」と要望
+
+**設計方針案:**
+1. **既存QueueStoreの拡張** — QueueItem に `remaining_tasks`, `session_notes` フィールドを追加
+2. **専用TaskTracker テーブル** — `pm-runner-task-tracker` テーブルを新設、プロジェクト×セッション単位で残存タスク・決定事項を保存
+3. **LLMによる自動記録** — タスク完了時にLLMが残存タスク・コンテキストをサマリ化してDynamoDBに保存。次セッション開始時に自動ロード
+
+**関連仕様:**
+- namespace: プロジェクト単位の分離は既存
+- QueueStore: DynamoDB実装済み（`pm-runner-queue` テーブル）
+- DAL: DynamoDB/ファイルベースのハイブリッド実装済み
+
+**依存:**
+- B-012: Single-Table DynamoDB Design（統合設計時に考慮）
+
+**Estimated Effort:** 1-2 weeks
+
+---
+
 ## Priority: High (Phase 2)
 
 ### B-001: WebSocket Real-time Updates

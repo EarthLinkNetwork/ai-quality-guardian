@@ -21,6 +21,7 @@ import {
   // Analysis functions
   analyzeTaskForChunking,
   detectTestIsolationNeed,
+  isQuestionOrInvestigationPrompt,
 
   // Retry functions
   calculateRetryDelay,
@@ -276,6 +277,80 @@ describe('Task Chunking Module', () => {
       const result = analyzeTaskForChunking(prompt, config);
 
       assert.strictEqual(result.is_decomposable, false);
+    });
+
+    it('should not decompose question prompts (English)', () => {
+      const result = analyzeTaskForChunking('What is the blast radius of this change?', DEFAULT_TASK_CHUNKING_CONFIG);
+      assert.strictEqual(result.is_decomposable, false);
+      assert.ok(result.reason?.includes('question'));
+    });
+
+    it('should not decompose question prompts with question mark', () => {
+      const result = analyzeTaskForChunking('How does the authentication system work?', DEFAULT_TASK_CHUNKING_CONFIG);
+      assert.strictEqual(result.is_decomposable, false);
+      assert.ok(result.reason?.includes('question'));
+    });
+
+    it('should not decompose investigation prompts', () => {
+      const result = analyzeTaskForChunking('Investigate why the tests are failing in CI', DEFAULT_TASK_CHUNKING_CONFIG);
+      assert.strictEqual(result.is_decomposable, false);
+      assert.ok(result.reason?.includes('question'));
+    });
+
+    it('should not decompose Japanese question prompts', () => {
+      const result = analyzeTaskForChunking('\u3053\u306e\u30a8\u30e9\u30fc\u306e\u539f\u56e0\u3092\u8abf\u3079\u3066\u304f\u3060\u3055\u3044', DEFAULT_TASK_CHUNKING_CONFIG);
+      assert.strictEqual(result.is_decomposable, false);
+      assert.ok(result.reason?.includes('question'));
+    });
+
+    it('should not decompose explain/describe prompts', () => {
+      const result = analyzeTaskForChunking('Explain the architecture of the task chunking module', DEFAULT_TASK_CHUNKING_CONFIG);
+      assert.strictEqual(result.is_decomposable, false);
+      assert.ok(result.reason?.includes('question'));
+    });
+
+    it('should still decompose implementation prompts with lists', () => {
+      const prompt = `Please implement the complete module with the following:
+1. Create the user service
+2. Create the auth middleware
+3. Create the session handler`;
+      const result = analyzeTaskForChunking(prompt, DEFAULT_TASK_CHUNKING_CONFIG);
+      assert.strictEqual(result.is_decomposable, true);
+    });
+  });
+
+  describe('isQuestionOrInvestigationPrompt', () => {
+    it('should detect English questions starting with question words', () => {
+      assert.strictEqual(isQuestionOrInvestigationPrompt('What is the purpose of this module?'), true);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Why does this test fail?'), true);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('How does task chunking work?'), true);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Where is the config file?'), true);
+    });
+
+    it('should detect investigation verbs', () => {
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Investigate the CI failure'), true);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Analyze why the build broke'), true);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Check if the deployment succeeded'), true);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Explain the error message'), true);
+    });
+
+    it('should detect Japanese question patterns', () => {
+      assert.strictEqual(isQuestionOrInvestigationPrompt('\u3053\u306e\u30e2\u30b8\u30e5\u30fc\u30eb\u3068\u306f\uff1f'), true);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('\u30a8\u30e9\u30fc\u306e\u539f\u56e0\u3092\u8abf\u3079\u3066\u304f\u3060\u3055\u3044'), true);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('\u8a2d\u5b9a\u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044'), true);
+    });
+
+    it('should detect short prompts with question marks', () => {
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Is this correct?'), true);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Can you help?'), true);
+    });
+
+    it('should NOT detect implementation prompts as questions', () => {
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Create a new user service with CRUD operations'), false);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Implement the login feature'), false);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Add error handling to the API endpoint'), false);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Fix the typo in README.md'), false);
+      assert.strictEqual(isQuestionOrInvestigationPrompt('Refactor the database module for better performance'), false);
     });
   });
 

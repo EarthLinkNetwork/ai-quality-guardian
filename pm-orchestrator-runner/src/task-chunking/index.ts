@@ -18,6 +18,7 @@ export {
   // Analysis functions
   analyzeTaskForChunking,
   detectTestIsolationNeed,
+  isQuestionOrInvestigationPrompt,
 
   // Retry functions
   calculateRetryDelay,
