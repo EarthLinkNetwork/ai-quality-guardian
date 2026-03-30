@@ -2246,6 +2246,12 @@
     }
     .sidebar.collapsed .nav-divider { margin: 8px 4px; }
     .sidebar.collapsed .nav-section-label { display: none; }
+    .sidebar-cost-summary {
+      padding: 12px 16px;
+      border-top: 1px solid #334155;
+      margin-top: auto;
+    }
+    .sidebar.collapsed .sidebar-cost-summary { display: none; }
     /* Two-pane layout for Hooks etc. */
     .two-pane {
       display: grid;
@@ -2839,6 +2845,11 @@
         <div class="nav-divider"></div>
         <a href="/settings" data-nav="settings"><span class="nav-icon">&#9881;</span><span class="nav-label">Settings</span></a>
       </nav>
+      <div class="sidebar-cost-summary" id="sidebar-cost-summary">
+        <div style="font-size: 0.7rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">AI Usage (Today)</div>
+        <div id="sidebar-cost-value" style="font-size: 1.1rem; font-weight: 600; color: #60a5fa;">--</div>
+        <div id="sidebar-cost-detail" style="font-size: 0.7rem; color: #9ca3af; margin-top: 2px;"></div>
+      </div>
     </aside>
 
     <main class="main-content">
@@ -12499,10 +12510,54 @@
     }
     updateLogoutButton();
 
+    // Sidebar AI usage cost display
+    async function updateSidebarCost() {
+      var costValue = document.getElementById('sidebar-cost-value');
+      var costDetail = document.getElementById('sidebar-cost-detail');
+      if (!costValue) return;
+
+      try {
+        var data = await api('/activity?limit=200');
+        var events = data.items || data.events || data || [];
+
+        var today = new Date().toISOString().split('T')[0];
+        var todayCost = 0;
+        var todayTasks = 0;
+        var totalCost = 0;
+
+        for (var i = 0; i < events.length; i++) {
+          var ev = events[i];
+          if (ev.cost_usd) {
+            totalCost += ev.cost_usd;
+            if (ev.timestamp && ev.timestamp.startsWith(today)) {
+              todayCost += ev.cost_usd;
+              todayTasks++;
+            }
+          }
+        }
+
+        costValue.textContent = '$' + todayCost.toFixed(4);
+        costDetail.textContent = todayTasks + ' tasks | Total: $' + totalCost.toFixed(4);
+
+        if (todayCost > 1) {
+          costValue.style.color = '#f87171';
+        } else if (todayCost > 0.1) {
+          costValue.style.color = '#fbbf24';
+        } else {
+          costValue.style.color = '#60a5fa';
+        }
+      } catch (e) {
+        costValue.textContent = '--';
+        costDetail.textContent = '';
+      }
+    }
+
     // Initial load
     renderSidebarContext();
     router();
     loadGlobalCmdProjects();
+    updateSidebarCost();
+    setInterval(updateSidebarCost, 30000);
   </script>
 
   <div class="global-cmd-bar" id="global-cmd-bar">
