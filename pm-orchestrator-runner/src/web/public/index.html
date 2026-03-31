@@ -6720,24 +6720,36 @@
 
     // Show operation result
     function showRunnerResult(success, message, output) {
-      const resultDiv = document.getElementById('runner-controls-result');
-      if (!resultDiv) return;
-      
-      resultDiv.style.display = 'block';
-      resultDiv.className = 'runner-controls-result ' + (success ? 'success' : 'error');
-      
-      let html = '<strong>' + (success ? 'Success' : 'Error') + ':</strong> ' + escapeHtml(message);
+      var type = success ? 'success' : 'error';
+      var title = success ? 'Success' : 'Error';
+      var body = escapeHtml(message);
       if (output) {
-        html += '<pre>' + escapeHtml(output) + '</pre>';
+        body += '<pre style="text-align:left;background:#0f172a;border-radius:8px;padding:12px;margin-top:12px;font-size:0.8rem;max-height:200px;overflow:auto;color:#94a3b8;white-space:pre-wrap;word-break:break-all;">' + escapeHtml(output) + '</pre>';
       }
-      resultDiv.innerHTML = html;
-      
-      // Auto-hide success messages after 5 seconds
-      if (success) {
-        setTimeout(() => {
-          if (resultDiv) resultDiv.style.display = 'none';
-        }, 5000);
-      }
+      showRunnerModal(title, body, type);
+    }
+
+    function showRunnerModal(title, message, type) {
+      var modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center;';
+
+      var colors = { success: '#10b981', error: '#ef4444', info: '#3b82f6' };
+      var icons = { success: '&#10004;', error: '&#10006;', info: '&#9432;' };
+      var dialog = document.createElement('div');
+      dialog.style.cssText = 'background:#1e293b;border-radius:12px;padding:32px;max-width:500px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.5);';
+      dialog.innerHTML =
+        '<div style="font-size:2rem;margin-bottom:12px;color:' + (colors[type] || '#e0e0e0') + ';">' + (icons[type] || icons.info) + '</div>' +
+        '<h3 style="color:' + (colors[type] || '#e0e0e0') + ';margin-bottom:8px;">' + title + '</h3>' +
+        '<div style="color:#9ca3af;font-size:0.9rem;margin-bottom:20px;">' + message + '</div>' +
+        '<button onclick="this.closest(\'div[style*=fixed]\').remove()" style="background:' + (colors[type] || '#3b82f6') + ';color:white;border:none;border-radius:8px;padding:10px 32px;cursor:pointer;font-size:0.95rem;">OK</button>';
+
+      modal.appendChild(dialog);
+      document.body.appendChild(modal);
+
+      // Also close on backdrop click
+      modal.addEventListener('click', function(e) {
+        if (e.target === modal) modal.remove();
+      });
     }
 
     // Build action
@@ -13354,6 +13366,17 @@
               monthCost += cost;
             }
           }
+        }
+
+        // Show "No data" when there are zero cost events
+        var hasCostData = totalCost > 0;
+        if (!hasCostData) {
+          elToday.textContent = 'No data';
+          elToday.style.color = '#6b7280';
+          elMonth.textContent = '-';
+          elTotal.textContent = '-';
+          elTasks.textContent = 'Run a task to start tracking';
+          return;
         }
 
         elToday.textContent = '$' + todayCost.toFixed(4);

@@ -1654,6 +1654,27 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
           console.warn('[Runner] Warning: failed to stop server during restart:', error);
         }
 
+        // Kill all stale pm-orchestrator-runner processes (but not this one and not Claude Code)
+        try {
+          const { execSync } = require('child_process');
+          const currentPid = process.pid;
+          // Find all node processes running dist/cli/index.js (pm-orchestrator-runner)
+          const psOutput = execSync("ps aux | grep 'dist/cli/index.js' | grep -v grep", { stdio: 'pipe', timeout: 5000 }).toString();
+          const lines = psOutput.trim().split('\n').filter(Boolean);
+          for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            const pid = parseInt(parts[1], 10);
+            if (pid && pid !== currentPid) {
+              try {
+                process.kill(pid, 'SIGTERM');
+                console.log(`[Runner] Killed stale process ${pid}`);
+              } catch { /* ignore already dead processes */ }
+            }
+          }
+          // Give them a moment to terminate
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch { /* ignore ps failures */ }
+
         const modulePath = path.join(projectPath, 'dist', 'cli', 'index.js');
         const args = ['web', '--port', String(port), '--namespace', namespaceConfig.namespace];
         if (storeMode === 'dynamodb') {
