@@ -70,7 +70,7 @@ export function createApiKeyAuth(config: AuthConfig) {
 
       req.userId = apiKeyData.userId;
       req.deviceName = apiKeyData.deviceName;
-      req.orgId = apiKeyData.userId; // orgId = userId for tenant isolation
+      req.orgId = apiKeyData.userId + ':' + apiKeyData.deviceName; // orgId = userId:device for machine-level isolation
       next();
     } catch (error) {
       console.error('[Auth] API key validation error:', error);
