@@ -222,7 +222,6 @@ export function createApp(config: WebServerConfig): Express {
     // Template routes (CRUD for input/output templates)
     app.use("/api/templates", createTemplateRoutes({ stateDir }));
 
-<<<<<<< HEAD
     // Task Tracker routes (task persistence, snapshots, recovery)
     // Per spec/34_TASK_TRACKER_PERSISTENCE.md Section 11
     app.use("/api/tracker", createTaskTrackerRoutes({ dal: getDAL() }));
