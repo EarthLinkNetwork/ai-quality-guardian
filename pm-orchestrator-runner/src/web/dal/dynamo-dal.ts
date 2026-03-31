@@ -679,7 +679,15 @@ export class DynamoDAL implements IDataAccessLayer {
     packets: number;
     plans: number;
   }> {
-    // TODO: For projects count, query DynamoDB instead of fallback
-    return this.fallback.getStats(orgId || this.orgId);
+    const effectiveOrgId = orgId || this.orgId;
+    const fileStats = await this.fallback.getStats(effectiveOrgId);
+    // Override projects count from DynamoDB (source of truth)
+    if (await this.ensureTable()) {
+      try {
+        const result = await projectIndexDAL.listProjectIndexes(effectiveOrgId, { limit: 200 });
+        fileStats.projects = result.items.length;
+      } catch { /* fallback to file count */ }
+    }
+    return fileStats;
   }
 }
