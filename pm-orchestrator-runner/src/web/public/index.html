@@ -7445,7 +7445,9 @@
         const projectTaskGroupIds = new Set(data.taskGroupIds || []);
         const recentActivity = data.recentActivity || [];
         const projectRuns = data.runs || [];
-        const recentTaskGroups = data.recentTaskGroups || [];
+        const recentTaskGroups = (data.recentTaskGroups || []).filter(function(tg) {
+          return tg.group_status !== 'archived';
+        });
         const recentTasks = data.recentTasks || [];
         const allTaskGroups = taskGroupsData.task_groups || [];
         const requiredActions = (actionsData.actions || []);
