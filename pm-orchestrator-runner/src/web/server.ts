@@ -236,7 +236,7 @@ export function createApp(config: WebServerConfig): Express {
       dal: getDAL(),
       github: prReviewGitHub,
       llmClient: prReviewLLM,
-      orgId: "default",
+      orgId: process.env.ORG_ID || "default",
     }));
 
     // Skills routes (project scanner + skill auto-generation)
