@@ -120,10 +120,13 @@ export class CustomCommandRegistry {
   async execute(name: string, args: string, context: CommandContext): Promise<CommandResult> {
     const definition = this.commands.get(name.toLowerCase());
     if (!definition) {
+      // Unknown built-in command → pass through to Claude Code as slash command
       return {
-        success: false,
-        output: `Unknown command: /${name}. Type /help to see available commands.`,
-        passthrough: false,
+        success: true,
+        output: '',
+        passthrough: true,
+        passthroughPrompt: `/${name}${args ? ' ' + args : ''}`,
+        metadata: { isSlashCommand: true, commandName: name },
       };
     }
 
