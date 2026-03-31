@@ -3871,6 +3871,17 @@
     }
 
     // =========================================================================
+    // Task Group page-level filters (status tabs + date filter)
+    // =========================================================================
+    var taskGroupStatusFilter = 'running';  // 'running' | 'all' | 'archived'
+    var taskGroupDateFilter = 'all';         // 'all' | 'today' | 'week' | 'month'
+
+    function filterTaskGroupsByDate(period) {
+      taskGroupDateFilter = period;
+      renderTaskGroupList();
+    }
+
+    // =========================================================================
     // Shared Task Group Panel (reusable component - Atomic Design)
     // Used by: Task Groups page, Project Detail, Projects list
     // =========================================================================
@@ -4245,8 +4256,39 @@
       app.innerHTML = '<div class="loading">Loading</div>';
 
       try {
-        const data = await api('/task-groups');
-        const allGroups = data.task_groups || [];
+        // Determine API query based on status tab
+        var statusParam = '';
+        if (taskGroupStatusFilter === 'archived') {
+          statusParam = '?group_status=archived';
+        } else if (taskGroupStatusFilter === 'all') {
+          statusParam = '?group_status=all';
+        } else {
+          // 'running' tab: fetch non-archived, then client-filter to running/queued/awaiting
+          statusParam = '';
+        }
+
+        const data = await api('/task-groups' + statusParam);
+        var allGroups = data.task_groups || [];
+
+        // For 'running' tab, filter to groups with active tasks only
+        if (taskGroupStatusFilter === 'running') {
+          allGroups = allGroups.filter(function(g) {
+            var sc = g.status_counts || {};
+            return (sc.RUNNING || 0) > 0 || (sc.QUEUED || 0) > 0 || (sc.AWAITING_RESPONSE || 0) > 0;
+          });
+        }
+
+        // Apply date filter
+        if (taskGroupDateFilter !== 'all') {
+          var now = new Date();
+          var cutoff;
+          if (taskGroupDateFilter === 'today') cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          else if (taskGroupDateFilter === 'week') { cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 7); }
+          else if (taskGroupDateFilter === 'month') { cutoff = new Date(now); cutoff.setMonth(cutoff.getMonth() - 1); }
+          if (cutoff) {
+            allGroups = allGroups.filter(function(g) { return new Date(g.latest_updated_at || g.created_at) >= cutoff; });
+          }
+        }
 
         if (allGroups.length === 0) {
           app.innerHTML = `
@@ -4254,9 +4296,11 @@
               <h2>Task Groups</h2>
               <button class="refresh-btn" onclick="renderTaskGroupList()">Refresh</button>
             </div>
+            ${renderTaskGroupStatusTabs()}
+            ${renderTaskGroupDateButtons()}
             <div class="card">
               <div class="empty-state">
-                <p>No task groups yet.</p>
+                <p>No task groups match the current filters.</p>
                 <button class="btn btn-primary" onclick="navigate('/new')">+ Create New Command</button>
               </div>
             </div>
@@ -4281,14 +4325,81 @@
       }
     }
 
+    // Build status tab buttons for Task Groups page
+    function renderTaskGroupStatusTabs() {
+      var tabs = [
+        { key: 'running', label: 'Running' },
+        { key: 'all', label: 'All' },
+        { key: 'archived', label: 'Archived' },
+      ];
+      var html = '<div style="display:flex; gap:4px; margin-bottom:8px;">';
+      tabs.forEach(function(tab) {
+        var cls = 'template-tab' + (taskGroupStatusFilter === tab.key ? ' active' : '');
+        html += '<button class="' + cls + '" onclick="taskGroupStatusFilter=\'' + tab.key + '\'; renderTaskGroupList();">' + tab.label + '</button>';
+      });
+      html += '</div>';
+      return html;
+    }
+
+    // Build date filter buttons for Task Groups page
+    function renderTaskGroupDateButtons() {
+      var periods = [
+        { key: 'today', label: 'Today' },
+        { key: 'week', label: 'This Week' },
+        { key: 'month', label: 'This Month' },
+        { key: 'all', label: 'All Time' },
+      ];
+      var html = '<div style="display:flex; gap:4px; margin-bottom:8px;">';
+      periods.forEach(function(p) {
+        var style = taskGroupDateFilter === p.key
+          ? 'background:#3b82f6; color:white; border-color:#3b82f6;'
+          : '';
+        html += '<button class="btn btn-sm" style="font-size:0.8rem; padding:4px 10px; ' + style + '" onclick="filterTaskGroupsByDate(\'' + p.key + '\')">' + p.label + '</button>';
+      });
+      html += '</div>';
+      return html;
+    }
+
     function renderTaskGroupListUI(allGroups) {
+      // Group by project for organized display
+      var byProject = {};
+      allGroups.forEach(function(g) {
+        var proj = g.project_path || g.project_id || 'Unlinked';
+        if (proj === 'N/A') proj = 'Unlinked';
+        if (!byProject[proj]) byProject[proj] = [];
+        byProject[proj].push(g);
+      });
+
+      var projectKeys = Object.keys(byProject);
+      // If only one project group (or all unlinked), render flat list
+      var useProjectGrouping = projectKeys.length > 1 || (projectKeys.length === 1 && projectKeys[0] !== 'Unlinked');
+
+      var groupedHtml = '';
+      if (useProjectGrouping) {
+        projectKeys.forEach(function(proj) {
+          var groups = byProject[proj];
+          var label = proj === 'Unlinked' ? 'Unlinked' : proj.split('/').pop();
+          groupedHtml += '<div style="margin-bottom:16px;">';
+          groupedHtml += '<h4 style="color:#9ca3af; font-size:0.85rem; margin-bottom:8px; padding:0 16px;">' + escapeHtml(label) + ' (' + groups.length + ')</h4>';
+          groups.forEach(function(g) {
+            groupedHtml += renderTaskGroupItem(g);
+          });
+          groupedHtml += '</div>';
+        });
+      }
+
       // Uses shared renderTaskGroupPanel for consistent filter/sort/display
       app.innerHTML = `
         <div class="page-header">
           <h2>Task Groups</h2>
           <button class="refresh-btn" onclick="renderTaskGroupList()">Refresh</button>
         </div>
-        ${renderTaskGroupPanel('tg-main', allGroups, { rerenderCall: 'renderTaskGroupListUI(window._taskGroupListData)' })}
+        ${renderTaskGroupStatusTabs()}
+        ${renderTaskGroupDateButtons()}
+        ${useProjectGrouping
+          ? '<div class="card" style="padding:0; overflow:hidden;">' + groupedHtml +
+            '<div style="padding:8px 16px; background:#f9fafb; border-top:1px solid #e5e7eb; font-size:0.8rem; color:#6b7280;">Showing ' + allGroups.length + ' group(s)</div></div>'
+          : renderTaskGroupPanel('tg-main', allGroups, { rerenderCall: 'renderTaskGroupListUI(window._taskGroupListData)' })}
       `;
     }
 

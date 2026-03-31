@@ -20,7 +20,7 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import { IQueueStore, QueueItemStatus } from '../queue/index';
+import { IQueueStore, QueueItemStatus, TaskGroupStatus } from '../queue/index';
 import { ConversationTracer } from '../trace/conversation-tracer';
 import { createApiKeyAuth, createPublicPathBypass, type AuthConfig, type AuthenticatedRequest } from './middleware/auth';
 import { createSettingsRoutes } from './routes/settings';
@@ -445,6 +445,25 @@ export function createApp(config: WebServerConfig): Express {
       const localFilteredGroups = localProjects.size > 0
         ? enrichedGroups.filter(g => g.project_id === 'N/A' || localProjects.has(g.project_id))
         : enrichedGroups;
+
+      // Auto-archive: groups where all tasks complete and last update > 24h ago
+      const now = Date.now();
+      const AUTO_ARCHIVE_MS = 24 * 60 * 60 * 1000; // 24 hours
+      for (const g of localFilteredGroups) {
+        if (g.group_status !== 'archived' && g.group_status !== 'complete') {
+          const sc = g.status_counts || { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 };
+          const allComplete = sc.QUEUED === 0 && sc.RUNNING === 0 &&
+                              sc.AWAITING_RESPONSE === 0 && sc.COMPLETE > 0 &&
+                              sc.ERROR === 0;
+          const age = now - new Date(g.latest_updated_at).getTime();
+          if (allComplete && age > AUTO_ARCHIVE_MS) {
+            try {
+              await queueStore.setTaskGroupStatus(g.task_group_id, 'archived' as TaskGroupStatus);
+              g.group_status = 'archived';
+            } catch { /* ignore auto-archive errors */ }
+          }
+        }
+      }
 
       // Filter by group_status (default: exclude archived)
       const groupStatusFilter = req.query.group_status as string | undefined;
