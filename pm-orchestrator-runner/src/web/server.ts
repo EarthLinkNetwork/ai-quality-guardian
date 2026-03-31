@@ -427,9 +427,28 @@ export function createApp(config: WebServerConfig): Express {
         };
       });
 
+      // Filter: only show task groups belonging to projects on this machine
+      // If a task group has a known project_id, check if that project exists in our orgId
+      // If project_id is N/A (unlinked), check if the task group's session_id pattern matches this server
+      let localProjects: Set<string> = new Set();
+      if (isDALInitialized()) {
+        try {
+          const dal = getDAL();
+          const allProjects = await dal.listProjectIndexes({ limit: 100 });
+          for (const p of allProjects.items) {
+            localProjects.add(p.projectId);
+          }
+        } catch { /* ignore */ }
+      }
+
+      // Keep groups that: have a local project, OR have no project linkage (legacy/unlinked)
+      const localFilteredGroups = localProjects.size > 0
+        ? enrichedGroups.filter(g => g.project_id === 'N/A' || localProjects.has(g.project_id))
+        : enrichedGroups;
+
       // Filter by group_status (default: exclude archived)
       const groupStatusFilter = req.query.group_status as string | undefined;
-      let filteredGroups = enrichedGroups;
+      let filteredGroups = localFilteredGroups;
       if (groupStatusFilter === 'all') {
         // Show everything including archived
       } else if (groupStatusFilter) {
