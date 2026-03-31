@@ -1512,6 +1512,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     useDynamoDB: queueStoreType === 'dynamodb',
     stateDir: effectiveStateDir,
     localDynamodb: useLocalDynamodbForDAL,
+    orgId: process.env.ORG_ID || 'default',
   });
 
 
