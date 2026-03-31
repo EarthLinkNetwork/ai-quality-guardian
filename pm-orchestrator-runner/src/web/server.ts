@@ -154,6 +154,7 @@ export function createApp(config: WebServerConfig): Express {
       initDAL({
         useDynamoDB: queueStoreType === 'dynamodb',
         stateDir,
+        orgId: process.env.ORG_ID || 'default',
       });
     }
 
