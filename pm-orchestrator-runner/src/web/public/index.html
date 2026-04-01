@@ -8046,6 +8046,16 @@
           tplBadges = '<div style="margin-top: 4px;">' + badges.join(' ') + '</div>';
         }
 
+        // Build default command indicator for chat input area
+        var defaultCmdIndicator = '';
+        if (project.defaultCommand) {
+          defaultCmdIndicator =
+            '<div id="default-cmd-indicator" style="font-size: 0.75rem; color: #60a5fa; padding: 4px 8px; background: rgba(96,165,250,0.1); border-radius: 4px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">' +
+              '<span>Auto: <strong>' + escapeHtml(project.defaultCommand) + '</strong></span>' +
+              '<span style="color: #9ca3af;">(change in Settings)</span>' +
+            '</div>';
+        }
+
         app.innerHTML =
           '<div class="page-header">' +
             '<h2>Chat: ' + escapeHtml(project.alias || project.projectPath) + '</h2>' +
@@ -8070,6 +8080,7 @@
               '</div>' +
               '<div id="cmd-panel" class="cmd-panel" data-project-id="' + escapeHtml(projectId) + '"></div>' +
               '<div id="cmd-selected-container" style="display:none;"></div>' +
+              defaultCmdIndicator +
               '<div class="chat-input-area">' +
                 '<div class="chat-attachments" id="chat-attachments"></div>' +
                 '<div class="chat-input-wrapper">' +
@@ -8679,11 +8690,12 @@
 
         // Show template injection indicators if applicable
         var injectionParts = [];
+        if (data.defaultCommandInjected && data.defaultCommand) injectionParts.push('Cmd: ' + data.defaultCommand);
         if (data.inputTemplateInjected && data.inputTemplateName) injectionParts.push('Input: ' + data.inputTemplateName);
         if (data.outputTemplateInjected && data.outputTemplateName) injectionParts.push('Output: ' + data.outputTemplateName);
         if (data.bootstrapInjected) injectionParts.push('Bootstrap');
         if (injectionParts.length > 0) {
-          showToast('Templates injected: ' + injectionParts.join(', '), 'info');
+          showToast('Injected: ' + injectionParts.join(', '), 'info');
         }
 
         // Clear input, attachments, draft, and selected command on success
@@ -8717,15 +8729,23 @@
         var res = await fetch('/api/projects/' + encodeURIComponent(projectId)).then(function(r) { return r.json(); });
         if (res.error) throw new Error(res.message);
 
-        // Load templates for dropdowns
+        // Load templates and slash commands for dropdowns
         var templates = [];
+        var slashCommands = [];
         try {
-          var tplRes = await fetch('/api/templates');
+          var [tplRes, slashRes] = await Promise.all([
+            fetch('/api/templates'),
+            fetch('/api/claude-settings/slash-commands' + (res.project && res.project.projectPath ? '?projectPath=' + encodeURIComponent(res.project.projectPath) : ''))
+          ]);
           if (tplRes.ok) {
             var tplData = await tplRes.json();
             templates = tplData.templates || [];
           }
-        } catch(e) { /* proceed without templates */ }
+          if (slashRes.ok) {
+            var slashData = await slashRes.json();
+            slashCommands = (slashData.global || []).concat(slashData.project || []);
+          }
+        } catch(e) { /* proceed without templates/commands */ }
 
         var project = res.project;
         var bootstrapPrompt = project.bootstrapPrompt || '';
@@ -8733,6 +8753,19 @@
         var currentProjectStatus = project.projectStatus || 'active';
         var inputTemplateId = project.inputTemplateId || '';
         var outputTemplateId = project.outputTemplateId || '';
+        var defaultCommand = project.defaultCommand || '';
+
+        // Build default command options from slash commands
+        var defaultCmdOptions = '<option value="">None (no default command)</option>';
+        slashCommands.forEach(function(cmd) {
+          var cmdName = cmd.name.startsWith('/') ? cmd.name : '/' + cmd.name;
+          var selected = (cmdName === defaultCommand) ? ' selected' : '';
+          defaultCmdOptions += '<option value="' + escapeHtml(cmdName) + '"' + selected + '>' + escapeHtml(cmdName) + (cmd.description ? ' - ' + escapeHtml(cmd.description) : '') + '</option>';
+        });
+        // If current defaultCommand is set but not in the list, add it
+        if (defaultCommand && defaultCmdOptions.indexOf('value="' + defaultCommand + '"') === -1) {
+          defaultCmdOptions += '<option value="' + escapeHtml(defaultCommand) + '" selected>' + escapeHtml(defaultCommand) + ' (custom)</option>';
+        }
 
         // Build template option HTML
         var inputOptions = '<option value="">None (no input template)</option>';
@@ -8765,6 +8798,14 @@
                 '<option value="normal"' + (projectType === 'normal' ? ' selected' : '') + '>Normal</option>' +
                 '<option value="runner-dev"' + (projectType === 'runner-dev' ? ' selected' : '') + '>Runner Dev (Self-modification)</option>' +
               '</select>' +
+            '</div>' +
+
+            '<hr style="border-color: var(--border-color, #2a2a4a); margin: 16px 0;" />' +
+            '<h4 style="margin-bottom: 8px;">Default Command</h4>' +
+            '<p style="font-size: 0.8rem; color: #9ca3af; margin-bottom: 12px;">Auto-prepend this command to every chat message. User can override by typing a / command explicitly.</p>' +
+            '<div class="form-group">' +
+              '<label>Default Command</label>' +
+              '<select id="default-command-select">' + defaultCmdOptions + '</select>' +
             '</div>' +
 
             '<hr style="border-color: var(--border-color, #2a2a4a); margin: 16px 0;" />' +
@@ -8818,8 +8859,10 @@
       var bootstrapPrompt = document.getElementById('bootstrap-prompt-input').value;
       var inputTemplateEl = document.getElementById('input-template-select');
       var outputTemplateEl = document.getElementById('output-template-select');
+      var defaultCommandEl = document.getElementById('default-command-select');
       var inputTemplateId = inputTemplateEl ? (inputTemplateEl.value || null) : null;
       var outputTemplateId = outputTemplateEl ? (outputTemplateEl.value || null) : null;
+      var defaultCommand = defaultCommandEl ? (defaultCommandEl.value || null) : null;
 
       try {
         var response = await fetch('/api/projects/' + encodeURIComponent(projectId), {
@@ -8830,7 +8873,8 @@
             projectStatus: projectStatus,
             bootstrapPrompt: bootstrapPrompt,
             inputTemplateId: inputTemplateId,
-            outputTemplateId: outputTemplateId
+            outputTemplateId: outputTemplateId,
+            defaultCommand: defaultCommand
           })
         });
 
@@ -13331,14 +13375,41 @@
         var match = path.match(/\/(projects|chat)\/([^\/\?]+)/);
         if (match) {
           select.value = decodeURIComponent(match[2]);
+          // Trigger default command indicator update for auto-selected project
+          updateGlobalCmdGroups();
         }
       } catch (e) {
         console.warn('[GlobalCmd] Failed to load projects:', e);
       }
     }
 
-    function updateGlobalCmdGroups() {
-      // Future: could load task groups for selected project
+    async function updateGlobalCmdGroups() {
+      // Show/hide default command indicator for selected project
+      var projectSelect = document.getElementById('gcmd-project');
+      var indicator = document.getElementById('gcmd-default-cmd');
+      if (!indicator || !projectSelect) return;
+
+      var projectId = projectSelect.value;
+      if (!projectId) {
+        indicator.style.display = 'none';
+        indicator.textContent = '';
+        return;
+      }
+
+      try {
+        var data = await api('/projects/' + encodeURIComponent(projectId));
+        var project = data.project || data;
+        if (project && project.defaultCommand) {
+          indicator.style.display = 'inline-block';
+          indicator.textContent = 'Auto: ' + project.defaultCommand;
+          indicator.title = 'Default command auto-prepended to messages';
+        } else {
+          indicator.style.display = 'none';
+          indicator.textContent = '';
+        }
+      } catch (e) {
+        indicator.style.display = 'none';
+      }
     }
 
     async function loadGlobalCmdCommands() {
@@ -13526,6 +13597,7 @@
     <select id="gcmd-project" onchange="updateGlobalCmdGroups();loadGlobalCmdCommands();" title="Select project">
       <option value="">Project...</option>
     </select>
+    <span id="gcmd-default-cmd" style="display:none; font-size:0.7rem; color:#60a5fa; background:rgba(96,165,250,0.15); padding:2px 8px; border-radius:4px; white-space:nowrap;"></span>
     <select id="gcmd-command" title="Select command" style="max-width:150px;">
       <option value="">No command</option>
     </select>

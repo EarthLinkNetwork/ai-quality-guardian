@@ -342,7 +342,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
   router.patch('/projects/:projectId', async (req: Request, res: Response) => {
     try {
       const dal = getDAL();
-      const { favorite, alias, description, notes, tags, bootstrapPrompt, projectType, projectStatus, inputTemplateId, outputTemplateId, aiModel, aiProvider } = req.body;
+      const { favorite, alias, description, notes, tags, bootstrapPrompt, projectType, projectStatus, inputTemplateId, outputTemplateId, aiModel, aiProvider, defaultCommand } = req.body;
 
       const project = await dal.updateProjectIndex(req.params.projectId as string, {
         favorite,
@@ -357,6 +357,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         outputTemplateId,
         aiModel,
         aiProvider,
+        defaultCommand,
       });
 
       if (!project) {

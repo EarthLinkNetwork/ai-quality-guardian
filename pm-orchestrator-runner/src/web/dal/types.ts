@@ -528,6 +528,7 @@ export interface ProjectIndex {
   };
   aiModel?: string;              // AI model ID used by this project (e.g. "gpt-4o")
   aiProvider?: string;            // AI provider used by this project (e.g. "openai")
+  defaultCommand?: string | null; // Default command auto-prepended to every chat message (e.g. "/orchestrate")
   createdAt: string;
   updatedAt: string;
   ttl?: number;
@@ -569,6 +570,7 @@ export interface UpdateProjectIndexInput {
   outputTemplateId?: string | null;
   aiModel?: string;
   aiProvider?: string;
+  defaultCommand?: string | null;
 }
 
 export interface ListProjectIndexOptions {

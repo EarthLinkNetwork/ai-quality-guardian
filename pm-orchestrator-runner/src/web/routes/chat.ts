@@ -182,11 +182,20 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
           return;
         }
 
+        // Fetch project early for defaultCommand check and later use
+        const project = await dal.getProjectIndex(projectId);
+
+        // Auto-prepend default command if set and user didn't specify a command
+        let effectiveContent = content;
+        const extProject = project as unknown as { defaultCommand?: string | null };
+        if (extProject?.defaultCommand && !content.trim().startsWith('/')) {
+          effectiveContent = extProject.defaultCommand + ' ' + content;
+        }
+
         // Check for custom command (slash commands)
-        const parsed = parseCommand(content);
+        const parsed = parseCommand(effectiveContent);
         if (parsed.isCommand) {
           const registry = getCommandRegistry();
-          const project = await dal.getProjectIndex(projectId);
           const commandContext: CommandContext = {
             projectId,
             projectPath: project?.projectPath,
@@ -287,8 +296,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
           }
         }
 
-        // Get project to check for bootstrapPrompt
-        const project = await dal.getProjectIndex(projectId);
+        // Check project exists (already fetched above for defaultCommand)
         if (!project) {
           // Record error Activity
           await dal.createActivityEvent({
@@ -506,6 +514,8 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
           outputTemplateInjected: !!outputTemplateText,
           inputTemplateName: inputTemplateName || null,
           outputTemplateName: outputTemplateName || null,
+          defaultCommandInjected: effectiveContent !== content,
+          defaultCommand: extProject?.defaultCommand || null,
         } as ChatResponse & {
           userMessage: ConversationMessage;
           assistantMessage: ConversationMessage;
@@ -516,6 +526,8 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
           outputTemplateInjected: boolean;
           inputTemplateName: string | null;
           outputTemplateName: string | null;
+          defaultCommandInjected: boolean;
+          defaultCommand: string | null;
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
