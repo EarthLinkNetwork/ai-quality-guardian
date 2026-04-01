@@ -289,7 +289,10 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
             group_status: groupStatusMap.get(tgId) || 'active',
           };
         })
-        .filter(tg => !excludeGroupStatus.includes(tg.group_status));
+        .filter(tg => !excludeGroupStatus.includes(tg.group_status))
+        // Only include groups that have actual activity events (not orphaned runs from old orgId)
+        .filter(tg => tg.latest_activity_type !== 'N/A' || tg.group_status !== 'active')
+        .slice(0, 20);
 
       // Build recentTasks from runs with resolved identifiers
       const recentTasks = projectRuns.slice(0, 20).map(r => {
