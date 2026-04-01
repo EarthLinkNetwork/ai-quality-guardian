@@ -294,8 +294,11 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         .filter(tg => tg.latest_activity_type !== 'N/A' || tg.group_status !== 'active')
         .slice(0, 20);
 
-      // Build recentTasks from runs with resolved identifiers
-      const recentTasks = projectRuns.slice(0, 20).map(r => {
+      // Build recentTasks from runs that have matching activity events (filters out old orgId orphans)
+      const projectRunsWithActivity = projectRuns.filter(r =>
+        activityResult.items.some(e => e.taskId === r.taskRunId || (e.details as any)?.taskRunId === r.taskRunId)
+      );
+      const recentTasks = projectRunsWithActivity.slice(0, 20).map(r => {
         const resolvedGroupId = taskIdToGroupId.get(r.taskRunId) || 'N/A';
         return {
           task_id: r.taskRunId,
