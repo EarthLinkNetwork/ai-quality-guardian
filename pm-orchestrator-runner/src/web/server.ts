@@ -441,9 +441,10 @@ export function createApp(config: WebServerConfig): Express {
         } catch { /* ignore */ }
       }
 
-      // Keep groups that: have a local project, OR have no project linkage (legacy/unlinked)
+      // Keep only groups linked to local projects. Unlinked (N/A) groups from
+      // old orgId are excluded — they belong to a different machine/tenant.
       const localFilteredGroups = localProjects.size > 0
-        ? enrichedGroups.filter(g => g.project_id === 'N/A' || localProjects.has(g.project_id))
+        ? enrichedGroups.filter(g => localProjects.has(g.project_id))
         : enrichedGroups;
 
       // Auto-archive: groups where all tasks complete and last update > 24h ago
