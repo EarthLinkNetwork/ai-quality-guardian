@@ -55,8 +55,7 @@ import {
 } from '../config/namespace';
 import { getApiKey } from '../config/global-config';
 import { getAwsProfile } from '../config/aws-config';
-import { initDAL } from '../web/dal/dal-factory';
-import { getNoDynamoExtended, isNoDynamoExtendedInitialized } from '../web/dal/no-dynamo';
+import { initDAL, isDALInitialized } from '../web/dal/dal-factory';
 import { ApiKeyManager, initApiKeyManager } from '../auth/api-key-manager';
 import { log } from '../logging/app-logger';
 import type { AuthConfig } from '../web/middleware/auth';
@@ -594,9 +593,9 @@ async function recordTaskLlmCost(item: QueueItem): Promise<void> {
     console.log(`[Runner] LLM usage: ${taskUsage.length} calls, $${totalCostUsd.toFixed(4)}`);
   }
 
-  if (isNoDynamoExtendedInitialized()) {
+  if (isDALInitialized()) {
     try {
-      const dal = getNoDynamoExtended();
+      const dal = getDAL();
       await dal.createActivityEvent({
         orgId: 'default',
         type: 'llm_cost',

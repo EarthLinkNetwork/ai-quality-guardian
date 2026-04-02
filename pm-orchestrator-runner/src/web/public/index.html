@@ -3865,7 +3865,7 @@
           link.classList.add('active');
         } else if ((path === '/projects' || path.startsWith('/projects/')) && nav === 'projects') {
           link.classList.add('active');
-        } else if (path.startsWith('/runs/') && nav === 'home') {
+        } else if ((path.startsWith('/tasks/') || path.startsWith('/task-groups/') || path.startsWith('/runs/')) && nav === 'home') {
           link.classList.add('active');
         }
       });
@@ -3874,7 +3874,7 @@
     // =========================================================================
     // Task Group page-level filters (status tabs + date filter)
     // =========================================================================
-    var taskGroupStatusFilter = 'running';  // 'running' | 'all' | 'archived'
+    var taskGroupStatusFilter = 'all';  // 'running' | 'all' | 'archived'
     var taskGroupDateFilter = 'all';         // 'all' | 'today' | 'week' | 'month'
 
     function filterTaskGroupsByDate(period) {
@@ -4832,10 +4832,7 @@
           <!-- Conversation Trace integrated into Conversation Thread above -->
         `;
 
-        // P0-1: Load executor logs and set up SSE streaming
-        await loadExecutorLogs(task.task_id, task.status);
-
-        // Prepend user's original prompt to conversation thread (for all statuses)
+        // Add user's original prompt to conversation thread FIRST (for all statuses)
         const threadCont = document.getElementById('conversation-thread-container');
         if (threadCont && task.prompt) {
           const placeholder = threadCont.querySelector('.thread-placeholder');
@@ -4845,6 +4842,9 @@
             timestamp: task.created_at || new Date().toISOString(),
           });
         }
+
+        // P0-1: Load executor logs and set up SSE streaming (appears after user prompt)
+        await loadExecutorLogs(task.task_id, task.status);
 
         // Load stream trace for completed tasks (conversation thread)
         if (task.status !== 'RUNNING') {
