@@ -258,6 +258,26 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         }
       }
 
+      // Fetch queue store items once (reused for task group enrichment and recentTasks supplement)
+      let queueTasksForProject: import('../../queue/queue-store').QueueItem[] = [];
+      if (queueStore) {
+        try {
+          const allQueueItems = await queueStore.getAllItemsSummary();
+          queueTasksForProject = allQueueItems.filter(
+            item => item.project_path === (project as any).projectPath
+          );
+          // Add task group IDs from queue store (tasks may exist in queue but not yet in activity events)
+          for (const item of queueTasksForProject) {
+            projectTaskGroupIds.add(item.task_group_id);
+            // Also update taskGroupTaskMap so task counts are accurate
+            if (!taskGroupTaskMap.has(item.task_group_id)) {
+              taskGroupTaskMap.set(item.task_group_id, new Set());
+            }
+            taskGroupTaskMap.get(item.task_group_id)!.add(item.task_id);
+          }
+        } catch { /* ignore queue store errors */ }
+      }
+
       // Build task group status lookup from queue store if available
       const groupStatusMap = new Map<string, string>();
       if (queueStore) {
@@ -312,6 +332,50 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
           ended_at: r.endedAt || null,
         };
       });
+
+      // Supplement recentTasks with live queue store data (using cached queueTasksForProject)
+      if (queueTasksForProject.length > 0) {
+        // Build a set of task IDs already in recentTasks
+        const existingTaskIds = new Set(recentTasks.map(t => t.task_id));
+
+        // Add queue tasks not already in recentTasks
+        for (const item of queueTasksForProject) {
+          if (!existingTaskIds.has(item.task_id)) {
+            recentTasks.push({
+              task_id: item.task_id,
+              run_id: 'N/A',
+              task_group_id: item.task_group_id,
+              projectId,
+              status: item.status,
+              summary: item.prompt?.substring(0, 120) || item.task_id,
+              started_at: item.created_at,
+              updated_at: item.updated_at,
+              ended_at: null,
+            });
+          } else {
+            // Update status from queue store (more current than runs)
+            const existing = recentTasks.find(t => t.task_id === item.task_id);
+            if (existing && item.status !== existing.status) {
+              existing.status = item.status;
+              existing.updated_at = item.updated_at;
+            }
+          }
+        }
+
+        // Re-sort by updated_at descending
+        recentTasks.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+
+        // Also update task group task counts from queue store
+        for (const tg of recentTaskGroups) {
+          const queueCount = queueTasksForProject.filter(i => i.task_group_id === tg.task_group_id).length;
+          if (queueCount > tg.task_count) {
+            tg.task_count = queueCount;
+            tg.task_ids = queueTasksForProject
+              .filter(i => i.task_group_id === tg.task_group_id)
+              .map(i => i.task_id);
+          }
+        }
+      }
 
       // Build cost info for the project
       const proj = project as any;
