@@ -357,6 +357,11 @@ export async function updateProjectIndex(
     expressionAttributeValues[":taskStats"] = updates.taskStats;
   }
 
+  if (updates.defaultCommand !== undefined) {
+    updateExpressions.push("defaultCommand = :defaultCommand");
+    expressionAttributeValues[":defaultCommand"] = updates.defaultCommand;
+  }
+
   const result = await docClient.send(
     new UpdateCommand({
       TableName: TABLES.PROJECT_INDEXES,
