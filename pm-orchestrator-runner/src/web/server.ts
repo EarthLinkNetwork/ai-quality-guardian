@@ -420,25 +420,23 @@ export function createApp(config: WebServerConfig): Express {
   app.get('/api/task-groups', async (req: Request, res: Response) => {
     try {
       const targetNamespace = (req.query.namespace as string) || namespace;
-      const groups = await queueStore.getAllTaskGroups(targetNamespace);
+      // Fetch groups, activity events, and local projects in PARALLEL
+      const dal = isDALInitialized() ? getDAL() : null;
+      const [groups, activityItems, localProjectItems] = await Promise.all([
+        queueStore.getAllTaskGroups(targetNamespace),
+        dal ? dal.listActivityEvents({ limit: 200 }).then(r => r.items).catch(() => []) : Promise.resolve([]),
+        dal ? dal.listProjectIndexes({ limit: 100 }).then(r => r.items).catch(() => []) : Promise.resolve([]),
+      ]);
 
-      // Enrich with project info from activity events
-      let projectLookup: Map<string, { projectId: string; projectAlias?: string; projectPath?: string }> = new Map();
-      if (isDALInitialized()) {
-        try {
-          const dal = getDAL();
-          const activityResult = await dal.listActivityEvents({ limit: 200 });
-          for (const evt of activityResult.items) {
-            if (evt.taskGroupId && evt.projectId) {
-              projectLookup.set(evt.taskGroupId, {
-                projectId: evt.projectId,
-                projectAlias: evt.projectAlias,
-                projectPath: evt.projectPath,
-              });
-            }
-          }
-        } catch {
-          // Best-effort
+      // Build project lookup from activity events
+      const projectLookup = new Map<string, { projectId: string; projectAlias?: string; projectPath?: string }>();
+      for (const evt of activityItems) {
+        if (evt.taskGroupId && evt.projectId) {
+          projectLookup.set(evt.taskGroupId, {
+            projectId: evt.projectId,
+            projectAlias: evt.projectAlias,
+            projectPath: evt.projectPath,
+          });
         }
       }
 
@@ -452,19 +450,8 @@ export function createApp(config: WebServerConfig): Express {
         };
       });
 
-      // Filter: only show task groups belonging to projects on this machine
-      // If a task group has a known project_id, check if that project exists in our orgId
-      // If project_id is N/A (unlinked), check if the task group's session_id pattern matches this server
-      let localProjects: Set<string> = new Set();
-      if (isDALInitialized()) {
-        try {
-          const dal = getDAL();
-          const allProjects = await dal.listProjectIndexes({ limit: 100 });
-          for (const p of allProjects.items) {
-            localProjects.add(p.projectId);
-          }
-        } catch { /* ignore */ }
-      }
+      // Filter: only show task groups belonging to local projects
+      const localProjects = new Set(localProjectItems.map(p => p.projectId));
 
       // Keep only groups linked to local projects. Unlinked (N/A) groups from
       // old orgId are excluded — they belong to a different machine/tenant.
@@ -473,8 +460,11 @@ export function createApp(config: WebServerConfig): Express {
         : enrichedGroups;
 
       // Auto-archive: groups where all tasks complete and last update > 24h ago
+      // Auto-archive: mark completed groups as archived IN MEMORY only (no DynamoDB writes)
+      // This avoids N DynamoDB writes per request that caused 10+ second response times.
+      // Actual archiving happens when user clicks "Archived" button.
       const now = Date.now();
-      const AUTO_ARCHIVE_MS = 24 * 60 * 60 * 1000; // 24 hours
+      const AUTO_ARCHIVE_MS = 24 * 60 * 60 * 1000;
       for (const g of localFilteredGroups) {
         if (g.group_status !== 'archived' && g.group_status !== 'complete') {
           const sc = g.status_counts || { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 };
@@ -483,10 +473,7 @@ export function createApp(config: WebServerConfig): Express {
                               sc.ERROR === 0;
           const age = now - new Date(g.latest_updated_at).getTime();
           if (allComplete && age > AUTO_ARCHIVE_MS) {
-            try {
-              await queueStore.setTaskGroupStatus(g.task_group_id, 'archived' as TaskGroupStatus);
-              g.group_status = 'archived';
-            } catch { /* ignore auto-archive errors */ }
+            g.group_status = 'archived'; // In-memory only, no DynamoDB write
           }
         }
       }
