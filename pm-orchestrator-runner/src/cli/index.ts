@@ -58,6 +58,7 @@ import { getAwsProfile } from '../config/aws-config';
 import { initDAL } from '../web/dal/dal-factory';
 import { getNoDynamoExtended, isNoDynamoExtendedInitialized } from '../web/dal/no-dynamo';
 import { ApiKeyManager, initApiKeyManager } from '../auth/api-key-manager';
+import { log } from '../logging/app-logger';
 import type { AuthConfig } from '../web/middleware/auth';
 import {
   installDaemon,
@@ -1828,13 +1829,16 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   });
   poller.on('claimed', (item: QueueItem) => {
     console.log(`[Runner] Claimed task: ${item.task_id}`);
+    log.app.info('Task started', { taskId: item.task_id, taskGroupId: item.task_group_id, prompt: item.prompt.substring(0, 100) });
   });
   poller.on('completed', (item: QueueItem) => {
     console.log(`[Runner] Completed task: ${item.task_id}`);
+    log.app.info('Task completed', { taskId: item.task_id, status: 'COMPLETE' });
     updateConversationFromTask(item, 'complete').catch(() => {});
   });
   poller.on('error', (item: QueueItem, error: Error) => {
     console.error(`[Runner] Task ${item.task_id} error:`, error.message);
+    log.app.error('Task failed', { taskId: item.task_id, error: error.message });
     updateConversationFromTask(item, 'error', error.message).catch(() => {});
   });
   poller.on('stale-recovered', (count: number) => {
@@ -1909,6 +1913,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
 
   // Start both web server and poller
   await server.start();
+  log.sys.info('Server started', { port, namespace: namespaceConfig.namespace, buildSha: process.env.PM_BUILD_SHA });
   if (!preflightReport.can_proceed && allowPreflightFailure) {
     console.warn('[Runner] Queue poller not started because preflight failed.');
     console.warn('[Runner] Configure an executor in Settings, then restart to enable task processing.');

@@ -49,6 +49,7 @@ import { createSkillsRoutes } from './routes/skills';
 import { detectTaskType } from '../utils/task-type-detector';
 import { detectQuestionsWithLlm } from '../utils/question-detector';
 import { initDAL, isDALInitialized, getDAL } from './dal/dal-factory';
+import { getLogEntries } from '../logging/app-logger';
 
 /**
  * Derive namespace from folder path (same logic as CLI)
@@ -245,6 +246,30 @@ export function createApp(config: WebServerConfig): Express {
       projectRoot: projectRoot || process.cwd(),
     }));
   }
+
+  // ===================
+  // Application Log Routes
+  // ===================
+
+  /**
+   * GET /api/app-logs
+   * Return in-memory application/system log entries for Web UI
+   */
+  app.get('/api/app-logs', (_req: Request, res: Response) => {
+    const category = _req.query.category as string | undefined;
+    const level = _req.query.level as string | undefined;
+    const limit = parseInt(_req.query.limit as string) || 100;
+    const projectId = _req.query.projectId as string | undefined;
+
+    const entries = getLogEntries({
+      category: category as 'app' | 'sys' | undefined,
+      level,
+      limit,
+      projectId,
+    });
+
+    res.json({ entries, count: entries.length });
+  });
 
   // ===================
   // REST API Routes (v2)
