@@ -308,6 +308,8 @@ export interface IQueueStore {
   getByStatus(status: QueueItemStatus): Promise<QueueItem[]>;
   getByTaskGroup(taskGroupId: string, targetNamespace?: string): Promise<QueueItem[]>;
   getAllItems(targetNamespace?: string): Promise<QueueItem[]>;
+  /** Lightweight version of getAllItems that excludes large fields (output, conversation_history, events) */
+  getAllItemsSummary(targetNamespace?: string): Promise<QueueItem[]>;
   getAllTaskGroups(targetNamespace?: string): Promise<TaskGroupSummary[]>;
   getAllNamespaces(): Promise<NamespaceSummary[]>;
   deleteItem(taskId: string): Promise<void>;
@@ -1027,10 +1029,36 @@ export class QueueStore implements IQueueStore {
   }
 
   /**
+   * Get all items in a namespace with only lightweight fields (excludes output, conversation_history, events).
+   * Used by getAllTaskGroups to avoid fetching large payloads from DynamoDB.
+   */
+  async getAllItemsSummary(targetNamespace?: string): Promise<QueueItem[]> {
+    const ns = targetNamespace ?? this.namespace;
+    const result = await this.docClient.send(
+      new QueryCommand({
+        TableName: QUEUE_TABLE_NAME,
+        KeyConditionExpression: '#namespace = :namespace',
+        ProjectionExpression: '#ns, task_id, task_group_id, #st, created_at, updated_at, session_id, task_type, parent_task_id, prompt',
+        ExpressionAttributeNames: {
+          '#namespace': 'namespace',
+          '#ns': 'namespace',
+          '#st': 'status',
+        },
+        ExpressionAttributeValues: {
+          ':namespace': ns,
+        },
+        ScanIndexForward: true,
+      })
+    );
+
+    return (result.Items as QueueItem[]) || [];
+  }
+
+  /**
    * Get all distinct task groups for a namespace with summary
    */
   async getAllTaskGroups(targetNamespace?: string): Promise<TaskGroupSummary[]> {
-    const items = await this.getAllItems(targetNamespace);
+    const items = await this.getAllItemsSummary(targetNamespace);
 
     const groupMap = new Map<string, {
       count: number;

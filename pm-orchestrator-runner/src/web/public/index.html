@@ -7602,6 +7602,18 @@
             </div>
           </div>
 
+          <div class="card" style="margin-top:16px;" data-testid="default-command-section">
+            <h3 style="margin:0 0 8px 0;">Default Command</h3>
+            <p style="font-size:0.8rem; color:#9ca3af; margin:0 0 12px 0;">Every message to this project will be auto-prepended with this command.</p>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <select id="proj-inline-default-cmd" style="flex:1; padding:8px; background:var(--bg-primary,#1a1a2e); color:var(--text-primary,#e0e0e0); border:1px solid var(--border-color,#2a2a4a); border-radius:6px;">
+                <option value="">None (direct message)</option>
+              </select>
+              <button class="btn btn-primary" style="font-size:0.8rem; padding:6px 16px;" onclick="saveInlineDefaultCommand('${escapeHtml(projectId)}')">Save</button>
+              <span id="inline-default-cmd-status" style="font-size:0.8rem; color:#059669; display:none;">Saved!</span>
+            </div>
+          </div>
+
           ${projectActionsHtml}
 
           <div>
@@ -7716,6 +7728,37 @@
         if (resumeInfo) {
           renderResumeInfo(resumeInfo);
         }
+
+        // Populate inline default command dropdown
+        (async function() {
+          try {
+            var qp = project.projectPath ? '?projectPath=' + encodeURIComponent(project.projectPath) : '';
+            var slashRes = await fetch('/api/claude-settings/slash-commands' + qp);
+            if (!slashRes.ok) return;
+            var slashData = await slashRes.json();
+            var cmds = (slashData.global || []).concat(slashData.project || []);
+            var sel = document.getElementById('proj-inline-default-cmd');
+            if (!sel) return;
+            var currentDefault = project.defaultCommand || '';
+            cmds.forEach(function(cmd) {
+              var cmdName = cmd.name.startsWith('/') ? cmd.name : '/' + cmd.name;
+              var opt = document.createElement('option');
+              opt.value = cmdName;
+              opt.textContent = cmdName + (cmd.description ? ' - ' + cmd.description : '');
+              if (cmdName === currentDefault) opt.selected = true;
+              sel.appendChild(opt);
+            });
+            // If current default is set but not in the list, add it
+            if (currentDefault && !sel.querySelector('option[value="' + CSS.escape(currentDefault) + '"]')) {
+              var opt = document.createElement('option');
+              opt.value = currentDefault;
+              opt.textContent = currentDefault + ' (custom)';
+              opt.selected = true;
+              sel.appendChild(opt);
+            }
+          } catch(e) { /* proceed without slash commands */ }
+        })();
+
       } catch (error) {
         app.innerHTML = `
           <div class="card">
@@ -7777,6 +7820,35 @@
           statusEl.style.display = 'inline';
           statusEl.textContent = 'Error: ' + e.message;
           statusEl.style.color = '#dc2626';
+        }
+      }
+    }
+
+    // Save inline default command from project detail page
+    async function saveInlineDefaultCommand(projectId) {
+      var select = document.getElementById('proj-inline-default-cmd');
+      var statusEl = document.getElementById('inline-default-cmd-status');
+      if (!select) return;
+      try {
+        var res = await fetch('/api/projects/' + encodeURIComponent(projectId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ defaultCommand: select.value || null }),
+        });
+        if (!res.ok) throw new Error('Failed to save');
+        if (statusEl) {
+          statusEl.style.display = 'inline';
+          statusEl.textContent = 'Saved!';
+          statusEl.style.color = '#059669';
+          setTimeout(function() { statusEl.style.display = 'none'; }, 2000);
+        }
+      } catch (e) {
+        if (statusEl) {
+          statusEl.style.display = 'inline';
+          statusEl.textContent = 'Error: ' + e.message;
+          statusEl.style.color = '#dc2626';
+        } else {
+          showToast('Error: ' + e.message, 'error');
         }
       }
     }

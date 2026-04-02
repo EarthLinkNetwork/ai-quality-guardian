@@ -617,6 +617,13 @@ export class FileQueueStore implements IQueueStore {
   }
 
   /**
+   * Lightweight version of getAllItems (file store just delegates to getAllItems).
+   */
+  async getAllItemsSummary(targetNamespace?: string): Promise<QueueItem[]> {
+    return this.getAllItems(targetNamespace);
+  }
+
+  /**
    * Get all distinct task groups for a namespace with summary
    */
   async getAllTaskGroups(targetNamespace?: string): Promise<TaskGroupSummary[]> {
