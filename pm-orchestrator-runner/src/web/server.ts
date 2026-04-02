@@ -412,6 +412,14 @@ export function createApp(config: WebServerConfig): Express {
     }
   });
 
+  // Task groups cache (TTL-based) to avoid slow DynamoDB queries on every request
+  let taskGroupsCache: { data: unknown; timestamp: number; cacheKey: string } | null = null;
+  const TASK_GROUPS_CACHE_TTL_MS = 10_000; // 10 seconds
+
+  function invalidateTaskGroupsCache() {
+    taskGroupsCache = null;
+  }
+
   /**
    * GET /api/task-groups
    * List all task groups with summary for specified namespace (or current)
@@ -420,6 +428,13 @@ export function createApp(config: WebServerConfig): Express {
   app.get('/api/task-groups', async (req: Request, res: Response) => {
     try {
       const targetNamespace = (req.query.namespace as string) || namespace;
+
+      // Return cached result if fresh
+      const cacheKey = targetNamespace + '|' + (req.query.group_status || '') + '|' + (req.query.limit || '') + '|' + (req.query.offset || '');
+      if (taskGroupsCache && taskGroupsCache.cacheKey === cacheKey && (Date.now() - taskGroupsCache.timestamp) < TASK_GROUPS_CACHE_TTL_MS) {
+        return res.json(taskGroupsCache.data);
+      }
+
       // Fetch groups, activity events, and local projects in PARALLEL
       const dal = isDALInitialized() ? getDAL() : null;
       const [groups, activityItems, localProjectItems] = await Promise.all([
@@ -499,12 +514,14 @@ export function createApp(config: WebServerConfig): Express {
         filteredGroups = filteredGroups.slice(offsetParam, offsetParam + limitParam);
       }
 
-      res.json({
+      const responseData = {
         namespace: targetNamespace,
         task_groups: filteredGroups,
         total_count: totalCount,
         has_more: limitParam > 0 ? (offsetParam + limitParam) < totalCount : false,
-      });
+      };
+      taskGroupsCache = { data: responseData, timestamp: Date.now(), cacheKey };
+      res.json(responseData);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
@@ -546,6 +563,7 @@ export function createApp(config: WebServerConfig): Express {
         status: item.status,
         created_at: item.created_at,
       });
+      invalidateTaskGroupsCache();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
@@ -620,6 +638,7 @@ export function createApp(config: WebServerConfig): Express {
           group_status,
           archived: group_status === 'archived',
         });
+        invalidateTaskGroupsCache();
       } else if (typeof archived === 'boolean') {
         const success = await queueStore.setTaskGroupArchived(task_group_id, archived);
         if (!success) {
@@ -635,6 +654,7 @@ export function createApp(config: WebServerConfig): Express {
           archived,
           group_status: archived ? 'archived' : null,
         });
+        invalidateTaskGroupsCache();
       } else {
         res.status(400).json({
           error: 'INVALID_INPUT',
@@ -933,6 +953,7 @@ export function createApp(config: WebServerConfig): Express {
         status: item.status,
         created_at: item.created_at,
       });
+      invalidateTaskGroupsCache();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
@@ -1048,6 +1069,7 @@ export function createApp(config: WebServerConfig): Express {
         old_status: result.old_status,
         new_status: result.new_status,
       });
+      invalidateTaskGroupsCache();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
