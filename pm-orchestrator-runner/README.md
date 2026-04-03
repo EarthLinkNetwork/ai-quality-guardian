@@ -20,6 +20,8 @@ npm install -g pm-orchestrator-runner
 
 ```env
 # .env
+PM_RUNNER_DEV_DIR=/path/to/pm-orchestrator-runner
+ORG_ID=userId:deviceName
 PORT=5678
 AUTH_ENABLED=true
 OPENAI_API_KEY=sk-proj-...
@@ -28,6 +30,8 @@ PM_SELFHOST_DEV=true
 
 | 変数 | 説明 | デフォルト |
 |------|------|-----------|
+| `PM_RUNNER_DEV_DIR` | プロジェクトルートの絶対パス（開発時必須） | - |
+| `ORG_ID` | テナント識別子（マルチテナント時必須、`userId:deviceName` 形式） | `default` |
 | `PORT` | Web UI ポート | namespace に応じて自動割当 |
 | `AUTH_ENABLED` | 認証モード有効化 | false |
 | `OPENAI_API_KEY` | OpenAI API Key | - |
