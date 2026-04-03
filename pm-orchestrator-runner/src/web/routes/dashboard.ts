@@ -54,7 +54,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
       const authReq = req as AuthenticatedRequest;
       const projectStatus = (req.query.projectStatus as string) || 'active';
       const [projectsResult, activityResult, stats] = await Promise.all([
-        dal.listProjectIndexes({ limit: 10, projectStatus: projectStatus === 'all' ? undefined : projectStatus as any, orgId: authReq.orgId }),
+        dal.listProjectIndexes({ limit: 50, projectStatus: projectStatus === 'all' ? undefined : projectStatus as any, orgId: authReq.orgId }),
         dal.listActivityEvents({ limit: 20, orgId: authReq.orgId } as any),
         dal.getStats(authReq.orgId),
       ]);
