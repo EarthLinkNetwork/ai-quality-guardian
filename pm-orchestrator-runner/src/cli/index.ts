@@ -597,7 +597,7 @@ async function recordTaskLlmCost(item: QueueItem): Promise<void> {
     try {
       const dal = getDAL();
       await dal.createActivityEvent({
-        orgId: 'default',
+        orgId: process.env.ORG_ID || 'default',
         type: 'llm_cost',
         summary: `LLM cost: $${totalCostUsd.toFixed(4)} (${taskUsage.length} calls)`,
         importance: 'low',

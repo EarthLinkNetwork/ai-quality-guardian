@@ -7064,13 +7064,19 @@
     // Dashboard & Activity Pages
     // ===================
 
+    // Dashboard project list state
+    var dashProjectPage = 1;
+    var dashProjectPageSize = 10;
+    var dashProjectSearch = '';
+    var dashProjectStatus = 'active';
+
     // Render Dashboard
     async function renderDashboard() {
       app.innerHTML = '<div class="loading">Loading Dashboard</div>';
 
       try {
         const [data, actionsData] = await Promise.all([
-          fetch('/api/dashboard').then(r => r.json()),
+          fetch('/api/dashboard?projectStatus=all').then(r => r.json()),
           fetch('/api/required-actions').then(r => r.json()).catch(() => ({ actions: [], count: 0 })),
         ]);
         const projects = data.projects || [];
@@ -7116,8 +7122,59 @@
             </div>`
           : '';
 
-        const projectCards = projects.length > 0
-          ? projects.map(p => `
+        // Filter projects based on dashboard controls
+        var filteredProjects = projects;
+        if (dashProjectSearch) {
+          var q = dashProjectSearch.toLowerCase();
+          filteredProjects = filteredProjects.filter(function(p) {
+            return (p.alias || '').toLowerCase().includes(q) ||
+                   (p.projectPath || '').toLowerCase().includes(q) ||
+                   (p.projectId || '').toLowerCase().includes(q);
+          });
+        }
+        if (dashProjectStatus !== 'all') {
+          filteredProjects = filteredProjects.filter(function(p) {
+            var ps = p.projectStatus || 'active';
+            return ps === dashProjectStatus;
+          });
+        }
+        var startIdx = (dashProjectPage - 1) * dashProjectPageSize;
+        var endIdx = startIdx + dashProjectPageSize;
+        var pagedProjects = filteredProjects.slice(startIdx, endIdx);
+        // Clamp page if out of range
+        if (startIdx >= filteredProjects.length && filteredProjects.length > 0) {
+          dashProjectPage = Math.max(1, Math.ceil(filteredProjects.length / dashProjectPageSize));
+          startIdx = (dashProjectPage - 1) * dashProjectPageSize;
+          endIdx = startIdx + dashProjectPageSize;
+          pagedProjects = filteredProjects.slice(startIdx, endIdx);
+        }
+
+        var projectControlsHtml = '<div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">' +
+          '<select onchange="dashProjectPageSize=parseInt(this.value); dashProjectPage=1; renderDashboard();" style="padding:4px 8px; background:#fff; color:#333; border:1px solid #d1d5db; border-radius:4px; font-size:0.8rem;">' +
+            '<option value="10"' + (dashProjectPageSize===10?' selected':'') + '>10</option>' +
+            '<option value="25"' + (dashProjectPageSize===25?' selected':'') + '>25</option>' +
+            '<option value="50"' + (dashProjectPageSize===50?' selected':'') + '>50</option>' +
+          '</select>' +
+          '<select onchange="dashProjectStatus=this.value; dashProjectPage=1; renderDashboard();" style="padding:4px 8px; background:#fff; color:#333; border:1px solid #d1d5db; border-radius:4px; font-size:0.8rem;">' +
+            '<option value="active"' + (dashProjectStatus==='active'?' selected':'') + '>Active</option>' +
+            '<option value="all"' + (dashProjectStatus==='all'?' selected':'') + '>All</option>' +
+            '<option value="completed"' + (dashProjectStatus==='completed'?' selected':'') + '>Completed</option>' +
+            '<option value="paused"' + (dashProjectStatus==='paused'?' selected':'') + '>Paused</option>' +
+            '<option value="on_hold"' + (dashProjectStatus==='on_hold'?' selected':'') + '>On Hold</option>' +
+          '</select>' +
+          '<input type="text" placeholder="Search projects..." value="' + escapeHtml(dashProjectSearch) + '" ' +
+            'oninput="dashProjectSearch=this.value;" ' +
+            'onkeydown="if(event.key===\'Enter\'){dashProjectPage=1;renderDashboard();}" ' +
+            'style="flex:1; min-width:120px; padding:4px 8px; background:#fff; color:#333; border:1px solid #d1d5db; border-radius:4px; font-size:0.85rem;">' +
+          '<span style="font-size:0.8rem; color:#9ca3af;">' +
+            (filteredProjects.length > 0 ? (startIdx+1) + '-' + Math.min(endIdx, filteredProjects.length) + ' of ' + filteredProjects.length : '0 of 0') +
+          '</span>' +
+          '<button class="btn btn-sm" style="font-size:0.75rem; padding:4px 10px;" onclick="dashProjectPage=Math.max(1,dashProjectPage-1);renderDashboard();"' + (dashProjectPage<=1?' disabled':'') + '>Prev</button>' +
+          '<button class="btn btn-sm" style="font-size:0.75rem; padding:4px 10px;" onclick="dashProjectPage++;renderDashboard();"' + (endIdx>=filteredProjects.length?' disabled':'') + '>Next</button>' +
+        '</div>';
+
+        const projectCards = pagedProjects.length > 0
+          ? pagedProjects.map(p => `
               <div class="list-item" onclick="navigate('/projects/${encodeURIComponent(p.projectId)}')">
                 <div class="list-item-main">
                   <div class="list-item-title" style="display:flex; align-items:center; gap:8px;">
@@ -7132,7 +7189,9 @@
                 <span class="list-item-arrow">&#8250;</span>
               </div>
             `).join('')
-          : '<div class="empty-state"><p>No projects yet. Create a project to get started.</p></div>';
+          : (filteredProjects.length === 0 && projects.length > 0
+              ? '<div class="empty-state"><p>No projects match your filters.</p></div>'
+              : '<div class="empty-state"><p>No projects yet. Create a project to get started.</p></div>');
 
         const activityItems = recentActivity.length > 0
           ? recentActivity.slice(0, 5).map(e => `
@@ -7180,6 +7239,7 @@
 
           <div class="card">
             <h3>Projects</h3>
+            ${projectControlsHtml}
             ${projectCards}
             <div style="margin-top: 16px; text-align: center;">
               <button class="btn btn-primary" onclick="showCreateProjectDialog()">+ New Project</button>
