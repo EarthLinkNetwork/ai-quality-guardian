@@ -466,6 +466,123 @@
       color: #2563eb;
     }
 
+    /* ===== Shared List Controls Component ===== */
+    .list-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 12px 16px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .list-controls .lc-search {
+      padding: 6px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      width: 200px;
+      background: #fff;
+      color: #374151;
+    }
+
+    .list-controls .lc-search:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+    }
+
+    .list-controls .lc-status-tabs {
+      display: flex;
+      gap: 2px;
+      background: #f1f5f9;
+      border-radius: 6px;
+      padding: 2px;
+    }
+
+    .list-controls .lc-tab {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .list-controls .lc-tab.active {
+      background: #2563eb;
+      color: white;
+    }
+
+    .list-controls .lc-tab:not(.active) {
+      background: transparent;
+      color: #64748b;
+    }
+
+    .list-controls .lc-tab:not(.active):hover {
+      background: #e2e8f0;
+      color: #334155;
+    }
+
+    .list-controls .lc-select {
+      padding: 6px 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      background: #fff;
+      color: #374151;
+      cursor: pointer;
+    }
+
+    .list-controls .lc-select:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+    }
+
+    .list-controls .lc-pagination {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-left: auto;
+    }
+
+    .list-controls .lc-page-info {
+      font-size: 0.8rem;
+      color: #9ca3af;
+      white-space: nowrap;
+    }
+
+    .list-controls .lc-page-btn {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      background: #fff;
+      color: #374151;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .list-controls .lc-page-btn:hover:not(:disabled) {
+      background: #f1f5f9;
+    }
+
+    .list-controls .lc-page-btn:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    .list-controls .lc-fav-label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      color: #6b7280;
+    }
+
     .action-bar {
       display: flex;
       gap: 12px;
@@ -4079,6 +4196,179 @@
     }
 
     // =========================================================================
+    // Shared List Controls Component
+    // =========================================================================
+    //
+    // buildListControls(options) - Renders a consistent filter/search/pagination bar.
+    //
+    // Options:
+    //   searchValue     : string   - Current search query value
+    //   onSearch        : string   - JS expression for search on Enter (receives 'this.value')
+    //   statusTabs      : Array<{ key, label, count, active }> - Status filter tabs
+    //   onStatusTab     : function(key) -> string - JS expression for tab click
+    //   sortOptions     : Array<{ value, label, selected }> - Sort dropdown options
+    //   onSort          : string   - JS onchange expression (receives 'this.value')
+    //   pageSizeOptions : number[] - e.g. [10, 25, 50]
+    //   currentPageSize : number
+    //   onPageSize      : string   - JS onchange expression (receives 'this.value')
+    //   currentPage     : number
+    //   totalItems      : number
+    //   onPrev          : string   - JS onclick for prev button
+    //   onNext          : string   - JS onclick for next button
+    //   showFavorites   : boolean
+    //   favChecked      : boolean
+    //   onFavChange     : string   - JS onchange expression
+    //   extraHtml       : string   - Additional HTML to append
+    //
+    // Returns: HTML string
+    //
+    function buildListControls(opts) {
+      var html = '<div class="list-controls" data-testid="list-controls">';
+
+      // Search input
+      if (opts.onSearch !== undefined) {
+        html += '<input type="text" class="lc-search" data-testid="lc-search" placeholder="Search..." ' +
+          'value="' + escapeHtml(opts.searchValue || '') + '" ' +
+          'oninput="this.dataset.val=this.value;" ' +
+          'onkeydown="if(event.key===\'Enter\'){' + opts.onSearch + '}">';
+      }
+
+      // Status filter tabs
+      if (opts.statusTabs && opts.statusTabs.length > 0) {
+        html += '<div class="lc-status-tabs" data-testid="lc-status-tabs">';
+        opts.statusTabs.forEach(function(tab) {
+          html += '<button class="lc-tab' + (tab.active ? ' active' : '') + '" data-testid="lc-tab-' + tab.key + '" ' +
+            'onclick="' + opts.onStatusTab(tab.key) + '">' +
+            escapeHtml(tab.label) + (tab.count !== undefined ? ' (' + tab.count + ')' : '') +
+            '</button>';
+        });
+        html += '</div>';
+      }
+
+      // Sort dropdown
+      if (opts.sortOptions && opts.sortOptions.length > 0) {
+        html += '<select class="lc-select" data-testid="lc-sort" onchange="' + opts.onSort + '">';
+        opts.sortOptions.forEach(function(opt) {
+          html += '<option value="' + escapeHtml(opt.value) + '"' + (opt.selected ? ' selected' : '') + '>' + escapeHtml(opt.label) + '</option>';
+        });
+        html += '</select>';
+      }
+
+      // Favorite toggle
+      if (opts.showFavorites) {
+        html += '<label class="lc-fav-label" data-testid="lc-fav-toggle">' +
+          '<input type="checkbox" ' + (opts.favChecked ? 'checked' : '') + ' onchange="' + opts.onFavChange + '"> Favorites only' +
+          '</label>';
+      }
+
+      // Page size + Pagination
+      if (opts.pageSizeOptions && opts.pageSizeOptions.length > 0) {
+        var startIdx = ((opts.currentPage || 1) - 1) * (opts.currentPageSize || 10);
+        var endIdx = startIdx + (opts.currentPageSize || 10);
+        var total = opts.totalItems || 0;
+        var atStart = (opts.currentPage || 1) <= 1;
+        var atEnd = endIdx >= total;
+
+        html += '<div class="lc-pagination" data-testid="lc-pagination">';
+        // Page size selector
+        html += '<select class="lc-select" data-testid="lc-page-size" onchange="' + opts.onPageSize + '">';
+        opts.pageSizeOptions.forEach(function(ps) {
+          html += '<option value="' + ps + '"' + (ps === opts.currentPageSize ? ' selected' : '') + '>' + ps + '</option>';
+        });
+        html += '</select>';
+        // Page info
+        html += '<span class="lc-page-info" data-testid="lc-page-info">' +
+          (total > 0 ? (startIdx + 1) + '-' + Math.min(endIdx, total) + ' of ' + total : '0 of 0') +
+          '</span>';
+        // Prev/Next
+        html += '<button class="lc-page-btn" data-testid="lc-prev" onclick="' + opts.onPrev + '"' + (atStart ? ' disabled' : '') + '>Prev</button>';
+        html += '<button class="lc-page-btn" data-testid="lc-next" onclick="' + opts.onNext + '"' + (atEnd ? ' disabled' : '') + '>Next</button>';
+        html += '</div>';
+      }
+
+      if (opts.extraHtml) {
+        html += opts.extraHtml;
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    // =========================================================================
+    // Shared Project Card Renderer
+    // Used by: renderProjectList (Projects page), renderDashboard (Dashboard)
+    // =========================================================================
+
+    /**
+     * Render a single project card HTML.
+     *
+     * @param {Object} p - Project object from /api/projects or /api/dashboard
+     * @param {Object} opts - Rendering options
+     * @param {Object} opts.groupCounts - Map of projectId -> task group count
+     * @param {Object} opts.taskStatusCounts - Map of projectId -> { RUNNING: n, ... }
+     * @returns {string} HTML string for a single project list-item
+     */
+    function renderProjectCard(p, opts) {
+      opts = opts || {};
+      var groupCounts = opts.groupCounts || {};
+      var taskStatusCounts = opts.taskStatusCounts || {};
+
+      var gc = groupCounts[p.projectId] || p.taskGroupCount || 0;
+      var sc = taskStatusCounts[p.projectId] || {};
+
+      // Task status badges
+      var statusParts = [];
+      if (sc.RUNNING) statusParts.push('<span class="badge badge-running" style="font-size:0.7rem;">' + sc.RUNNING + ' running</span>');
+      if (sc.AWAITING_RESPONSE) statusParts.push('<span class="badge" style="font-size:0.7rem; background:#f59e0b; color:white;">' + sc.AWAITING_RESPONSE + ' awaiting</span>');
+      if (sc.ERROR) statusParts.push('<span class="badge badge-error" style="font-size:0.7rem;">' + sc.ERROR + ' error</span>');
+      if (sc.COMPLETE) statusParts.push('<span class="badge badge-complete" style="font-size:0.7rem;">' + sc.COMPLETE + ' done</span>');
+      if (sc.QUEUED) statusParts.push('<span class="badge badge-queued" style="font-size:0.7rem;">' + sc.QUEUED + ' queued</span>');
+      var statusSummary = statusParts.length > 0
+        ? '<div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">' + statusParts.join(' ') + '</div>'
+        : '';
+
+      // Optional lines
+      var descLine = p.description
+        ? '<div data-testid="project-description" style="margin-top:2px; font-size:0.8rem; color:#64748b; line-height:1.3;">' + escapeHtml(p.description) + '</div>'
+        : '';
+      var notesLine = p.notes
+        ? '<div data-testid="project-notes" style="margin-top:2px; font-size:0.75rem; color:#94a3b8; font-style:italic; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:600px;">Note: ' + escapeHtml(p.notes) + '</div>'
+        : '';
+
+      var costLine = '';
+      if (p.costInfo && p.costInfo.modelDisplayName) {
+        costLine = '<div style="margin-top:3px; font-size:0.75rem; color:#60a5fa;">' +
+          'Model: ' + escapeHtml(p.costInfo.modelDisplayName) +
+          (p.costInfo.inputPricePerMillion ? ' ($' + p.costInfo.inputPricePerMillion + '/$' + p.costInfo.outputPricePerMillion + ' per 1M tokens)' : '') +
+          '</div>';
+      } else if (p.aiModel) {
+        costLine = '<div style="margin-top:3px; font-size:0.75rem; color:#60a5fa;">Model: ' + escapeHtml(p.aiModel) + '</div>';
+      }
+
+      return '<div class="list-item" data-testid="project-card" onclick="navigate(\'/projects/' + encodeURIComponent(p.projectId) + '\')">' +
+        '<div class="list-item-main">' +
+          '<div class="list-item-title">' +
+            (p.favorite ? '<span style="color: #f59e0b;">&#9733;</span> ' : '') +
+            escapeHtml(p.alias || p.projectPath) +
+            ' <span class="badge badge-' + (p.status === 'running' ? 'running' : p.status === 'error' ? 'error' : 'queued') + '" style="font-size:0.7rem;">' + p.status + '</span>' +
+            ' ' + getProjectStatusBadge(p.projectStatus) +
+          '</div>' +
+          descLine +
+          costLine +
+          '<div class="list-item-meta">' +
+            escapeHtml(p.projectPath) +
+            ' | ' + gc + ' task group(s)' +
+            ' | ' + p.sessionCount + ' session(s)' +
+            ' | Updated: ' + formatDate(p.updatedAt) +
+          '</div>' +
+          notesLine +
+          statusSummary +
+        '</div>' +
+        '<span class="list-item-arrow">&#8250;</span>' +
+      '</div>';
+    }
+
+    // =========================================================================
     // Projects List page (#2, #3)
     // =========================================================================
 
@@ -4089,7 +4379,9 @@
       sortDirection: 'desc',
       search: '',
       favoriteOnly: false,
-      includeArchived: false
+      includeArchived: false,
+      page: 1,
+      pageSize: 25
     };
 
     function buildProjectQueryString() {
@@ -4147,100 +4439,65 @@
           });
         });
 
-        // Build filter bar
-        var filterBar =
-          '<div style="padding:12px 16px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; border-bottom:1px solid #e2e8f0;">' +
-            // Search
-            '<input type="text" id="project-search-input" placeholder="Search projects..." value="' + escapeHtml(projectListFilters.search) + '" ' +
-              'style="padding:6px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:0.85rem; width:200px;" ' +
-              'onkeydown="if(event.key===\'Enter\'){projectListFilters.search=this.value;renderProjectList();}">' +
-            // Status filter tabs
-            '<div style="display:flex; gap:2px; background:#f1f5f9; border-radius:6px; padding:2px;">' +
-              '<button class="' + (projectListFilters.projectStatus === 'active' ? 'btn btn-primary' : 'btn btn-secondary') + '" ' +
-                'style="font-size:0.75rem; padding:4px 10px; border-radius:4px;" ' +
-                'onclick="projectListFilters.projectStatus=\'active\';renderProjectList();">Active (' + statusCounts.active + ')</button>' +
-              '<button class="' + (projectListFilters.projectStatus === 'paused' ? 'btn btn-primary' : 'btn btn-secondary') + '" ' +
-                'style="font-size:0.75rem; padding:4px 10px; border-radius:4px;" ' +
-                'onclick="projectListFilters.projectStatus=\'paused\';renderProjectList();">Paused (' + statusCounts.paused + ')</button>' +
-              '<button class="' + (projectListFilters.projectStatus === 'on_hold' ? 'btn btn-primary' : 'btn btn-secondary') + '" ' +
-                'style="font-size:0.75rem; padding:4px 10px; border-radius:4px;" ' +
-                'onclick="projectListFilters.projectStatus=\'on_hold\';renderProjectList();">On Hold (' + statusCounts.on_hold + ')</button>' +
-              '<button class="' + (projectListFilters.projectStatus === 'completed' ? 'btn btn-primary' : 'btn btn-secondary') + '" ' +
-                'style="font-size:0.75rem; padding:4px 10px; border-radius:4px;" ' +
-                'onclick="projectListFilters.projectStatus=\'completed\';renderProjectList();">Completed (' + statusCounts.completed + ')</button>' +
-              '<button class="' + (projectListFilters.projectStatus === 'all' ? 'btn btn-primary' : 'btn btn-secondary') + '" ' +
-                'style="font-size:0.75rem; padding:4px 10px; border-radius:4px;" ' +
-                'onclick="projectListFilters.projectStatus=\'all\';renderProjectList();">All (' + statusCounts.all + ')</button>' +
-            '</div>' +
-            // Sort
-            '<select id="project-sort-select" style="padding:6px 8px; border:1px solid #d1d5db; border-radius:6px; font-size:0.8rem;" ' +
-              'onchange="var v=this.value.split(\':\');projectListFilters.sortBy=v[0];projectListFilters.sortDirection=v[1];renderProjectList();">' +
-              '<option value="updatedAt:desc"' + (projectListFilters.sortBy === 'updatedAt' && projectListFilters.sortDirection === 'desc' ? ' selected' : '') + '>Recently Updated</option>' +
-              '<option value="updatedAt:asc"' + (projectListFilters.sortBy === 'updatedAt' && projectListFilters.sortDirection === 'asc' ? ' selected' : '') + '>Oldest Updated</option>' +
-              '<option value="name:asc"' + (projectListFilters.sortBy === 'name' && projectListFilters.sortDirection === 'asc' ? ' selected' : '') + '>Name (A-Z)</option>' +
-              '<option value="name:desc"' + (projectListFilters.sortBy === 'name' && projectListFilters.sortDirection === 'desc' ? ' selected' : '') + '>Name (Z-A)</option>' +
-              '<option value="createdAt:desc"' + (projectListFilters.sortBy === 'createdAt' && projectListFilters.sortDirection === 'desc' ? ' selected' : '') + '>Recently Created</option>' +
-              '<option value="lastActivityAt:desc"' + (projectListFilters.sortBy === 'lastActivityAt' && projectListFilters.sortDirection === 'desc' ? ' selected' : '') + '>Recent Activity</option>' +
-            '</select>' +
-            // Favorite toggle
-            '<label style="display:flex; align-items:center; gap:4px; font-size:0.8rem; cursor:pointer;">' +
-              '<input type="checkbox" ' + (projectListFilters.favoriteOnly ? 'checked' : '') + ' ' +
-                'onchange="projectListFilters.favoriteOnly=this.checked;renderProjectList();"> Favorites only' +
-            '</label>' +
-          '</div>';
+        // Client-side pagination
+        var totalProjects = projects.length;
+        var startIdx = (projectListFilters.page - 1) * projectListFilters.pageSize;
+        var endIdx = startIdx + projectListFilters.pageSize;
+        // Clamp page if out of range
+        if (startIdx >= totalProjects && totalProjects > 0) {
+          projectListFilters.page = Math.max(1, Math.ceil(totalProjects / projectListFilters.pageSize));
+          startIdx = (projectListFilters.page - 1) * projectListFilters.pageSize;
+          endIdx = startIdx + projectListFilters.pageSize;
+        }
+        var pagedProjects = projects.slice(startIdx, endIdx);
 
+        // Build filter bar using shared list controls component
+        var sortVal = (projectListFilters.sortBy || 'updatedAt') + ':' + (projectListFilters.sortDirection || 'desc');
+        var filterBar = buildListControls({
+          searchValue: projectListFilters.search,
+          onSearch: "projectListFilters.search=this.value;projectListFilters.page=1;renderProjectList();",
+          statusTabs: [
+            { key: 'active', label: 'Active', count: statusCounts.active, active: projectListFilters.projectStatus === 'active' },
+            { key: 'paused', label: 'Paused', count: statusCounts.paused, active: projectListFilters.projectStatus === 'paused' },
+            { key: 'on_hold', label: 'On Hold', count: statusCounts.on_hold, active: projectListFilters.projectStatus === 'on_hold' },
+            { key: 'completed', label: 'Completed', count: statusCounts.completed, active: projectListFilters.projectStatus === 'completed' },
+            { key: 'all', label: 'All', count: statusCounts.all, active: projectListFilters.projectStatus === 'all' },
+          ],
+          onStatusTab: function(key) { return "projectListFilters.projectStatus='" + key + "';projectListFilters.page=1;renderProjectList();"; },
+          sortOptions: [
+            { value: 'updatedAt:desc', label: 'Recently Updated', selected: sortVal === 'updatedAt:desc' },
+            { value: 'updatedAt:asc', label: 'Oldest Updated', selected: sortVal === 'updatedAt:asc' },
+            { value: 'name:asc', label: 'Name (A-Z)', selected: sortVal === 'name:asc' },
+            { value: 'name:desc', label: 'Name (Z-A)', selected: sortVal === 'name:desc' },
+            { value: 'createdAt:desc', label: 'Recently Created', selected: sortVal === 'createdAt:desc' },
+            { value: 'lastActivityAt:desc', label: 'Recent Activity', selected: sortVal === 'lastActivityAt:desc' },
+          ],
+          onSort: "var v=this.value.split(':');projectListFilters.sortBy=v[0];projectListFilters.sortDirection=v[1];renderProjectList();",
+          showFavorites: true,
+          favChecked: projectListFilters.favoriteOnly,
+          onFavChange: "projectListFilters.favoriteOnly=this.checked;projectListFilters.page=1;renderProjectList();",
+          pageSizeOptions: [10, 25, 50],
+          currentPageSize: projectListFilters.pageSize,
+          onPageSize: "projectListFilters.pageSize=parseInt(this.value);projectListFilters.page=1;renderProjectList();",
+          currentPage: projectListFilters.page,
+          totalItems: totalProjects,
+          onPrev: "projectListFilters.page=Math.max(1,projectListFilters.page-1);renderProjectList();",
+          onNext: "projectListFilters.page++;renderProjectList();",
+        });
+
+        var cardOpts = { groupCounts: projectGroupCounts, taskStatusCounts: projectTaskStatusCounts };
         var projectCards = '';
-        if (projects.length === 0) {
+        if (pagedProjects.length === 0) {
           projectCards = '<div class="empty-state" style="padding:24px; text-align:center; color:#94a3b8;"><p>No projects match the current filters.</p></div>';
         } else {
-          projectCards = projects.map(function(p) {
-            var gc = projectGroupCounts[p.projectId] || 0;
-            var sc = projectTaskStatusCounts[p.projectId] || {};
-            var statusParts = [];
-            if (sc.RUNNING) statusParts.push('<span class="badge badge-running" style="font-size:0.7rem;">' + sc.RUNNING + ' running</span>');
-            if (sc.AWAITING_RESPONSE) statusParts.push('<span class="badge" style="font-size:0.7rem; background:#f59e0b; color:white;">' + sc.AWAITING_RESPONSE + ' awaiting</span>');
-            if (sc.ERROR) statusParts.push('<span class="badge badge-error" style="font-size:0.7rem;">' + sc.ERROR + ' error</span>');
-            if (sc.COMPLETE) statusParts.push('<span class="badge badge-complete" style="font-size:0.7rem;">' + sc.COMPLETE + ' done</span>');
-            if (sc.QUEUED) statusParts.push('<span class="badge badge-queued" style="font-size:0.7rem;">' + sc.QUEUED + ' queued</span>');
-            var statusSummary = statusParts.length > 0 ? '<div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">' + statusParts.join(' ') + '</div>' : '';
-            var descLine = p.description ? '<div data-testid="project-description" style="margin-top:2px; font-size:0.8rem; color:#64748b; line-height:1.3;">' + escapeHtml(p.description) + '</div>' : '';
-            var notesLine = p.notes ? '<div data-testid="project-notes" style="margin-top:2px; font-size:0.75rem; color:#94a3b8; font-style:italic; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:600px;">Note: ' + escapeHtml(p.notes) + '</div>' : '';
-            var costLine = '';
-            if (p.costInfo && p.costInfo.modelDisplayName) {
-              costLine = '<div style="margin-top:3px; font-size:0.75rem; color:#60a5fa;">' +
-                'Model: ' + escapeHtml(p.costInfo.modelDisplayName) +
-                (p.costInfo.inputPricePerMillion ? ' ($' + p.costInfo.inputPricePerMillion + '/$' + p.costInfo.outputPricePerMillion + ' per 1M tokens)' : '') +
-                '</div>';
-            } else if (p.aiModel) {
-              costLine = '<div style="margin-top:3px; font-size:0.75rem; color:#60a5fa;">Model: ' + escapeHtml(p.aiModel) + '</div>';
-            }
-            return '<div class="list-item" data-testid="project-card" onclick="navigate(\'/projects/' + encodeURIComponent(p.projectId) + '\')">' +
-              '<div class="list-item-main">' +
-                '<div class="list-item-title">' +
-                  (p.favorite ? '<span style="color: #f59e0b;">&#9733;</span> ' : '') +
-                  escapeHtml(p.alias || p.projectPath) +
-                  ' <span class="badge badge-' + (p.status === 'running' ? 'running' : p.status === 'error' ? 'error' : 'queued') + '" style="font-size:0.7rem;">' + p.status + '</span>' +
-                  ' ' + getProjectStatusBadge(p.projectStatus) +
-                '</div>' +
-                descLine +
-                costLine +
-                '<div class="list-item-meta">' +
-                  escapeHtml(p.projectPath) +
-                  ' | ' + gc + ' task group(s)' +
-                  ' | ' + p.sessionCount + ' session(s)' +
-                  ' | Updated: ' + formatDate(p.updatedAt) +
-                '</div>' +
-                notesLine +
-                statusSummary +
-              '</div>' +
-              '<span class="list-item-arrow">&#8250;</span>' +
-            '</div>';
+          projectCards = pagedProjects.map(function(p) {
+            return renderProjectCard(p, cardOpts);
           }).join('');
         }
 
         app.innerHTML =
           '<div class="page-header">' +
-            '<h2>Projects (' + projects.length + ')</h2>' +
+            '<h2>Projects (' + totalProjects + ')</h2>' +
             '<button class="refresh-btn" onclick="renderProjectList()">Refresh</button>' +
           '</div>' +
           '<div class="card" style="padding:0; overflow:hidden;">' +
@@ -7069,20 +7326,40 @@
     var dashProjectPageSize = 10;
     var dashProjectSearch = '';
     var dashProjectStatus = 'active';
+    var dashProjectSortBy = 'updatedAt';
+    var dashProjectSortDirection = 'desc';
+    var dashProjectFavoriteOnly = false;
 
     // Render Dashboard
     async function renderDashboard() {
       app.innerHTML = '<div class="loading">Loading Dashboard</div>';
 
       try {
-        const [data, actionsData] = await Promise.all([
+        const [data, actionsData, projectsData, tgData] = await Promise.all([
           fetch('/api/dashboard?projectStatus=all').then(r => r.json()),
           fetch('/api/required-actions').then(r => r.json()).catch(() => ({ actions: [], count: 0 })),
+          fetch('/api/projects?includeArchived=true').then(r => r.json()),
+          api('/task-groups'),
         ]);
-        const projects = data.projects || [];
+        // Use enriched projects from /api/projects (includes costInfo)
+        const projects = projectsData.projects || [];
         const recentActivity = data.recentActivity || [];
         const stats = data.stats || {};
         const requiredActions = actionsData.actions || [];
+
+        // Build task group counts and task status counts per project (same as Projects page)
+        var allGroups = tgData.task_groups || [];
+        var dashGroupCounts = {};
+        var dashTaskStatusCounts = {};
+        allGroups.forEach(function(g) {
+          var pid = g.project_id || 'N/A';
+          dashGroupCounts[pid] = (dashGroupCounts[pid] || 0) + 1;
+          if (!dashTaskStatusCounts[pid]) dashTaskStatusCounts[pid] = {};
+          var sc = g.status_counts || {};
+          Object.keys(sc).forEach(function(s) {
+            dashTaskStatusCounts[pid][s] = (dashTaskStatusCounts[pid][s] || 0) + sc[s];
+          });
+        });
 
         // Required Actions section (includes AWAITING_RESPONSE + ERROR with failure classification)
         const requiredActionsHtml = requiredActions.length > 0
@@ -7122,7 +7399,7 @@
             </div>`
           : '';
 
-        // Filter projects based on dashboard controls
+        // Filter projects based on dashboard controls (mirrors Projects page logic)
         var filteredProjects = projects;
         if (dashProjectSearch) {
           var q = dashProjectSearch.toLowerCase();
@@ -7138,6 +7415,29 @@
             return ps === dashProjectStatus;
           });
         }
+        if (dashProjectFavoriteOnly) {
+          filteredProjects = filteredProjects.filter(function(p) { return p.favorite; });
+        }
+
+        // Count projects by status for tab badges
+        var dashStatusCounts = { all: projects.length, active: 0, paused: 0, completed: 0, on_hold: 0 };
+        projects.forEach(function(p) {
+          var ps = p.projectStatus || 'active';
+          if (dashStatusCounts[ps] !== undefined) dashStatusCounts[ps]++;
+        });
+
+        // Client-side sort
+        var sortKey = dashProjectSortBy;
+        var sortDir = dashProjectSortDirection === 'asc' ? 1 : -1;
+        filteredProjects.sort(function(a, b) {
+          var va = a[sortKey] || '';
+          var vb = b[sortKey] || '';
+          if (sortKey === 'name') { va = (a.alias || a.projectPath || '').toLowerCase(); vb = (b.alias || b.projectPath || '').toLowerCase(); }
+          if (va < vb) return -1 * sortDir;
+          if (va > vb) return 1 * sortDir;
+          return 0;
+        });
+
         var startIdx = (dashProjectPage - 1) * dashProjectPageSize;
         var endIdx = startIdx + dashProjectPageSize;
         var pagedProjects = filteredProjects.slice(startIdx, endIdx);
@@ -7149,46 +7449,44 @@
           pagedProjects = filteredProjects.slice(startIdx, endIdx);
         }
 
-        var projectControlsHtml = '<div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">' +
-          '<select onchange="dashProjectPageSize=parseInt(this.value); dashProjectPage=1; renderDashboard();" style="padding:4px 8px; background:#fff; color:#333; border:1px solid #d1d5db; border-radius:4px; font-size:0.8rem;">' +
-            '<option value="10"' + (dashProjectPageSize===10?' selected':'') + '>10</option>' +
-            '<option value="25"' + (dashProjectPageSize===25?' selected':'') + '>25</option>' +
-            '<option value="50"' + (dashProjectPageSize===50?' selected':'') + '>50</option>' +
-          '</select>' +
-          '<select onchange="dashProjectStatus=this.value; dashProjectPage=1; renderDashboard();" style="padding:4px 8px; background:#fff; color:#333; border:1px solid #d1d5db; border-radius:4px; font-size:0.8rem;">' +
-            '<option value="active"' + (dashProjectStatus==='active'?' selected':'') + '>Active</option>' +
-            '<option value="all"' + (dashProjectStatus==='all'?' selected':'') + '>All</option>' +
-            '<option value="completed"' + (dashProjectStatus==='completed'?' selected':'') + '>Completed</option>' +
-            '<option value="paused"' + (dashProjectStatus==='paused'?' selected':'') + '>Paused</option>' +
-            '<option value="on_hold"' + (dashProjectStatus==='on_hold'?' selected':'') + '>On Hold</option>' +
-          '</select>' +
-          '<input type="text" placeholder="Search projects..." value="' + escapeHtml(dashProjectSearch) + '" ' +
-            'oninput="dashProjectSearch=this.value;" ' +
-            'onkeydown="if(event.key===\'Enter\'){dashProjectPage=1;renderDashboard();}" ' +
-            'style="flex:1; min-width:120px; padding:4px 8px; background:#fff; color:#333; border:1px solid #d1d5db; border-radius:4px; font-size:0.85rem;">' +
-          '<span style="font-size:0.8rem; color:#9ca3af;">' +
-            (filteredProjects.length > 0 ? (startIdx+1) + '-' + Math.min(endIdx, filteredProjects.length) + ' of ' + filteredProjects.length : '0 of 0') +
-          '</span>' +
-          '<button class="btn btn-sm" style="font-size:0.75rem; padding:4px 10px;" onclick="dashProjectPage=Math.max(1,dashProjectPage-1);renderDashboard();"' + (dashProjectPage<=1?' disabled':'') + '>Prev</button>' +
-          '<button class="btn btn-sm" style="font-size:0.75rem; padding:4px 10px;" onclick="dashProjectPage++;renderDashboard();"' + (endIdx>=filteredProjects.length?' disabled':'') + '>Next</button>' +
-        '</div>';
+        // Build controls using shared list controls component (matching Projects page)
+        var dashSortVal = (dashProjectSortBy || 'updatedAt') + ':' + (dashProjectSortDirection || 'desc');
+        var projectControlsHtml = buildListControls({
+          searchValue: dashProjectSearch,
+          onSearch: "dashProjectSearch=this.value;dashProjectPage=1;renderDashboard();",
+          statusTabs: [
+            { key: 'active', label: 'Active', count: dashStatusCounts.active, active: dashProjectStatus === 'active' },
+            { key: 'all', label: 'All', count: dashStatusCounts.all, active: dashProjectStatus === 'all' },
+            { key: 'completed', label: 'Completed', count: dashStatusCounts.completed, active: dashProjectStatus === 'completed' },
+            { key: 'paused', label: 'Paused', count: dashStatusCounts.paused, active: dashProjectStatus === 'paused' },
+            { key: 'on_hold', label: 'On Hold', count: dashStatusCounts.on_hold, active: dashProjectStatus === 'on_hold' },
+          ],
+          onStatusTab: function(key) { return "dashProjectStatus='" + key + "';dashProjectPage=1;renderDashboard();"; },
+          sortOptions: [
+            { value: 'updatedAt:desc', label: 'Recently Updated', selected: dashSortVal === 'updatedAt:desc' },
+            { value: 'updatedAt:asc', label: 'Oldest Updated', selected: dashSortVal === 'updatedAt:asc' },
+            { value: 'name:asc', label: 'Name (A-Z)', selected: dashSortVal === 'name:asc' },
+            { value: 'name:desc', label: 'Name (Z-A)', selected: dashSortVal === 'name:desc' },
+            { value: 'createdAt:desc', label: 'Recently Created', selected: dashSortVal === 'createdAt:desc' },
+            { value: 'lastActivityAt:desc', label: 'Recent Activity', selected: dashSortVal === 'lastActivityAt:desc' },
+          ],
+          onSort: "var v=this.value.split(':');dashProjectSortBy=v[0];dashProjectSortDirection=v[1];renderDashboard();",
+          showFavorites: true,
+          favChecked: dashProjectFavoriteOnly,
+          onFavChange: "dashProjectFavoriteOnly=this.checked;dashProjectPage=1;renderDashboard();",
+          pageSizeOptions: [10, 25, 50],
+          currentPageSize: dashProjectPageSize,
+          onPageSize: "dashProjectPageSize=parseInt(this.value);dashProjectPage=1;renderDashboard();",
+          currentPage: dashProjectPage,
+          totalItems: filteredProjects.length,
+          onPrev: "dashProjectPage=Math.max(1,dashProjectPage-1);renderDashboard();",
+          onNext: "dashProjectPage++;renderDashboard();",
+        });
 
+        // Use shared project card renderer (same as Projects page)
+        var dashCardOpts = { groupCounts: dashGroupCounts, taskStatusCounts: dashTaskStatusCounts };
         const projectCards = pagedProjects.length > 0
-          ? pagedProjects.map(p => `
-              <div class="list-item" onclick="navigate('/projects/${encodeURIComponent(p.projectId)}')">
-                <div class="list-item-main">
-                  <div class="list-item-title" style="display:flex; align-items:center; gap:8px;">
-                    ${p.favorite ? '<span style="color: #f59e0b;">&#9733;</span> ' : ''}
-                    ${escapeHtml(p.alias || p.projectPath)}
-                    <span class="badge badge-${p.status === 'running' ? 'running' : p.status === 'error' ? 'error' : 'queued'}" style="font-size:0.7rem;">${p.status}</span>
-                  </div>
-                  <div class="list-item-meta">
-                    ${escapeHtml(p.projectPath)} | ${p.sessionCount} session(s) | ${p.taskGroupCount || 0} group(s) | Updated: ${formatDate(p.updatedAt)}
-                  </div>
-                </div>
-                <span class="list-item-arrow">&#8250;</span>
-              </div>
-            `).join('')
+          ? pagedProjects.map(function(p) { return renderProjectCard(p, dashCardOpts); }).join('')
           : (filteredProjects.length === 0 && projects.length > 0
               ? '<div class="empty-state"><p>No projects match your filters.</p></div>'
               : '<div class="empty-state"><p>No projects yet. Create a project to get started.</p></div>');
