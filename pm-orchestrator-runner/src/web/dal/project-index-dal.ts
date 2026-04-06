@@ -228,11 +228,23 @@ export async function listProjectIndexes(
     expressionAttributeValues[":archivedFalse"] = false;
   }
 
-  // Filter by status
+  // Filter by status (running/idle/error)
   if (options.status) {
     filterExpressions.push("#status = :status");
     expressionAttributeNames["#status"] = "status";
     expressionAttributeValues[":status"] = options.status;
+  }
+
+  // Filter by projectStatus (active/paused/on_hold/completed)
+  // Note: many items don't have projectStatus field (defaults to active)
+  if (options.projectStatus) {
+    if (options.projectStatus === 'active') {
+      // active = projectStatus is 'active' OR field doesn't exist
+      filterExpressions.push("(projectStatus = :projectStatus OR attribute_not_exists(projectStatus))");
+    } else {
+      filterExpressions.push("projectStatus = :projectStatus");
+    }
+    expressionAttributeValues[":projectStatus"] = options.projectStatus;
   }
 
   // Filter by favorite
