@@ -32,6 +32,7 @@ import {
   encodeCursor,
   decodeCursor,
 } from "./utils";
+import { log } from "../../logging/app-logger";
 
 /**
  * Default idle threshold in days for lifecycle state
@@ -304,7 +305,26 @@ export async function listProjectIndexes(
 }
 
 /**
+ * DynamoDB reserved words that need #name aliases in UpdateExpression.
+ * See: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ReservedWords.html
+ */
+const DYNAMODB_RESERVED_WORDS = new Set([
+  "status", "alias", "name", "type", "action", "session",
+  "comment", "connection", "count", "date", "domain", "end",
+  "format", "hash", "index", "key", "language", "level",
+  "limit", "location", "module", "number", "order", "owner",
+  "path", "primary", "range", "result", "role", "schema",
+  "size", "source", "state", "time", "timestamp", "token",
+  "uid", "user", "value", "values", "zone",
+]);
+
+/**
  * Update project index
+ *
+ * Uses auto-build UpdateExpression from Object.entries(updates) so that
+ * any new field added to UpdateProjectIndexInput is automatically persisted.
+ * This prevents silent data loss when new fields are added to the type but
+ * forgotten in the update function.
  */
 export async function updateProjectIndex(
   orgId: string,
@@ -317,97 +337,32 @@ export async function updateProjectIndex(
   const expressionAttributeValues: Record<string, unknown> = { ":now": nowISO() };
   const expressionAttributeNames: Record<string, string> = {};
 
-  if (updates.alias !== undefined) {
-    updateExpressions.push("#alias = :alias");
-    expressionAttributeNames["#alias"] = "alias";
-    expressionAttributeValues[":alias"] = updates.alias;
+  // Automatically build UpdateExpression from all defined fields in updates
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === undefined) continue; // Skip undefined (not provided)
+
+    const attrValue = `:${key}`;
+    expressionAttributeValues[attrValue] = value;
+
+    if (DYNAMODB_RESERVED_WORDS.has(key)) {
+      const attrName = `#${key}`;
+      expressionAttributeNames[attrName] = key;
+      updateExpressions.push(`${attrName} = ${attrValue}`);
+    } else {
+      updateExpressions.push(`${key} = ${attrValue}`);
+    }
   }
 
-  if (updates.description !== undefined) {
-    updateExpressions.push("description = :description");
-    expressionAttributeValues[":description"] = updates.description;
-  }
+  const updateExpression = `SET ${updateExpressions.join(", ")}`;
+  const updatedFields = Object.keys(updates).filter(
+    (k) => updates[k as keyof typeof updates] !== undefined
+  );
 
-  if (updates.notes !== undefined) {
-    updateExpressions.push("notes = :notes");
-    expressionAttributeValues[":notes"] = updates.notes;
-  }
-
-  if (updates.tags !== undefined) {
-    updateExpressions.push("tags = :tags");
-    expressionAttributeValues[":tags"] = updates.tags;
-  }
-
-  if (updates.favorite !== undefined) {
-    updateExpressions.push("favorite = :favorite");
-    expressionAttributeValues[":favorite"] = updates.favorite;
-  }
-
-  if (updates.status !== undefined) {
-    updateExpressions.push("#status = :status");
-    expressionAttributeNames["#status"] = "status";
-    expressionAttributeValues[":status"] = updates.status;
-  }
-
-  if (updates.lastActivityAt !== undefined) {
-    updateExpressions.push("lastActivityAt = :lastActivityAt");
-    expressionAttributeValues[":lastActivityAt"] = updates.lastActivityAt;
-  }
-
-  if (updates.lastSeenAt !== undefined) {
-    updateExpressions.push("lastSeenAt = :lastSeenAt");
-    expressionAttributeValues[":lastSeenAt"] = updates.lastSeenAt;
-  }
-
-  if (updates.sessionCount !== undefined) {
-    updateExpressions.push("sessionCount = :sessionCount");
-    expressionAttributeValues[":sessionCount"] = updates.sessionCount;
-  }
-
-  if (updates.taskStats !== undefined) {
-    updateExpressions.push("taskStats = :taskStats");
-    expressionAttributeValues[":taskStats"] = updates.taskStats;
-  }
-
-  if (updates.defaultCommand !== undefined) {
-    updateExpressions.push("defaultCommand = :defaultCommand");
-    expressionAttributeValues[":defaultCommand"] = updates.defaultCommand;
-  }
-
-  if (updates.projectStatus !== undefined) {
-    updateExpressions.push("projectStatus = :projectStatus");
-    expressionAttributeValues[":projectStatus"] = updates.projectStatus;
-  }
-
-  if (updates.projectType !== undefined) {
-    updateExpressions.push("projectType = :projectType");
-    expressionAttributeValues[":projectType"] = updates.projectType;
-  }
-
-  if (updates.bootstrapPrompt !== undefined) {
-    updateExpressions.push("bootstrapPrompt = :bootstrapPrompt");
-    expressionAttributeValues[":bootstrapPrompt"] = updates.bootstrapPrompt;
-  }
-
-  if (updates.inputTemplateId !== undefined) {
-    updateExpressions.push("inputTemplateId = :inputTemplateId");
-    expressionAttributeValues[":inputTemplateId"] = updates.inputTemplateId;
-  }
-
-  if (updates.outputTemplateId !== undefined) {
-    updateExpressions.push("outputTemplateId = :outputTemplateId");
-    expressionAttributeValues[":outputTemplateId"] = updates.outputTemplateId;
-  }
-
-  if (updates.aiModel !== undefined) {
-    updateExpressions.push("aiModel = :aiModel");
-    expressionAttributeValues[":aiModel"] = updates.aiModel;
-  }
-
-  if (updates.aiProvider !== undefined) {
-    updateExpressions.push("aiProvider = :aiProvider");
-    expressionAttributeValues[":aiProvider"] = updates.aiProvider;
-  }
+  log.app.info("Project update", {
+    projectId,
+    fields: updatedFields,
+    updateExpression,
+  });
 
   const result = await docClient.send(
     new UpdateCommand({
@@ -416,7 +371,7 @@ export async function updateProjectIndex(
         PK: orgPK(orgId),
         SK: projectIndexSK(projectId),
       },
-      UpdateExpression: `SET ${updateExpressions.join(", ")}`,
+      UpdateExpression: updateExpression,
       ExpressionAttributeNames:
         Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
       ExpressionAttributeValues: expressionAttributeValues,
