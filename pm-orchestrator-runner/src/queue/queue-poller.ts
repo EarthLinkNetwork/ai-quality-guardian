@@ -11,6 +11,7 @@
 
 import { EventEmitter } from 'events';
 import { IQueueStore, QueueItem, QueueItemStatus } from './queue-store';
+import { log } from '../logging/app-logger';
 
 /**
  * Task executor function type
@@ -126,6 +127,7 @@ export class QueuePoller extends EventEmitter {
       try {
         const recovered = await this.store.recoverStaleTasks(this.maxStaleTaskAgeMs);
         if (recovered > 0) {
+          log.sys.warn('Stale tasks recovered', { count: recovered });
           this.emit('stale-recovered', recovered);
         }
       } catch (error) {
@@ -142,6 +144,7 @@ export class QueuePoller extends EventEmitter {
       this.poll().catch(error => {
         // eslint-disable-next-line no-console
         console.error('[QueuePoller] Poll error:', error);
+        log.sys.error('Poll error', { error: error instanceof Error ? error.message : String(error) });
       });
     }, this.pollIntervalMs);
 
@@ -225,6 +228,7 @@ export class QueuePoller extends EventEmitter {
 
     const item = claimResult.item!;
     this.inFlight = item;
+    log.app.info('Task claimed', { taskId: item.task_id, taskGroupId: item.task_group_id });
     this.emit('claimed', item);
 
     try {

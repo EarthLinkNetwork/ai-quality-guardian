@@ -21,6 +21,7 @@ import {
   PreflightReport,
   ExecutorType,
 } from '../../diagnostics/executor-preflight';
+import { log } from '../../logging/app-logger';
 
 const execAsync = promisify(exec);
 
@@ -279,6 +280,7 @@ export function createRunnerControlsRoutes(config: RunnerControlsConfig): Router
       if (processSupervisor) {
         const result = await processSupervisor.build();
         if (result.success) {
+          log.sys.info('Build initiated', { buildSha: result.buildMeta?.build_sha, durationMs: Date.now() - startTime });
           res.json({
             success: true,
             operation: 'build',
@@ -303,6 +305,7 @@ export function createRunnerControlsRoutes(config: RunnerControlsConfig): Router
         }
       );
 
+      log.sys.info('Build initiated', { durationMs: Date.now() - startTime });
       res.json({
         success: true,
         operation: 'build',
@@ -340,6 +343,7 @@ export function createRunnerControlsRoutes(config: RunnerControlsConfig): Router
     try {
       // Use custom restart handler if provided (self-restart flow)
       if (settings.restartHandler) {
+        log.sys.info('Restart initiated');
         const result = await settings.restartHandler();
         if (result.success) {
           res.json({

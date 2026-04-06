@@ -24,6 +24,7 @@ import { v4 as uuidv4 } from "uuid";
 import { IQueueStore, TaskTypeValue } from "../../queue/queue-store";
 import { detectTaskType } from "../../utils/task-type-detector";
 import { parseCommand, getCommandRegistry, CommandContext } from "../services/custom-command-registry";
+import { log } from "../../logging/app-logger";
 
 /**
  * Error response format
@@ -181,6 +182,8 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
           } as ErrorResponse);
           return;
         }
+
+        log.app.info('Chat message', { projectId, contentLength: content.length, hasImages: !!(images && images.length) });
 
         // Fetch project early for defaultCommand check and later use
         const project = await dal.getProjectIndex(projectId);
@@ -410,6 +413,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
               taskType,
               project.projectPath
             );
+            log.app.info('Task enqueued', { taskId: taskRunId, taskGroupId, projectId });
             // Emit task_queued activity event with full identifier chain
             try {
               await dal.createActivityEvent({

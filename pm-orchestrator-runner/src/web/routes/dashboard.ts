@@ -11,6 +11,7 @@ import {
 import { initDAL, getDAL, isDALInitialized } from '../dal/dal-factory';
 import type { IQueueStore } from '../../queue/queue-store';
 import { buildProjectCostInfo, getAllModelCostInfo } from '../services/ai-cost-service';
+import { log } from '../../logging/app-logger';
 
 /**
  * Error response format
@@ -151,6 +152,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         aiProvider,
       });
 
+      log.app.info('Project created', { projectId: project.projectId, projectPath });
       res.status(201).json(project);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -408,7 +410,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
       const dal = getDAL();
       const { favorite, alias, description, notes, tags, bootstrapPrompt, projectType, projectStatus, inputTemplateId, outputTemplateId, aiModel, aiProvider, defaultCommand } = req.body;
 
-      const project = await dal.updateProjectIndex(req.params.projectId as string, {
+      const updates = {
         favorite,
         alias,
         description,
@@ -422,7 +424,8 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         aiModel,
         aiProvider,
         defaultCommand,
-      });
+      };
+      const project = await dal.updateProjectIndex(req.params.projectId as string, updates);
 
       if (!project) {
         res.status(404).json({
@@ -432,6 +435,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         return;
       }
 
+      log.app.info('Project updated', { projectId: req.params.projectId, fields: Object.keys(updates).filter(k => (updates as Record<string, unknown>)[k] !== undefined) });
       res.json(project);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
