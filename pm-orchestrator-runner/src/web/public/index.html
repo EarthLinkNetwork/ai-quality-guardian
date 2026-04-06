@@ -7335,14 +7335,12 @@
       app.innerHTML = '<div class="loading">Loading Dashboard</div>';
 
       try {
-        const [data, actionsData, projectsData, tgData] = await Promise.all([
-          fetch('/api/dashboard?projectStatus=all').then(r => r.json()),
+        const [data, actionsData, tgData] = await Promise.all([
+          fetch('/api/dashboard').then(r => r.json()),
           fetch('/api/required-actions').then(r => r.json()).catch(() => ({ actions: [], count: 0 })),
-          fetch('/api/projects?includeArchived=true').then(r => r.json()),
           api('/task-groups'),
         ]);
-        // Use enriched projects from /api/projects (includes costInfo)
-        const projects = projectsData.projects || [];
+        const projects = data.projects || [];
         const recentActivity = data.recentActivity || [];
         const stats = data.stats || {};
         const requiredActions = actionsData.actions || [];
@@ -7536,11 +7534,18 @@
           </div>
 
           <div class="card">
-            <h3>Projects</h3>
-            ${projectControlsHtml}
-            ${projectCards}
-            <div style="margin-top: 16px; text-align: center;">
-              <button class="btn btn-primary" onclick="showCreateProjectDialog()">+ New Project</button>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <h3>Projects</h3>
+              <a href="/projects" onclick="event.preventDefault(); navigate('/projects')" style="color:#3b82f6; font-size:0.85rem;">View All &rarr;</a>
+            </div>
+            <div style="display:flex; gap:16px; align-items:center; margin-top:8px;">
+              <span style="font-size:1.5rem; font-weight:bold; color:#2563eb;">${dashStatusCounts.active}</span>
+              <span style="color:#6b7280;">Active</span>
+              <span style="color:#4b5563;">/</span>
+              <span style="font-size:1.2rem; color:#9ca3af;">${projects.length}</span>
+              <span style="color:#6b7280;">Total</span>
+              ${dashStatusCounts.completed > 0 ? '<span style="color:#4b5563;">|</span><span style="color:#10b981;">' + dashStatusCounts.completed + ' completed</span>' : ''}
+              ${dashStatusCounts.paused > 0 ? '<span style="color:#4b5563;">|</span><span style="color:#f59e0b;">' + dashStatusCounts.paused + ' paused</span>' : ''}
             </div>
           </div>
 
