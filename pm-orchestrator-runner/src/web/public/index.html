@@ -4299,6 +4299,22 @@
     // Used by: renderProjectList (Projects page), renderDashboard (Dashboard)
     // =========================================================================
 
+    async function toggleFavorite(projectId) {
+      try {
+        var data = await api('/projects/' + encodeURIComponent(projectId));
+        var proj = data.project || data;
+        var newFav = !proj.favorite;
+        await api('/projects/' + encodeURIComponent(projectId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ favorite: newFav }),
+        });
+        router();
+      } catch (e) {
+        showToast('Error: ' + e.message, 'error');
+      }
+    }
+
     /**
      * Render a single project card HTML.
      *
@@ -4345,10 +4361,13 @@
         costLine = '<div style="margin-top:3px; font-size:0.75rem; color:#60a5fa;">Model: ' + escapeHtml(p.aiModel) + '</div>';
       }
 
+      var starHtml = '<span style="cursor:pointer; font-size:1.1rem; color:' + (p.favorite ? '#f59e0b' : '#d1d5db') + ';" onclick="event.stopPropagation(); toggleFavorite(\'' + escapeHtml(p.projectId) + '\')">' +
+        (p.favorite ? '&#9733;' : '&#9734;') + '</span> ';
+
       return '<div class="list-item" data-testid="project-card" onclick="navigate(\'/projects/' + encodeURIComponent(p.projectId) + '\')">' +
         '<div class="list-item-main">' +
           '<div class="list-item-title">' +
-            (p.favorite ? '<span style="color: #f59e0b;">&#9733;</span> ' : '') +
+            starHtml +
             escapeHtml(p.alias || p.projectPath) +
             ' <span class="badge badge-' + (p.status === 'running' ? 'running' : p.status === 'error' ? 'error' : 'queued') + '" style="font-size:0.7rem;">' + p.status + '</span>' +
             ' ' + getProjectStatusBadge(p.projectStatus) +
@@ -4384,6 +4403,31 @@
       pageSize: 25
     };
 
+    // Restore list preferences from localStorage
+    (function() {
+      try {
+        var saved = localStorage.getItem('pm-list-prefs');
+        if (saved) {
+          var prefs = JSON.parse(saved);
+          if (prefs.pageSize) projectListFilters.pageSize = prefs.pageSize;
+          if (prefs.projectStatus) projectListFilters.projectStatus = prefs.projectStatus;
+          if (prefs.sortBy) projectListFilters.sortBy = prefs.sortBy;
+          if (prefs.sortDirection) projectListFilters.sortDirection = prefs.sortDirection;
+        }
+      } catch (e) {}
+    })();
+
+    function saveListPrefs() {
+      try {
+        localStorage.setItem('pm-list-prefs', JSON.stringify({
+          pageSize: projectListFilters.pageSize,
+          projectStatus: projectListFilters.projectStatus,
+          sortBy: projectListFilters.sortBy,
+          sortDirection: projectListFilters.sortDirection,
+        }));
+      } catch (e) {}
+    }
+
     function buildProjectQueryString() {
       var params = new URLSearchParams();
       if (projectListFilters.projectStatus && projectListFilters.projectStatus !== 'all') {
@@ -4409,6 +4453,7 @@
     }
 
     async function renderProjectList() {
+      saveListPrefs();
       app.innerHTML = '<div class="loading">Loading Projects</div>';
       try {
         var qs = buildProjectQueryString();
@@ -7330,8 +7375,34 @@
     var dashProjectSortDirection = 'desc';
     var dashProjectFavoriteOnly = false;
 
+    // Restore dashboard list preferences from localStorage
+    (function() {
+      try {
+        var saved = localStorage.getItem('pm-dash-list-prefs');
+        if (saved) {
+          var prefs = JSON.parse(saved);
+          if (prefs.pageSize) dashProjectPageSize = prefs.pageSize;
+          if (prefs.projectStatus) dashProjectStatus = prefs.projectStatus;
+          if (prefs.sortBy) dashProjectSortBy = prefs.sortBy;
+          if (prefs.sortDirection) dashProjectSortDirection = prefs.sortDirection;
+        }
+      } catch (e) {}
+    })();
+
+    function saveDashListPrefs() {
+      try {
+        localStorage.setItem('pm-dash-list-prefs', JSON.stringify({
+          pageSize: dashProjectPageSize,
+          projectStatus: dashProjectStatus,
+          sortBy: dashProjectSortBy,
+          sortDirection: dashProjectSortDirection,
+        }));
+      } catch (e) {}
+    }
+
     // Render Dashboard
     async function renderDashboard() {
+      saveDashListPrefs();
       app.innerHTML = '<div class="loading">Loading Dashboard</div>';
 
       try {

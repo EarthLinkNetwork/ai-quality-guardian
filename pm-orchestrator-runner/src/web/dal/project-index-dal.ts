@@ -374,6 +374,41 @@ export async function updateProjectIndex(
     expressionAttributeValues[":defaultCommand"] = updates.defaultCommand;
   }
 
+  if (updates.projectStatus !== undefined) {
+    updateExpressions.push("projectStatus = :projectStatus");
+    expressionAttributeValues[":projectStatus"] = updates.projectStatus;
+  }
+
+  if (updates.projectType !== undefined) {
+    updateExpressions.push("projectType = :projectType");
+    expressionAttributeValues[":projectType"] = updates.projectType;
+  }
+
+  if (updates.bootstrapPrompt !== undefined) {
+    updateExpressions.push("bootstrapPrompt = :bootstrapPrompt");
+    expressionAttributeValues[":bootstrapPrompt"] = updates.bootstrapPrompt;
+  }
+
+  if (updates.inputTemplateId !== undefined) {
+    updateExpressions.push("inputTemplateId = :inputTemplateId");
+    expressionAttributeValues[":inputTemplateId"] = updates.inputTemplateId;
+  }
+
+  if (updates.outputTemplateId !== undefined) {
+    updateExpressions.push("outputTemplateId = :outputTemplateId");
+    expressionAttributeValues[":outputTemplateId"] = updates.outputTemplateId;
+  }
+
+  if (updates.aiModel !== undefined) {
+    updateExpressions.push("aiModel = :aiModel");
+    expressionAttributeValues[":aiModel"] = updates.aiModel;
+  }
+
+  if (updates.aiProvider !== undefined) {
+    updateExpressions.push("aiProvider = :aiProvider");
+    expressionAttributeValues[":aiProvider"] = updates.aiProvider;
+  }
+
   const result = await docClient.send(
     new UpdateCommand({
       TableName: TABLES.PROJECT_INDEXES,
