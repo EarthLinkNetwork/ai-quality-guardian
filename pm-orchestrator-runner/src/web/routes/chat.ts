@@ -224,9 +224,31 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
           if (commandResult.passthrough && commandResult.passthroughPrompt && queueStore && project) {
             const taskRunId = "task_" + uuidv4();
             const effectiveSessionId = sessionId || "sess_" + projectId;
-            const effectiveTaskGroupId = (typeof requestedTaskGroupId === "string" && requestedTaskGroupId.trim())
-              ? requestedTaskGroupId.trim()
-              : effectiveSessionId;
+            // Validate requestedTaskGroupId belongs to this project (same as main chat path)
+            let effectiveTaskGroupId = effectiveSessionId;
+            if (typeof requestedTaskGroupId === "string" && requestedTaskGroupId.trim()) {
+              let groupBelongs = false;
+              try {
+                const existingTasks = await queueStore.getByTaskGroup(requestedTaskGroupId.trim());
+                if (existingTasks && existingTasks.length > 0) {
+                  groupBelongs = existingTasks.some(t => t.project_path === project.projectPath);
+                } else {
+                  groupBelongs = true; // New group
+                }
+              } catch {
+                groupBelongs = false;
+              }
+              if (groupBelongs) {
+                effectiveTaskGroupId = requestedTaskGroupId.trim();
+              } else {
+                console.warn(`[Chat] Rejected command taskGroupId ${requestedTaskGroupId} - belongs to different project.`);
+                log.app.warn('Command task group project mismatch', {
+                  requestedTaskGroupId,
+                  projectId,
+                  projectPath: project.projectPath,
+                });
+              }
+            }
 
             const taskType = (commandResult.metadata?.taskType as TaskTypeValue) || detectTaskType(commandResult.passthroughPrompt);
             await queueStore.enqueue(
@@ -386,10 +408,45 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
 
         // Derive taskGroupId early so it can be saved in activity and run
         // If client provides a taskGroupId, reuse it to keep tasks in the same group
+        // CRITICAL: Validate requestedTaskGroupId belongs to this project to prevent
+        // stale taskGroupIds from a previous project binding tasks to the wrong project
         const effectiveSessionId = sessionId || "sess_" + projectId;
-        taskGroupId = (typeof requestedTaskGroupId === "string" && requestedTaskGroupId.trim())
-          ? requestedTaskGroupId.trim()
-          : effectiveSessionId;
+        if (typeof requestedTaskGroupId === "string" && requestedTaskGroupId.trim()) {
+          let taskGroupBelongsToProject = false;
+          try {
+            if (queueStore) {
+              const existingTasks = await queueStore.getByTaskGroup(requestedTaskGroupId.trim());
+              if (existingTasks && existingTasks.length > 0) {
+                taskGroupBelongsToProject = existingTasks.some(t =>
+                  t.project_path === project.projectPath
+                );
+              } else {
+                // New group with no tasks yet - allow it
+                taskGroupBelongsToProject = true;
+              }
+            } else {
+              // No queue store to verify - allow it
+              taskGroupBelongsToProject = true;
+            }
+          } catch {
+            // If check fails, reject for safety
+            taskGroupBelongsToProject = false;
+          }
+
+          if (taskGroupBelongsToProject) {
+            taskGroupId = requestedTaskGroupId.trim();
+          } else {
+            console.warn(`[Chat] Rejected taskGroupId ${requestedTaskGroupId} - belongs to different project. Creating new group.`);
+            log.app.warn('Task group project mismatch', {
+              requestedTaskGroupId,
+              projectId,
+              projectPath: project.projectPath,
+            });
+            taskGroupId = effectiveSessionId;
+          }
+        } else {
+          taskGroupId = effectiveSessionId;
+        }
 
         const run = await dal.createRun({
           sessionId: effectiveSessionId,

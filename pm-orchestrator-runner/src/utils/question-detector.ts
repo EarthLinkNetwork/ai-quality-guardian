@@ -907,6 +907,7 @@ Instructions:
 3. Add concrete acceptance criteria so Claude Code knows when it's "done"
 4. Specify that tests must pass after implementation
 5. Keep it concise — do not write an essay
+6. CRITICAL: Always write the meta prompt in the SAME LANGUAGE as the user's input. If the user writes in Japanese, the meta prompt must be in Japanese. If in English, write in English. Never translate or switch languages.
 
 Respond in this exact JSON format (no markdown):
 {"metaPrompt":"the enhanced prompt for Claude Code","enhancements":"brief list of what you clarified/added"}`;
