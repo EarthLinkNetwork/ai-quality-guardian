@@ -12,7 +12,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp -r src/web/public dist/web/",
     "postbuild": "rm -rf dist/web/public && cp -r src/web/public dist/web/public && cp src/web/routes/golden-set.json dist/web/routes/golden-set.json 2>/dev/null; node scripts/generate-build-meta.js && node scripts/verify-dist.js",
     "test": "mocha --require ts-node/register 'test/**/*.test.ts'",
     "test:unit": "mocha --require ts-node/register 'test/unit/**/*.test.ts'",

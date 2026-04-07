@@ -1623,13 +1623,26 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
         timeout: 300_000,
       });
 
-      // Ensure public assets are present after build
+      // Ensure public assets are present after build (CRITICAL for index.html updates)
       try {
         const { execSync } = require('child_process');
         execSync('cp -r src/web/public dist/web/', { cwd: projectPath, stdio: 'pipe' });
+        // Verify the copy succeeded by checking file exists and is recent
+        const publicHtmlSrc = path.join(projectPath, 'src', 'web', 'public', 'index.html');
+        const publicHtmlDist = path.join(projectPath, 'dist', 'web', 'public', 'index.html');
+        if (fs.existsSync(publicHtmlSrc) && fs.existsSync(publicHtmlDist)) {
+          const srcSize = fs.statSync(publicHtmlSrc).size;
+          const distSize = fs.statSync(publicHtmlDist).size;
+          if (srcSize !== distSize) {
+            // Force copy again
+            execSync('cp src/web/public/index.html dist/web/public/index.html', { cwd: projectPath, stdio: 'pipe' });
+            console.log('[Runner] index.html size mismatch fixed (src=' + srcSize + ' dist=' + distSize + ')');
+          }
+          log.sys.info('Public assets copied', { srcSize, distSize });
+        }
       } catch (e) {
-        // Best-effort copy; log and continue
         console.warn('[Runner] Warning: could not copy public assets after build:', e);
+        log.sys.warn('Public assets copy failed', { error: String(e) });
       }
 
       let buildMeta: { build_sha: string; build_timestamp: string; git_sha?: string; git_branch?: string } | undefined;
