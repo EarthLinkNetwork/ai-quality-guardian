@@ -265,8 +265,11 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
       if (queueStore) {
         try {
           const allQueueItems = await queueStore.getAllItemsSummary();
+          const projectPath = (project as any).projectPath;
           queueTasksForProject = allQueueItems.filter(
-            item => item.project_path === (project as any).projectPath
+            item => item.project_path === projectPath ||
+                    // Include tasks without project_path if their task_group belongs to this project
+                    (!item.project_path && projectTaskGroupIds.has(item.task_group_id))
           );
           // Add task group IDs from queue store (tasks may exist in queue but not yet in activity events)
           for (const item of queueTasksForProject) {
@@ -367,14 +370,19 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         // Re-sort by updated_at descending
         recentTasks.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
 
-        // Also update task group task counts from queue store
+        // Update task group counts and status_counts from queue store
         for (const tg of recentTaskGroups) {
-          const queueCount = queueTasksForProject.filter(i => i.task_group_id === tg.task_group_id).length;
-          if (queueCount > tg.task_count) {
-            tg.task_count = queueCount;
-            tg.task_ids = queueTasksForProject
-              .filter(i => i.task_group_id === tg.task_group_id)
-              .map(i => i.task_id);
+          const groupTasks = queueTasksForProject.filter(i => i.task_group_id === tg.task_group_id);
+          if (groupTasks.length > 0) {
+            tg.task_count = Math.max(tg.task_count, groupTasks.length);
+            tg.task_ids = groupTasks.map(i => i.task_id);
+            // Build status_counts from queue store (accurate real-time status)
+            const sc: Record<string, number> = { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 };
+            for (const t of groupTasks) { sc[t.status] = (sc[t.status] || 0) + 1; }
+            (tg as any).status_counts = sc;
+            // Set latest_status from most recent task
+            const sorted = [...groupTasks].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+            if (sorted.length > 0) (tg as any).latest_status = sorted[0].status;
           }
         }
       }
