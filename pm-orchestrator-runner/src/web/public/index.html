@@ -5730,6 +5730,7 @@
         { id: 'claude', label: 'Claude Settings', icon: '\uD83D\uDCCB' },
         { id: 'instructions', label: 'Claude Instructions', icon: '\uD83D\uDCDD' },
         { id: 'effective', label: 'Effective', icon: '\uD83D\uDD0D' },
+        { id: 'readme', label: 'README', icon: '\uD83D\uDCD6' },
       ];
 
       app.innerHTML = `
@@ -5791,6 +5792,7 @@
         case 'claude': renderClaudeSettings(container); break;
         case 'instructions': renderClaudeInstructions(container); break;
         case 'effective': renderEffectiveSettings(container); break;
+        case 'readme': renderReadmeSection(container); break;
         default: renderAppSettings(container);
       }
     }
@@ -6710,6 +6712,175 @@
     }
 
     // ===================
+    // README Section (Markdown Preview)
+    // ===================
+    async function renderReadmeSection(container) {
+      container.innerHTML = '<div class="loading">Loading README...</div>';
+      try {
+        const res = await fetch('/api/readme');
+        const data = await res.json();
+
+        if (!data.content) {
+          container.innerHTML = `
+            <div class="card settings-section">
+              <h3>README</h3>
+              <p style="color:#6b7280;">No README file found in the project root.</p>
+            </div>`;
+          return;
+        }
+
+        const html = renderMarkdownToHtml(data.content);
+        container.innerHTML = `
+          <div class="card settings-section">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+              <h3 style="margin:0;">&#128214; README</h3>
+              <span style="font-size:0.8rem;color:#6b7280;font-family:monospace;">${escapeHtml(data.filename)}</span>
+            </div>
+            <div class="readme-preview-body">${html}</div>
+          </div>`;
+      } catch (err) {
+        container.innerHTML = `<div class="card"><p style="color:#ef4444;">Error loading README: ${escapeHtml(err.message)}</p></div>`;
+      }
+    }
+
+    /**
+     * Convert Markdown text to safe HTML for preview.
+     * Handles: headings, bold, italic, inline code, fenced code blocks,
+     * ordered & unordered lists, blockquotes, horizontal rules, links, paragraphs.
+     */
+    function renderMarkdownToHtml(md) {
+      // Split into blocks so we can handle fenced code blocks specially
+      const lines = md.split('\n');
+      const out = [];
+      let i = 0;
+
+      while (i < lines.length) {
+        const line = lines[i];
+
+        // Fenced code block
+        if (/^```/.test(line)) {
+          const lang = line.slice(3).trim();
+          const codeLines = [];
+          i++;
+          while (i < lines.length && !/^```/.test(lines[i])) {
+            codeLines.push(lines[i]);
+            i++;
+          }
+          i++; // skip closing ```
+          const code = escapeHtml(codeLines.join('\n'));
+          out.push('<pre class="readme-code-block"><code' + (lang ? ' class="lang-' + escapeHtml(lang) + '"' : '') + '>' + code + '</code></pre>');
+          continue;
+        }
+
+        // Horizontal rule
+        if (/^[-*_]{3,}\s*$/.test(line)) {
+          out.push('<hr class="readme-hr">');
+          i++;
+          continue;
+        }
+
+        // Headings
+        const hm = line.match(/^(#{1,6})\s+(.+)/);
+        if (hm) {
+          const level = hm[1].length;
+          out.push('<h' + level + ' class="readme-h' + level + '">' + inlineMarkdown(hm[2]) + '</h' + level + '>');
+          i++;
+          continue;
+        }
+
+        // Blockquote
+        if (/^>\s?/.test(line)) {
+          const bqLines = [];
+          while (i < lines.length && /^>\s?/.test(lines[i])) {
+            bqLines.push(lines[i].replace(/^>\s?/, ''));
+            i++;
+          }
+          out.push('<blockquote class="readme-blockquote">' + inlineMarkdown(bqLines.join('<br>')) + '</blockquote>');
+          continue;
+        }
+
+        // Unordered list
+        if (/^[-*+]\s/.test(line)) {
+          const items = [];
+          while (i < lines.length && /^[-*+]\s/.test(lines[i])) {
+            items.push('<li>' + inlineMarkdown(lines[i].replace(/^[-*+]\s/, '')) + '</li>');
+            i++;
+          }
+          out.push('<ul class="readme-ul">' + items.join('') + '</ul>');
+          continue;
+        }
+
+        // Ordered list
+        if (/^\d+\.\s/.test(line)) {
+          const items = [];
+          while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
+            items.push('<li>' + inlineMarkdown(lines[i].replace(/^\d+\.\s/, '')) + '</li>');
+            i++;
+          }
+          out.push('<ol class="readme-ol">' + items.join('') + '</ol>');
+          continue;
+        }
+
+        // Blank line → paragraph break
+        if (line.trim() === '') {
+          i++;
+          continue;
+        }
+
+        // Paragraph: gather consecutive non-special lines
+        const paraLines = [];
+        while (
+          i < lines.length &&
+          lines[i].trim() !== '' &&
+          !/^```/.test(lines[i]) &&
+          !/^#{1,6}\s/.test(lines[i]) &&
+          !/^[-*+]\s/.test(lines[i]) &&
+          !/^\d+\.\s/.test(lines[i]) &&
+          !/^>\s?/.test(lines[i]) &&
+          !/^[-*_]{3,}\s*$/.test(lines[i])
+        ) {
+          paraLines.push(lines[i]);
+          i++;
+        }
+        if (paraLines.length) {
+          out.push('<p class="readme-p">' + inlineMarkdown(paraLines.join(' ')) + '</p>');
+        }
+      }
+
+      return out.join('\n');
+    }
+
+    /**
+     * Render inline Markdown: bold, italic, inline code, links, images.
+     * Input is NOT yet HTML-escaped; we escape as we go.
+     */
+    function inlineMarkdown(text) {
+      // Escape HTML first (except we'll inject tags below)
+      let s = escapeHtml(text);
+      // Bold+italic
+      s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+      // Bold
+      s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
+      // Italic
+      s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+      s = s.replace(/_(.+?)_/g, '<em>$1</em>');
+      // Inline code (escaped backtick: &#96;)
+      s = s.replace(/&#96;(.+?)&#96;/g, '<code class="readme-inline-code">$1</code>');
+      // Strikethrough
+      s = s.replace(/~~(.+?)~~/g, '<del>$1</del>');
+      // Image (before link so ![...](...) matches first)
+      s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_, alt, src) {
+        return '<img src="' + src + '" alt="' + alt + '" style="max-width:100%;border-radius:4px;">';
+      });
+      // Link
+      s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, label, href) {
+        return '<a href="' + href + '" target="_blank" rel="noopener" class="readme-link">' + label + '</a>';
+      });
+      return s;
+    }
+
+    // ===================
     // Settings Styles (shared)
     // ===================
     function getSettingsStyles() {
@@ -6808,6 +6979,22 @@
           .tpl-badge { display: inline-block; font-size: 0.7rem; padding: 1px 6px; border-radius: 3px; margin-right: 4px; }
           .tpl-badge-input { background: #818cf8; color: white; }
           .tpl-badge-output { background: #34d399; color: white; }
+          /* README Markdown Preview */
+          .readme-preview-body { line-height: 1.7; color: #1f2937; font-size: 0.95rem; }
+          .readme-h1 { font-size: 1.8rem; font-weight: 700; margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 2px solid #e5e7eb; }
+          .readme-h2 { font-size: 1.4rem; font-weight: 600; margin: 20px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #e5e7eb; }
+          .readme-h3 { font-size: 1.15rem; font-weight: 600; margin: 16px 0 8px; }
+          .readme-h4 { font-size: 1rem; font-weight: 600; margin: 14px 0 6px; }
+          .readme-h5, .readme-h6 { font-size: 0.9rem; font-weight: 600; margin: 12px 0 6px; }
+          .readme-p { margin: 10px 0; }
+          .readme-ul, .readme-ol { margin: 10px 0 10px 24px; padding: 0; }
+          .readme-ul li, .readme-ol li { margin: 4px 0; }
+          .readme-code-block { background: #1f2937; color: #e5e7eb; padding: 14px 16px; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; margin: 12px 0; line-height: 1.5; }
+          .readme-inline-code { background: #f3f4f6; color: #be185d; padding: 2px 6px; border-radius: 4px; font-size: 0.88em; font-family: monospace; }
+          .readme-blockquote { border-left: 4px solid #d1d5db; margin: 12px 0; padding: 8px 16px; color: #6b7280; background: #f9fafb; border-radius: 0 6px 6px 0; }
+          .readme-hr { border: none; border-top: 2px solid #e5e7eb; margin: 20px 0; }
+          .readme-link { color: #2563eb; text-decoration: underline; }
+          .readme-link:hover { color: #1d4ed8; }
         </style>
       `;
     }
@@ -8750,6 +8937,14 @@
                 defaultCmdIndicator +
                 '<div class="chat-input-area">' +
                   '<div class="chat-attachments" id="chat-attachments"></div>' +
+                  '<div style="display:flex; gap:12px; margin-bottom:4px; font-size:0.8rem;">' +
+                    '<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#888;">' +
+                      '<input type="checkbox" id="chat-add-test" /> Add Test' +
+                    '</label>' +
+                    '<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#888;">' +
+                      '<input type="checkbox" id="chat-add-review" /> Add Review' +
+                    '</label>' +
+                  '</div>' +
                   '<div class="chat-input-wrapper">' +
                     '<div class="chat-input-left">' +
                       '<textarea class="' + inputClass + '" id="chat-input" placeholder="' + inputPlaceholder + '" rows="3" onkeydown="handleChatKeydown(event, \'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')"></textarea>' +
@@ -9369,6 +9564,13 @@
         var body = { content: content || '(image attached)' };
         if (!isRespond && currentChatTaskGroupId) {
           body.taskGroupId = currentChatTaskGroupId;
+        }
+        // Pipeline options: addTest / addReview checkboxes
+        var addTestEl = document.getElementById('chat-add-test');
+        var addReviewEl = document.getElementById('chat-add-review');
+        if (!isRespond) {
+          body.addTest = addTestEl ? addTestEl.checked : false;
+          body.addReview = addReviewEl ? addReviewEl.checked : false;
         }
         if (chatAttachments.length > 0) {
           body.images = chatAttachments.map(function(att) {

@@ -853,6 +853,15 @@ export interface MetaPromptResult {
   enhancements: string;
   /** Provider used */
   usedProvider?: string;
+  /** Whether the task should be split into subtasks */
+  shouldSplit: boolean;
+  /** Subtask prompts if splitting is recommended */
+  subtasks?: Array<{
+    prompt: string;
+    type: 'implementation' | 'test' | 'review' | 'research';
+  }>;
+  /** Reason for splitting (or not splitting) */
+  splitReason?: string;
 }
 
 /**
@@ -883,17 +892,19 @@ export async function generateMetaPrompt(
   stateDir?: string,
 ): Promise<MetaPromptResult> {
   if (!userPrompt || userPrompt.trim() === '') {
-    return { metaPrompt: userPrompt, enhancements: 'Empty prompt, no enhancement' };
+    return { metaPrompt: userPrompt, enhancements: 'Empty prompt, no enhancement', shouldSplit: false };
   }
 
   try {
     const resolved = await resolveProvider(config, stateDir);
     if (!resolved) {
       console.warn('[meta-prompt] No LLM provider available, using raw prompt');
-      return { metaPrompt: userPrompt, enhancements: 'No LLM provider, passed through' };
+      return { metaPrompt: userPrompt, enhancements: 'No LLM provider, passed through', shouldSplit: false };
     }
 
-    const prompt = `You are an AI project manager. A user has submitted a task for an AI coding assistant (Claude Code). Your job is to transform the user's raw request into a clear, structured, actionable prompt that Claude Code can execute precisely.
+    const prompt = `You are an AI project manager. A user has submitted a task for an AI coding assistant (Claude Code). Your job is to:
+1. Transform the user's raw request into a clear, structured, actionable prompt
+2. Determine if the task should be split into subtasks
 
 User's raw request:
 """
@@ -901,7 +912,7 @@ ${userPrompt}
 """
 
 ${projectContext ? `Project context:\n${projectContext}\n` : ''}
-Instructions:
+Instructions for meta prompt:
 1. Preserve the user's INTENT exactly — do not add features they didn't ask for
 2. Clarify ambiguities by making reasonable decisions (file paths, naming, structure)
 3. Add concrete acceptance criteria so Claude Code knows when it's "done"
@@ -909,19 +920,40 @@ Instructions:
 5. Keep it concise — do not write an essay
 6. CRITICAL: Always write the meta prompt in the SAME LANGUAGE as the user's input. If the user writes in Japanese, the meta prompt must be in Japanese. If in English, write in English. Never translate or switch languages.
 
+Instructions for split judgment:
+Split the task into subtasks if:
+1. Multiple independent changes are requested (e.g., "Add A and also fix B")
+2. Multiple explicit steps are described (e.g., "1. ... 2. ... 3. ...")
+3. Different files/components need changes that can be done independently
+4. Test creation and implementation are requested together — always split (test isolation)
+
+Do NOT split if:
+1. Single question or information request
+2. One small fix in one file
+3. Simple configuration change
+
 Respond in this exact JSON format (no markdown):
-{"metaPrompt":"the enhanced prompt for Claude Code","enhancements":"brief list of what you clarified/added"}`;
+{"metaPrompt":"the enhanced prompt for Claude Code","enhancements":"brief list of what you clarified/added","shouldSplit":true/false,"subtasks":[{"prompt":"subtask 1 prompt","type":"implementation"},{"prompt":"subtask 2 prompt","type":"test"}],"splitReason":"why splitting is or is not needed"}
+
+If shouldSplit is false, subtasks should be an empty array [].
+Valid subtask types: "implementation", "test", "review", "research".`;
 
     console.log(`[meta-prompt] Using ${resolved.provider}/${resolved.model} to generate meta prompt`);
 
-    let parsed: { metaPrompt: string; enhancements: string };
+    let parsed: {
+      metaPrompt: string;
+      enhancements: string;
+      shouldSplit?: boolean;
+      subtasks?: Array<{ prompt: string; type?: string }>;
+      splitReason?: string;
+    };
 
     if (resolved.provider === 'openai') {
       const { default: OpenAI } = await import('openai');
       const client = new OpenAI({ apiKey: resolved.apiKey });
       const response = await client.chat.completions.create({
         model: resolved.model,
-        max_tokens: 1000,
+        max_tokens: 2000,
         messages: [{ role: 'user', content: prompt }],
       });
       if (response.usage) {
@@ -939,7 +971,7 @@ Respond in this exact JSON format (no markdown):
       const client = new Anthropic({ apiKey: resolved.apiKey });
       const response = await client.messages.create({
         model: resolved.model,
-        max_tokens: 1000,
+        max_tokens: 2000,
         messages: [{ role: 'user', content: prompt }],
       });
       if (response.usage) {
@@ -957,15 +989,30 @@ Respond in this exact JSON format (no markdown):
     }
 
     console.log(`[meta-prompt] Enhancements: ${parsed.enhancements}`);
+    if (parsed.shouldSplit) {
+      console.log(`[meta-prompt] Split recommended: ${parsed.splitReason} (${parsed.subtasks?.length || 0} subtasks)`);
+    }
+
+    // Normalize subtask types to valid values
+    const validTypes = ['implementation', 'test', 'review', 'research'] as const;
+    const normalizedSubtasks = parsed.shouldSplit && parsed.subtasks
+      ? parsed.subtasks.map(st => ({
+          prompt: st.prompt,
+          type: (validTypes.includes(st.type as typeof validTypes[number]) ? st.type : 'implementation') as 'implementation' | 'test' | 'review' | 'research',
+        }))
+      : undefined;
 
     return {
       metaPrompt: parsed.metaPrompt || userPrompt,
       enhancements: parsed.enhancements || '',
       usedProvider: resolved.provider,
+      shouldSplit: parsed.shouldSplit === true,
+      subtasks: normalizedSubtasks,
+      splitReason: parsed.splitReason || undefined,
     };
   } catch (error) {
     console.warn('[meta-prompt] Meta prompt generation failed, using raw prompt:', error instanceof Error ? error.message : String(error));
-    return { metaPrompt: userPrompt, enhancements: `Failed: ${error instanceof Error ? error.message : String(error)}` };
+    return { metaPrompt: userPrompt, enhancements: `Failed: ${error instanceof Error ? error.message : String(error)}`, shouldSplit: false };
   }
 }
 

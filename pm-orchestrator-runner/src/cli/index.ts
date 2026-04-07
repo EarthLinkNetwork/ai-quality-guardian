@@ -698,11 +698,59 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
       } catch { /* ignore trace write errors */ }
     };
 
-    // ── LLM Relay Step 1: Meta Prompt Generation ──
+    // Helper: enqueue post-execution pipeline tasks (test/review) after COMPLETE
+    const enqueuePipelineTasks = async (cleanPrompt: string) => {
+      // Strip pipeline markers from the prompt for child task context
+      const basePrompt = cleanPrompt.replace(/\n*\[PIPELINE:(TEST|REVIEW)\]/g, '').trim();
+
+      if (hasPipelineTest) {
+        try {
+          const testTaskId = `${item.task_id}-test`;
+          await queueStore.enqueue(
+            item.session_id,
+            item.task_group_id,
+            `[TEST ISOLATION MODE]\n\nWrite tests for the changes made by parent task ${item.task_id}.\nDO NOT read implementation source code (src/ directory).\nBase tests ONLY on specifications, requirements, and public interfaces.\n\nOriginal task: ${basePrompt}`,
+            testTaskId,
+            'IMPLEMENTATION',
+            item.project_path,
+            item.task_id,
+          );
+          console.log(`[Runner] Test pipeline task enqueued: ${testTaskId}`);
+          log.app.info('Test pipeline task enqueued', { parentTaskId: item.task_id, testTaskId });
+          stateStream.emit(item.task_id, 'system', `[pipeline] Test task enqueued: ${testTaskId}`);
+        } catch (pipeErr) {
+          console.warn('[Runner] Failed to enqueue test pipeline task:', pipeErr);
+        }
+      }
+
+      if (hasPipelineReview) {
+        try {
+          const reviewTaskId = `${item.task_id}-review`;
+          await queueStore.enqueue(
+            item.session_id,
+            item.task_group_id,
+            `[CODE REVIEW MODE]\n\nReview the changes made by the task.\nCheck for: correctness, security, code quality, test coverage.\nProvide a structured report.\n\nOriginal task: ${basePrompt}`,
+            reviewTaskId,
+            'READ_INFO',
+            item.project_path,
+            item.task_id,
+          );
+          console.log(`[Runner] Review pipeline task enqueued: ${reviewTaskId}`);
+          log.app.info('Review pipeline task enqueued', { parentTaskId: item.task_id, reviewTaskId });
+          stateStream.emit(item.task_id, 'system', `[pipeline] Review task enqueued: ${reviewTaskId}`);
+        } catch (pipeErr) {
+          console.warn('[Runner] Failed to enqueue review pipeline task:', pipeErr);
+        }
+      }
+    };
+
+    // ── LLM Relay Step 1: Meta Prompt Generation + Split Judgment ──
     // Transform the user's raw prompt into structured instructions for Claude Code.
+    // Also determines if the task should be split into subtasks (LLM-based).
     // This is the PRE-PROCESSING step of the LLM relay loop.
     let metaPromptUsed = false;
     let promptForClaude = effectivePrompt;
+    let llmSplitResult: { shouldSplit: boolean; subtasks?: Array<{ prompt: string; type: string }>; splitReason?: string } | undefined;
     if (!item.conversation_history || item.conversation_history.length === 0) {
       // Only generate meta prompt for initial execution (not re-runs after reply)
       try {
@@ -719,15 +767,31 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
         } else {
           writeLlmTraceEvent({ type: 'llm_processing', action: 'meta_prompt_skipped', content: 'No enhancement needed, using raw prompt' });
         }
+        // Capture LLM split judgment for use in decomposition check
+        if (metaResult.shouldSplit && metaResult.subtasks && metaResult.subtasks.length >= 2) {
+          llmSplitResult = {
+            shouldSplit: true,
+            subtasks: metaResult.subtasks,
+            splitReason: metaResult.splitReason,
+          };
+          console.log(`[Runner] LLM recommends split: ${metaResult.splitReason} (${metaResult.subtasks.length} subtasks)`);
+          log.app.info('LLM split recommended', { taskId: item.task_id, subtaskCount: metaResult.subtasks.length, reason: metaResult.splitReason });
+        }
       } catch (metaErr) {
         console.warn('[Runner] Meta prompt generation failed, using raw prompt:', metaErr);
         writeLlmTraceEvent({ type: 'llm_processing', action: 'meta_prompt_failed', content: 'Meta prompt generation failed, using raw prompt' });
       }
     }
 
+    // Detect and strip pipeline markers before sending to Claude Code
+    const hasPipelineTest = item.prompt.includes('[PIPELINE:TEST]');
+    const hasPipelineReview = item.prompt.includes('[PIPELINE:REVIEW]');
+    // Strip pipeline markers from the prompt so Claude Code doesn't see them
+    const promptForClaudeClean = promptForClaude.replace(/\n*\[PIPELINE:(TEST|REVIEW)\]/g, '');
+
     // Inject TaskContext and OutputRules into the prompt for all Web Chat tasks
-    const enrichedPrompt = injectTaskContext(promptForClaude, item);
-    const promptPreview = truncateForLog(promptForClaude, 300);
+    const enrichedPrompt = injectTaskContext(promptForClaudeClean, item);
+    const promptPreview = truncateForLog(promptForClaudeClean, 300);
     // Resolve effective working directory: prefer project_path from queue item, fallback to runner's projectPath
     const effectiveWorkingDir = item.project_path || projectPath;
     stateStream.emit(
@@ -737,40 +801,87 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
     );
 
       // ── Task Decomposition Check ──
+      // Priority: LLM split judgment > regex-based analyzeTaskForChunking
       // Only for initial execution (not re-runs after reply) and not for subtasks
       if (!item.conversation_history?.length && !item.parent_task_id) {
-        try {
-          // Use raw prompt (item.prompt) instead of enrichedPrompt to prevent
-          // template-injected text from triggering false decomposition
-          const analysis = analyzeTaskForChunking(item.prompt);
-          if (analysis.is_decomposable && analysis.suggested_subtasks && analysis.suggested_subtasks.length >= 2) {
-            console.log(`[Runner] Task ${item.task_id} decomposed into ${analysis.suggested_subtasks.length} subtasks`);
-            log.app.info('Task decomposed', { taskId: item.task_id, subtaskCount: analysis.suggested_subtasks.length });
-            stateStream.emit(item.task_id, 'system', `[decomposition] Splitting into ${analysis.suggested_subtasks.length} subtasks`);
+        // Map task subtask type to TaskTypeValue
+        const subtaskTypeToTaskType = (type: string): typeof item.task_type => {
+          switch (type) {
+            case 'test': return 'IMPLEMENTATION';
+            case 'review': return 'READ_INFO';
+            case 'research': return 'READ_INFO';
+            default: return item.task_type;
+          }
+        };
 
-            // Enqueue each subtask in the same task_group_id
+        let decomposed = false;
+
+        // 1. Try LLM-based split first (from meta prompt generation)
+        if (llmSplitResult?.shouldSplit && llmSplitResult.subtasks && llmSplitResult.subtasks.length >= 2) {
+          try {
+            console.log(`[Runner] Using LLM split for task ${item.task_id}: ${llmSplitResult.splitReason}`);
+            stateStream.emit(item.task_id, 'system', `[decomposition] LLM split: ${llmSplitResult.subtasks.length} subtasks (${llmSplitResult.splitReason})`);
+
             const subtaskIds: string[] = [];
-            for (let i = 0; i < analysis.suggested_subtasks.length; i++) {
-              const subtask = analysis.suggested_subtasks[i];
-              const subtaskPrompt = `[Subtask ${i + 1}/${analysis.suggested_subtasks.length} of parent task ${item.task_id}]\n\n${subtask.prompt}`;
+            for (let i = 0; i < llmSplitResult.subtasks.length; i++) {
+              const subtask = llmSplitResult.subtasks[i];
+              const subtaskPrompt = `[Subtask ${i + 1}/${llmSplitResult.subtasks.length} of parent task ${item.task_id}]\n\n${subtask.prompt}`;
               const subtaskId = `${item.task_id}-sub-${i + 1}`;
+              const subtaskType = subtaskTypeToTaskType(subtask.type);
               await queueStore.enqueue(
                 item.session_id,
                 item.task_group_id,
                 subtaskPrompt,
                 subtaskId,
-                item.task_type,
+                subtaskType,
                 item.project_path,
                 item.task_id,
               );
               subtaskIds.push(subtaskId);
             }
 
-            const summary = `Task decomposed into ${subtaskIds.length} subtasks:\n${subtaskIds.map((id, i) => `  ${i + 1}. ${id}: ${analysis.suggested_subtasks![i].prompt.substring(0, 100)}`).join('\n')}`;
+            const summary = `Task decomposed by LLM into ${subtaskIds.length} subtasks (${llmSplitResult.splitReason}):\n${subtaskIds.map((id, i) => `  ${i + 1}. ${id} [${llmSplitResult!.subtasks![i].type}]: ${llmSplitResult!.subtasks![i].prompt.substring(0, 100)}`).join('\n')}`;
             return { status: 'COMPLETE' as const, output: summary };
+          } catch (llmSplitErr) {
+            console.warn('[Runner] LLM split enqueue failed, falling back to regex:', llmSplitErr);
           }
-        } catch (decompErr) {
-          console.warn('[Runner] Task decomposition check failed, proceeding with single execution:', decompErr);
+        }
+
+        // 2. Fallback: regex-based analyzeTaskForChunking
+        if (!decomposed) {
+          try {
+            // Use raw prompt (item.prompt) instead of enrichedPrompt to prevent
+            // template-injected text from triggering false decomposition
+            const analysis = analyzeTaskForChunking(item.prompt);
+            if (analysis.is_decomposable && analysis.suggested_subtasks && analysis.suggested_subtasks.length >= 2) {
+              console.log(`[Runner] Task ${item.task_id} decomposed by regex into ${analysis.suggested_subtasks.length} subtasks`);
+              log.app.info('Task decomposed (regex fallback)', { taskId: item.task_id, subtaskCount: analysis.suggested_subtasks.length });
+              stateStream.emit(item.task_id, 'system', `[decomposition] Regex split: ${analysis.suggested_subtasks.length} subtasks`);
+
+              // Enqueue each subtask in the same task_group_id
+              const subtaskIds: string[] = [];
+              for (let i = 0; i < analysis.suggested_subtasks.length; i++) {
+                const subtask = analysis.suggested_subtasks[i];
+                const subtaskPrompt = `[Subtask ${i + 1}/${analysis.suggested_subtasks.length} of parent task ${item.task_id}]\n\n${subtask.prompt}`;
+                const subtaskId = `${item.task_id}-sub-${i + 1}`;
+                await queueStore.enqueue(
+                  item.session_id,
+                  item.task_group_id,
+                  subtaskPrompt,
+                  subtaskId,
+                  item.task_type,
+                  item.project_path,
+                  item.task_id,
+                );
+                subtaskIds.push(subtaskId);
+              }
+
+              const summary = `Task decomposed into ${subtaskIds.length} subtasks:\n${subtaskIds.map((id, i) => `  ${i + 1}. ${id}: ${analysis.suggested_subtasks![i].prompt.substring(0, 100)}`).join('\n')}`;
+              return { status: 'COMPLETE' as const, output: summary };
+            }
+          } catch (decompErr) {
+            console.warn('[Runner] Task decomposition check failed, proceeding with single execution:', decompErr);
+          }
         }
       }
 
@@ -1081,6 +1192,7 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
               console.log(`[Runner] Auto-answer retry succeeded -> COMPLETE`);
               stateStream.emit(item.task_id, 'state', `[state] COMPLETE (auto-answer resolved)`);
               if (checkpoint) { await cleanupCheckpoint(checkpoint); }
+              await enqueuePipelineTasks(item.prompt);
               return { status: 'COMPLETE', output: reClean };
             } else {
               // Retry produced no output — fall through to normal status handling
@@ -1123,6 +1235,7 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
         stateStream.emit(item.task_id, 'state', `[state] COMPLETE`);
         // Clean up checkpoint on success
         if (checkpoint) { await cleanupCheckpoint(checkpoint); }
+        await enqueuePipelineTasks(item.prompt);
         return { status: 'COMPLETE', output: cleanOutput || undefined };
       } else if (result.status === 'ERROR') {
         stateStream.emit(item.task_id, 'state', `[state] ERROR`);
@@ -1156,6 +1269,7 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
           console.log(`[Runner] READ_INFO/REPORT ${result.status} with output -> COMPLETE`);
           stateStream.emit(item.task_id, 'state', `[state] COMPLETE (${result.status} with output)`);
           if (checkpoint) { await cleanupCheckpoint(checkpoint); }
+          await enqueuePipelineTasks(item.prompt);
           return { status: 'COMPLETE', output: cleanOutput };
         } else {
           // No output -> needs clarification (AWAITING_RESPONSE, never ERROR)
@@ -1186,6 +1300,7 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
           console.log(`[Runner] ${taskType} ${result.status} but exit=0 + output -> COMPLETE (file verification override)`);
           stateStream.emit(item.task_id, 'state', `[state] COMPLETE (${taskType} ${result.status}, exit=0 override)`);
           if (checkpoint) { await cleanupCheckpoint(checkpoint); }
+          await enqueuePipelineTasks(item.prompt);
           return { status: 'COMPLETE', output: cleanOutput };
         }
         // Non-COMPLETE with no output or non-zero exit -> ERROR

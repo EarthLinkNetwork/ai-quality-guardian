@@ -162,7 +162,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
       let taskGroupId: string | undefined;
 
       try {
-        const { content, images, taskGroupId: requestedTaskGroupId } = req.body;
+        const { content, images, taskGroupId: requestedTaskGroupId, addTest, addReview } = req.body;
 
         if (!content || typeof content !== "string" || content.trim() === "") {
           // Record error Activity
@@ -392,7 +392,15 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
         if (outputTemplateText) {
           promptParts.push('[OutputRules]\n' + outputTemplateText + '\n[/OutputRules]');
         }
-        const finalContent = promptParts.join('\n\n---\n\n');
+        let finalContent = promptParts.join('\n\n---\n\n');
+
+        // Append pipeline markers for post-execution pipeline (test/review)
+        if (addTest === true) {
+          finalContent += '\n\n[PIPELINE:TEST]';
+        }
+        if (addReview === true) {
+          finalContent += '\n\n[PIPELINE:REVIEW]';
+        }
 
         // Create user message (with optional image attachments in metadata)
         const userMessage = await dal.createConversationMessage({
