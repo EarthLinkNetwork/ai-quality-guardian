@@ -1058,6 +1058,47 @@
       to { transform: rotate(360deg); }
     }
 
+    /* Chat processing progress indicator */
+    .chat-processing-content {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .chat-processing-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 500;
+      color: #92400e;
+    }
+    .chat-processing-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid #fde68a;
+      border-top-color: #d97706;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      flex-shrink: 0;
+    }
+    .chat-processing-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-left: 22px;
+    }
+    .chat-processing-step {
+      font-size: 0.78rem;
+      color: #a16207;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .chat-processing-step::before {
+      content: '›';
+      color: #d97706;
+      font-weight: bold;
+    }
+
     .project-type-badge {
       display: inline-flex;
       align-items: center;
@@ -5129,6 +5170,7 @@
           <div class="card">
             <h3>Prompt</h3>
             <div class="prompt-box">${collapsible(task.prompt, 4)}</div>
+            <div id="meta-prompt-info" style="margin-top:12px;"></div>
           </div>
 
           ${task.prompt_info ? (() => {
@@ -5207,6 +5249,33 @@
         if (task.status !== 'RUNNING') {
           await loadStreamTrace(task.task_id);
         }
+
+        // Load meta prompt info from trace data
+        try {
+          var traceRes = await fetch('/api/tasks/' + encodeURIComponent(task.task_id) + '/trace?raw=true');
+          if (traceRes.ok) {
+            var traceData = await traceRes.json();
+            var traceEvents = traceData.events || [];
+            var metaDone = traceEvents.find(function(e) { return e.action === 'meta_prompt_done'; });
+            var metaContainer = document.getElementById('meta-prompt-info');
+            if (metaDone && metaContainer) {
+              var provider = metaDone.provider || 'unknown';
+              var enhancements = metaDone.enhancements || '';
+              metaContainer.innerHTML =
+                '<div style="border-top:1px solid var(--border-color,#e5e7eb);padding-top:12px;">' +
+                  '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+                    '<span style="background:#eff6ff;border:1px solid #3b82f6;color:#1d4ed8;padding:2px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;">LLM Adjusted</span>' +
+                    '<span style="font-size:0.82rem;color:#6b7280;">Provider: <strong>' + escapeHtml(provider) + '</strong></span>' +
+                  '</div>' +
+                  '<div style="font-size:0.82rem;color:#6b7280;margin-bottom:8px;">Changes: ' + escapeHtml(enhancements) + '</div>' +
+                  '<div style="font-size:0.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Original User Prompt:</div>' +
+                  '<pre style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;padding:10px;font-size:0.82rem;white-space:pre-wrap;word-break:break-word;max-height:150px;overflow-y:auto;">' + escapeHtml(task.prompt) + '</pre>' +
+                  '<div style="font-size:0.82rem;font-weight:600;color:#374151;margin-top:8px;margin-bottom:4px;">Enhanced Prompt (sent to Claude Code):</div>' +
+                  '<pre style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:4px;padding:10px;font-size:0.82rem;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;">' + escapeHtml(metaDone.metaPrompt || metaDone.content || 'N/A') + '</pre>' +
+                '</div>';
+            }
+          }
+        } catch { /* trace loading is best-effort */ }
 
         // Update system log count
         const sysLogContainer = document.getElementById('executor-logs-container');
@@ -8508,7 +8577,12 @@
         chatInputDrafts[currentChatProjectId || projectId] = existingInput.value;
       }
 
-      app.innerHTML = '<div class="loading">Loading Chat</div>';
+      // Check if chat structure already exists for this project → incremental update (no flash)
+      var isIncrementalUpdate = document.getElementById('chat-messages') !== null && currentChatProjectId === projectId;
+
+      if (!isIncrementalUpdate) {
+        app.innerHTML = '<div class="loading">Loading Chat</div>';
+      }
 
       // Reset taskGroupId when switching to a different project's chat
       // or when starting a fresh new chat (no existing messages)
@@ -8565,8 +8639,25 @@
                   }).join('') +
                 '</div>';
               }
+              // Show rich progress indicator for assistant processing messages
+              var contentHtml;
+              if (m.status === 'processing' && m.role === 'assistant') {
+                contentHtml =
+                  '<div class="chat-processing-content">' +
+                    '<div class="chat-processing-header">' +
+                      '<div class="chat-processing-spinner"></div>' +
+                      '<span>処理中...</span>' +
+                    '</div>' +
+                    '<div class="chat-processing-steps">' +
+                      '<div class="chat-processing-step">タスクをキューに追加しました</div>' +
+                      '<div class="chat-processing-step">Claude Code が実行中...</div>' +
+                    '</div>' +
+                  '</div>';
+              } else {
+                contentHtml = escapeHtml(m.content);
+              }
               return '<div class="chat-message ' + roleClass + '">' +
-                '<div class="chat-bubble">' + escapeHtml(m.content) + imagesHtml + meta + '</div>' +
+                '<div class="chat-bubble">' + contentHtml + imagesHtml + meta + '</div>' +
               '</div>';
             }).join('')
           : '<div class="empty-state" style="padding: 40px; text-align: center;"><p>No messages yet. Start a conversation!</p></div>';
@@ -8615,83 +8706,111 @@
             '</div>';
         }
 
-        app.innerHTML =
-          '<div class="page-header">' +
-            '<h2>Chat: ' + escapeHtml(project.alias || project.projectPath) + '</h2>' +
-            tplBadges +
-            '<div class="action-bar">' +
-              backBtn +
-              '<button class="refresh-btn" onclick="renderChat(\'' + escapeHtml(projectId) + '\')">Refresh</button>' +
-              '<button class="btn btn-secondary" onclick="openProjectSettings(\'' + escapeHtml(projectId) + '\')">Settings</button>' +
-            '</div>' +
-          '</div>' +
-          '<div class="card chat-container">' +
-            '<div class="chat-messages" id="chat-messages">' + messageItems + '</div>' +
-            statusBar +
-            '<div class="chat-input-container" style="position:relative;" id="chat-input-container">' +
-              '<div class="chat-drop-overlay" id="chat-drop-overlay">Drop files here to attach</div>' +
-              '<div id="cmd-dropdown-bar" class="cmd-dropdown-bar" style="display:none;">' +
-                '<span class="cmd-dropdown-label">Commands:</span>' +
-                '<button class="cmd-dropdown-toggle" id="cmd-toggle-global" data-testid="cmd-toggle-global" onclick="toggleCommandDropdown(\'global\')">Global</button>' +
-                '<select class="cmd-dropdown-select" id="cmd-select-global" data-testid="cmd-select-global" style="display:none;" onchange="selectSettingsCommand(this, \'' + escapeHtml(projectId) + '\')"><option value="">-- select --</option></select>' +
-                '<button class="cmd-dropdown-toggle" id="cmd-toggle-project" data-testid="cmd-toggle-project" onclick="toggleCommandDropdown(\'project\')">Project</button>' +
-                '<select class="cmd-dropdown-select" id="cmd-select-project" data-testid="cmd-select-project" style="display:none;" onchange="selectSettingsCommand(this, \'' + escapeHtml(projectId) + '\')"><option value="">-- select --</option></select>' +
+        if (isIncrementalUpdate) {
+          // Incremental update: only refresh messages and status bar (no flash)
+          var chatMsgsEl = document.getElementById('chat-messages');
+          if (chatMsgsEl) {
+            chatMsgsEl.innerHTML = messageItems;
+            chatMsgsEl.scrollTop = chatMsgsEl.scrollHeight;
+          }
+          // Update status bar (insert/replace before chat-input-container)
+          var existingStatusBar = app.querySelector('.chat-status');
+          var inputContainer = document.getElementById('chat-input-container');
+          if (existingStatusBar) {
+            existingStatusBar.remove();
+          }
+          if (statusBar && inputContainer) {
+            inputContainer.insertAdjacentHTML('beforebegin', statusBar);
+          }
+        } else {
+          app.innerHTML =
+            '<div class="page-header">' +
+              '<h2>Chat: ' + escapeHtml(project.alias || project.projectPath) + '</h2>' +
+              tplBadges +
+              '<div class="action-bar">' +
+                backBtn +
+                '<button class="refresh-btn" onclick="renderChat(\'' + escapeHtml(projectId) + '\')">Refresh</button>' +
+                '<button class="btn btn-secondary" onclick="openProjectSettings(\'' + escapeHtml(projectId) + '\')">Settings</button>' +
               '</div>' +
-              '<div id="cmd-panel" class="cmd-panel" data-project-id="' + escapeHtml(projectId) + '"></div>' +
-              '<div id="cmd-selected-container" style="display:none;"></div>' +
-              defaultCmdIndicator +
-              '<div class="chat-input-area">' +
-                '<div class="chat-attachments" id="chat-attachments"></div>' +
-                '<div class="chat-input-wrapper">' +
-                  '<div class="chat-input-left">' +
-                    '<textarea class="' + inputClass + '" id="chat-input" placeholder="' + inputPlaceholder + '" rows="3" onkeydown="handleChatKeydown(event, \'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')"></textarea>' +
-                    '<div class="chat-input-hint">' +
-                      (navigator.platform.indexOf("Mac") > -1 ? 'Cmd' : 'Ctrl') + '+Enter to send' +
+            '</div>' +
+            '<div class="card chat-container">' +
+              '<div class="chat-messages" id="chat-messages">' + messageItems + '</div>' +
+              statusBar +
+              '<div class="chat-input-container" style="position:relative;" id="chat-input-container">' +
+                '<div class="chat-drop-overlay" id="chat-drop-overlay">Drop files here to attach</div>' +
+                '<div id="cmd-dropdown-bar" class="cmd-dropdown-bar" style="display:none;">' +
+                  '<span class="cmd-dropdown-label">Commands:</span>' +
+                  '<button class="cmd-dropdown-toggle" id="cmd-toggle-global" data-testid="cmd-toggle-global" onclick="toggleCommandDropdown(\'global\')">Global</button>' +
+                  '<select class="cmd-dropdown-select" id="cmd-select-global" data-testid="cmd-select-global" style="display:none;" onchange="selectSettingsCommand(this, \'' + escapeHtml(projectId) + '\')"><option value="">-- select --</option></select>' +
+                  '<button class="cmd-dropdown-toggle" id="cmd-toggle-project" data-testid="cmd-toggle-project" onclick="toggleCommandDropdown(\'project\')">Project</button>' +
+                  '<select class="cmd-dropdown-select" id="cmd-select-project" data-testid="cmd-select-project" style="display:none;" onchange="selectSettingsCommand(this, \'' + escapeHtml(projectId) + '\')"><option value="">-- select --</option></select>' +
+                '</div>' +
+                '<div id="cmd-panel" class="cmd-panel" data-project-id="' + escapeHtml(projectId) + '"></div>' +
+                '<div id="cmd-selected-container" style="display:none;"></div>' +
+                defaultCmdIndicator +
+                '<div class="chat-input-area">' +
+                  '<div class="chat-attachments" id="chat-attachments"></div>' +
+                  '<div class="chat-input-wrapper">' +
+                    '<div class="chat-input-left">' +
+                      '<textarea class="' + inputClass + '" id="chat-input" placeholder="' + inputPlaceholder + '" rows="3" onkeydown="handleChatKeydown(event, \'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')"></textarea>' +
+                      '<div class="chat-input-hint">' +
+                        (navigator.platform.indexOf("Mac") > -1 ? 'Cmd' : 'Ctrl') + '+Enter to send' +
+                      '</div>' +
                     '</div>' +
-                  '</div>' +
-                  '<div class="chat-input-actions">' +
-                    '<button class="' + sendBtnClass + '" id="chat-send-btn" onclick="sendChatMessage(\'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')">' + sendBtnText + '</button>' +
-                    '<button class="chat-attach-btn" id="chat-attach-btn" onclick="document.getElementById(\'chat-file-input\').click()" title="Attach files">&#128206;</button>' +
-                    '<input type="file" id="chat-file-input" multiple accept="image/*" style="display:none" onchange="handleFileSelect(event)">' +
+                    '<div class="chat-input-actions">' +
+                      '<button class="' + sendBtnClass + '" id="chat-send-btn" onclick="sendChatMessage(\'' + escapeHtml(projectId) + '\', ' + (awaitingResponse ? 'true' : 'false') + ')">' + sendBtnText + '</button>' +
+                      '<button class="chat-attach-btn" id="chat-attach-btn" onclick="document.getElementById(\'chat-file-input\').click()" title="Attach files">&#128206;</button>' +
+                      '<input type="file" id="chat-file-input" multiple accept="image/*" style="display:none" onchange="handleFileSelect(event)">' +
+                    '</div>' +
                   '</div>' +
                 '</div>' +
               '</div>' +
-            '</div>' +
-          '</div>';
+            '</div>';
 
-        // Scroll to bottom
-        var chatMessages = document.getElementById('chat-messages');
-        if (chatMessages) {
-          chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        // Focus input, restore draft, and setup drag-drop
-        var chatInput = document.getElementById('chat-input');
-        if (chatInput) {
-          // Restore saved draft for this project
-          var draft = chatInputDrafts[projectId];
-          if (draft) {
-            chatInput.value = draft;
+          // Scroll to bottom
+          var chatMessages = document.getElementById('chat-messages');
+          if (chatMessages) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
           }
-          chatInput.focus();
-          // Save draft on every input change and handle slash-command filtering
-          chatInput.addEventListener('input', function() {
-            chatInputDrafts[projectId] = chatInput.value;
-            handleSlashCommandInput(chatInput.value);
-          });
-        }
-        setupChatDragDrop();
-        chatAttachments = []; // Reset on re-render
 
-        // Load settings custom commands for the dropdown bar
-        loadSettingsCommands(project.projectPath);
+          // Focus input, restore draft, and setup drag-drop
+          var chatInput = document.getElementById('chat-input');
+          if (chatInput) {
+            // Restore saved draft for this project
+            var draft = chatInputDrafts[projectId];
+            if (draft) {
+              chatInput.value = draft;
+            }
+            chatInput.focus();
+            // Save draft on every input change and handle slash-command filtering
+            chatInput.addEventListener('input', function() {
+              chatInputDrafts[projectId] = chatInput.value;
+              handleSlashCommandInput(chatInput.value);
+            });
+          }
+          setupChatDragDrop();
+          chatAttachments = []; // Reset on re-render
+
+          // Load settings custom commands for the dropdown bar
+          loadSettingsCommands(project.projectPath);
+        }
+
+        // Auto-poll if any messages are still processing
+        var hasProcessingMessages = messages.some(function(m) { return m.status === 'processing'; });
+        if (hasProcessingMessages) {
+          startChatPolling(projectId);
+        } else {
+          stopChatPolling();
+        }
 
       } catch (error) {
-        app.innerHTML = 
-          '<div class="card">' +
-            '<div class="error-message">Error: ' + escapeHtml(error.message) + '</div>' +
-            '<a href="/dashboard" class="btn btn-secondary" onclick="event.preventDefault(); navigate(\'/dashboard\')">Back to Dashboard</a>' +
-          '</div>';
+        if (!isIncrementalUpdate) {
+          app.innerHTML =
+            '<div class="card">' +
+              '<div class="error-message">Error: ' + escapeHtml(error.message) + '</div>' +
+              '<a href="/dashboard" class="btn btn-secondary" onclick="event.preventDefault(); navigate(\'/dashboard\')">Back to Dashboard</a>' +
+            '</div>';
+        }
       }
     }
 
@@ -9189,6 +9308,34 @@
     // Preserve chat input text across re-renders (keyed by projectId)
     var chatInputDrafts = {};
 
+    // ============================================
+    // Chat Auto-Polling (for processing messages)
+    // ============================================
+    var _chatPollTimer = null;
+    var _chatPollProjectId = null;
+
+    // Start background polling to refresh chat messages while tasks are processing
+    function startChatPolling(projectId) {
+      stopChatPolling();
+      _chatPollProjectId = projectId;
+      _chatPollTimer = setInterval(function() {
+        if (_chatPollProjectId === projectId) {
+          renderChat(projectId);
+        } else {
+          stopChatPolling();
+        }
+      }, 3000);
+    }
+
+    // Stop background chat polling
+    function stopChatPolling() {
+      if (_chatPollTimer) {
+        clearInterval(_chatPollTimer);
+        _chatPollTimer = null;
+      }
+      _chatPollProjectId = null;
+    }
+
     // Send chat message (with optional attachments)
     async function sendChatMessage(projectId, isRespond) {
       var input = document.getElementById('chat-input');
@@ -9271,8 +9418,9 @@
         sendBtn.disabled = false;
         sendBtn.textContent = isRespond ? 'Respond' : 'Send';
 
-        // Refresh chat
+        // Refresh chat without full re-render, then start polling for task completion
         renderChat(projectId);
+        startChatPolling(projectId);
 
       } catch (error) {
         showToast(error.message, 'error');
@@ -12757,6 +12905,7 @@
           agentPageState.isDirty = false;
           // P0-1: Clean up SSE connections on navigation
           cleanupExecutorLogStream();
+          stopChatPolling();
           history.pushState(null, '', path);
           router();
         }, { danger: true });
@@ -12764,6 +12913,7 @@
       }
       // P0-1: Clean up SSE connections on navigation
       cleanupExecutorLogStream();
+      stopChatPolling();
       history.pushState(null, '', path);
       router();
     }
