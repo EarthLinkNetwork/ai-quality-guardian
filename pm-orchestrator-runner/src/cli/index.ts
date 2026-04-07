@@ -1602,6 +1602,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     pollIntervalMs: 1000,
     recoverOnStartup: true,
     projectRoot: projectPath,
+    maxStaleTaskAgeMs: 30 * 60 * 1000, // 30 minutes (was 5 min, too aggressive for long-running Claude Code tasks)
   });
 
   // Self-restart handler for Web UI (Build & Restart)
@@ -2272,6 +2273,7 @@ async function startAgentOnly(agentArgs: AgentArguments): Promise<void> {
     pollIntervalMs: 1000,
     recoverOnStartup: true,
     projectRoot: projectPath,
+    maxStaleTaskAgeMs: 30 * 60 * 1000, // 30 minutes (was 5 min, too aggressive for long-running Claude Code tasks)
   });
 
   poller.on('started', () => console.log('[Agent] Queue poller started'));

@@ -231,6 +231,13 @@ export class QueuePoller extends EventEmitter {
     log.app.info('Task claimed', { taskId: item.task_id, taskGroupId: item.task_group_id });
     this.emit('claimed', item);
 
+    // Heartbeat: update updated_at every 60s to prevent stale detection during long-running tasks
+    const heartbeatInterval = setInterval(async () => {
+      try {
+        await this.store.updateStatus(item.task_id, 'RUNNING');
+      } catch { /* ignore heartbeat errors */ }
+    }, 60_000);
+
     try {
       // Execute the task
       const result = await this.executor(item);
@@ -284,6 +291,7 @@ export class QueuePoller extends EventEmitter {
 
       this.emit('error', item, error instanceof Error ? error : new Error(String(error)));
     } finally {
+      clearInterval(heartbeatInterval);
       this.inFlight = null;
     }
   }
