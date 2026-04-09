@@ -587,6 +587,7 @@ export function createApp(config: WebServerConfig): Express {
         tasks: tasks.map(t => ({
           task_id: t.task_id,
           task_group_id: t.task_group_id,
+          parent_task_id: t.parent_task_id || null,
           status: t.status,
           prompt: t.prompt,
           created_at: t.created_at,
@@ -661,6 +662,55 @@ export function createApp(config: WebServerConfig): Express {
           message: 'Either group_status or archived must be provided',
         } as ErrorResponse);
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * DELETE /api/task-groups/:task_group_id
+   * Delete all tasks in a task group
+   */
+  app.delete('/api/task-groups/:task_group_id', async (req: Request, res: Response) => {
+    try {
+      const task_group_id = req.params.task_group_id as string;
+      const targetNamespace = (req.query.namespace as string) || namespace;
+      const count = await queueStore.deleteTaskGroup(task_group_id, targetNamespace);
+      if (count === 0) {
+        res.status(404).json({
+          error: 'NOT_FOUND',
+          message: 'Task group not found: ' + task_group_id,
+        } as ErrorResponse);
+        return;
+      }
+      invalidateTaskGroupsCache();
+      res.json({ task_group_id, deleted_count: count });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * DELETE /api/tasks/:task_id
+   * Delete a single task
+   */
+  app.delete('/api/tasks/:task_id', async (req: Request, res: Response) => {
+    try {
+      const task_id = req.params.task_id as string;
+      const targetNamespace = (req.query.namespace as string) || namespace;
+      const task = await queueStore.getItem(task_id, targetNamespace);
+      if (!task) {
+        res.status(404).json({
+          error: 'NOT_FOUND',
+          message: 'Task not found: ' + task_id,
+        } as ErrorResponse);
+        return;
+      }
+      await queueStore.deleteItem(task_id);
+      invalidateTaskGroupsCache();
+      res.json({ task_id, deleted: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
@@ -1279,6 +1329,14 @@ export function createApp(config: WebServerConfig): Express {
   });
 
   /**
+   * GET /task-groups
+   * Serve task groups list page
+   */
+  app.get('/task-groups', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+
+  /**
    * GET /task-groups/:id
    * Serve task list page
    */
@@ -1558,7 +1616,9 @@ export function createApp(config: WebServerConfig): Express {
       'POST /api/task-groups',
       'GET /api/task-groups/:task_group_id/tasks',
       'PATCH /api/task-groups/:task_group_id',
+      'DELETE /api/task-groups/:task_group_id',
       'GET /api/tasks/:task_id',
+      'DELETE /api/tasks/:task_id',
       'GET /api/tasks/:task_id/trace',
       'POST /api/tasks',
       'PATCH /api/tasks/:task_id/status',

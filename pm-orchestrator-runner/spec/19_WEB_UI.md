@@ -357,6 +357,79 @@ tunnels:
 - 05_DATA_MODELS.md (Task / Session データ構造)
 - 21_STABLE_DEV.md (Namespace 設計)
 
+---
+
+## 管理画面メニュー構成（現行 v3+）
+
+*最終更新: 2026-04-09*
+
+### 左サイドバーメニュー（15項目）
+
+#### セクション 1: Main
+
+| メニュー名 | URL/ハッシュ | レンダラー関数 | 主要APIエンドポイント | Playwrightテスト |
+|-----------|------------|--------------|-------------------|----------------|
+| Dashboard | #/dashboard または / | renderDashboard | GET /api/dashboard, /api/projects | left-menu-navigation.spec.ts |
+| Projects | #/projects | renderProjectList | GET/POST/PATCH/DELETE /api/projects | left-menu-navigation.spec.ts |
+| Task Groups | #/ または #/task-groups | renderTaskGroupList | GET/POST/PATCH/DELETE /api/task-groups | task-groups-crud.spec.ts |
+| Activity | #/activity | renderActivity | GET /api/activity | left-menu-navigation.spec.ts |
+
+#### セクション 2: Claude Code
+
+| メニュー名 | URL/ハッシュ | レンダラー関数 | 主要APIエンドポイント | Playwrightテスト |
+|-----------|------------|--------------|-------------------|----------------|
+| AI Generate | #/ai-generate | renderAssistantPage | /api/assistant/* | left-menu-navigation.spec.ts |
+| Hooks | #/hooks | renderHooksPage | GET/POST/PUT/DELETE /api/claude-hooks | hooks-crud.spec.ts |
+| Commands | #/commands | renderCommandsPage | GET/POST/PUT/DELETE /api/claude-files/commands | commands-agents-crud.spec.ts |
+| Agents | #/agents | renderAgentsPage | GET/POST/PUT/DELETE /api/claude-files/agents | commands-agents-crud.spec.ts |
+| Plugins | #/plugins | renderPluginsPage | /api/assistant/plugins* | assistant-save-plugin spec |
+| MCP Servers | #/mcp-servers | renderMcpServersPage | GET/PATCH /api/mcp-servers | left-menu-navigation.spec.ts |
+
+#### セクション 3: Management
+
+| メニュー名 | URL/ハッシュ | レンダラー関数 | 主要APIエンドポイント | Playwrightテスト |
+|-----------|------------|--------------|-------------------|----------------|
+| Backup | #/backup | renderBackupPage | （部分実装） | left-menu-navigation.spec.ts |
+| Task Tracker | #/task-tracker | renderTaskTrackerPage | GET/POST/PATCH /api/tracker | left-menu-navigation.spec.ts |
+| PR Reviews | #/pr-reviews | renderPRReviewsPage | GET/POST/DELETE /api/pr-reviews | left-menu-navigation.spec.ts |
+| Logs | #/logs | renderLogsPage | GET /api/app-logs | left-menu-navigation.spec.ts |
+| Settings | #/settings | renderSettingsPage | GET/POST/PATCH/DELETE /api/settings | settings*.spec.ts |
+
+### Task Groups の詳細仕様（v3）
+
+#### 一覧ページ（renderTaskGroupList）
+
+- URLハッシュ: `#/` または `#/task-groups`
+- 表示内容: タスクグループの一覧（最新order）
+- 各アイテムに削除ボタン（赤色）が表示される
+- 削除後のナビゲーション先: `/task-groups`（`/` ではない）
+
+#### 詳細ページ（renderTaskList）
+
+- URLハッシュ: `#/task-groups/{task_group_id}`
+- 表示内容: タスクグループ内のタスク一覧
+- 「グループ削除」ボタンが表示される
+- 削除後のナビゲーション先: `/task-groups`（`/` ではない）
+
+#### タスク詳細ページ（renderTaskDetail）
+
+- URLハッシュ: `#/tasks/{task_id}`
+- 「タスク削除」ボタンが表示される
+- 削除後のナビゲーション先: `/task-groups/{task_group_id}`
+
+### 削除操作の仕様
+
+すべての削除操作は以下の共通仕様に従う:
+
+1. ユーザーに確認ダイアログを表示（`confirm()`）
+2. DELETE APIを呼び出す
+3. 成功後、適切なリストページへナビゲートする
+4. 失敗時はアラート表示
+
+**ナビゲーション先の正規化**:
+- タスクグループ削除 → `/task-groups` へ（`/`ではない）
+- タスク削除 → `/task-groups/{親グループID}` へ
+
 
 ## バックグラウンド起動
 

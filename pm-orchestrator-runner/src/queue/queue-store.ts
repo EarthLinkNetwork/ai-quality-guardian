@@ -313,6 +313,8 @@ export interface IQueueStore {
   getAllTaskGroups(targetNamespace?: string): Promise<TaskGroupSummary[]>;
   getAllNamespaces(): Promise<NamespaceSummary[]>;
   deleteItem(taskId: string): Promise<void>;
+  /** Delete all tasks in a task group. Returns count of deleted items. */
+  deleteTaskGroup(taskGroupId: string, targetNamespace?: string): Promise<number>;
   recoverStaleTasks(maxAgeMs?: number): Promise<number>;
   updateRunnerHeartbeat(runnerId: string, projectRoot: string): Promise<void>;
   getRunner(runnerId: string): Promise<RunnerRecord | null>;
@@ -1271,12 +1273,33 @@ export class QueueStore implements IQueueStore {
     await this.docClient.send(
       new DeleteCommand({
         TableName: QUEUE_TABLE_NAME,
-        Key: { 
+        Key: {
           namespace: this.namespace,
-          task_id: taskId 
+          task_id: taskId
         },
       })
     );
+  }
+
+  /**
+   * Delete all tasks in a task group. Returns count of deleted items.
+   */
+  async deleteTaskGroup(taskGroupId: string, targetNamespace?: string): Promise<number> {
+    const items = await this.getByTaskGroup(taskGroupId, targetNamespace);
+    const ns = targetNamespace ?? this.namespace;
+    let count = 0;
+    for (const item of items) {
+      await this.docClient.send(
+        new DeleteCommand({
+          TableName: QUEUE_TABLE_NAME,
+          Key: { namespace: ns, task_id: item.task_id },
+        })
+      );
+      count++;
+    }
+    this.archivedGroups.delete(taskGroupId);
+    this.groupStatusOverrides.delete(taskGroupId);
+    return count;
   }
 
   /**

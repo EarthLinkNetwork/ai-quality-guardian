@@ -104,6 +104,30 @@ if (fs.existsSync(srcHtml)) {
   }
 }
 
+// Check 8: All 15 page renderer functions exist
+const pageRenderers = [
+  'renderDashboard', 'renderProjectList', 'renderTaskGroupList', 'renderActivity',
+  'renderAssistantPage', 'renderHooksPage', 'renderCommandsPage', 'renderAgentsPage',
+  'renderPluginsPage', 'renderMcpServersPage', 'renderBackupPage',
+  'renderTaskTrackerPage', 'renderPRReviewsPage', 'renderLogsPage', 'renderSettingsPage',
+];
+for (const fn of pageRenderers) {
+  if (content.includes(fn)) {
+    pass(`contains renderer: ${fn}`);
+  } else {
+    fail(`missing renderer: ${fn}`);
+  }
+}
+
+// Check 9: Delete navigation goes to /task-groups (not /)
+const deleteNavPattern = "navigate('/task-groups')";
+const deleteNavCount = (content.match(/navigate\('\/task-groups'\)/g) || []).length;
+if (deleteNavCount >= 2) {
+  pass(`delete navigation to /task-groups present (${deleteNavCount} occurrences)`);
+} else {
+  fail(`delete navigation to /task-groups missing or insufficient (found: ${deleteNavCount}, need: >= 2)`);
+}
+
 console.log('');
 if (failures > 0) {
   console.error(`verify-dist: ${failures} failure(s) — build is invalid`);

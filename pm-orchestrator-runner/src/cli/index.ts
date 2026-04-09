@@ -750,7 +750,7 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
     // This is the PRE-PROCESSING step of the LLM relay loop.
     let metaPromptUsed = false;
     let promptForClaude = effectivePrompt;
-    let llmSplitResult: { shouldSplit: boolean; subtasks?: Array<{ prompt: string; type: string }>; splitReason?: string } | undefined;
+    let llmSplitResult: { shouldSplit: boolean; subtasks?: Array<{ prompt: string; type: string; acceptance_criteria?: string[] }>; splitReason?: string } | undefined;
     if (!item.conversation_history || item.conversation_history.length === 0) {
       // Only generate meta prompt for initial execution (not re-runs after reply)
       try {
@@ -825,7 +825,10 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
             const subtaskIds: string[] = [];
             for (let i = 0; i < llmSplitResult.subtasks.length; i++) {
               const subtask = llmSplitResult.subtasks[i];
-              const subtaskPrompt = `[Subtask ${i + 1}/${llmSplitResult.subtasks.length} of parent task ${item.task_id}]\n\n${subtask.prompt}`;
+              const acSection = subtask.acceptance_criteria && subtask.acceptance_criteria.length > 0
+                ? `\n\n## 完了条件\nこのタスクが完了したとき、以下の条件がすべて満たされていなければなりません:\n${subtask.acceptance_criteria.map(c => `- ${c}`).join('\n')}\n\n**重要**: 上記の完了条件を一つずつ確認してから「完了」と報告してください。`
+                : '';
+              const subtaskPrompt = `[サブタスク ${i + 1}/${llmSplitResult.subtasks.length} (親タスク: ${item.task_id})]\n\n**注意**: 回答は必ず日本語で行ってください。\n\n${subtask.prompt}${acSection}`;
               const subtaskId = `${item.task_id}-sub-${i + 1}`;
               const subtaskType = subtaskTypeToTaskType(subtask.type);
               await queueStore.enqueue(
@@ -862,7 +865,7 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
               const subtaskIds: string[] = [];
               for (let i = 0; i < analysis.suggested_subtasks.length; i++) {
                 const subtask = analysis.suggested_subtasks[i];
-                const subtaskPrompt = `[Subtask ${i + 1}/${analysis.suggested_subtasks.length} of parent task ${item.task_id}]\n\n${subtask.prompt}`;
+                const subtaskPrompt = `[サブタスク ${i + 1}/${analysis.suggested_subtasks.length} (親タスク: ${item.task_id})]\n\n**注意**: 回答は必ず日本語で行ってください。\n\n${subtask.prompt}`;
                 const subtaskId = `${item.task_id}-sub-${i + 1}`;
                 await queueStore.enqueue(
                   item.session_id,
@@ -1949,9 +1952,12 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
       const taskItem = await queueStore.getItem(item.task_id);
       const output = taskItem?.output || (status === 'error' ? (errorMessage || 'Task failed') : 'Task completed');
 
+      // If this is a parent task that was decomposed, keep conversation as 'processing'
+      // until all subtasks complete (the aggregation code will set it to 'complete')
+      const isDecomposedTask = output.startsWith('Task decomposed');
       await dal.updateConversationMessage(run.projectId, assistantMsg.messageId, {
-        content: output,
-        status,
+        content: isDecomposedTask ? output + '\n\n(サブタスクの完了を待機中...)' : output,
+        status: isDecomposedTask ? 'processing' : status,
       });
 
       // Also update the run status
@@ -1959,7 +1965,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
         status: status === 'complete' ? 'COMPLETE' : 'ERROR',
       });
 
-      console.log(`[Runner] Updated conversation message for runId=${run.runId} → ${status}`);
+      console.log(`[Runner] Updated conversation message for runId=${run.runId} → ${isDecomposedTask ? 'processing (decomposed)' : status}`);
     } catch (err) {
       console.error('[Runner] Failed to update conversation message:', err);
     }

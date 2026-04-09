@@ -4131,6 +4131,7 @@
       // Inline status buttons for group lifecycle control
       const currentGroupStatus = g.group_status || 'active';
       const inlineStatusButtons = buildInlineGroupStatusButtons(g.task_group_id, currentGroupStatus);
+      const tgIdForDelete = g.task_group_id;
       return `
         <div class="list-item" onclick="navigate('/task-groups/${encodeURIComponent(g.task_group_id)}')">
           <div class="list-item-main">
@@ -4146,7 +4147,10 @@
               <span style="margin-left:auto; display:flex; gap:3px;" onclick="event.stopPropagation();">${inlineStatusButtons}</span>
             </div>
           </div>
-          <span class="list-item-arrow">›</span>
+          <div style="display:flex; align-items:center; gap:6px;" onclick="event.stopPropagation();">
+            <span class="list-item-arrow">›</span>
+            <button class="btn" style="background:#dc2626; color:white; border-color:#dc2626; font-size:0.75rem; padding:3px 10px;" onclick="event.stopPropagation(); (async () => { if (!confirm('このタスクグループを削除しますか？')) return; try { await api('/task-groups/${encodeURIComponent(g.task_group_id)}', { method: 'DELETE' }); navigate('/task-groups'); } catch(e) { alert('削除に失敗しました: ' + e.message); } })()">削除</button>
+          </div>
         </div>`;
     }
 
@@ -4806,6 +4810,7 @@
         const chatBtn = projectId
           ? `<button class="btn btn-primary" onclick="navigate('/chat/${encodeURIComponent(projectId)}?taskGroupId=${encodeURIComponent(taskGroupId)}')">Chat</button>`
           : '';
+        const deleteGroupBtn = `<button class="btn" style="background:#dc2626; color:white; border-color:#dc2626;" onclick="(async () => { if (!confirm('このタスクグループを削除しますか？')) return; try { await api('/task-groups/${encodeURIComponent(taskGroupId)}', { method: 'DELETE' }); navigate('/task-groups'); } catch(e) { alert('削除に失敗しました: ' + e.message); } })()">グループ削除</button>`;
         const statusButtons = buildGroupStatusButtons(taskGroupId, currentGroupStatus);
 
         if (tasks.length === 0) {
@@ -4816,6 +4821,7 @@
                 ${backBtn}
                 <button class="refresh-btn" onclick="renderTaskList('${escapeHtml(taskGroupId)}')">Refresh</button>
                 ${chatBtn}
+                ${deleteGroupBtn}
               </div>
             </div>
             <div class="card" style="padding:12px; display:flex; align-items:center; gap:8px;">
@@ -4832,21 +4838,52 @@
           return;
         }
 
-        const items = tasks.map(t => `
-          <div class="list-item" onclick="navigate('/tasks/${encodeURIComponent(t.task_id)}')">
-            <div class="list-item-main">
-              <span class="badge ${getStatusBadgeClass(t.status)}">${t.status}</span>
-              <span class="list-item-title">${escapeHtml(t.task_id)}</span>
-              <div class="list-item-meta">
-                ${escapeHtml(t.prompt.substring(0, 80))}${t.prompt.length > 80 ? '...' : ''}
+        // Build subtask tree structure
+        const parentTasks = tasks.filter(t => !t.parent_task_id);
+        const subtaskMap = {};
+        tasks.filter(t => t.parent_task_id).forEach(t => {
+          if (!subtaskMap[t.parent_task_id]) subtaskMap[t.parent_task_id] = [];
+          subtaskMap[t.parent_task_id].push(t);
+        });
+
+        const renderTaskItem = (t, isSubtask) => {
+          const indentStyle = isSubtask
+            ? 'margin-left: 24px; border-left: 3px solid #e5e7eb; padding-left: 8px; margin-top: 4px;'
+            : '';
+          const subtasks = subtaskMap[t.task_id] || [];
+          const doneCount = subtasks.filter(s => s.status === 'COMPLETE').length;
+          const subtaskBadge = subtasks.length > 0
+            ? `<span class="badge badge-secondary" style="font-size:0.75rem; margin-left:8px;">${subtasks.length} subtasks (${doneCount} done)</span>`
+            : '';
+          return `
+            <div style="${indentStyle}">
+              <div class="list-item" style="position:relative;" onclick="navigate('/tasks/${encodeURIComponent(t.task_id)}')">
+                <div class="list-item-main">
+                  <span class="badge ${getStatusBadgeClass(t.status)}">${t.status}</span>
+                  <span class="list-item-title">${escapeHtml(t.task_id)}</span>
+                  ${subtaskBadge}
+                  <div class="list-item-meta">
+                    ${escapeHtml(t.prompt.substring(0, 80))}${t.prompt.length > 80 ? '...' : ''}
+                  </div>
+                  <div class="list-item-meta">
+                    ${formatDate(t.created_at)}
+                  </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="list-item-arrow">›</span>
+                  <button class="btn" style="background:#dc2626; color:white; border-color:#dc2626; font-size:0.75rem; padding:3px 10px;" onclick="event.stopPropagation(); (async () => { if (!confirm('このタスクを削除しますか？')) return; try { await api('/tasks/${encodeURIComponent(t.task_id)}', { method: 'DELETE' }); renderTaskList('${escapeHtml(taskGroupId)}'); } catch(e) { alert('削除に失敗しました: ' + e.message); } })()">削除</button>
+                </div>
               </div>
-              <div class="list-item-meta">
-                ${formatDate(t.created_at)}
-              </div>
+              ${subtasks.map(s => renderTaskItem(s, true)).join('')}
             </div>
-            <span class="list-item-arrow">›</span>
-          </div>
-        `).join('');
+          `;
+        };
+
+        // Render parent tasks first; orphan subtasks (no matching parent in list) appended at end
+        const renderedParents = parentTasks.map(t => renderTaskItem(t, false)).join('');
+        const orphanSubtasks = tasks.filter(t => t.parent_task_id && !tasks.find(p => p.task_id === t.parent_task_id));
+        const renderedOrphans = orphanSubtasks.map(t => renderTaskItem(t, false)).join('');
+        const items = renderedParents + renderedOrphans;
 
         app.innerHTML = `
           <div class="page-header">
@@ -4855,6 +4892,7 @@
               ${backBtn}
               <button class="refresh-btn" onclick="renderTaskList('${escapeHtml(taskGroupId)}')">Refresh</button>
               ${chatBtn}
+              ${deleteGroupBtn}
             </div>
           </div>
           <div class="card" data-testid="group-status-bar" style="padding:12px; display:flex; align-items:center; gap:8px;">
@@ -4898,6 +4936,7 @@
         const chatBtn = taskProjectId
           ? `<button class="btn btn-primary" onclick="navigate('/chat/${encodeURIComponent(taskProjectId)}?taskGroupId=${encodeURIComponent(task.task_group_id)}')">Chat</button>`
           : '';
+        const deleteTaskBtn = `<button class="btn" style="background:#dc2626; color:white; border-color:#dc2626;" onclick="(async () => { if (!confirm('このタスクを削除しますか？')) return; try { await api('/tasks/${encodeURIComponent(task.task_id)}', { method: 'DELETE' }); navigate('/task-groups/${encodeURIComponent(task.task_group_id)}'); } catch(e) { alert('削除に失敗しました: ' + e.message); } })()">タスク削除</button>`;
 
         let errorSection = '';
         if (task.error_message) {
@@ -5039,6 +5078,7 @@
               ${backBtn}
               <button class="refresh-btn" onclick="renderTaskDetail('${escapeHtml(taskId)}')">Refresh</button>
               ${chatBtn}
+              ${deleteTaskBtn}
             </div>
           </div>
 
@@ -7892,8 +7932,8 @@
           ${requiredActionsHtml}
 
           <div id="active-projects-section" style="margin-bottom:20px;">
-            <h3 style="margin-bottom:4px; color:#1f2937;">Active Projects</h3>
-            <div style="font-size:0.85rem; color:#6b7280; margin-bottom:12px;">Projects with running or queued tasks</div>
+            <h3 style="margin-bottom:4px; color:#1f2937;">最近のタスクグループ</h3>
+            <div style="font-size:0.85rem; color:#6b7280; margin-bottom:12px;">最近更新されたタスクグループ</div>
             <div id="live-projects"><div style="color:#6b7280; text-align:center; padding:20px;">Loading...</div></div>
           </div>
 
@@ -7971,113 +8011,60 @@
       if (!container) return;
 
       try {
-        // Fetch projects and task groups in parallel
-        var results = await Promise.all([
-          api('/dashboard'),
-          api('/task-groups')
-        ]);
-        var dashboardData = results[0];
-        var taskGroupsData = results[1];
+        var taskGroupsData = await api('/task-groups');
+        var taskGroups = (taskGroupsData.task_groups || []);
 
-        var projects = dashboardData.projects || [];
-        var taskGroups = taskGroupsData.task_groups || [];
-
-        // Group active task groups by project_id
-        var projectTasks = {};
-        taskGroups.forEach(function(tg) {
-          var pid = tg.project_id || '';
-          if (!projectTasks[pid]) projectTasks[pid] = [];
-          var sc = tg.status_counts || {};
-          var hasActive = (sc.RUNNING || 0) + (sc.QUEUED || 0) + (sc.AWAITING_RESPONSE || 0);
-          if (hasActive > 0 || tg.group_status === 'active') {
-            projectTasks[pid].push(tg);
-          }
+        // Sort by latest_updated_at descending, show top 8
+        taskGroups.sort(function(a, b) {
+          return (b.latest_updated_at || '').localeCompare(a.latest_updated_at || '');
         });
+        var recentGroups = taskGroups.slice(0, 8);
 
-        // Filter to active projects or those with running tasks
-        var activeProjects = projects.filter(function(p) {
-          var pid = p.projectId;
-          var tasks = projectTasks[pid] || [];
-          return p.status === 'running' || tasks.length > 0;
-        });
-
-        // If no active projects, show the most recent ones
-        if (activeProjects.length === 0) {
-          activeProjects = projects.slice(0, 5);
-        }
-
-        if (activeProjects.length === 0) {
-          container.innerHTML = '<div style="color:#6b7280; text-align:center; padding:20px;">No active projects</div>';
+        if (recentGroups.length === 0) {
+          container.innerHTML = '<div style="color:#6b7280; text-align:center; padding:20px;">タスクグループがありません</div>';
           return;
         }
 
         var html = '';
-        activeProjects.forEach(function(project) {
-          var pid = project.projectId;
-          var tasks = projectTasks[pid] || [];
-          var label = project.alias || project.projectPath || pid;
-          if (label.length > 50) label = '...' + label.slice(-47);
+        recentGroups.forEach(function(tg) {
+          var sc = tg.status_counts || {};
+          var running = sc.RUNNING || 0;
+          var queued = sc.QUEUED || 0;
+          var awaiting = sc.AWAITING_RESPONSE || 0;
+          var errors = sc.ERROR || 0;
+          var done = sc.COMPLETE || 0;
 
-          // Count running/queued tasks across groups
-          var runningCount = 0;
-          var queuedCount = 0;
-          var awaitingCount = 0;
-          tasks.forEach(function(tg) {
-            var sc = tg.status_counts || {};
-            runningCount += sc.RUNNING || 0;
-            queuedCount += sc.QUEUED || 0;
-            awaitingCount += sc.AWAITING_RESPONSE || 0;
-          });
+          var badges = '';
+          if (running > 0) badges += '<span class="badge badge-running" style="font-size:0.7rem;">' + running + ' running</span> ';
+          if (awaiting > 0) badges += '<span class="badge" style="font-size:0.7rem; background:#f59e0b; color:white;">' + awaiting + ' awaiting</span> ';
+          if (queued > 0) badges += '<span class="badge badge-queued" style="font-size:0.7rem;">' + queued + ' queued</span> ';
+          if (errors > 0) badges += '<span class="badge badge-error" style="font-size:0.7rem;">' + errors + ' error</span> ';
+          if (done > 0 && !running && !queued && !awaiting) badges += '<span class="badge badge-complete" style="font-size:0.7rem;">' + done + ' done</span>';
+          if (!badges) badges = '<span style="font-size:0.7rem; color:#6b7280;">' + (tg.group_status || 'active') + '</span>';
 
-          var statusBadges = '';
-          if (runningCount > 0) {
-            statusBadges += '<span class="badge badge-running" style="font-size:0.7rem;">' + runningCount + ' running</span>';
-          }
-          if (queuedCount > 0) {
-            statusBadges += '<span class="badge badge-queued" style="font-size:0.7rem;">' + queuedCount + ' queued</span>';
-          }
-          if (awaitingCount > 0) {
-            statusBadges += '<span class="badge" style="font-size:0.7rem; background:#f59e0b; color:white;">' + awaitingCount + ' awaiting</span>';
-          }
-          if (!statusBadges) {
-            statusBadges = '<span style="font-size:0.75rem; color:#6b7280;">idle</span>';
-          }
+          var title = tg.first_prompt || tg.task_group_id;
+          if (title.length > 70) title = title.substring(0, 67) + '...';
 
-          html += '<div class="card" style="margin-bottom:12px; padding:12px 16px;">';
-          html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">';
-          html += '<div style="font-weight:600; cursor:pointer;" onclick="navigate(\'/projects/' + encodeURIComponent(pid) + '\')">' + escapeHtml(label) + '</div>';
-          html += '<div style="display:flex; gap:8px; align-items:center;">' + statusBadges;
-          html += '<button class="btn btn-sm" style="font-size:0.75rem; padding:4px 10px;" onclick="navigate(\'/chat/' + encodeURIComponent(pid) + '\')">+ Task</button>';
+          var projectLabel = tg.project_alias && tg.project_alias !== 'N/A' ? tg.project_alias : '';
+          var projectInfo = projectLabel
+            ? '<span style="font-size:0.75rem; color:#2563eb; cursor:pointer;" onclick="event.stopPropagation(); navigate(\'/projects/' + encodeURIComponent(tg.project_id) + '\')">' + escapeHtml(projectLabel) + '</span>'
+            : '';
+
+          html += '<div class="list-item" style="margin-bottom:4px;" onclick="navigate(\'/task-groups/' + encodeURIComponent(tg.task_group_id) + '\')">';
+          html += '<div class="list-item-main">';
+          html += '<div style="font-size:0.9rem; color:#111827; margin-bottom:3px;">' + escapeHtml(title) + '</div>';
+          html += '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">';
+          html += badges;
+          if (projectInfo) html += '| ' + projectInfo;
+          html += '<span style="font-size:0.75rem; color:#9ca3af;">更新: ' + formatDate(tg.latest_updated_at) + '</span>';
           html += '</div></div>';
-
-          // Show active task groups
-          if (tasks.length > 0) {
-            tasks.forEach(function(tg) {
-              var sc = tg.status_counts || {};
-              var running = sc.RUNNING || 0;
-              var awaiting = sc.AWAITING_RESPONSE || 0;
-              var tgLabel = tg.first_prompt || tg.task_group_id;
-              if (tgLabel.length > 60) tgLabel = tgLabel.substring(0, 57) + '...';
-
-              var statusIndicator = running > 0 ? '<span class="badge badge-running" style="font-size:0.65rem;">RUN</span>'
-                : awaiting > 0 ? '<span class="badge" style="font-size:0.65rem; background:#f59e0b; color:white;">WAIT</span>'
-                : '<span class="badge badge-queued" style="font-size:0.65rem;">Q</span>';
-
-              html += '<div style="padding:6px 8px; margin:2px 0; background:#f9fafb; border-radius:4px; display:flex; justify-content:space-between; align-items:center; cursor:pointer; font-size:0.85rem;" onclick="navigate(\'/task-groups/' + encodeURIComponent(tg.task_group_id) + '\')">';
-              html += '<span style="display:flex; align-items:center; gap:6px;">' + statusIndicator + ' ' + escapeHtml(tgLabel) + '</span>';
-              html += '<span style="font-size:0.75rem; color:#6b7280;">' + tg.task_count + ' task(s)</span>';
-              html += '</div>';
-            });
-          } else {
-            html += '<div style="font-size:0.8rem; color:#6b7280; padding:4px 8px;">No active tasks</div>';
-          }
-
+          html += '<span class="list-item-arrow">›</span>';
           html += '</div>';
         });
 
-        container.innerHTML = html;
+        container.innerHTML = '<div class="card" style="padding:8px 12px;">' + html + '</div>';
       } catch (e) {
-        container.innerHTML = '<div class="error-message">Failed to load active projects: ' + escapeHtml(e.message) + '</div>';
+        container.innerHTML = '<div class="error-message">Failed to load recent task groups: ' + escapeHtml(e.message) + '</div>';
       }
     }
 
@@ -13030,7 +13017,7 @@
         renderDashboard();
       } else if (path === '/projects') {
         renderProjectList();
-      } else if (path === '/' || path === '') {
+      } else if (path === '/' || path === '' || path === '/task-groups') {
         renderTaskGroupList();
       } else if (path === '/activity') {
         renderActivity();

@@ -859,6 +859,8 @@ export interface MetaPromptResult {
   subtasks?: Array<{
     prompt: string;
     type: 'implementation' | 'test' | 'review' | 'research';
+    /** Specific, verifiable conditions that must be true when the subtask is complete */
+    acceptance_criteria?: string[];
   }>;
   /** Reason for splitting (or not splitting) */
   splitReason?: string;
@@ -933,10 +935,17 @@ Do NOT split if:
 3. Simple configuration change
 
 Respond in this exact JSON format (no markdown):
-{"metaPrompt":"the enhanced prompt for Claude Code","enhancements":"brief list of what you clarified/added","shouldSplit":true/false,"subtasks":[{"prompt":"subtask 1 prompt","type":"implementation"},{"prompt":"subtask 2 prompt","type":"test"}],"splitReason":"why splitting is or is not needed"}
+{"metaPrompt":"the enhanced prompt for Claude Code","enhancements":"brief list of what you clarified/added","shouldSplit":true/false,"subtasks":[{"prompt":"subtask 1 prompt","type":"implementation","acceptance_criteria":["verifiable condition 1","verifiable condition 2"]},{"prompt":"subtask 2 prompt","type":"test","acceptance_criteria":["all tests pass","coverage >= 80%"]}],"splitReason":"why splitting is or is not needed"}
 
 If shouldSplit is false, subtasks should be an empty array [].
-Valid subtask types: "implementation", "test", "review", "research".`;
+Valid subtask types: "implementation", "test", "review", "research".
+
+CRITICAL: Every subtask MUST include acceptance_criteria — a list of specific, verifiable conditions that prove the subtask is complete. Examples:
+- For UI implementation: ["Delete button appears in task detail page", "Clicking delete shows confirmation dialog", "Confirmed delete calls DELETE /api/tasks/:id and redirects"]
+- For API implementation: ["GET /api/endpoint returns 200 with {field: value}", "POST with invalid data returns 400 with error message"]
+- For test tasks: ["All new tests pass", "Tests cover the happy path and at least one error case"]
+- For refactoring: ["Existing tests still pass", "No new TypeScript errors"]
+DO NOT write vague criteria like "works correctly" or "is implemented". Each criterion must be independently verifiable.`;
 
     console.log(`[meta-prompt] Using ${resolved.provider}/${resolved.model} to generate meta prompt`);
 
@@ -944,7 +953,7 @@ Valid subtask types: "implementation", "test", "review", "research".`;
       metaPrompt: string;
       enhancements: string;
       shouldSplit?: boolean;
-      subtasks?: Array<{ prompt: string; type?: string }>;
+      subtasks?: Array<{ prompt: string; type?: string; acceptance_criteria?: string[] }>;
       splitReason?: string;
     };
 
@@ -993,12 +1002,15 @@ Valid subtask types: "implementation", "test", "review", "research".`;
       console.log(`[meta-prompt] Split recommended: ${parsed.splitReason} (${parsed.subtasks?.length || 0} subtasks)`);
     }
 
-    // Normalize subtask types to valid values
+    // Normalize subtask types to valid values and preserve acceptance_criteria
     const validTypes = ['implementation', 'test', 'review', 'research'] as const;
     const normalizedSubtasks = parsed.shouldSplit && parsed.subtasks
       ? parsed.subtasks.map(st => ({
           prompt: st.prompt,
           type: (validTypes.includes(st.type as typeof validTypes[number]) ? st.type : 'implementation') as 'implementation' | 'test' | 'review' | 'research',
+          acceptance_criteria: Array.isArray((st as { acceptance_criteria?: unknown }).acceptance_criteria)
+            ? (st as { acceptance_criteria: string[] }).acceptance_criteria
+            : undefined,
         }))
       : undefined;
 

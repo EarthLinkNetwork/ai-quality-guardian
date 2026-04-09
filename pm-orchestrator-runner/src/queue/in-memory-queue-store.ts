@@ -628,6 +628,22 @@ export class InMemoryQueueStore implements IQueueStore {
   }
 
   /**
+   * Delete all tasks in a task group. Returns count of deleted items.
+   */
+  async deleteTaskGroup(taskGroupId: string, targetNamespace?: string): Promise<number> {
+    const items = await this.getByTaskGroup(taskGroupId, targetNamespace);
+    let count = 0;
+    for (const item of items) {
+      const key = this.getTaskKey(item.task_id);
+      this.tasks.delete(key);
+      count++;
+    }
+    this.archivedGroups.delete(taskGroupId);
+    this.groupStatusOverrides.delete(taskGroupId);
+    return count;
+  }
+
+  /**
    * Mark stale RUNNING tasks as ERROR
    */
   async recoverStaleTasks(maxAgeMs: number = 5 * 60 * 1000): Promise<number> {

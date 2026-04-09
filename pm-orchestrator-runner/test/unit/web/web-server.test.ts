@@ -194,6 +194,16 @@ class MockQueueStore {
     this.items.delete(taskId);
   }
 
+  async deleteTaskGroup(taskGroupId: string): Promise<number> {
+    const toDelete = Array.from(this.items.values()).filter(i => i.task_group_id === taskGroupId);
+    for (const item of toDelete) {
+      this.items.delete(item.task_id);
+    }
+    this.archivedGroups.delete(taskGroupId);
+    this.groupStatusOverrides.delete(taskGroupId);
+    return toDelete.length;
+  }
+
   async recoverStaleTasks(_maxAgeMs: number): Promise<number> {
     return 0;
   }

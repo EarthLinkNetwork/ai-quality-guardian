@@ -808,6 +808,25 @@ export class FileQueueStore implements IQueueStore {
   }
 
   /**
+   * Delete all tasks in a task group. Returns count of deleted items.
+   */
+  async deleteTaskGroup(taskGroupId: string, targetNamespace?: string): Promise<number> {
+    const items = await this.getByTaskGroup(taskGroupId, targetNamespace);
+    for (const item of items) {
+      const key = this.getTaskKey(item.task_id);
+      this.tasks.delete(key);
+    }
+    if (items.length > 0) {
+      this.saveTasks();
+    }
+    this.archivedGroups.delete(taskGroupId);
+    this.groupStatusOverrides.delete(taskGroupId);
+    this.saveArchivedGroups();
+    this.saveGroupStatusOverrides();
+    return items.length;
+  }
+
+  /**
    * Mark stale RUNNING tasks as ERROR
    */
   async recoverStaleTasks(maxAgeMs: number = 5 * 60 * 1000): Promise<number> {
