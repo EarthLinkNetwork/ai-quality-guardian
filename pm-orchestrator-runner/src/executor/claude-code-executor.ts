@@ -26,6 +26,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import type { BlockedReason, TerminatedBy } from '../models/enums';
 import { getExecutorOutputStream } from './executor-output-stream';
+import { registerTaskProcess, deregisterTaskProcess } from './process-registry';
 
 /**
  * Executor configuration
@@ -750,6 +751,16 @@ export class ClaudeCodeExecutor implements IExecutor {
       // Log PID after successful spawn
       outputStream.emit(task.id, 'spawn', `[spawn] pid: ${childProcess.pid ?? 'unknown'}`);
 
+      // Register in process registry so cancel API can kill this process
+      registerTaskProcess(task.id, () => {
+        if (childProcess && !childProcess.killed) {
+          childProcess.kill('SIGTERM');
+          setTimeout(() => {
+            if (childProcess && !childProcess.killed) childProcess.kill('SIGKILL');
+          }, SIGTERM_GRACE_MS);
+        }
+      });
+
       // Initialize last output time
       updateLastOutputTime();
 
@@ -932,6 +943,9 @@ export class ClaudeCodeExecutor implements IExecutor {
       // Handle completion
       childProcess.on('close', async (code: number | null) => {
         const duration_ms = Date.now() - startTime;
+
+        // Deregister from process registry (process has ended)
+        deregisterTaskProcess(task.id);
 
         // Flush remaining stdout buffer
         if (stdoutBuffer.trim()) {

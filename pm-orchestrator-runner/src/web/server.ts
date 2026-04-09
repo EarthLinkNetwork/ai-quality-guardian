@@ -50,6 +50,7 @@ import { detectTaskType } from '../utils/task-type-detector';
 import { detectQuestionsWithLlm } from '../utils/question-detector';
 import { initDAL, isDALInitialized, getDAL } from './dal/dal-factory';
 import { getLogEntries } from '../logging/app-logger';
+import { killTaskProcess } from '../executor/process-registry';
 
 /**
  * Derive namespace from folder path (same logic as CLI)
@@ -676,6 +677,21 @@ export function createApp(config: WebServerConfig): Express {
     try {
       const task_group_id = req.params.task_group_id as string;
       const targetNamespace = (req.query.namespace as string) || namespace;
+
+      // Get tasks before deletion to cancel running/queued ones
+      const tasks = await queueStore.getByTaskGroup(task_group_id, targetNamespace);
+
+      // Kill running processes and cancel queued tasks
+      for (const task of tasks) {
+        if (task.status === 'RUNNING' || task.status === 'AWAITING_RESPONSE') {
+          killTaskProcess(task.task_id);
+          // Also update status to CANCELLED in store
+          await queueStore.updateStatusWithValidation(task.task_id, 'CANCELLED').catch(() => {});
+        } else if (task.status === 'QUEUED') {
+          await queueStore.updateStatusWithValidation(task.task_id, 'CANCELLED').catch(() => {});
+        }
+      }
+
       const count = await queueStore.deleteTaskGroup(task_group_id, targetNamespace);
       if (count === 0) {
         res.status(404).json({
@@ -1111,6 +1127,11 @@ export function createApp(config: WebServerConfig): Express {
         } catch {
           // Best effort - don't fail the status update
         }
+      }
+
+      // If cancelling, kill any running Claude Code process
+      if (status === 'CANCELLED') {
+        killTaskProcess(task_id);
       }
 
       res.json({

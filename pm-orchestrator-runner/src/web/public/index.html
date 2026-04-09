@@ -2432,6 +2432,42 @@
     }
     .sidebar.collapsed .nav-divider { margin: 8px 4px; }
     .sidebar.collapsed .nav-section-label { display: none; }
+    .sidebar-task-manager {
+      padding: 8px 4px 4px 4px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      margin-top: 4px;
+    }
+    .sidebar.collapsed .sidebar-task-manager { display: none; }
+    .task-manager-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 4px;
+      border-radius: 4px;
+      font-size: 0.68rem;
+      color: rgba(255,255,255,0.8);
+      cursor: pointer;
+      margin-bottom: 2px;
+    }
+    .task-manager-item:hover { background: rgba(255,255,255,0.08); }
+    .task-manager-item .tm-status {
+      width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    }
+    .task-manager-item .tm-status.running { background: #22c55e; animation: pulse 2s infinite; }
+    .task-manager-item .tm-status.queued { background: #f59e0b; }
+    .task-manager-item .tm-text { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .task-manager-item .tm-time { font-size: 0.6rem; color: rgba(255,255,255,0.4); flex-shrink: 0; }
+    .task-manager-item .tm-cancel {
+      flex-shrink: 0; background: none; border: 1px solid rgba(239,68,68,0.5);
+      color: #ef4444; border-radius: 3px; cursor: pointer; font-size: 0.6rem; padding: 1px 4px;
+      line-height: 1.2;
+    }
+    .task-manager-item .tm-cancel:hover { background: rgba(239,68,68,0.2); }
+    .task-manager-empty { font-size: 0.65rem; color: rgba(255,255,255,0.3); padding: 4px 4px; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
     .sidebar-cost-summary {
       padding: 8px 16px;
       padding-bottom: 52px;
@@ -3038,6 +3074,10 @@
         <div class="nav-divider"></div>
         <a href="/settings" data-nav="settings"><span class="nav-icon">&#9881;</span><span class="nav-label">Settings</span></a>
       </nav>
+      <div class="sidebar-task-manager" id="sidebar-task-manager">
+        <div style="font-size:0.65rem;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;padding:0 4px;">Task Manager</div>
+        <div id="sidebar-task-list" style="max-height:200px;overflow-y:auto;"></div>
+      </div>
       <div class="sidebar-cost-summary" id="sidebar-cost-summary">
         <div style="font-size: 0.65rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">AI Usage</div>
         <div style="display:flex; justify-content:space-between; align-items:baseline;">
@@ -13266,9 +13306,96 @@
       }
     }
 
+    // ===== Task Manager Sidebar =====
+    let _taskManagerInterval = null;
+
+    async function updateTaskManager() {
+      try {
+        const res = await fetch('/api/task-groups');
+        const data = await res.json();
+        const groups = data.task_groups || data || [];
+        const activeTasks = [];
+        const now = Date.now();
+        (groups || []).forEach(function(g) {
+          const sc = g.status_counts || {};
+          const runningCount = (sc.RUNNING || 0) + (sc.AWAITING_RESPONSE || 0);
+          const queuedCount = sc.QUEUED || 0;
+          if (runningCount > 0 || queuedCount > 0) {
+            const elapsed = g.latest_updated_at
+              ? Math.round((now - new Date(g.latest_updated_at).getTime()) / 1000)
+              : 0;
+            activeTasks.push({
+              task_group_id: g.task_group_id,
+              status: runningCount > 0 ? 'running' : 'queued',
+              prompt: g.first_prompt || g.task_group_id || '',
+              elapsed: elapsed,
+              running: runningCount,
+              queued: queuedCount,
+            });
+          }
+        });
+
+        const container = document.getElementById('sidebar-task-list');
+        if (!container) return;
+
+        if (activeTasks.length === 0) {
+          container.innerHTML = '<div class="task-manager-empty">No active tasks</div>';
+          return;
+        }
+
+        let html = '';
+        activeTasks.forEach(function(t) {
+          const statusClass = t.status === 'running' ? 'running' : 'queued';
+          const promptPreview = (t.prompt || '').substring(0, 40) + ((t.prompt || '').length > 40 ? '...' : '');
+          const elapsedStr = t.elapsed > 0 ? (t.elapsed >= 60 ? Math.floor(t.elapsed / 60) + 'm' : t.elapsed + 's') : '';
+          html += '<div class="task-manager-item" onclick="navigate(\'/\')" title="' + escapeHtml(t.prompt || '') + '">' +
+            '<span class="tm-status ' + statusClass + '"></span>' +
+            '<span class="tm-text">' + escapeHtml(promptPreview || t.task_group_id.substring(0, 12)) + '</span>' +
+            (elapsedStr ? '<span class="tm-time">' + elapsedStr + '</span>' : '') +
+            '<button class="tm-cancel" onclick="event.stopPropagation();tmCancelGroup(\'' + escapeHtml(t.task_group_id) + '\')" title="Cancel tasks">x</button>' +
+            '</div>';
+        });
+        container.innerHTML = html;
+      } catch (e) { /* silent */ }
+    }
+
+    async function tmCancelGroup(taskGroupId) {
+      try {
+        // Get tasks in this group and cancel running/queued ones
+        const res = await fetch('/api/task-groups/' + encodeURIComponent(taskGroupId) + '/tasks');
+        const data = await res.json();
+        const tasks = data.tasks || [];
+        const cancelPromises = tasks
+          .filter(function(t) {
+            const s = (t.status || '').toUpperCase();
+            return s === 'RUNNING' || s === 'QUEUED' || s === 'AWAITING_RESPONSE';
+          })
+          .map(function(t) {
+            return fetch('/api/tasks/' + encodeURIComponent(t.task_id) + '/status', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: 'CANCELLED' }),
+            });
+          });
+        await Promise.all(cancelPromises);
+        showToast(cancelPromises.length + ' task(s) cancelled', 'success');
+        updateTaskManager();
+        updateRunningBadge();
+      } catch (e) {
+        showToast('Failed to cancel tasks', 'error');
+      }
+    }
+
+    function startTaskManager() {
+      updateTaskManager();
+      if (_taskManagerInterval) clearInterval(_taskManagerInterval);
+      _taskManagerInterval = setInterval(updateTaskManager, 10000);
+    }
+
     // Initialize sidebar
     loadSidebarProjectInfo();
     startRunningPoll();
+    startTaskManager();
 
     // =========================================================================
     // Web Dev Mode Functions
