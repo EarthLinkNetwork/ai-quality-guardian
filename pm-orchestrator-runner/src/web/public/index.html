@@ -3053,6 +3053,7 @@
         <a href="/dashboard" data-nav="dashboard"><span class="nav-icon">&#128200;</span><span class="nav-label">Dashboard</span></a>
         <a href="/projects" data-nav="projects"><span class="nav-icon">&#128193;</span><span class="nav-label">Projects</span></a>
         <a href="/" data-nav="home"><span class="nav-icon">&#128203;</span><span class="nav-label">Task Groups</span></a>
+        <a href="#" data-nav="new-chat" data-testid="nav-new-chat" onclick="event.preventDefault(); openNewChatDialog()"><span class="nav-icon">&#128172;</span><span class="nav-label">New Chat</span></a>
         <a href="/activity" data-nav="activity"><span class="nav-icon">&#9200;</span><span class="nav-label">Activity</span></a>
         <div class="nav-divider"></div>
         <div data-testid="sidebar-section-claude-code">
@@ -4189,6 +4190,7 @@
           </div>
           <div style="display:flex; align-items:center; gap:6px;" onclick="event.stopPropagation();">
             <span class="list-item-arrow">›</span>
+            ${hasProject ? `<button class="btn btn-primary" data-testid="tg-chat-btn" style="font-size:0.75rem; padding:3px 10px;" onclick="event.stopPropagation(); navigate('/chat/' + encodeURIComponent('${escapeHtml(g.project_id)}') + '?taskGroupId=' + encodeURIComponent('${escapeHtml(g.task_group_id)}'))">Chat</button>` : ''}
             <button class="btn" style="background:#dc2626; color:white; border-color:#dc2626; font-size:0.75rem; padding:3px 10px;" onclick="event.stopPropagation(); (async () => { if (!confirm('このタスクグループを削除しますか？')) return; try { await api('/task-groups/${encodeURIComponent(g.task_group_id)}', { method: 'DELETE' }); navigate('/task-groups'); } catch(e) { alert('削除に失敗しました: ' + e.message); } })()">削除</button>
           </div>
         </div>`;
@@ -4405,6 +4407,51 @@
     }
 
     /**
+     * Open a dialog for selecting a project to start a new chat
+     */
+    async function openNewChatDialog() {
+      // Remove existing dialog if any
+      var existing = document.getElementById('new-chat-dialog-overlay');
+      if (existing) existing.remove();
+
+      var overlay = document.createElement('div');
+      overlay.id = 'new-chat-dialog-overlay';
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; display:flex; align-items:center; justify-content:center;';
+
+      var dialog = document.createElement('div');
+      dialog.id = 'new-chat-dialog';
+      dialog.style.cssText = 'background:white; border-radius:8px; padding:24px; width:480px; max-width:90vw; max-height:70vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,0.3);';
+      dialog.innerHTML = '<h3 style="margin:0 0 16px; font-size:1.1rem;">New Chat \u2014 Select Project</h3><div id="new-chat-project-list" style="font-size:0.9rem; color:#6b7280;">Loading...</div><div style="margin-top:16px; text-align:right;"><button class="btn btn-secondary" id="new-chat-cancel-btn">Cancel</button></div>';
+
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+
+      overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+      document.getElementById('new-chat-cancel-btn').addEventListener('click', function() { overlay.remove(); });
+
+      try {
+        var projectsResp = await api('/projects');
+        var projectList = Array.isArray(projectsResp) ? projectsResp : (projectsResp && projectsResp.projects ? projectsResp.projects : []);
+        var listEl = document.getElementById('new-chat-project-list');
+        if (!listEl) return;
+        var activeProjects = projectList.filter(function(p) { return p.projectStatus !== 'archived'; });
+        if (activeProjects.length === 0) {
+          listEl.innerHTML = '<p style="color:#6b7280;">No projects found. <a href="/projects" onclick="event.preventDefault(); overlay.remove(); navigate(\'/projects\')">Add a project</a> first.</p>';
+          return;
+        }
+        listEl.innerHTML = activeProjects.map(function(p) {
+          return '<div class="list-item" data-testid="new-chat-project-item" style="cursor:pointer; padding:10px 12px; margin-bottom:6px; border:1px solid #e5e7eb; border-radius:6px;" onclick="document.getElementById(\'new-chat-dialog-overlay\').remove(); navigate(\'/chat/\' + encodeURIComponent(\'' + escapeHtml(p.projectId) + '\'))">' +
+            '<div style="font-weight:600; color:#1f2937;">' + escapeHtml(p.alias || p.projectPath.split('/').pop() || p.projectPath) + '</div>' +
+            '<div style="font-size:0.75rem; color:#6b7280; margin-top:2px;">' + escapeHtml(p.projectPath) + '</div>' +
+          '</div>';
+        }).join('');
+      } catch (e) {
+        var listEl2 = document.getElementById('new-chat-project-list');
+        if (listEl2) listEl2.innerHTML = '<p style="color:#dc2626;">Failed to load projects: ' + escapeHtml(e.message) + '</p>';
+      }
+    }
+
+    /**
      * Render a single project card HTML.
      *
      * @param {Object} p - Project object from /api/projects or /api/dashboard
@@ -4472,7 +4519,10 @@
           notesLine +
           statusSummary +
         '</div>' +
-        '<span class="list-item-arrow">&#8250;</span>' +
+        '<div style="display:flex; align-items:center; gap:6px;" onclick="event.stopPropagation();">' +
+          '<button class="btn btn-primary" data-testid="project-chat-btn" style="font-size:0.75rem; padding:3px 10px;" onclick="navigate(\'/chat/\' + encodeURIComponent(\'' + escapeHtml(p.projectId) + '\'))">Chat</button>' +
+          '<span class="list-item-arrow">&#8250;</span>' +
+        '</div>' +
       '</div>';
     }
 
