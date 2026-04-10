@@ -4,6 +4,8 @@
  */
 
 import { Router, Request, Response } from 'express';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import type { AuthenticatedRequest } from '../middleware/auth';
 import {
   InspectionPacket,
@@ -493,6 +495,65 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
       }
 
       res.json(project);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * GET /api/projects/:projectId/readme
+   * Read README file from project path. Tries common variants in order.
+   * Returns { filename, content } on success, { error: 'NOT_FOUND' } if no README exists.
+   */
+  router.get('/projects/:projectId/readme', async (req: Request, res: Response) => {
+    try {
+      const dal = getDAL();
+      const projectId = req.params.projectId as string;
+      const project = await dal.getProjectIndex(projectId);
+
+      if (!project) {
+        res.status(404).json({
+          error: 'NOT_FOUND',
+          message: 'Project not found',
+        } as ErrorResponse);
+        return;
+      }
+
+      const projectPath = project.projectPath;
+      if (!projectPath) {
+        res.status(404).json({
+          error: 'NOT_FOUND',
+          message: 'Project has no projectPath',
+        } as ErrorResponse);
+        return;
+      }
+
+      // Try common README filename variants
+      const candidates = ['README.md', 'readme.md', 'Readme.md', 'README.MD', 'README.txt', 'README'];
+      for (const filename of candidates) {
+        const fullPath = path.join(projectPath, filename);
+        // Prevent path traversal: resolved path must stay within projectPath
+        const resolved = path.resolve(fullPath);
+        if (!resolved.startsWith(path.resolve(projectPath) + path.sep) && resolved !== path.resolve(projectPath)) {
+          continue;
+        }
+        try {
+          const stat = await fs.stat(fullPath);
+          if (stat.isFile()) {
+            const content = await fs.readFile(fullPath, 'utf-8');
+            res.json({ filename, content, size: stat.size });
+            return;
+          }
+        } catch {
+          // File not found, try next variant
+        }
+      }
+
+      res.status(404).json({
+        error: 'NOT_FOUND',
+        message: 'No README file found in project root',
+      } as ErrorResponse);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);

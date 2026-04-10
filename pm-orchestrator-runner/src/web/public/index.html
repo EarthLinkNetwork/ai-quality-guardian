@@ -6855,6 +6855,34 @@
     }
 
     // ===================
+    // ===================
+    // Project Detail README Loader
+    // ===================
+    async function loadProjectReadme(projectId) {
+      const container = document.getElementById('project-readme-content');
+      if (!container) return;
+      container.innerHTML = '<div style="color:#9ca3af; font-size:0.85rem;">Loading README...</div>';
+      try {
+        const data = await api('/projects/' + encodeURIComponent(projectId) + '/readme');
+        if (!data || !data.content) {
+          container.innerHTML = '<p style="color:#6b7280; font-size:0.85rem; margin:0;">No README file found in the project root.</p>';
+          return;
+        }
+        const html = renderMarkdownToHtml(data.content);
+        container.innerHTML =
+          '<div style="font-size:0.75rem; color:#9ca3af; font-family:monospace; margin-bottom:8px;">' + escapeHtml(data.filename) + '</div>' +
+          '<div class="readme-preview-body" data-testid="project-readme-body">' + html + '</div>';
+      } catch (err) {
+        const msg = err && err.message ? err.message : 'Error';
+        if (/404|not.?found/i.test(msg)) {
+          container.innerHTML = '<p style="color:#6b7280; font-size:0.85rem; margin:0;">No README file found in the project root.</p>';
+        } else {
+          container.innerHTML = '<p style="color:#ef4444; font-size:0.85rem; margin:0;">Error loading README: ' + escapeHtml(msg) + '</p>';
+        }
+      }
+    }
+
+    // ===================
     // README Section (Markdown Preview)
     // ===================
     async function renderReadmeSection(container) {
@@ -8448,6 +8476,16 @@
 
           ${projectActionsHtml}
 
+          <div class="card" data-testid="project-readme-card" id="project-readme-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <h3 style="margin:0;">&#128214; README</h3>
+              <button class="btn btn-secondary" style="font-size:0.75rem; padding:4px 10px;" data-testid="project-readme-refresh-btn" onclick="loadProjectReadme('${escapeHtml(projectId)}')">Refresh</button>
+            </div>
+            <div id="project-readme-content" data-testid="project-readme-content" style="min-height:40px;">
+              <div style="color:#9ca3af; font-size:0.85rem;">Loading README...</div>
+            </div>
+          </div>
+
           <div>
             <h3 style="margin-bottom:12px;">Task Groups (${projectTaskGroups.length})</h3>
             <div id="project-tg-wrapper">${taskGroupItems}</div>
@@ -8555,6 +8593,9 @@
             renderDevConsole(projectId);
           }
         }
+
+        // Load README (async — non-blocking)
+        loadProjectReadme(projectId);
 
         // Display resume info if available
         if (resumeInfo) {
