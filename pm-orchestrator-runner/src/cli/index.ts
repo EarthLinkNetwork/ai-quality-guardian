@@ -1971,6 +1971,65 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     }
   };
 
+  /**
+   * When all child tasks of a decomposed parent finish, update the parent's
+   * conversation message with an aggregated summary.
+   */
+  const aggregateParentConversation = async (item: QueueItem) => {
+    if (!item.parent_task_id) return;
+    try {
+      const dal = getDAL();
+      const groupTasks = await queueStore.getByTaskGroup(item.task_group_id);
+      const siblings = groupTasks.filter(
+        (t) => t.parent_task_id === item.parent_task_id
+      );
+      if (siblings.length === 0) return;
+
+      const terminalStatuses = ['COMPLETE', 'ERROR', 'CANCELLED'] as const;
+      const allDone = siblings.every((t) =>
+        (terminalStatuses as readonly string[]).includes(t.status)
+      );
+      if (!allDone) return;
+
+      const rawParentId = item.parent_task_id.includes(':')
+        ? item.parent_task_id.split(':').slice(1).join(':')
+        : item.parent_task_id;
+
+      const parentRun = await dal.findRunByTaskRunId(rawParentId);
+      if (!parentRun) return;
+
+      const messages = await dal.listConversationMessages(parentRun.projectId);
+      const parentMsg = messages.find(
+        (m) => m.runId === parentRun.runId && m.role === 'assistant'
+      );
+      if (!parentMsg || parentMsg.status !== 'processing') return;
+
+      const hasErrors = siblings.some((t) => t.status === 'ERROR');
+      const finalStatus = hasErrors ? 'error' : 'complete';
+
+      const lines = siblings.map((t) => {
+        const rawId = t.task_id.includes(':')
+          ? t.task_id.split(':').slice(1).join(':')
+          : t.task_id;
+        const preview = t.output ? (' — ' + t.output.substring(0, 100)) : '';
+        return `- ${rawId}: ${t.status}${preview}`;
+      });
+      const doneCount = siblings.filter((t) => t.status === 'COMPLETE').length;
+      const summary = `全サブタスク完了 (${doneCount}/${siblings.length} 成功):\n${lines.join('\n')}`;
+
+      await dal.updateConversationMessage(parentRun.projectId, parentMsg.messageId, {
+        content: summary,
+        status: finalStatus,
+      });
+      await dal.updateRun(parentRun.runId, {
+        status: finalStatus === 'complete' ? 'COMPLETE' : 'ERROR',
+      });
+      console.log(`[Runner] Aggregated parent task ${item.parent_task_id} → ${finalStatus}`);
+    } catch (err) {
+      console.error('[Runner] Failed to aggregate parent conversation:', err);
+    }
+  };
+
   // Set up poller event listeners
   poller.on('started', () => {
     console.log('[Runner] Queue poller started');
@@ -1984,11 +2043,13 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     console.log(`[Runner] Completed task: ${item.task_id}`);
     log.app.info('Task completed', { taskId: item.task_id, status: 'COMPLETE' });
     updateConversationFromTask(item, 'complete').catch(() => {});
+    if (item.parent_task_id) aggregateParentConversation(item).catch(() => {});
   });
   poller.on('error', (item: QueueItem, error: Error) => {
     console.error(`[Runner] Task ${item.task_id} error:`, error.message);
     log.app.error('Task failed', { taskId: item.task_id, error: error.message });
     updateConversationFromTask(item, 'error', error.message).catch(() => {});
+    if (item.parent_task_id) aggregateParentConversation(item).catch(() => {});
   });
   poller.on('stale-recovered', (count: number) => {
     console.log(`[Runner] Recovered ${count} stale tasks`);

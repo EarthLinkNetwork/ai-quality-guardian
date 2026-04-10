@@ -151,3 +151,12 @@ test('sidebar contains all expected nav items', async ({ page }) => {
   await expect(page.locator('[data-nav="agents"]')).toBeVisible();
   await expect(page.locator('[data-nav="settings"]')).toBeVisible();
 });
+
+test('projects page has + New Project button', async ({ page }) => {
+  // spec: spec/19_WEB_UI.md > 管理画面メニュー構成 > Projects
+  await page.goto(BASE_URL + '/projects');
+  await page.waitForTimeout(1000);
+  // The + New Project button must be visible in the page header
+  const newProjectBtn = page.locator('button', { hasText: '+ New Project' });
+  await expect(newProjectBtn).toBeVisible();
+});

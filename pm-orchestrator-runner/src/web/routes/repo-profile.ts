@@ -32,6 +32,14 @@ export interface RepoProfile {
   devDependencies: string[];
   dirs: string[];
   detectedAt: string;
+  /** Existing .claude/skills/*.md file names (for AI Generate context) */
+  claudeSkills: string[];
+  /** Existing .claude/agents/*.md file names */
+  claudeAgents: string[];
+  /** Existing .claude/commands/*.md file names */
+  claudeCommands: string[];
+  /** Existing .claude/hooks/*.sh file names */
+  claudeHooks: string[];
 }
 
 export interface RepoProfileRoutesConfig {
@@ -76,6 +84,10 @@ async function scanRepoProfile(projectRoot: string): Promise<RepoProfile> {
     devDependencies: [],
     dirs: [],
     detectedAt: new Date().toISOString(),
+    claudeSkills: [],
+    claudeAgents: [],
+    claudeCommands: [],
+    claudeHooks: [],
   };
 
   // Read package.json
@@ -170,6 +182,25 @@ async function scanRepoProfile(projectRoot: string): Promise<RepoProfile> {
   } catch {
     /* ignore */
   }
+
+  // Scan .claude/ subdirectories for existing Claude Code configurations.
+  // This context helps AI Generate avoid duplicates and understand existing setup.
+  const scanClaudeSubdir = async (subDir: string): Promise<string[]> => {
+    try {
+      const dirPath = path.join(projectRoot, ".claude", subDir);
+      const entries = await fs.readdir(dirPath, { withFileTypes: true });
+      return entries.filter((e) => e.isFile()).map((e) => e.name);
+    } catch {
+      return [];
+    }
+  };
+  [profile.claudeSkills, profile.claudeAgents, profile.claudeCommands, profile.claudeHooks] =
+    await Promise.all([
+      scanClaudeSubdir("skills"),
+      scanClaudeSubdir("agents"),
+      scanClaudeSubdir("commands"),
+      scanClaudeSubdir("hooks"),
+    ]);
 
   return profile;
 }

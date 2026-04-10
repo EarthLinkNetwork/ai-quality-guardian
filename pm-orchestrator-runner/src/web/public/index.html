@@ -4632,7 +4632,10 @@
         app.innerHTML =
           '<div class="page-header">' +
             '<h2>Projects (' + totalProjects + ')</h2>' +
-            '<button class="refresh-btn" onclick="renderProjectList()">Refresh</button>' +
+            '<div class="action-bar">' +
+              '<button class="refresh-btn" onclick="renderProjectList()">Refresh</button>' +
+              '<button class="btn btn-primary" onclick="showCreateProjectDialog()">+ New Project</button>' +
+            '</div>' +
           '</div>' +
           '<div class="card" style="padding:0; overflow:hidden;">' +
             filterBar +
@@ -14451,6 +14454,9 @@
       document.body.style.paddingBottom = globalCmdBarVisible ? '56px' : '0';
     }
 
+    // Cache of projectId → projectPath for slash-command loading
+    var _gcmdProjectPathCache = {};
+
     async function loadGlobalCmdProjects() {
       var select = document.getElementById('gcmd-project');
       if (!select) return;
@@ -14462,6 +14468,8 @@
           var label = p.alias || p.projectPath || p.projectId;
           if (label.length > 30) label = '...' + label.slice(-27);
           html += '<option value="' + escapeHtml(p.projectId) + '">' + escapeHtml(label) + '</option>';
+          // Cache projectPath for slash-command loading
+          if (p.projectPath) _gcmdProjectPathCache[p.projectId] = p.projectPath;
         });
         select.innerHTML = html;
 
@@ -14472,6 +14480,7 @@
           select.value = decodeURIComponent(match[2]);
           // Trigger default command indicator update for auto-selected project
           updateGlobalCmdGroups();
+          loadGlobalCmdCommands();
         }
       } catch (e) {
         console.warn('[GlobalCmd] Failed to load projects:', e);
@@ -14519,22 +14528,32 @@
       }
 
       try {
-        var data = await api('/projects/' + encodeURIComponent(projectId) + '/settings-commands');
-        var globalCmds = data.global || [];
-        var projectCmds = data.project || [];
+        var projectPath = _gcmdProjectPathCache[projectId] || '';
+        var fetchSettingsCmd = api('/projects/' + encodeURIComponent(projectId) + '/settings-commands');
+        var fetchSlashCmd = projectPath
+          ? api('/claude-settings/slash-commands?projectPath=' + encodeURIComponent(projectPath))
+          : Promise.resolve({ commands: [] });
+        var results = await Promise.allSettled([fetchSettingsCmd, fetchSlashCmd]);
+
+        var settingsData = results[0].status === 'fulfilled' ? results[0].value : {};
+        var slashData = results[1].status === 'fulfilled' ? results[1].value : { commands: [] };
+
+        var globalCmds = settingsData.global || [];
+        var projectCmds = settingsData.project || [];
+        var slashCmds = slashData.commands || [];
 
         var html = '<option value="">No command</option>';
-        if (globalCmds.length > 0) {
-          html += '<optgroup label="Global">';
-          globalCmds.forEach(function(c) {
+        if (globalCmds.length > 0 || projectCmds.length > 0) {
+          html += '<optgroup label="Settings Commands">';
+          globalCmds.concat(projectCmds).forEach(function(c) {
             html += '<option value="' + escapeHtml(c.prompt || '') + '">' + escapeHtml(c.name) + '</option>';
           });
           html += '</optgroup>';
         }
-        if (projectCmds.length > 0) {
-          html += '<optgroup label="Project">';
-          projectCmds.forEach(function(c) {
-            html += '<option value="' + escapeHtml(c.prompt || '') + '">' + escapeHtml(c.name) + '</option>';
+        if (slashCmds.length > 0) {
+          html += '<optgroup label="Project Commands">';
+          slashCmds.forEach(function(c) {
+            html += '<option value="/' + escapeHtml(c.name) + '">' + escapeHtml(c.name) + '</option>';
           });
           html += '</optgroup>';
         }
@@ -14568,6 +14587,11 @@
       } else if (cmdPrompt && !content) {
         content = cmdPrompt;
       }
+      var gcmdAddTest = document.getElementById('gcmd-add-test');
+      var gcmdAddReview = document.getElementById('gcmd-add-review');
+      var addTest = gcmdAddTest ? gcmdAddTest.checked : false;
+      var addReview = gcmdAddReview ? gcmdAddReview.checked : false;
+
       input.disabled = true;
       sendBtn.disabled = true;
       sendBtn.textContent = '...';
@@ -14576,13 +14600,15 @@
         var data = await api('/projects/' + encodeURIComponent(projectId) + '/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: content })
+          body: JSON.stringify({ content: content, addTest: addTest, addReview: addReview })
         });
 
         if (data.error) throw new Error(data.message);
 
         input.value = '';
         if (cmdSelect) cmdSelect.selectedIndex = 0;
+        if (gcmdAddTest) gcmdAddTest.checked = false;
+        if (gcmdAddReview) gcmdAddReview.checked = false;
         showToast('Task submitted', 'success');
 
         // Refresh current page if on dashboard or task groups
@@ -14696,6 +14722,8 @@
     <select id="gcmd-command" title="Select command" style="max-width:150px;">
       <option value="">No command</option>
     </select>
+    <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#9ca3af;font-size:0.72rem;white-space:nowrap;flex-shrink:0;" title="Add test pipeline task after completion"><input type="checkbox" id="gcmd-add-test" style="width:12px;height:12px;"> Test</label>
+    <label style="display:flex;align-items:center;gap:3px;cursor:pointer;color:#9ca3af;font-size:0.72rem;white-space:nowrap;flex-shrink:0;" title="Add review pipeline task after completion"><input type="checkbox" id="gcmd-add-review" style="width:12px;height:12px;"> Review</label>
     <input type="text" id="gcmd-input" placeholder="Quick task... (Enter to send)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendGlobalCmd();}">
     <button onclick="sendGlobalCmd()" id="gcmd-send">Send</button>
     <button class="cmd-bar-toggle" onclick="toggleGlobalCmdBar()" title="Hide command bar">&times;</button>

@@ -103,6 +103,31 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
 
         const messages = await dal.listConversationMessages(projectId, limit);
 
+        // Self-healing: fix messages stuck in 'processing' if the underlying run
+        // has already finished (e.g. after server restart or missed poller events).
+        for (const msg of messages) {
+          if (msg.status === "processing" && msg.runId) {
+            try {
+              const run = await dal.getRun(msg.runId);
+              if (run && (run.status === "COMPLETE" || run.status === "ERROR")) {
+                const healedStatus = run.status === "COMPLETE" ? "complete" : "error";
+                const isPlaceholder =
+                  msg.content === "Processing..." ||
+                  msg.content === "Processing response...";
+                await dal.updateConversationMessage(projectId, msg.messageId, {
+                  status: healedStatus,
+                  ...(isPlaceholder
+                    ? { content: run.status === "COMPLETE" ? "タスク完了" : "タスクエラー" }
+                    : {}),
+                });
+                msg.status = healedStatus;
+              }
+            } catch {
+              /* non-fatal – return unhealed message */
+            }
+          }
+        }
+
         // Check for awaiting response
         const awaitingMessage = await dal.getAwaitingResponseMessage(projectId);
 
