@@ -81,6 +81,7 @@ export class QueuePoller extends EventEmitter {
   private readonly projectRoot: string;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private staleRecoveryTimer: ReturnType<typeof setInterval> | null = null;
   private inFlight: QueueItem | null = null;
   private isRunning: boolean = false;
   private lastPollAt: string | null = null;
@@ -148,6 +149,23 @@ export class QueuePoller extends EventEmitter {
       });
     }, this.pollIntervalMs);
 
+    // Periodic stale task recovery: runs every 5 minutes to catch tasks that got
+    // stuck at RUNNING when a runner process died between startup and 30-min threshold.
+    const staleRecoveryIntervalMs = 5 * 60 * 1000;
+    this.staleRecoveryTimer = setInterval(() => {
+      this.store.recoverStaleTasks(this.maxStaleTaskAgeMs).then(count => {
+        if (count > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[QueuePoller] Periodic stale recovery: ${count} task(s) recovered`);
+          log.sys.warn('Periodic stale tasks recovered', { count });
+          this.emit('stale-recovered', count);
+        }
+      }).catch(error => {
+        // eslint-disable-next-line no-console
+        console.error('[QueuePoller] Periodic stale recovery error:', error);
+      });
+    }, staleRecoveryIntervalMs);
+
     // Immediate first poll
     await this.poll();
   }
@@ -165,6 +183,11 @@ export class QueuePoller extends EventEmitter {
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
+    }
+
+    if (this.staleRecoveryTimer) {
+      clearInterval(this.staleRecoveryTimer);
+      this.staleRecoveryTimer = null;
     }
 
     // Mark runner as stopped (v2)
