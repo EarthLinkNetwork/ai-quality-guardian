@@ -125,8 +125,14 @@ export function createApp(config: WebServerConfig): Express {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+  // Prefer src/web/public/ when available (self-hosted/dev mode) so that
+  // edits to index.html by Claude Code are immediately visible without a build step.
+  const srcPublicPath = path.join(__dirname, '../../src/web/public');
+  const distPublicPath = path.join(__dirname, 'public');
+  const publicPath = fs.existsSync(srcPublicPath) ? srcPublicPath : distPublicPath;
+
   // Static files (no-cache for development)
-  app.use(express.static(path.join(__dirname, 'public'), {
+  app.use(express.static(publicPath, {
     setHeaders: (res) => {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     },
@@ -1346,7 +1352,7 @@ export function createApp(config: WebServerConfig): Express {
    * Serve main page (task group list)
    */
   app.get('/', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   /**
@@ -1354,7 +1360,7 @@ export function createApp(config: WebServerConfig): Express {
    * Serve task groups list page
    */
   app.get('/task-groups', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   /**
@@ -1362,7 +1368,7 @@ export function createApp(config: WebServerConfig): Express {
    * Serve task list page
    */
   app.get('/task-groups/:id', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   /**
@@ -1370,7 +1376,7 @@ export function createApp(config: WebServerConfig): Express {
    * Serve task detail page
    */
   app.get('/tasks/:id', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   /**
@@ -1378,7 +1384,7 @@ export function createApp(config: WebServerConfig): Express {
    * Serve new command form
    */
   app.get('/new', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   /**
@@ -1386,47 +1392,47 @@ export function createApp(config: WebServerConfig): Express {
    * Serve settings page
    */
   app.get('/settings', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   app.get('/commands', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   app.get('/agents', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   app.get('/hooks', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   app.get('/mcp-servers', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   app.get('/backup', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   app.get('/plugins', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   app.get('/assistant', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   app.get('/dashboard', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   app.get('/activity', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   app.get('/projects', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   // ===================
@@ -1570,7 +1576,7 @@ export function createApp(config: WebServerConfig): Express {
    * Serve agent launcher page
    */
   app.get('/agent', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   /**
@@ -1578,7 +1584,7 @@ export function createApp(config: WebServerConfig): Express {
    * Serve dashboard page
    */
   app.get('/dashboard', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   /**
@@ -1586,7 +1592,7 @@ export function createApp(config: WebServerConfig): Express {
    * Serve project detail page
    */
   app.get('/projects/:id', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   /**
@@ -1594,7 +1600,7 @@ export function createApp(config: WebServerConfig): Express {
    * Serve chat page for a project
    */
   app.get('/chat/:projectId', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   /**
@@ -1602,7 +1608,7 @@ export function createApp(config: WebServerConfig): Express {
    * Serve activity page
    */
   app.get('/activity', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   /**
@@ -1610,7 +1616,7 @@ export function createApp(config: WebServerConfig): Express {
    * Serve run detail page
    */
   app.get('/runs/:id', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   /**
@@ -1618,7 +1624,7 @@ export function createApp(config: WebServerConfig): Express {
    * Serve session detail page
    */
   app.get('/sessions/:id', (_req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
   });
 
   // ===================
