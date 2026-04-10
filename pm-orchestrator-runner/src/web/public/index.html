@@ -4898,12 +4898,19 @@
           const subtaskBadge = subtasks.length > 0
             ? `<span class="badge badge-secondary" style="font-size:0.75rem; margin-left:8px;">${subtasks.length} subtasks (${doneCount} done)</span>`
             : '';
+          const projectLabel = t.project_alias
+            || (t.project_path ? t.project_path.split('/').pop() : null)
+            || null;
+          const projectBadge = projectLabel
+            ? `<span style="display:inline-block; font-size:0.7rem; padding:1px 6px; border-radius:3px; background:#ede9fe; color:#6d28d9; margin-left:8px; font-weight:500;">${escapeHtml(projectLabel)}</span>`
+            : '';
           return `
             <div style="${indentStyle}">
               <div class="list-item" style="position:relative;" onclick="navigate('/tasks/${encodeURIComponent(t.task_id)}')">
                 <div class="list-item-main">
                   <span class="badge ${getStatusBadgeClass(t.status)}">${t.status}</span>
                   <span class="list-item-title">${escapeHtml(t.task_id)}</span>
+                  ${projectBadge}
                   ${subtaskBadge}
                   <div class="list-item-meta">
                     ${escapeHtml(t.prompt.substring(0, 80))}${t.prompt.length > 80 ? '...' : ''}
