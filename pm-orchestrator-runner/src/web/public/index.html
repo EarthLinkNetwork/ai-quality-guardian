@@ -3053,7 +3053,7 @@
         <a href="/dashboard" data-nav="dashboard"><span class="nav-icon">&#128200;</span><span class="nav-label">Dashboard</span></a>
         <a href="/projects" data-nav="projects"><span class="nav-icon">&#128193;</span><span class="nav-label">Projects</span></a>
         <a href="/" data-nav="home"><span class="nav-icon">&#128203;</span><span class="nav-label">Task Groups</span></a>
-        <a href="#" data-nav="new-chat" data-testid="nav-new-chat" onclick="event.preventDefault(); openNewChatDialog()"><span class="nav-icon">&#128172;</span><span class="nav-label">New Chat</span></a>
+        <a href="#" data-nav="new-chat" data-testid="nav-new-chat" onclick="event.preventDefault(); event.stopImmediatePropagation(); openNewChatDialog()"><span class="nav-icon">&#128172;</span><span class="nav-label">New Chat</span></a>
         <a href="/activity" data-nav="activity"><span class="nav-icon">&#9200;</span><span class="nav-label">Activity</span></a>
         <div class="nav-divider"></div>
         <div data-testid="sidebar-section-claude-code">
@@ -4173,8 +4173,14 @@
       const currentGroupStatus = g.group_status || 'active';
       const inlineStatusButtons = buildInlineGroupStatusButtons(g.task_group_id, currentGroupStatus);
       const tgIdForDelete = g.task_group_id;
+      // Pre-compute chat URL for the Chat button (data-attribute approach avoids JS-string injection)
+      const tgChatUrl = hasProject
+        ? '/chat/' + encodeURIComponent(g.project_id) + '?taskGroupId=' + encodeURIComponent(g.task_group_id)
+        : '';
+      // Pre-compute the task group detail URL the same way (also used in row onclick)
+      const tgDetailUrl = '/task-groups/' + encodeURIComponent(g.task_group_id);
       return `
-        <div class="list-item" onclick="navigate('/task-groups/${encodeURIComponent(g.task_group_id)}')">
+        <div class="list-item" data-tg-url="${escapeHtml(tgDetailUrl)}" onclick="navigate(this.dataset.tgUrl)">
           <div class="list-item-main">
             <div class="list-item-title" style="display:flex; align-items:center; gap:8px;">
               ${escapeHtml(displayTitle)}
@@ -4190,8 +4196,8 @@
           </div>
           <div style="display:flex; align-items:center; gap:6px;" onclick="event.stopPropagation();">
             <span class="list-item-arrow">›</span>
-            ${hasProject ? `<button class="btn btn-primary" data-testid="tg-chat-btn" style="font-size:0.75rem; padding:3px 10px;" onclick="event.stopPropagation(); navigate('/chat/' + encodeURIComponent('${escapeHtml(g.project_id)}') + '?taskGroupId=' + encodeURIComponent('${escapeHtml(g.task_group_id)}'))">Chat</button>` : ''}
-            <button class="btn" style="background:#dc2626; color:white; border-color:#dc2626; font-size:0.75rem; padding:3px 10px;" onclick="event.stopPropagation(); (async () => { if (!confirm('このタスクグループを削除しますか？')) return; try { await api('/task-groups/${encodeURIComponent(g.task_group_id)}', { method: 'DELETE' }); navigate('/task-groups'); } catch(e) { alert('削除に失敗しました: ' + e.message); } })()">削除</button>
+            ${hasProject ? `<button class="btn btn-primary" data-testid="tg-chat-btn" data-chat-url="${escapeHtml(tgChatUrl)}" style="font-size:0.75rem; padding:3px 10px;" onclick="event.stopPropagation(); navigate(this.dataset.chatUrl)">Chat</button>` : ''}
+            <button class="btn" data-tg-delete-id="${escapeHtml(tgIdForDelete)}" style="background:#dc2626; color:white; border-color:#dc2626; font-size:0.75rem; padding:3px 10px;" onclick="event.stopPropagation(); (async (btn) => { const tgid = btn.dataset.tgDeleteId; if (!confirm('このタスクグループを削除しますか？')) return; try { await api('/task-groups/' + encodeURIComponent(tgid), { method: 'DELETE' }); navigate('/task-groups'); } catch(e) { alert('削除に失敗しました: ' + e.message); } })(this)">削除</button>
           </div>
         </div>`;
     }
@@ -4440,7 +4446,8 @@
           return;
         }
         listEl.innerHTML = activeProjects.map(function(p) {
-          return '<div class="list-item" data-testid="new-chat-project-item" style="cursor:pointer; padding:10px 12px; margin-bottom:6px; border:1px solid #e5e7eb; border-radius:6px;" onclick="document.getElementById(\'new-chat-dialog-overlay\').remove(); navigate(\'/chat/\' + encodeURIComponent(\'' + escapeHtml(p.projectId) + '\'))">' +
+          var chatUrl = '/chat/' + encodeURIComponent(p.projectId);
+          return '<div class="list-item" data-testid="new-chat-project-item" data-chat-url="' + escapeHtml(chatUrl) + '" style="cursor:pointer; padding:10px 12px; margin-bottom:6px; border:1px solid #e5e7eb; border-radius:6px;" onclick="document.getElementById(\'new-chat-dialog-overlay\').remove(); navigate(this.dataset.chatUrl)">' +
             '<div style="font-weight:600; color:#1f2937;">' + escapeHtml(p.alias || p.projectPath.split('/').pop() || p.projectPath) + '</div>' +
             '<div style="font-size:0.75rem; color:#6b7280; margin-top:2px;">' + escapeHtml(p.projectPath) + '</div>' +
           '</div>';
@@ -4497,10 +4504,14 @@
         costLine = '<div style="margin-top:3px; font-size:0.75rem; color:#60a5fa;">Model: ' + escapeHtml(p.aiModel) + '</div>';
       }
 
-      var starHtml = '<span style="cursor:pointer; font-size:1.1rem; color:' + (p.favorite ? '#f59e0b' : '#d1d5db') + ';" onclick="event.stopPropagation(); toggleFavorite(\'' + escapeHtml(p.projectId) + '\')">' +
+      // Pre-compute URLs (use encodeURIComponent then escapeHtml for HTML-attribute safety)
+      var projectDetailUrl = '/projects/' + encodeURIComponent(p.projectId);
+      var projectChatUrl = '/chat/' + encodeURIComponent(p.projectId);
+
+      var starHtml = '<span data-fav-pid="' + escapeHtml(p.projectId) + '" style="cursor:pointer; font-size:1.1rem; color:' + (p.favorite ? '#f59e0b' : '#d1d5db') + ';" onclick="event.stopPropagation(); toggleFavorite(this.dataset.favPid)">' +
         (p.favorite ? '&#9733;' : '&#9734;') + '</span> ';
 
-      return '<div class="list-item" data-testid="project-card" onclick="navigate(\'/projects/' + encodeURIComponent(p.projectId) + '\')">' +
+      return '<div class="list-item" data-testid="project-card" data-proj-url="' + escapeHtml(projectDetailUrl) + '" onclick="navigate(this.dataset.projUrl)">' +
         '<div class="list-item-main">' +
           '<div class="list-item-title">' +
             starHtml +
@@ -4520,7 +4531,7 @@
           statusSummary +
         '</div>' +
         '<div style="display:flex; align-items:center; gap:6px;" onclick="event.stopPropagation();">' +
-          '<button class="btn btn-primary" data-testid="project-chat-btn" style="font-size:0.75rem; padding:3px 10px;" onclick="navigate(\'/chat/\' + encodeURIComponent(\'' + escapeHtml(p.projectId) + '\'))">Chat</button>' +
+          '<button class="btn btn-primary" data-testid="project-chat-btn" data-chat-url="' + escapeHtml(projectChatUrl) + '" style="font-size:0.75rem; padding:3px 10px;" onclick="event.stopPropagation(); navigate(this.dataset.chatUrl)">Chat</button>' +
           '<span class="list-item-arrow">&#8250;</span>' +
         '</div>' +
       '</div>';
@@ -7025,6 +7036,25 @@
      * Render inline Markdown: bold, italic, inline code, links, images.
      * Input is NOT yet HTML-escaped; we escape as we go.
      */
+    /**
+     * Sanitize a URL to prevent XSS via javascript:, data:, vbscript: protocols.
+     * Returns '#' for unsafe URLs. Allows http(s):, mailto:, relative, and anchor URLs.
+     */
+    function sanitizeMarkdownUrl(url) {
+      if (!url) return '#';
+      var trimmed = String(url).trim();
+      // Decode common HTML entities that may have been produced by escapeHtml earlier
+      var decoded = trimmed
+        .replace(/&amp;/g, '&')
+        .replace(/&#x2F;/gi, '/')
+        .replace(/&#47;/g, '/');
+      // Block dangerous protocols (case-insensitive, allow leading whitespace/control chars)
+      if (/^[\s\x00-\x1f]*(javascript|data|vbscript|file):/i.test(decoded)) {
+        return '#';
+      }
+      return trimmed;
+    }
+
     function inlineMarkdown(text) {
       // Escape HTML first (except we'll inject tags below)
       let s = escapeHtml(text);
@@ -7042,11 +7072,11 @@
       s = s.replace(/~~(.+?)~~/g, '<del>$1</del>');
       // Image (before link so ![...](...) matches first)
       s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_, alt, src) {
-        return '<img src="' + src + '" alt="' + alt + '" style="max-width:100%;border-radius:4px;">';
+        return '<img src="' + sanitizeMarkdownUrl(src) + '" alt="' + alt + '" style="max-width:100%;border-radius:4px;">';
       });
       // Link
       s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, label, href) {
-        return '<a href="' + href + '" target="_blank" rel="noopener" class="readme-link">' + label + '</a>';
+        return '<a href="' + sanitizeMarkdownUrl(href) + '" target="_blank" rel="noopener noreferrer" class="readme-link">' + label + '</a>';
       });
       return s;
     }

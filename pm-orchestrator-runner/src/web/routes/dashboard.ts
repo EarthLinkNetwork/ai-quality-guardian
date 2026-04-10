@@ -531,22 +531,28 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
 
       // Try common README filename variants
       const candidates = ['README.md', 'readme.md', 'Readme.md', 'README.MD', 'README.txt', 'README'];
+      // Resolve symlinks on the project root so the boundary check is accurate
+      const projectRootReal = await fs.realpath(projectPath).catch(() => path.resolve(projectPath));
       for (const filename of candidates) {
         const fullPath = path.join(projectPath, filename);
-        // Prevent path traversal: resolved path must stay within projectPath
-        const resolved = path.resolve(fullPath);
-        if (!resolved.startsWith(path.resolve(projectPath) + path.sep) && resolved !== path.resolve(projectPath)) {
-          continue;
-        }
         try {
-          const stat = await fs.stat(fullPath);
-          if (stat.isFile()) {
-            const content = await fs.readFile(fullPath, 'utf-8');
-            res.json({ filename, content, size: stat.size });
+          // Reject symlinks outright to avoid following them outside the project root
+          const lstat = await fs.lstat(fullPath);
+          if (lstat.isSymbolicLink()) {
+            continue;
+          }
+          // Resolve to the real path and ensure it stays within the project root (after symlink resolution)
+          const realPath = await fs.realpath(fullPath);
+          if (realPath !== projectRootReal && !realPath.startsWith(projectRootReal + path.sep)) {
+            continue;
+          }
+          if (lstat.isFile()) {
+            const content = await fs.readFile(realPath, 'utf-8');
+            res.json({ filename, content, size: lstat.size });
             return;
           }
         } catch {
-          // File not found, try next variant
+          // File not found or not accessible, try next variant
         }
       }
 
