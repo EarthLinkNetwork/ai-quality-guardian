@@ -5222,10 +5222,13 @@
             <div class="detail-grid">
               <div class="detail-item">
                 <label>Project</label>
-                <value>${task.project_path
-                  ? escapeHtml(task.project_path.split('/').pop() || task.project_path)
-                    + '<br><small style="color:#6b7280;">' + escapeHtml(task.project_path) + '</small>'
-                  : (taskProjectId ? escapeHtml(taskProjectId) : '<span style="color:#9ca3af;">N/A</span>')}</value>
+                <value>${task.project_alias
+                  ? escapeHtml(task.project_alias)
+                    + (task.project_path ? '<br><small style="color:#6b7280;">' + escapeHtml(task.project_path) + '</small>' : '')
+                  : task.project_path
+                    ? escapeHtml(task.project_path.split('/').pop() || task.project_path)
+                      + '<br><small style="color:#6b7280;">' + escapeHtml(task.project_path) + '</small>'
+                    : (taskProjectId ? escapeHtml(taskProjectId) : '<span style="color:#9ca3af;">N/A</span>')}</value>
               </div>
               <div class="detail-item">
                 <label>Task ID</label>
@@ -9639,6 +9642,7 @@
         // Clear input, attachments, draft, and selected command on success
         input.value = '';
         chatAttachments = [];
+        renderAttachments();
         delete chatInputDrafts[projectId];
         selectedChatCommand = null;
         selectedCommandScope = null;

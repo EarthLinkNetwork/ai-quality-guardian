@@ -249,8 +249,11 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
           if (commandResult.passthrough && commandResult.passthroughPrompt && queueStore && project) {
             const taskRunId = "task_" + uuidv4();
             const effectiveSessionId = sessionId || "sess_" + projectId;
+            // Default task group is project-scoped to prevent cross-project mixing.
+            // The server session ID is shared across all projects, so we prefix with projectId.
+            const defaultTaskGroupId = sessionId ? `${projectId}-${sessionId}` : "sess_" + projectId;
             // Validate requestedTaskGroupId belongs to this project (same as main chat path)
-            let effectiveTaskGroupId = effectiveSessionId;
+            let effectiveTaskGroupId = defaultTaskGroupId;
             if (typeof requestedTaskGroupId === "string" && requestedTaskGroupId.trim()) {
               let groupBelongs = false;
               try {
@@ -444,6 +447,9 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
         // CRITICAL: Validate requestedTaskGroupId belongs to this project to prevent
         // stale taskGroupIds from a previous project binding tasks to the wrong project
         const effectiveSessionId = sessionId || "sess_" + projectId;
+        // Default task group is project-scoped: prefix with projectId so the server-level
+        // sessionId (shared across all projects) never groups tasks from different projects.
+        const defaultTaskGroupId = sessionId ? `${projectId}-${sessionId}` : "sess_" + projectId;
         if (typeof requestedTaskGroupId === "string" && requestedTaskGroupId.trim()) {
           let taskGroupBelongsToProject = false;
           try {
@@ -475,10 +481,10 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
               projectId,
               projectPath: project.projectPath,
             });
-            taskGroupId = effectiveSessionId;
+            taskGroupId = defaultTaskGroupId;
           }
         } else {
-          taskGroupId = effectiveSessionId;
+          taskGroupId = defaultTaskGroupId;
         }
 
         const run = await dal.createRun({
