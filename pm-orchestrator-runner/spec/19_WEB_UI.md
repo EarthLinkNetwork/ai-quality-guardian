@@ -363,7 +363,13 @@ tunnels:
 
 *最終更新: 2026-04-09*
 
-### 左サイドバーメニュー（15項目）
+### 左サイドバーメニュー
+
+> **v2.3 変更点**:
+> - `Activity` → `Live Tasks` に改名（`#/activity` は現役 + 新エイリアス `#/live-tasks`）
+> - `Task Tracker` メニューを **削除**（使用されていなかった。`spec/34` と `src/task-tracker/` も削除）
+> - 新メニュー `Recovery` を追加（`#/recovery`）: stale / failed タスクの continue / rollback / retry
+> - 新メニュー `New Chat` (`#/new-chat` ダイアログ)、`Processes` (`#/processes`) は別途実装済み
 
 #### セクション 1: Main
 
@@ -372,7 +378,8 @@ tunnels:
 | Dashboard | #/dashboard または / | renderDashboard | GET /api/dashboard, /api/projects | left-menu-navigation.spec.ts |
 | Projects | #/projects | renderProjectList | GET/POST/PATCH/DELETE /api/projects | left-menu-navigation.spec.ts |
 | Task Groups | #/ または #/task-groups | renderTaskGroupList | GET/POST/PATCH/DELETE /api/task-groups | task-groups-crud.spec.ts |
-| Activity | #/activity | renderActivity | GET /api/activity | left-menu-navigation.spec.ts |
+| New Chat | #/new-chat（ダイアログ） | openNewChatDialog | GET /api/projects | chat-navigation.spec.ts |
+| Live Tasks | #/activity または #/live-tasks | renderLiveTasks | GET /api/live-tasks, GET /api/activity | live-tasks.spec.ts |
 
 #### セクション 2: Claude Code
 
@@ -390,10 +397,77 @@ tunnels:
 | メニュー名 | URL/ハッシュ | レンダラー関数 | 主要APIエンドポイント | Playwrightテスト |
 |-----------|------------|--------------|-------------------|----------------|
 | Backup | #/backup | renderBackupPage | （部分実装） | left-menu-navigation.spec.ts |
-| Task Tracker | #/task-tracker | renderTaskTrackerPage | GET/POST/PATCH /api/tracker | left-menu-navigation.spec.ts |
+| Recovery | #/recovery | renderRecoveryPage | GET /api/recovery/stale, /api/recovery/failed, POST /api/tasks/:id/rollback, POST /api/tasks/:id/retry | recovery-page.spec.ts |
 | PR Reviews | #/pr-reviews | renderPRReviewsPage | GET/POST/DELETE /api/pr-reviews | left-menu-navigation.spec.ts |
 | Logs | #/logs | renderLogsPage | GET /api/app-logs | left-menu-navigation.spec.ts |
+| Processes | #/processes | renderProcessesPage | GET /api/system/processes, POST /api/system/processes/:pid/kill | processes-page.spec.ts |
 | Settings | #/settings | renderSettingsPage | GET/POST/PATCH/DELETE /api/settings | settings*.spec.ts |
+
+### Live Tasks ページ詳細仕様（v2.3 新規）
+
+**目的**: いま動いているタスクをプロジェクト横断で一覧表示。Event History を下部に折りたたみ表示。
+
+**上段: Live Tasks テーブル**
+- 対象ステータス: `RUNNING`, `WAITING_CHILDREN`, `AWAITING_RESPONSE`, `QUEUED`（QUEUED は optional フィルタ）
+- 列: Status バッジ / Task ID / Project alias / Task Group / Started / Elapsed / Age from last update / Actions
+- Actions: View (→ `/tasks/:id`), Cancel (→ PATCH status CANCELLED)
+- Stale判定: `age > staleThresholdMs` の行は赤背景 + "STALE" バッジ
+- 自動リフレッシュ: 5 秒間隔（チェックボックスで on/off）
+
+**下段: Event History（折りたたみ）**
+- 既存 `/api/activity` を再利用
+- デフォルト collapsed、クリックで展開
+- 50 件表示
+
+**API**:
+```
+GET /api/live-tasks?namespace=<ns>&limit=<n>&includeQueued=<bool>
+  Response:
+  {
+    tasks: [
+      { task_id, task_group_id, project_path, project_alias, status,
+        started_at, updated_at, elapsed_ms, stale_ms, is_stale }
+    ],
+    stale_count: number,
+    stale_threshold_ms: number
+  }
+```
+
+### Recovery ページ詳細仕様（v2.3 新規）
+
+**目的**: クラッシュ・中断などで RUNNING のまま放置されたタスク、および ERROR タスクを検査し、`continue` / `retry` / `rollback` / `cancel` する。
+
+**URL**: `#/recovery`
+
+**上段: Stale タスク一覧**
+- 条件: status=`RUNNING` or `WAITING_CHILDREN` で `age_ms > staleThresholdMs`
+- 列: Task ID / Project / Task Group / Status / Age / Actions
+- Actions: **Mark as ERROR** (強制的にエラーに遷移) / **Rollback** (git stash/file snapshot 復元) / **View**
+- 起動時にバナー通知: "N 件の stale タスクを検出しました"
+
+**中段: Recent Failed タスク一覧**
+- 条件: status=`ERROR` で最近 24 時間以内
+- Actions: **Retry** (QUEUED に戻す) / **Rollback** / **View**
+
+**下段: Rollback History**
+- 過去に実行された rollback 操作のログ（最新 20 件）
+- 列: Task ID / Project / Rolled back at / Checkpoint type / Result
+
+**API**:
+```
+GET /api/recovery/stale        → stale task list
+GET /api/recovery/failed       → recent error tasks
+POST /api/tasks/:id/rollback   → execute checkpoint rollback (parent-scoped)
+POST /api/tasks/:id/retry      → transition ERROR → QUEUED
+```
+
+**Rollback の親子関係ルール（CRITICAL）**:
+詳細は [spec/36_LIVE_TASKS_AND_RECOVERY.md](./36_LIVE_TASKS_AND_RECOVERY.md) を参照。
+- Checkpoint は **ルートタスクのみが作成・所有**する（`parent_task_id === undefined` のタスク）
+- サブタスクは checkpoint を新規作成しない（親のチェックポイントを継承）
+- Rollback は対象タスクから親チェーンを辿って root を見つけ、root.checkpoint_ref を復元
+- 復元後、root と全ての descendants は `CANCELLED` に遷移
+- "親または子のどちらを rollback してもツリー全体が巻き戻る" — これが期待動作
 
 ### Task Groups の詳細仕様（v3）
 

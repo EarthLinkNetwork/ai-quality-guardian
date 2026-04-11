@@ -22,13 +22,17 @@ If no task is awaiting response, `/respond` prints an error message.
 
 ---
 
-## Task States
+## Task States (v2.3)
 
 ```
-QUEUED -> RUNNING -> COMPLETE
-                  -> INCOMPLETE
-                  -> ERROR
-         RUNNING -> AWAITING_RESPONSE -> RUNNING (via /respond)
+QUEUED → RUNNING → COMPLETE
+              ↓ → INCOMPLETE
+              ↓ → ERROR
+              ↓ → AWAITING_RESPONSE → RUNNING (via /respond)
+              ↓ → WAITING_CHILDREN  → COMPLETE  (all children done)
+                                    → ERROR     (any child errored)
+                                    → AWAITING_RESPONSE (any child awaiting)
+                                    → CANCELLED (rollback cascade)
 ```
 
 ### State Definitions
@@ -36,17 +40,21 @@ QUEUED -> RUNNING -> COMPLETE
 |-------|-------------|
 | QUEUED | Task accepted, waiting for agent slot |
 | RUNNING | Agent is actively processing |
+| WAITING_CHILDREN (v2.3) | Parent task waiting for its subtasks to complete |
 | AWAITING_RESPONSE | Blocked on user clarification |
 | COMPLETE | Successfully finished |
 | INCOMPLETE | Finished but objectives not fully met |
 | ERROR | Failed with error |
+| CANCELLED | User cancellation or rollback cascade |
 
 ### Invariants
 1. A task in QUEUED can only transition to RUNNING.
-2. A task in RUNNING can transition to COMPLETE, INCOMPLETE, ERROR, or AWAITING_RESPONSE.
+2. A task in RUNNING can transition to COMPLETE, INCOMPLETE, ERROR, AWAITING_RESPONSE, or **WAITING_CHILDREN**.
 3. A task in AWAITING_RESPONSE can only transition to RUNNING (via /respond).
-4. COMPLETE, INCOMPLETE, ERROR are terminal states.
-5. At most one task may be AWAITING_RESPONSE at any time (Rule G).
+4. A task in WAITING_CHILDREN transitions to COMPLETE / ERROR / AWAITING_RESPONSE / CANCELLED based on aggregated child status (see `aggregateParentConversation` in `src/cli/index.ts`).
+5. COMPLETE is the sole terminal state. ERROR / CANCELLED are recoverable via Retry.
+6. At most one task may be AWAITING_RESPONSE at any time (Rule G).
+7. **Rollback cascade**: If a task is rolled back (via checkpoint restore), the task AND all of its descendants transition to CANCELLED in a single operation. Checkpoint is owned by the root task only — see `spec/36_LIVE_TASKS_AND_RECOVERY.md` §5.
 
 ---
 

@@ -1,4 +1,34 @@
-# 34. Task Tracker Persistence (Single-Table DynamoDB Design)
+# 34. Task Tracker Persistence (Single-Table DynamoDB Design) — DEPRECATED
+
+> **⚠️ DEPRECATED (v2.3, 2026-04-12)**
+>
+> This specification is deprecated and **will be removed** in the next minor release.
+>
+> **Reason**: The Task Tracker service layer was fully implemented but never
+> populated by the CLI or queue poller. `activeTasks`, `currentPlan`, and
+> `snapshots` were never written by any production code path, so the DynamoDB
+> entities described below remained empty forever.
+>
+> **Replacement**: The crash-recovery and continue-from-interruption use cases
+> are now handled by a simpler, integrated design documented in:
+>
+> **→ [spec/36_LIVE_TASKS_AND_RECOVERY.md](./36_LIVE_TASKS_AND_RECOVERY.md)**
+>
+> **Migration path**:
+> - `src/task-tracker/` will be deleted
+> - `src/web/routes/task-tracker.ts` will be deleted
+> - `src/web/dal/task-tracker-types.ts` will be deleted
+> - All `/api/tracker/*` REST endpoints will return 404
+> - The `Task Tracker` sidebar menu is replaced by the new `Recovery` menu
+>   at `#/recovery`
+> - Existing DynamoDB Task Tracker records are harmless (they are simply
+>   ignored by the new code) and can be optionally removed via
+>   `scripts/cleanup-task-tracker.sh`
+>
+> The historical content below is retained for reference until Phase 2
+> (Task Tracker deletion) of the Live Tasks + Recovery rollout is complete.
+
+---
 
 ## 1. 概要
 

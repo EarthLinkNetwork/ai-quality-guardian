@@ -277,14 +277,19 @@
 - ProjectSettingsStore API。
 - グローバル設定との優先順位。
 
-34_TASK_TRACKER_PERSISTENCE.md
+34_TASK_TRACKER_PERSISTENCE.md — **DEPRECATED (v2.3)**
 
-- Task Tracker 永続化仕様（Single-Table DynamoDB Design）。
-- プロジェクト単位のタスク管理状態（TaskTracker）を DynamoDB に保存。
-- コンテキスト消失時の自動復元フロー。
-- LLM による自動サマリ生成。
-- TaskSnapshot / TaskSummary エンティティ。
-- DAL インターフェース拡張と Hybrid DAL 対応。
+- ⚠️ 廃止予定。`activeTasks` / `currentPlan` / `snapshots` は実運用で populate されなかったため削除される。
+- 代替: [36_LIVE_TASKS_AND_RECOVERY.md](./36_LIVE_TASKS_AND_RECOVERY.md)
+
+36_LIVE_TASKS_AND_RECOVERY.md
+
+- Live Tasks ページ仕様（旧 Activity、プロジェクト横断の実行中タスク一覧）。
+- Recovery ページ仕様（stale / failed タスクの continue / retry / rollback）。
+- Checkpoint 親子所有ルール（root task のみが checkpoint を持ち、rollback は root から descendants をまとめて CANCELLED）。
+- 設定可能な stale task threshold（デフォルト 10 分）。
+- /api/live-tasks, /api/recovery/* API 仕様。
+- Playwright テスト計画。
 
 ---
 
@@ -325,7 +330,8 @@
   20. 31_PROVIDER_MODEL_POLICY.md（Provider/Model Policy 仕様）
   21. 32_TEMPLATE_INJECTION.md（テンプレート注入仕様）
   22. 33_PROJECT_SETTINGS_PERSISTENCE.md（プロジェクト設定永続化仕様）
-  23. 34_TASK_TRACKER_PERSISTENCE.md（Task Tracker 永続化仕様）
-  24. 99_RUNBOOK.md（運用仕様）
+  23. 34_TASK_TRACKER_PERSISTENCE.md（**DEPRECATED** — 36 に置換）
+  24. 36_LIVE_TASKS_AND_RECOVERY.md（Live Tasks + Recovery + Rollback 仕様）
+  25. 99_RUNBOOK.md（運用仕様）
 
 - 本インデックスに記載のない挙動は仕様外とし、fail-closed とする。
