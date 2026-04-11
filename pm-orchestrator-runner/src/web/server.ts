@@ -20,6 +20,9 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import { exec as execCb } from 'child_process';
+import { promisify } from 'util';
+const exec = promisify(execCb);
 import { IQueueStore, QueueItemStatus, TaskGroupStatus } from '../queue/index';
 import { ConversationTracer } from '../trace/conversation-tracer';
 import { createApiKeyAuth, createPublicPathBypass, type AuthConfig, type AuthenticatedRequest } from './middleware/auth';
@@ -319,6 +322,134 @@ export function createApp(config: WebServerConfig): Express {
           project_root: r.project_root,
         })),
       });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * GET /api/system/processes
+   * List running OS processes that match claude / claude-code / pm-orchestrator-runner
+   * Helps detect ghost / orphaned processes from previous runs.
+   *
+   * Returns array of { pid, ppid, etime, cpu, mem, command, category }
+   * category: 'claude' | 'claude-code' | 'pm-runner' | 'node-runner' | 'other'
+   */
+  app.get('/api/system/processes', async (_req: Request, res: Response) => {
+    try {
+      // macOS/Linux ps — list all processes with the columns we need
+      const { stdout } = await exec(
+        'ps -axo pid=,ppid=,etime=,%cpu=,%mem=,command=',
+        { maxBuffer: 10 * 1024 * 1024 }
+      );
+
+      const selfPid = process.pid;
+      const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
+      const processes: Array<{
+        pid: number;
+        ppid: number;
+        etime: string;
+        cpu: number;
+        mem: number;
+        command: string;
+        category: string;
+        is_self: boolean;
+      }> = [];
+
+      for (const line of lines) {
+        // Split on whitespace for first 5 columns, rest is command
+        const match = line.match(/^(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/);
+        if (!match) continue;
+        const pid = parseInt(match[1], 10);
+        const ppid = parseInt(match[2], 10);
+        const etime = match[3];
+        const cpu = parseFloat(match[4]);
+        const mem = parseFloat(match[5]);
+        const command = match[6];
+
+        // Filter: only show processes related to claude / pm-orchestrator-runner
+        // Skip ps itself and the grep command
+        if (/\bps\s+-axo\b/.test(command)) continue;
+
+        let category: string | null = null;
+        if (/\bclaude-code\b/i.test(command) || /\bclaude\s+code\b/i.test(command)) {
+          category = 'claude-code';
+        } else if (/\/claude(\s|$)/i.test(command) || /\bclaude\s+--/.test(command) || /\bbin\/claude\b/.test(command)) {
+          category = 'claude-cli';
+        } else if (/pm-orchestrator-runner/.test(command)) {
+          category = 'pm-runner';
+        } else if (/node.*(dist\/cli|pm-orchestrator)/.test(command)) {
+          category = 'node-runner';
+        }
+
+        if (category === null) continue;
+
+        processes.push({
+          pid,
+          ppid,
+          etime,
+          cpu: isNaN(cpu) ? 0 : cpu,
+          mem: isNaN(mem) ? 0 : mem,
+          command,
+          category,
+          is_self: pid === selfPid,
+        });
+      }
+
+      // Sort: pm-runner first, then by cpu desc
+      const categoryOrder: Record<string, number> = {
+        'pm-runner': 0,
+        'node-runner': 1,
+        'claude-code': 2,
+        'claude-cli': 3,
+      };
+      processes.sort((a, b) => {
+        const diff = (categoryOrder[a.category] ?? 99) - (categoryOrder[b.category] ?? 99);
+        if (diff !== 0) return diff;
+        return b.cpu - a.cpu;
+      });
+
+      res.json({
+        self_pid: selfPid,
+        count: processes.length,
+        processes,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * POST /api/system/processes/:pid/kill
+   * Kill a specific PID. Safety: reject killing self PID.
+   * Body: { signal?: 'SIGTERM' | 'SIGKILL' } (default: SIGTERM)
+   */
+  app.post('/api/system/processes/:pid/kill', async (req: Request, res: Response) => {
+    try {
+      const pid = parseInt(req.params.pid as string, 10);
+      if (!Number.isFinite(pid) || pid <= 0) {
+        res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Invalid pid' } as ErrorResponse);
+        return;
+      }
+      if (pid === process.pid) {
+        res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Cannot kill self' } as ErrorResponse);
+        return;
+      }
+      const requestedSignal = (req.body?.signal as string | undefined) || 'SIGTERM';
+      const allowedSignals = ['SIGTERM', 'SIGKILL', 'SIGINT', 'SIGHUP'] as const;
+      const signal = (allowedSignals as readonly string[]).includes(requestedSignal)
+        ? (requestedSignal as NodeJS.Signals)
+        : 'SIGTERM';
+
+      try {
+        process.kill(pid, signal);
+        res.json({ success: true, pid, signal });
+      } catch (killErr) {
+        const message = killErr instanceof Error ? killErr.message : String(killErr);
+        res.status(500).json({ error: 'KILL_FAILED', message } as ErrorResponse);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
@@ -1608,6 +1739,14 @@ export function createApp(config: WebServerConfig): Express {
    * Serve activity page
    */
   app.get('/activity', (_req: Request, res: Response) => {
+    res.sendFile(path.join(publicPath, 'index.html'));
+  });
+
+  /**
+   * GET /processes
+   * Serve processes page (system process monitor)
+   */
+  app.get('/processes', (_req: Request, res: Response) => {
     res.sendFile(path.join(publicPath, 'index.html'));
   });
 
