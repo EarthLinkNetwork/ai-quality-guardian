@@ -92,7 +92,7 @@ import {
 import { getExecutorOutputStream } from '../executor/executor-output-stream';
 import type { ExecutorOutputStream, ExecutorOutputChunk } from '../executor/executor-output-stream';
 import { getDAL } from '../web/dal/dal-factory';
-import { initializeTaskTracker, shutdownTaskTracker } from './task-tracker-integration';
+// Task Tracker removed (v2.3) — see spec/36_LIVE_TASKS_AND_RECOVERY.md
 
 /**
  * Help text
@@ -1803,7 +1803,6 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   let serverRef: WebServer | null = null;
   let pollerRef: QueuePoller | null = poller;
   let detachProgressPersistenceRef: (() => void) | null = null;
-  let taskTrackerServiceRef: import("../task-tracker/task-tracker-service").TaskTrackerService | null = null;
   const runnerRestartHandler = async () => {
     const oldPid = process.pid;
 
@@ -1986,15 +1985,8 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   // DAL is already initialized above via initDAL()
 
 
-  // =========================================================================
-  // Initialize Task Tracker (per spec/34_TASK_TRACKER_PERSISTENCE.md Section 10)
-  // =========================================================================
-  try {
-    const trackerResult = await initializeTaskTracker(getDAL(), namespaceConfig.namespace, namespaceConfig.namespace);
-    taskTrackerServiceRef = trackerResult.service;
-  } catch (error) {
-    console.warn("[TaskTracker] Initialization failed (non-fatal):", error instanceof Error ? error.message : String(error));
-  }
+  // Task Tracker was removed in v2.3 (spec/36_LIVE_TASKS_AND_RECOVERY.md).
+  // The previous TaskTracker initialization / shutdown hooks no longer exist.
   /**
    * Update conversation message after task completion/error.
    * Links queue task_id → run (by taskRunId) → conversation message (by runId).
@@ -2290,7 +2282,6 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     detachProgressPersistence();
     await poller.stop();
     await server.stop();
-    await shutdownTaskTracker(taskTrackerServiceRef);
     console.log('[Runner] Shutdown complete');
     process.exit(0);
   };

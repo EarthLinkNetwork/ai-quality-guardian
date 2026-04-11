@@ -3054,7 +3054,7 @@
         <a href="/projects" data-nav="projects"><span class="nav-icon">&#128193;</span><span class="nav-label">Projects</span></a>
         <a href="/" data-nav="home"><span class="nav-icon">&#128203;</span><span class="nav-label">Task Groups</span></a>
         <a href="#" data-nav="new-chat" data-testid="nav-new-chat" onclick="event.preventDefault(); event.stopImmediatePropagation(); openNewChatDialog()"><span class="nav-icon">&#128172;</span><span class="nav-label">New Chat</span></a>
-        <a href="/activity" data-nav="activity"><span class="nav-icon">&#9200;</span><span class="nav-label">Activity</span></a>
+        <a href="/activity" data-nav="activity" data-testid="nav-live-tasks"><span class="nav-icon">&#9200;</span><span class="nav-label">Live Tasks</span></a>
         <div class="nav-divider"></div>
         <div data-testid="sidebar-section-claude-code">
         <div class="nav-section-label">Claude Code</div>
@@ -3069,7 +3069,7 @@
         <div class="nav-divider"></div>
         <div class="nav-section-label">Management</div>
         <a href="/backup" data-nav="backup"><span class="nav-icon">&#128190;</span><span class="nav-label">Backup</span></a>
-        <a href="/task-tracker" data-nav="task-tracker" data-testid="nav-task-tracker"><span class="nav-icon">&#9776;</span><span class="nav-label">Task Tracker</span></a>
+        <a href="/recovery" data-nav="recovery" data-testid="nav-recovery"><span class="nav-icon">&#9851;</span><span class="nav-label">Recovery</span></a>
         <a href="/pr-reviews" data-nav="pr-reviews" data-testid="nav-pr-reviews"><span class="nav-icon">&#128269;</span><span class="nav-label">PR Reviews</span></a>
         <a href="/logs" data-nav="logs" data-testid="nav-logs"><span class="nav-icon">&#128220;</span><span class="nav-label">Logs</span></a>
         <a href="/processes" data-nav="processes" data-testid="nav-processes"><span class="nav-icon">&#128065;</span><span class="nav-label">Processes</span></a>
@@ -11711,204 +11711,222 @@
     }
 
     // =========================================================================
-    // Task Tracker Page
+    // Recovery Page (spec/36_LIVE_TASKS_AND_RECOVERY.md §4)
     // =========================================================================
-    var taskTrackerState = { tracker: null, snapshots: [], loading: false, projectId: null };
+    // Shows stale + recently-failed tasks. Provides Retry / Rollback / Mark-as-ERROR
+    // / View actions. Rollback walks up to the root task and restores the
+    // checkpoint; all descendants are CANCELLED in one cascade.
     var prReviewState = { reviews: [], detail: null, comments: [], cycles: [], loading: false, projectId: null, currentPr: null };
 
-    async function renderTaskTrackerPage() {
-      // Determine projectId from current project context
-      var projectInfo = document.getElementById('sidebar-project-info');
-      var projectName = projectInfo ? projectInfo.querySelector('.project-name') : null;
-      var projectId = projectName ? projectName.textContent : 'default';
-
-      taskTrackerState.projectId = projectId;
-      taskTrackerState.loading = true;
-
-      app.innerHTML = '<div class="page-header"><h2>Task Tracker</h2></div>' +
-        '<div class="card"><p style="color:#9ca3af;text-align:center;padding:20px;">Loading task tracker...</p></div>';
-
-      try {
-        var data = await api('/tracker/' + encodeURIComponent(projectId));
-        taskTrackerState.tracker = data;
-        taskTrackerState.loading = false;
-        renderTaskTrackerContent();
-      } catch (err) {
-        taskTrackerState.tracker = null;
-        taskTrackerState.loading = false;
-        renderTaskTrackerEmpty(err.message || 'Failed to load tracker');
-      }
-
-      // Load snapshots in parallel
-      try {
-        var snaps = await api('/tracker/' + encodeURIComponent(projectId) + '/snapshots');
-        taskTrackerState.snapshots = snaps.snapshots || snaps || [];
-        if (taskTrackerState.tracker) renderTaskTrackerContent();
-      } catch (e) {
-        taskTrackerState.snapshots = [];
-      }
-    }
-
-    function renderTaskTrackerEmpty(message) {
+    async function renderRecoveryPage() {
       app.innerHTML =
-        '<div class="page-header"><h2>Task Tracker</h2></div>' +
-        '<div class="card">' +
-          '<p style="color:#9ca3af;text-align:center;padding:20px;">' +
-            escapeHtml(message || 'No active task tracker for this project.') +
+        '<div class="page-header">' +
+          '<h2>Recovery</h2>' +
+          '<div class="action-bar">' +
+            '<button class="refresh-btn" data-testid="recovery-refresh-btn" onclick="renderRecoveryPage()">Refresh</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="card" style="margin-bottom:12px; background:#fef3c7; border-color:#fbbf24;">' +
+          '<p style="font-size:0.85rem; color:#78350f; margin:0;">' +
+            '<strong>Recovery</strong>: ここではクラッシュ・中断などで <strong>RUNNING / WAITING_CHILDREN のまま stale になった</strong>タスクと、' +
+            '最近の <strong>ERROR</strong> タスクを確認できます。<em>Retry</em> で QUEUED に戻す、<em>Rollback</em> で git stash / file snapshot を復元（親子ツリー全体が CANCELLED になります）。' +
           '</p>' +
-          '<p style="text-align:center;padding-bottom:16px;">' +
-            '<button class="btn btn-primary" onclick="taskTrackerInitProject()">Initialize Tracker</button>' +
-          '</p>' +
+        '</div>' +
+        '<div id="recovery-stale" data-testid="recovery-stale-section" style="margin-bottom:16px;">' +
+          '<div style="color:#6b7280; text-align:center; padding:20px;">Loading stale tasks...</div>' +
+        '</div>' +
+        '<div id="recovery-failed" data-testid="recovery-failed-section" style="margin-bottom:16px;">' +
+          '<div style="color:#6b7280; text-align:center; padding:20px;">Loading recent failed tasks...</div>' +
+        '</div>' +
+        '<div id="recovery-history" data-testid="recovery-history-section">' +
+          '<div style="color:#6b7280; text-align:center; padding:20px;">Loading rollback history...</div>' +
         '</div>';
+      await Promise.all([
+        loadRecoveryStale(),
+        loadRecoveryFailed(),
+        loadRecoveryHistory(),
+      ]);
     }
 
-    function renderTaskTrackerContent() {
-      var t = taskTrackerState.tracker;
-      if (!t) return renderTaskTrackerEmpty('No tracker data');
+    function recoveryFormatAge(ms) {
+      if (ms === null || ms === undefined) return '—';
+      var s = Math.floor(ms / 1000);
+      if (s < 60) return s + 's';
+      var m = Math.floor(s / 60);
+      if (m < 60) return m + 'm ' + (s % 60) + 's';
+      var h = Math.floor(m / 60);
+      return h + 'h ' + (m % 60) + 'm';
+    }
 
-      var plan = t.currentPlan;
-      var planHtml = '';
-      if (plan) {
-        var doneCount = plan.subtasks.filter(function(s) { return s.status === 'DONE'; }).length;
-        var totalCount = plan.subtasks.length;
-        var pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
-
-        var subtasksHtml = plan.subtasks.map(function(s) {
-          var statusClass = s.status === 'DONE' ? 'status-done' : s.status === 'IN_PROGRESS' ? 'status-running' : 'status-pending';
-          var statusLabel = s.status === 'DONE' ? 'Done' : s.status === 'IN_PROGRESS' ? 'Running' : s.status === 'SKIPPED' ? 'Skipped' : 'Pending';
-          return '<div class="list-item" style="padding:8px 0;border-bottom:1px solid #f3f4f6;">' +
-            '<span>' + escapeHtml(s.description || s.subtaskId) + '</span>' +
-            '<span class="badge ' + statusClass + '">' + statusLabel + '</span>' +
-          '</div>';
+    async function loadRecoveryStale() {
+      var container = document.getElementById('recovery-stale');
+      if (!container) return;
+      try {
+        var data = await api('/recovery/stale');
+        var tasks = (data && data.tasks) || [];
+        if (tasks.length === 0) {
+          container.innerHTML = '<div class="card"><h3>Stale Tasks</h3><p style="color:#059669; margin:0;">No stale tasks detected.</p></div>';
+          return;
+        }
+        var rows = tasks.map(function(t) {
+          var tgLabel = t.task_group_id ? escapeHtml(t.task_group_id.substring(0, 30)) : '—';
+          var projectLabel = t.project_alias || (t.project_path ? t.project_path.split('/').pop() : '—');
+          var cpBadge = t.has_checkpoint
+            ? '<span style="font-size:0.7rem; color:#059669;">✓ checkpoint</span>'
+            : '<span style="font-size:0.7rem; color:#9ca3af;">no checkpoint</span>';
+          return '<tr style="border-bottom:1px solid #f3f4f6; background:#fef2f2;" data-testid="stale-task-row" data-task-id="' + escapeHtml(t.task_id) + '">' +
+            '<td style="padding:8px 10px;"><span class="badge badge-running">' + escapeHtml(t.status) + '</span></td>' +
+            '<td style="padding:8px 10px;"><a href="#" onclick="event.preventDefault(); navigate(\'/tasks/\' + encodeURIComponent(\'' + escapeHtml(t.task_id) + '\'))" style="color:#2563eb; font-family:monospace; font-size:0.75rem;">' + escapeHtml(t.task_id.substring(0, 24)) + '…</a></td>' +
+            '<td style="padding:8px 10px;">' + escapeHtml(projectLabel) + '</td>' +
+            '<td style="padding:8px 10px; font-family:monospace; font-size:0.75rem;">' + tgLabel + '</td>' +
+            '<td style="padding:8px 10px; font-family:monospace;">' + recoveryFormatAge(t.age_ms) + '</td>' +
+            '<td style="padding:8px 10px;">' + cpBadge + '</td>' +
+            '<td style="padding:8px 10px; text-align:right;">' +
+              '<button class="btn" data-testid="mark-error-btn" style="background:#f59e0b; color:white; border-color:#f59e0b; font-size:0.7rem; padding:3px 8px; margin-right:4px;" onclick="recoveryMarkError(\'' + escapeHtml(t.task_id) + '\')">Mark ERROR</button>' +
+              (t.has_checkpoint
+                ? '<button class="btn" data-testid="rollback-btn" style="background:#dc2626; color:white; border-color:#dc2626; font-size:0.7rem; padding:3px 8px;" onclick="recoveryRollback(\'' + escapeHtml(t.task_id) + '\')">Rollback</button>'
+                : '<button class="btn" style="font-size:0.7rem; padding:3px 8px;" disabled title="No checkpoint available">Rollback</button>') +
+            '</td>' +
+          '</tr>';
         }).join('');
-
-        planHtml =
+        container.innerHTML =
           '<div class="card">' +
-            '<h3>Current Plan: ' + escapeHtml(plan.title || plan.originalPrompt || 'Untitled') + '</h3>' +
-            '<div style="margin-bottom:12px;">' +
-              '<div style="display:flex;justify-content:space-between;margin-bottom:4px;">' +
-                '<span style="font-size:0.85rem;color:#6b7280;">Progress</span>' +
-                '<span style="font-size:0.85rem;font-weight:600;">' + doneCount + '/' + totalCount + ' (' + pct + '%)</span>' +
-              '</div>' +
-              '<div style="background:#e5e7eb;border-radius:4px;height:8px;overflow:hidden;">' +
-                '<div style="background:#3b82f6;height:100%;width:' + pct + '%;transition:width 0.3s;"></div>' +
-              '</div>' +
-            '</div>' +
-            subtasksHtml +
+            '<h3>Stale Tasks <span style="font-size:0.8rem; color:#dc2626;">(' + tasks.length + ')</span></h3>' +
+            '<p style="font-size:0.8rem; color:#6b7280;">Threshold: ' + Math.round((data.stale_threshold_ms || 0) / 1000) + 's</p>' +
+            '<table style="width:100%; border-collapse:collapse; font-size:0.85rem;">' +
+              '<thead><tr style="border-bottom:2px solid #e5e7eb; text-align:left; background:#f9fafb;">' +
+                '<th style="padding:6px 10px;">Status</th><th style="padding:6px 10px;">Task</th><th style="padding:6px 10px;">Project</th><th style="padding:6px 10px;">Group</th><th style="padding:6px 10px;">Age</th><th style="padding:6px 10px;">Checkpoint</th><th style="padding:6px 10px; text-align:right;">Action</th>' +
+              '</tr></thead><tbody>' + rows + '</tbody>' +
+            '</table>' +
           '</div>';
-      } else {
-        planHtml = '<div class="card"><h3>Current Plan</h3><p style="color:#9ca3af;text-align:center;padding:12px;">No active plan</p></div>';
+      } catch (err) {
+        container.innerHTML = '<div class="card" style="color:#ef4444;">Error loading stale tasks: ' + escapeHtml(err.message || 'unknown') + '</div>';
       }
-
-      // Active tasks
-      var tasksHtml = '';
-      if (t.activeTasks && t.activeTasks.length > 0) {
-        var taskItems = t.activeTasks.map(function(task) {
-          var statusLabel = task.status || 'UNKNOWN';
-          return '<div class="list-item" style="padding:8px 0;border-bottom:1px solid #f3f4f6;">' +
-            '<div><strong>' + escapeHtml(task.title || task.taskId) + '</strong>' +
-              (task.description ? '<br><span style="font-size:0.8rem;color:#6b7280;">' + escapeHtml(task.description) + '</span>' : '') +
-            '</div>' +
-            '<span class="badge status-' + statusLabel.toLowerCase() + '">' + statusLabel + '</span>' +
-          '</div>';
-        }).join('');
-
-        tasksHtml = '<div class="card"><h3>Active Tasks (' + t.activeTasks.length + ')</h3>' + taskItems + '</div>';
-      }
-
-      // Context summary
-      var contextHtml = '';
-      if (t.lastContextSummary) {
-        contextHtml = '<div class="card"><h3>Context Summary</h3>' +
-          '<p style="white-space:pre-wrap;font-size:0.9rem;color:#374151;">' + escapeHtml(t.lastContextSummary) + '</p></div>';
-      }
-
-      // Snapshots
-      var snapshotsHtml = '';
-      if (taskTrackerState.snapshots.length > 0) {
-        var snapItems = taskTrackerState.snapshots.slice(0, 10).map(function(snap) {
-          var date = snap.createdAt ? new Date(snap.createdAt).toLocaleString() : '?';
-          return '<div class="list-item" style="padding:8px 0;border-bottom:1px solid #f3f4f6;">' +
-            '<div><span style="font-size:0.85rem;">' + escapeHtml(snap.trigger || 'MANUAL') + '</span>' +
-              '<br><span style="font-size:0.75rem;color:#9ca3af;">' + date + '</span>' +
-            '</div>' +
-            '<span style="font-size:0.75rem;color:#6b7280;">' + escapeHtml(snap.snapshotId || '') + '</span>' +
-          '</div>';
-        }).join('');
-
-        snapshotsHtml = '<div class="card"><h3>Recent Snapshots</h3>' + snapItems + '</div>';
-      }
-
-      // Recovery section
-      var recoveryHtml = '';
-      if (t.recoveryHint) {
-        recoveryHtml =
-          '<div class="card" style="border-left:4px solid #f59e0b;">' +
-            '<h3>Recovery Available</h3>' +
-            '<p style="font-size:0.9rem;color:#374151;">' + escapeHtml(t.recoveryHint) + '</p>' +
-            '<button class="btn btn-primary" onclick="taskTrackerRecover()" style="margin-top:8px;">Recover Session</button>' +
-          '</div>';
-      }
-
-      // Actions
-      var actionsHtml =
-        '<div style="display:flex;gap:8px;margin-bottom:16px;">' +
-          '<button class="btn btn-secondary" onclick="taskTrackerSnapshot()">Create Snapshot</button>' +
-          '<button class="btn btn-secondary" style="color:#ef4444;" onclick="taskTrackerReset()">Reset Tracker</button>' +
-        '</div>';
-
-      app.innerHTML =
-        '<div class="page-header"><h2>Task Tracker</h2>' + actionsHtml + '</div>' +
-        recoveryHtml + planHtml + tasksHtml + contextHtml + snapshotsHtml;
     }
 
-    async function taskTrackerInitProject() {
-      var projectId = taskTrackerState.projectId || 'default';
+    async function loadRecoveryFailed() {
+      var container = document.getElementById('recovery-failed');
+      if (!container) return;
       try {
-        await api('/tracker/' + encodeURIComponent(projectId), {
-          method: 'PUT',
-          body: JSON.stringify({ orgId: 'default', projectId: projectId }),
+        var data = await api('/recovery/failed?since_hours=24&limit=50');
+        var tasks = (data && data.tasks) || [];
+        if (tasks.length === 0) {
+          container.innerHTML = '<div class="card"><h3>Recent Failed</h3><p style="color:#059669; margin:0;">No failed tasks in the last 24 hours.</p></div>';
+          return;
+        }
+        var rows = tasks.map(function(t) {
+          var projectLabel = t.project_alias || (t.project_path ? t.project_path.split('/').pop() : '—');
+          var errPreview = t.error_message ? escapeHtml(t.error_message.substring(0, 120)) : '—';
+          return '<tr style="border-bottom:1px solid #f3f4f6;" data-testid="failed-task-row" data-task-id="' + escapeHtml(t.task_id) + '">' +
+            '<td style="padding:8px 10px;"><a href="#" onclick="event.preventDefault(); navigate(\'/tasks/\' + encodeURIComponent(\'' + escapeHtml(t.task_id) + '\'))" style="color:#2563eb; font-family:monospace; font-size:0.75rem;">' + escapeHtml(t.task_id.substring(0, 24)) + '…</a></td>' +
+            '<td style="padding:8px 10px;">' + escapeHtml(projectLabel) + '</td>' +
+            '<td style="padding:8px 10px; font-size:0.8rem; color:#7f1d1d;">' + errPreview + '</td>' +
+            '<td style="padding:8px 10px; font-family:monospace; font-size:0.75rem;">' + escapeHtml(t.updated_at || '') + '</td>' +
+            '<td style="padding:8px 10px; text-align:right;">' +
+              '<button class="btn btn-primary" data-testid="retry-btn" style="font-size:0.7rem; padding:3px 8px; margin-right:4px;" onclick="recoveryRetry(\'' + escapeHtml(t.task_id) + '\')">Retry</button>' +
+              (t.has_checkpoint
+                ? '<button class="btn" data-testid="failed-rollback-btn" style="background:#dc2626; color:white; border-color:#dc2626; font-size:0.7rem; padding:3px 8px;" onclick="recoveryRollback(\'' + escapeHtml(t.task_id) + '\')">Rollback</button>'
+                : '') +
+            '</td>' +
+          '</tr>';
+        }).join('');
+        container.innerHTML =
+          '<div class="card">' +
+            '<h3>Recent Failed <span style="font-size:0.8rem; color:#9ca3af;">(' + tasks.length + ')</span></h3>' +
+            '<table style="width:100%; border-collapse:collapse; font-size:0.85rem;">' +
+              '<thead><tr style="border-bottom:2px solid #e5e7eb; text-align:left; background:#f9fafb;">' +
+                '<th style="padding:6px 10px;">Task</th><th style="padding:6px 10px;">Project</th><th style="padding:6px 10px;">Error</th><th style="padding:6px 10px;">Updated</th><th style="padding:6px 10px; text-align:right;">Action</th>' +
+              '</tr></thead><tbody>' + rows + '</tbody>' +
+            '</table>' +
+          '</div>';
+      } catch (err) {
+        container.innerHTML = '<div class="card" style="color:#ef4444;">Error loading failed tasks: ' + escapeHtml(err.message || 'unknown') + '</div>';
+      }
+    }
+
+    async function loadRecoveryHistory() {
+      var container = document.getElementById('recovery-history');
+      if (!container) return;
+      try {
+        var data = await api('/recovery/rollback-history?limit=20');
+        var entries = (data && data.entries) || [];
+        if (entries.length === 0) {
+          container.innerHTML = '<div class="card"><h3>Rollback History</h3><p style="color:#9ca3af; margin:0;">No rollbacks yet.</p></div>';
+          return;
+        }
+        var rows = entries.map(function(e) {
+          var statusBadge = e.success
+            ? '<span class="badge badge-complete" style="font-size:0.7rem;">success</span>'
+            : '<span class="badge badge-error" style="font-size:0.7rem;">failed</span>';
+          return '<tr style="border-bottom:1px solid #f3f4f6;" data-testid="rollback-history-row">' +
+            '<td style="padding:8px 10px;">' + statusBadge + '</td>' +
+            '<td style="padding:8px 10px; font-family:monospace; font-size:0.75rem;">' + escapeHtml((e.rolled_back_task_id || '').substring(0, 30)) + '</td>' +
+            '<td style="padding:8px 10px;">' + escapeHtml(e.checkpoint_type || '—') + '</td>' +
+            '<td style="padding:8px 10px; font-size:0.75rem;">' + e.cancelled_count + ' tasks cancelled</td>' +
+            '<td style="padding:8px 10px; font-family:monospace; font-size:0.75rem;">' + escapeHtml(e.triggered_at || '') + '</td>' +
+          '</tr>';
+        }).join('');
+        container.innerHTML =
+          '<div class="card">' +
+            '<h3>Rollback History</h3>' +
+            '<table style="width:100%; border-collapse:collapse; font-size:0.85rem;">' +
+              '<thead><tr style="border-bottom:2px solid #e5e7eb; text-align:left; background:#f9fafb;">' +
+                '<th style="padding:6px 10px;">Status</th><th style="padding:6px 10px;">Root Task</th><th style="padding:6px 10px;">Checkpoint</th><th style="padding:6px 10px;">Cascade</th><th style="padding:6px 10px;">When</th>' +
+              '</tr></thead><tbody>' + rows + '</tbody>' +
+            '</table>' +
+          '</div>';
+      } catch (err) {
+        container.innerHTML = '<div class="card" style="color:#ef4444;">Error loading rollback history: ' + escapeHtml(err.message || 'unknown') + '</div>';
+      }
+    }
+
+    async function recoveryRetry(taskId) {
+      if (!confirm('タスク ' + taskId + ' を QUEUED に戻して再実行しますか?')) return;
+      try {
+        await api('/tasks/' + encodeURIComponent(taskId) + '/retry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
         });
-        showToast('Tracker initialized', 'success');
-        renderTaskTrackerPage();
+        showToast('Retry queued for ' + taskId, 'success');
+        setTimeout(renderRecoveryPage, 500);
       } catch (err) {
-        showToast('Failed to initialize: ' + err.message, 'error');
+        showToast('Retry failed: ' + (err.message || 'unknown'), 'error');
       }
     }
 
-    async function taskTrackerSnapshot() {
-      var projectId = taskTrackerState.projectId || 'default';
+    async function recoveryRollback(taskId) {
+      if (!confirm('このタスクをロールバックしますか?\n\n' +
+        '・git stash (または file snapshot) から pre-task 状態を復元\n' +
+        '・親子関係で繋がった全タスクが CANCELLED になります\n' +
+        '・この操作は取り消せません')) return;
       try {
-        await api('/tracker/' + encodeURIComponent(projectId) + '/snapshots', { method: 'POST', body: JSON.stringify({}) });
-        showToast('Snapshot created', 'success');
-        renderTaskTrackerPage();
+        var result = await api('/tasks/' + encodeURIComponent(taskId) + '/rollback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm: true }),
+        });
+        var rolled = (result && result.rolled_back_task_id) || taskId;
+        var cancelled = (result && result.cancelled_descendants) || [];
+        showToast('Rolled back root ' + rolled + ' (' + cancelled.length + ' tasks cancelled)', 'success', 6000);
+        setTimeout(renderRecoveryPage, 500);
       } catch (err) {
-        showToast('Failed: ' + err.message, 'error');
+        showToast('Rollback failed: ' + (err.message || 'unknown'), 'error', 8000);
       }
     }
 
-    async function taskTrackerRecover() {
-      var projectId = taskTrackerState.projectId || 'default';
+    async function recoveryMarkError(taskId) {
+      if (!confirm('タスク ' + taskId + ' を強制的に ERROR にしますか?')) return;
       try {
-        var result = await api('/tracker/' + encodeURIComponent(projectId) + '/recover', { method: 'POST', body: JSON.stringify({}) });
-        showToast('Recovery complete', 'success');
-        renderTaskTrackerPage();
+        await api('/tasks/' + encodeURIComponent(taskId) + '/status', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'ERROR', error_message: 'Manually marked as ERROR from Recovery page' }),
+        });
+        showToast('Task marked as ERROR', 'success');
+        setTimeout(renderRecoveryPage, 500);
       } catch (err) {
-        showToast('Recovery failed: ' + err.message, 'error');
-      }
-    }
-
-    async function taskTrackerReset() {
-      if (!confirm('Reset the task tracker? This will clear all plans and tasks.')) return;
-      var projectId = taskTrackerState.projectId || 'default';
-      try {
-        await api('/tracker/' + encodeURIComponent(projectId), { method: 'DELETE' });
-        showToast('Tracker reset', 'success');
-        taskTrackerState.tracker = null;
-        taskTrackerState.snapshots = [];
-        renderTaskTrackerPage();
-      } catch (err) {
-        showToast('Reset failed: ' + err.message, 'error');
+        showToast('Failed: ' + (err.message || 'unknown'), 'error');
       }
     }
 
@@ -13406,8 +13424,9 @@
         renderMcpServersPage();
       } else if (path === '/backup') {
         renderBackupPage();
-      } else if (path === '/task-tracker') {
-        renderTaskTrackerPage();
+      } else if (path === '/task-tracker' || path === '/recovery') {
+        // /task-tracker is the legacy URL (pre-v2.3) — redirect to /recovery
+        renderRecoveryPage();
       } else if (path === '/pr-reviews') {
         renderPRReviewsPage();
       } else if (path.startsWith('/pr-reviews/')) {

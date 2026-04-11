@@ -109,7 +109,8 @@ const pageRenderers = [
   'renderDashboard', 'renderProjectList', 'renderTaskGroupList', 'renderActivity',
   'renderAssistantPage', 'renderHooksPage', 'renderCommandsPage', 'renderAgentsPage',
   'renderPluginsPage', 'renderMcpServersPage', 'renderBackupPage',
-  'renderTaskTrackerPage', 'renderPRReviewsPage', 'renderLogsPage', 'renderSettingsPage',
+  'renderRecoveryPage', 'renderPRReviewsPage', 'renderLogsPage', 'renderSettingsPage',
+  'renderProcessesPage',
 ];
 for (const fn of pageRenderers) {
   if (content.includes(fn)) {

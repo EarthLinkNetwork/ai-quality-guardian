@@ -44,7 +44,7 @@ import { createClaudeHooksRoutes } from './routes/claude-hooks';
 import { createAssistantRoutes } from './routes/assistant';
 import { createRepoProfileRoutes } from './routes/repo-profile';
 import { createTemplateRoutes } from './routes/templates';
-import { createTaskTrackerRoutes } from './routes/task-tracker';
+// Task Tracker routes removed (v2.3) — replaced by /api/recovery/* in Recovery page
 import { createPRReviewRoutes } from './routes/pr-review';
 import { GhCliGitHubAdapter } from './github/gh-cli-adapter';
 import type { ReviewJudgeLLMClient } from '../pr-review/review-judge';
@@ -234,9 +234,7 @@ export function createApp(config: WebServerConfig): Express {
     // Template routes (CRUD for input/output templates)
     app.use("/api/templates", createTemplateRoutes({ stateDir }));
 
-    // Task Tracker routes (task persistence, snapshots, recovery)
-    // Per spec/34_TASK_TRACKER_PERSISTENCE.md Section 11
-    app.use("/api/tracker", createTaskTrackerRoutes({ dal: getDAL() }));
+    // Task Tracker routes removed (v2.3). See spec/36_LIVE_TASKS_AND_RECOVERY.md.
 
     // PR Review Automation routes (review automation, dashboard API)
     // Per spec/35_PR_REVIEW_AUTOMATION.md Section 10
