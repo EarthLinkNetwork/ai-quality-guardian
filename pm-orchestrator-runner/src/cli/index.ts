@@ -1024,6 +1024,8 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
         prompt: enrichedPrompt,
         workingDir: effectiveWorkingDir,
         taskType: item.task_type, // Propagate task type for READ_INFO/REPORT handling
+        taskGroupId: item.task_group_id, // For process registry / ghost detection
+        projectPath: item.project_path || effectiveWorkingDir,
       });
 
       console.log(`[Runner] Task ${item.task_id} completed with status: ${result.status}`);

@@ -68,6 +68,10 @@ export interface ExecutorTask {
    * READ_INFO tasks don't require file changes - response output becomes evidence.
    */
   taskType?: 'READ_INFO' | 'IMPLEMENTATION' | 'REPORT' | string;
+  /** Parent task group id — recorded in process registry for ghost detection */
+  taskGroupId?: string;
+  /** Absolute project path — recorded in process registry for ghost detection */
+  projectPath?: string;
 }
 /**
  * Verified file information
@@ -751,14 +755,23 @@ export class ClaudeCodeExecutor implements IExecutor {
       // Log PID after successful spawn
       outputStream.emit(task.id, 'spawn', `[spawn] pid: ${childProcess.pid ?? 'unknown'}`);
 
-      // Register in process registry so cancel API can kill this process
-      registerTaskProcess(task.id, () => {
-        if (childProcess && !childProcess.killed) {
-          childProcess.kill('SIGTERM');
-          setTimeout(() => {
-            if (childProcess && !childProcess.killed) childProcess.kill('SIGKILL');
-          }, SIGTERM_GRACE_MS);
-        }
+      // Register in process registry with full task metadata so:
+      // - cancel API can kill this process
+      // - /api/system/processes can show PID↔task↔project↔status association
+      //   and distinguish PM-Runner-spawned processes from unrelated `claude`
+      //   processes the user runs in their terminal.
+      registerTaskProcess(task.id, {
+        pid: childProcess.pid ?? -1,
+        taskGroupId: task.taskGroupId,
+        projectPath: task.projectPath ?? task.workingDir,
+        killFn: () => {
+          if (childProcess && !childProcess.killed) {
+            childProcess.kill('SIGTERM');
+            setTimeout(() => {
+              if (childProcess && !childProcess.killed) childProcess.kill('SIGKILL');
+            }, SIGTERM_GRACE_MS);
+          }
+        },
       });
 
       // Initialize last output time

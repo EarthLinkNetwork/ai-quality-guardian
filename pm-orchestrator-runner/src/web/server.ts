@@ -330,89 +330,137 @@ export function createApp(config: WebServerConfig): Express {
 
   /**
    * GET /api/system/processes
-   * List running OS processes that match claude / claude-code / pm-orchestrator-runner
-   * Helps detect ghost / orphaned processes from previous runs.
+   * List PM Runner-spawned task processes, cross-referenced with:
+   *   - Live OS state (ps) for PID liveness, CPU/MEM, elapsed time
+   *   - Task store for task status, task group, project alias
    *
-   * Returns array of { pid, ppid, etime, cpu, mem, command, category }
-   * category: 'claude' | 'claude-code' | 'pm-runner' | 'node-runner' | 'other'
+   * SAFETY: This endpoint returns ONLY processes recorded in the in-memory
+   * process registry (src/executor/process-registry.ts). Processes the user
+   * runs in their terminal (e.g. `claude --dangerously-skip-permissions`) or
+   * Claude Desktop helpers are NEVER included, so Kill actions cannot harm
+   * unrelated sessions.
+   *
+   * Each entry includes:
+   *   pid, task_id, task_group_id, project_path, project_alias,
+   *   task_status, spawned_at, registry_elapsed_ms, is_alive,
+   *   ps_etime, cpu, mem, command
    */
   app.get('/api/system/processes', async (_req: Request, res: Response) => {
     try {
-      // macOS/Linux ps — list all processes with the columns we need
-      const { stdout } = await exec(
-        'ps -axo pid=,ppid=,etime=,%cpu=,%mem=,command=',
-        { maxBuffer: 10 * 1024 * 1024 }
-      );
-
+      const { listTaskProcesses } = await import('../executor/process-registry');
+      const snapshots = listTaskProcesses();
       const selfPid = process.pid;
-      const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
-      const processes: Array<{
-        pid: number;
-        ppid: number;
-        etime: string;
-        cpu: number;
-        mem: number;
-        command: string;
-        category: string;
-        is_self: boolean;
-      }> = [];
+      const now = Date.now();
 
-      for (const line of lines) {
-        // Split on whitespace for first 5 columns, rest is command
-        const match = line.match(/^(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/);
-        if (!match) continue;
-        const pid = parseInt(match[1], 10);
-        const ppid = parseInt(match[2], 10);
-        const etime = match[3];
-        const cpu = parseFloat(match[4]);
-        const mem = parseFloat(match[5]);
-        const command = match[6];
-
-        // Filter: only show processes related to claude / pm-orchestrator-runner
-        // Skip ps itself and the grep command
-        if (/\bps\s+-axo\b/.test(command)) continue;
-
-        let category: string | null = null;
-        if (/\bclaude-code\b/i.test(command) || /\bclaude\s+code\b/i.test(command)) {
-          category = 'claude-code';
-        } else if (/\/claude(\s|$)/i.test(command) || /\bclaude\s+--/.test(command) || /\bbin\/claude\b/.test(command)) {
-          category = 'claude-cli';
-        } else if (/pm-orchestrator-runner/.test(command)) {
-          category = 'pm-runner';
-        } else if (/node.*(dist\/cli|pm-orchestrator)/.test(command)) {
-          category = 'node-runner';
+      // Fetch OS info for the relevant PIDs only.
+      // `ps -p <pid>,<pid>,...` queries specific PIDs without scanning the full process table.
+      const pidNumbers = snapshots
+        .map(s => s.pid)
+        .filter((p): p is number => Number.isFinite(p) && p > 0);
+      const psInfo = new Map<number, { etime: string; cpu: number; mem: number; command: string }>();
+      if (pidNumbers.length > 0) {
+        try {
+          const psArgs = pidNumbers.join(',');
+          const { stdout } = await exec(
+            `ps -o pid=,etime=,%cpu=,%mem=,command= -p ${psArgs}`,
+            { maxBuffer: 2 * 1024 * 1024 }
+          );
+          for (const line of stdout.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const m = trimmed.match(/^(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/);
+            if (!m) continue;
+            const pid = parseInt(m[1], 10);
+            psInfo.set(pid, {
+              etime: m[2],
+              cpu: parseFloat(m[3]) || 0,
+              mem: parseFloat(m[4]) || 0,
+              command: m[5],
+            });
+          }
+        } catch {
+          // ps may exit non-zero if some PIDs are dead — that's fine, we just
+          // won't have OS info for those and will mark them as not alive.
         }
-
-        if (category === null) continue;
-
-        processes.push({
-          pid,
-          ppid,
-          etime,
-          cpu: isNaN(cpu) ? 0 : cpu,
-          mem: isNaN(mem) ? 0 : mem,
-          command,
-          category,
-          is_self: pid === selfPid,
-        });
       }
 
-      // Sort: pm-runner first, then by cpu desc
-      const categoryOrder: Record<string, number> = {
-        'pm-runner': 0,
-        'node-runner': 1,
-        'claude-code': 2,
-        'claude-cli': 3,
-      };
+      // Build task metadata lookup from the queue store for any taskIds we track.
+      const taskStatusById = new Map<string, {
+        status: string;
+        task_group_id: string;
+        project_path?: string;
+        created_at?: string;
+        updated_at?: string;
+      }>();
+      for (const snap of snapshots) {
+        try {
+          const item = await queueStore.getItem(snap.taskId);
+          if (item) {
+            taskStatusById.set(snap.taskId, {
+              status: item.status,
+              task_group_id: item.task_group_id,
+              project_path: item.project_path,
+              created_at: item.created_at,
+              updated_at: item.updated_at,
+            });
+          }
+        } catch {
+          // Task record missing (deleted) — leave unset
+        }
+      }
+
+      // Build project alias lookup if DAL is initialized
+      const projectAliasByPath = new Map<string, string>();
+      if (isDALInitialized()) {
+        try {
+          const dal = getDAL();
+          const allProjects = await dal.listProjectIndexes();
+          for (const p of allProjects.items) {
+            if (p.projectPath) {
+              projectAliasByPath.set(p.projectPath, p.alias || p.projectPath.split('/').pop() || p.projectPath);
+            }
+          }
+        } catch {
+          // Non-fatal
+        }
+      }
+
+      const processes = snapshots.map(snap => {
+        const os = psInfo.get(snap.pid);
+        const taskMeta = taskStatusById.get(snap.taskId);
+        const projectPath = snap.projectPath || taskMeta?.project_path;
+        const projectAlias = projectPath ? projectAliasByPath.get(projectPath) : undefined;
+        const spawnedMs = Date.parse(snap.spawnedAt);
+        return {
+          pid: snap.pid,
+          task_id: snap.taskId,
+          task_group_id: snap.taskGroupId || taskMeta?.task_group_id,
+          project_path: projectPath,
+          project_alias: projectAlias,
+          task_status: taskMeta?.status,
+          task_created_at: taskMeta?.created_at,
+          task_updated_at: taskMeta?.updated_at,
+          spawned_at: snap.spawnedAt,
+          registry_elapsed_ms: Number.isFinite(spawnedMs) ? now - spawnedMs : null,
+          is_alive: os !== undefined,
+          ps_etime: os?.etime,
+          cpu: os?.cpu ?? 0,
+          mem: os?.mem ?? 0,
+          command: os?.command,
+          is_self: snap.pid === selfPid,
+        };
+      });
+
+      // Sort: dead processes (ghost candidates) first, then by elapsed desc
       processes.sort((a, b) => {
-        const diff = (categoryOrder[a.category] ?? 99) - (categoryOrder[b.category] ?? 99);
-        if (diff !== 0) return diff;
-        return b.cpu - a.cpu;
+        if (a.is_alive !== b.is_alive) return a.is_alive ? 1 : -1;
+        return (b.registry_elapsed_ms ?? 0) - (a.registry_elapsed_ms ?? 0);
       });
 
       res.json({
         self_pid: selfPid,
         count: processes.length,
+        ghost_count: processes.filter(p => !p.is_alive).length,
         processes,
       });
     } catch (error) {
@@ -423,11 +471,17 @@ export function createApp(config: WebServerConfig): Express {
 
   /**
    * POST /api/system/processes/:pid/kill
-   * Kill a specific PID. Safety: reject killing self PID.
+   * Kill a task process by PID.
+   *
+   * SAFETY: Only registered task processes can be killed via this endpoint.
+   * PIDs not in the process registry (e.g. the user's terminal claude session,
+   * Claude Desktop helpers) are rejected with 403 even if the PID is valid.
+   *
    * Body: { signal?: 'SIGTERM' | 'SIGKILL' } (default: SIGTERM)
    */
   app.post('/api/system/processes/:pid/kill', async (req: Request, res: Response) => {
     try {
+      const { listTaskProcesses, killTaskProcessByPid } = await import('../executor/process-registry');
       const pid = parseInt(req.params.pid as string, 10);
       if (!Number.isFinite(pid) || pid <= 0) {
         res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Invalid pid' } as ErrorResponse);
@@ -437,18 +491,23 @@ export function createApp(config: WebServerConfig): Express {
         res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Cannot kill self' } as ErrorResponse);
         return;
       }
-      const requestedSignal = (req.body?.signal as string | undefined) || 'SIGTERM';
-      const allowedSignals = ['SIGTERM', 'SIGKILL', 'SIGINT', 'SIGHUP'] as const;
-      const signal = (allowedSignals as readonly string[]).includes(requestedSignal)
-        ? (requestedSignal as NodeJS.Signals)
-        : 'SIGTERM';
 
-      try {
-        process.kill(pid, signal);
-        res.json({ success: true, pid, signal });
-      } catch (killErr) {
-        const message = killErr instanceof Error ? killErr.message : String(killErr);
-        res.status(500).json({ error: 'KILL_FAILED', message } as ErrorResponse);
+      // CRITICAL SAFETY: only allow killing PIDs that PM Runner itself spawned.
+      // This prevents accidentally killing the user's terminal `claude` sessions.
+      const registered = listTaskProcesses().find(p => p.pid === pid);
+      if (!registered) {
+        res.status(403).json({
+          error: 'NOT_OWNED',
+          message: 'Refusing to kill a PID that was not spawned by this PM Runner (not in process registry).',
+        } as ErrorResponse);
+        return;
+      }
+
+      const killed = killTaskProcessByPid(pid);
+      if (killed) {
+        res.json({ success: true, pid, task_id: registered.taskId });
+      } else {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Process already gone' } as ErrorResponse);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';

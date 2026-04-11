@@ -13118,7 +13118,7 @@
     async function renderProcessesPage() {
       app.innerHTML =
         '<div class="page-header">' +
-          '<h2>Processes</h2>' +
+          '<h2>Task Processes</h2>' +
           '<div class="action-bar">' +
             '<button class="refresh-btn" data-testid="processes-refresh-btn" onclick="loadProcessesList()">Refresh</button>' +
             '<label style="display:flex; align-items:center; gap:4px; font-size:0.85rem; color:#6b7280;">' +
@@ -13126,12 +13126,14 @@
             '</label>' +
           '</div>' +
         '</div>' +
-        '<div class="card" style="margin-bottom:12px;">' +
-          '<p style="font-size:0.85rem; color:#6b7280; margin:0;">' +
-            'Running OS processes related to <code>claude</code>, <code>claude-code</code>, and <code>pm-orchestrator-runner</code>. ' +
-            'Use this page to detect <strong>ghost processes</strong> (orphaned instances left over from previous runs).' +
+        '<div class="card" style="margin-bottom:12px; background:#fef3c7; border-color:#fbbf24;">' +
+          '<p style="font-size:0.85rem; color:#78350f; margin:0;">' +
+            '<strong>SAFETY:</strong> This page only shows processes that <strong>this PM Orchestrator Runner spawned</strong>. ' +
+            'Your terminal <code>claude</code> sessions and Claude Desktop helpers are never listed here and cannot be killed from this UI. ' +
+            'Use this page to find <strong>ghost processes</strong> — tasks that are stuck RUNNING or whose OS process died without updating status.' +
           '</p>' +
         '</div>' +
+        '<div id="processes-summary" data-testid="processes-summary" style="margin-bottom:12px;"></div>' +
         '<div id="processes-list" data-testid="processes-list">' +
           '<div style="color:#6b7280; text-align:center; padding:20px;">Loading processes...</div>' +
         '</div>';
@@ -13157,74 +13159,108 @@
       }
     }
 
+    function formatMs(ms) {
+      if (ms === null || ms === undefined) return '—';
+      var s = Math.floor(ms / 1000);
+      if (s < 60) return s + 's';
+      var m = Math.floor(s / 60);
+      if (m < 60) return m + 'm ' + (s % 60) + 's';
+      var h = Math.floor(m / 60);
+      return h + 'h ' + (m % 60) + 'm';
+    }
+
+    function processStatusBadge(status) {
+      if (!status) return '<span class="badge" style="font-size:0.7rem; background:#6b7280; color:white;">UNKNOWN</span>';
+      var cls = 'badge-queued';
+      if (status === 'COMPLETE') cls = 'badge-complete';
+      else if (status === 'ERROR') cls = 'badge-error';
+      else if (status === 'RUNNING') cls = 'badge-running';
+      else if (status === 'AWAITING_RESPONSE') cls = 'badge-awaiting';
+      return '<span class="badge ' + cls + '" style="font-size:0.7rem;">' + escapeHtml(status) + '</span>';
+    }
+
     async function loadProcessesList() {
       var container = document.getElementById('processes-list');
+      var summary = document.getElementById('processes-summary');
       if (!container) return;
       try {
         var data = await api('/system/processes');
         var procs = data.processes || [];
+
+        if (summary) {
+          var ghostCount = data.ghost_count || 0;
+          summary.innerHTML =
+            '<div class="card" style="padding:12px;">' +
+              '<div style="display:flex; gap:24px; align-items:center;">' +
+                '<div><strong style="font-size:1.5rem;">' + procs.length + '</strong> <span style="color:#6b7280;">tracked task processes</span></div>' +
+                (ghostCount > 0
+                  ? '<div data-testid="ghost-count" style="color:#dc2626;"><strong style="font-size:1.5rem;">' + ghostCount + '</strong> <span>ghost (OS process missing)</span></div>'
+                  : '<div data-testid="ghost-count" style="color:#059669;">No ghost processes detected</div>') +
+                '<div style="margin-left:auto; color:#6b7280; font-size:0.8rem;">Self PID: ' + data.self_pid + '</div>' +
+              '</div>' +
+            '</div>';
+        }
+
         if (procs.length === 0) {
-          container.innerHTML = '<div class="card" style="text-align:center; padding:20px; color:#9ca3af;">No matching processes found.</div>';
+          container.innerHTML =
+            '<div class="card" style="text-align:center; padding:30px; color:#9ca3af;">' +
+              '<p style="margin:0 0 8px; font-size:1rem;">No active task processes.</p>' +
+              '<p style="margin:0; font-size:0.85rem;">When PM Runner executes a task (e.g. via chat), the spawned process appears here.</p>' +
+            '</div>';
           return;
         }
-        // Group by category
-        var categoryLabels = {
-          'pm-runner': 'PM Orchestrator Runner',
-          'node-runner': 'Node Runner (dist/cli)',
-          'claude-code': 'Claude Code',
-          'claude-cli': 'Claude CLI',
-        };
-        var categoryColors = {
-          'pm-runner': '#2563eb',
-          'node-runner': '#0ea5e9',
-          'claude-code': '#8b5cf6',
-          'claude-cli': '#a855f7',
-        };
-        var groups = {};
+
+        var html = '<div class="card" style="padding:0; overflow:auto;">';
+        html += '<table style="width:100%; border-collapse:collapse; font-size:0.85rem;">';
+        html += '<thead><tr style="border-bottom:2px solid #e5e7eb; text-align:left; color:#374151; background:#f9fafb;">' +
+          '<th style="padding:8px 10px;">Status</th>' +
+          '<th style="padding:8px 10px;">Alive</th>' +
+          '<th style="padding:8px 10px;">PID</th>' +
+          '<th style="padding:8px 10px;">Task</th>' +
+          '<th style="padding:8px 10px;">Project</th>' +
+          '<th style="padding:8px 10px;">Task Group</th>' +
+          '<th style="padding:8px 10px;">Age</th>' +
+          '<th style="padding:8px 10px;">CPU%</th>' +
+          '<th style="padding:8px 10px;">MEM%</th>' +
+          '<th style="padding:8px 10px; text-align:right;">Action</th>' +
+        '</tr></thead><tbody>';
+
         procs.forEach(function(p) {
-          if (!groups[p.category]) groups[p.category] = [];
-          groups[p.category].push(p);
+          var aliveBadge = p.is_alive
+            ? '<span style="color:#059669; font-weight:600;">✓ alive</span>'
+            : '<span style="color:#dc2626; font-weight:600;" data-testid="ghost-badge">✗ dead</span>';
+          var statusBadge = processStatusBadge(p.task_status);
+          var taskLink = p.task_id
+            ? '<a href="#" onclick="event.preventDefault(); navigate(\'/tasks/\' + encodeURIComponent(\'' + escapeHtml(p.task_id) + '\'))" style="color:#2563eb; font-family:monospace; font-size:0.75rem;">' + escapeHtml(p.task_id.substring(0, 20)) + '…</a>'
+            : '—';
+          var projectLabel = p.project_alias || (p.project_path ? p.project_path.split('/').pop() : '—');
+          var groupLink = p.task_group_id
+            ? '<a href="#" onclick="event.preventDefault(); navigate(\'/task-groups/\' + encodeURIComponent(\'' + escapeHtml(p.task_group_id) + '\'))" style="color:#2563eb; font-family:monospace; font-size:0.75rem;">' + escapeHtml(p.task_group_id.substring(0, 20)) + '…</a>'
+            : '—';
+
+          html += '<tr style="border-bottom:1px solid #f3f4f6;' + (!p.is_alive ? ' background:#fef2f2;' : '') + '" data-testid="process-row" data-pid="' + p.pid + '">';
+          html += '<td style="padding:8px 10px;">' + statusBadge + '</td>';
+          html += '<td style="padding:8px 10px;">' + aliveBadge + '</td>';
+          html += '<td style="padding:8px 10px; font-family:monospace;">' + p.pid + (p.is_self ? ' <span style="font-size:0.65rem; background:#10b981; color:white; padding:1px 5px; border-radius:3px;">SELF</span>' : '') + '</td>';
+          html += '<td style="padding:8px 10px;">' + taskLink + '</td>';
+          html += '<td style="padding:8px 10px;">' + escapeHtml(projectLabel) + '</td>';
+          html += '<td style="padding:8px 10px;">' + groupLink + '</td>';
+          html += '<td style="padding:8px 10px; font-family:monospace;">' + formatMs(p.registry_elapsed_ms) + '</td>';
+          html += '<td style="padding:8px 10px; font-family:monospace;">' + (p.cpu || 0).toFixed(1) + '</td>';
+          html += '<td style="padding:8px 10px; font-family:monospace;">' + (p.mem || 0).toFixed(1) + '</td>';
+          html += '<td style="padding:8px 10px; text-align:right;">';
+          if (!p.is_self && p.is_alive) {
+            html += '<button class="btn" data-testid="process-kill-btn" data-pid="' + p.pid + '" style="background:#dc2626; color:white; border-color:#dc2626; font-size:0.7rem; padding:3px 10px;" onclick="killProcess(' + p.pid + ')">Kill</button>';
+          } else if (!p.is_alive) {
+            html += '<span style="font-size:0.7rem; color:#9ca3af;">(ghost)</span>';
+          } else {
+            html += '<span style="font-size:0.7rem; color:#9ca3af;">(self)</span>';
+          }
+          html += '</td>';
+          html += '</tr>';
         });
 
-        var html = '';
-        var categoryOrder = ['pm-runner', 'node-runner', 'claude-code', 'claude-cli'];
-        categoryOrder.forEach(function(cat) {
-          if (!groups[cat]) return;
-          var items = groups[cat];
-          html += '<div class="card" style="margin-bottom:12px;" data-testid="process-category-' + cat + '">';
-          html += '<h3 style="margin-top:0; color:' + categoryColors[cat] + ';">' + categoryLabels[cat] + ' <span style="font-size:0.8rem; color:#9ca3af;">(' + items.length + ')</span></h3>';
-          html += '<table style="width:100%; border-collapse:collapse; font-size:0.85rem;">';
-          html += '<thead><tr style="border-bottom:1px solid #e5e7eb; text-align:left; color:#6b7280;">' +
-            '<th style="padding:6px 8px;">PID</th>' +
-            '<th style="padding:6px 8px;">PPID</th>' +
-            '<th style="padding:6px 8px;">Elapsed</th>' +
-            '<th style="padding:6px 8px;">CPU%</th>' +
-            '<th style="padding:6px 8px;">MEM%</th>' +
-            '<th style="padding:6px 8px;">Command</th>' +
-            '<th style="padding:6px 8px; text-align:right;">Action</th>' +
-          '</tr></thead><tbody>';
-          items.forEach(function(p) {
-            var selfTag = p.is_self ? ' <span style="font-size:0.7rem; background:#10b981; color:white; padding:1px 6px; border-radius:3px;">SELF</span>' : '';
-            html += '<tr style="border-bottom:1px solid #f3f4f6;" data-testid="process-row" data-pid="' + p.pid + '">';
-            html += '<td style="padding:6px 8px; font-family:monospace;">' + p.pid + selfTag + '</td>';
-            html += '<td style="padding:6px 8px; font-family:monospace; color:#6b7280;">' + p.ppid + '</td>';
-            html += '<td style="padding:6px 8px; font-family:monospace;">' + escapeHtml(p.etime) + '</td>';
-            html += '<td style="padding:6px 8px; font-family:monospace;">' + p.cpu.toFixed(1) + '</td>';
-            html += '<td style="padding:6px 8px; font-family:monospace;">' + p.mem.toFixed(1) + '</td>';
-            html += '<td style="padding:6px 8px; font-family:monospace; font-size:0.75rem; color:#374151; word-break:break-all; max-width:600px;">' + escapeHtml(p.command) + '</td>';
-            html += '<td style="padding:6px 8px; text-align:right;">';
-            if (!p.is_self) {
-              html += '<button class="btn" data-testid="process-kill-btn" data-pid="' + p.pid + '" style="background:#dc2626; color:white; border-color:#dc2626; font-size:0.7rem; padding:3px 10px;" onclick="killProcess(' + p.pid + ')">Kill</button>';
-            } else {
-              html += '<span style="font-size:0.7rem; color:#9ca3af;">(self)</span>';
-            }
-            html += '</td>';
-            html += '</tr>';
-          });
-          html += '</tbody></table>';
-          html += '</div>';
-        });
-
+        html += '</tbody></table></div>';
         container.innerHTML = html;
       } catch (err) {
         container.innerHTML = '<div class="card" style="color:#ef4444; padding:20px;">Error loading processes: ' + escapeHtml(err.message || 'unknown') + '</div>';
