@@ -679,7 +679,7 @@ export function createApp(config: WebServerConfig): Express {
       const AUTO_ARCHIVE_MS = 24 * 60 * 60 * 1000;
       for (const g of localFilteredGroups) {
         if (g.group_status !== 'archived' && g.group_status !== 'complete') {
-          const sc = g.status_counts || { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 };
+          const sc = g.status_counts || { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, WAITING_CHILDREN: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 };
           const allComplete = sc.QUEUED === 0 && sc.RUNNING === 0 &&
                               sc.AWAITING_RESPONSE === 0 && sc.COMPLETE > 0 &&
                               sc.ERROR === 0;
@@ -1241,7 +1241,7 @@ export function createApp(config: WebServerConfig): Express {
       }
 
       // v2.1: Added AWAITING_RESPONSE for clarification flow (P0-3, P0-4)
-      const validStatuses: QueueItemStatus[] = ['QUEUED', 'RUNNING', 'AWAITING_RESPONSE', 'COMPLETE', 'ERROR', 'CANCELLED'];
+      const validStatuses: QueueItemStatus[] = ['QUEUED', 'RUNNING', 'AWAITING_RESPONSE', 'WAITING_CHILDREN', 'COMPLETE', 'ERROR', 'CANCELLED'];
       if (!validStatuses.includes(status as QueueItemStatus)) {
         res.status(400).json({
           error: 'INVALID_STATUS',

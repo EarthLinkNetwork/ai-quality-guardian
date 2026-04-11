@@ -43,7 +43,7 @@ loadEnvFile();
 import { CLI, CLIError } from './cli-interface';
 import { REPLInterface, ProjectMode } from '../repl/repl-interface';
 import { WebServer } from '../web/server';
-import { QueueStore, QueuePoller, QueueItem, TaskExecutor, IQueueStore, ProgressEvent } from '../queue/index';
+import { QueueStore, QueuePoller, QueueItem, QueueItemStatus, TaskExecutor, IQueueStore, ProgressEvent } from '../queue/index';
 import { InMemoryQueueStore } from '../queue/in-memory-queue-store';
 import { FileQueueStore } from '../queue/file-queue-store';
 import { AutoResolvingExecutor } from '../executor/auto-resolve-executor';
@@ -616,7 +616,7 @@ async function recordTaskLlmCost(item: QueueItem): Promise<void> {
 }
 
 function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskExecutor {
-  return async (item: QueueItem): Promise<{ status: 'COMPLETE' | 'ERROR'; errorMessage?: string; output?: string }> => {
+  return async (item: QueueItem): Promise<{ status: 'COMPLETE' | 'ERROR' | 'WAITING_CHILDREN'; errorMessage?: string; output?: string }> => {
     // Clear any stale pending usage from a previous task
     getPendingUsage();
 
@@ -698,61 +698,106 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
       } catch { /* ignore trace write errors */ }
     };
 
-    // Helper: enqueue post-execution pipeline tasks (test/review) after COMPLETE
-    const enqueuePipelineTasks = async (cleanPrompt: string) => {
-      // Strip pipeline markers from the prompt for child task context
-      const basePrompt = cleanPrompt.replace(/\n*\[PIPELINE:(TEST|REVIEW)\]/g, '').trim();
+    // Helper: enqueue deterministic pipeline subtasks (test/review) after the parent task's
+    // implementation step completes. The Test and Review subtasks run with EXPLICIT scope
+    // (the parent's original prompt + actual output) — no LLM invention, no hallucinated
+    // component names. Subtasks bypass meta prompt re-adjustment (see isSubtask check above).
+    const enqueuePipelineSubtasks = async (parentPrompt: string, parentOutput: string | undefined): Promise<string[]> => {
+      const enqueuedIds: string[] = [];
+      const basePrompt = parentPrompt.trim();
+      // Truncate parent output for embedding (but keep it meaningful).
+      const outputExcerpt = (parentOutput || '').substring(0, 2000).trim();
+      const outputSection = outputExcerpt
+        ? `\n\n## 親タスクの実行結果サマリ\n\`\`\`\n${outputExcerpt}${(parentOutput || '').length > 2000 ? '\n...(truncated)' : ''}\n\`\`\`\n`
+        : '';
 
-      if (hasPipelineTest) {
+      if (item.add_review === true) {
         try {
-          const testTaskId = `${item.task_id}-test`;
+          const reviewTaskId = `${item.task_id}-sub-review`;
+          const reviewPrompt =
+            `[サブタスク (親タスク: ${item.task_id}) - Code Review]\n\n` +
+            `**注意**: 回答は必ず日本語で行ってください。\n\n` +
+            `## レビュー対象\n親タスクが実装した変更をレビューしてください。範囲は以下のスコープに**厳密に**限定してください — 関係のない git diff や過去のコミットには触れないこと。\n\n` +
+            `## 親タスクの元の要求\n${basePrompt}\n` +
+            outputSection +
+            `\n## レビュー観点\n` +
+            `1. 正確性: 親タスクの要求をすべて満たしているか？\n` +
+            `2. 品質: 可読性、保守性、既存コードとの整合性\n` +
+            `3. セキュリティ: 明らかな脆弱性がないか\n` +
+            `4. テストカバレッジ: 既存テストの影響、追加すべきテスト\n` +
+            `5. エッジケース: 未対応のケースがないか\n\n` +
+            `## 出力\n構造化されたレビューレポートを作成してください。発見した問題と、もし修正が必要であれば具体的な修正提案を含めること。\n\n` +
+            `**重要**: 上記スコープ以外のファイル変更は **絶対にレビュー対象外** としてください。親タスクの元の要求に明記されていないコンポーネント名・API名・機能名を発明してはいけません。`;
           await queueStore.enqueue(
             item.session_id,
             item.task_group_id,
-            `[TEST ISOLATION MODE]\n\nWrite tests for the changes made by parent task ${item.task_id}.\nDO NOT read implementation source code (src/ directory).\nBase tests ONLY on specifications, requirements, and public interfaces.\n\nOriginal task: ${basePrompt}`,
-            testTaskId,
-            'IMPLEMENTATION',
-            item.project_path,
-            item.task_id,
-          );
-          console.log(`[Runner] Test pipeline task enqueued: ${testTaskId}`);
-          log.app.info('Test pipeline task enqueued', { parentTaskId: item.task_id, testTaskId });
-          stateStream.emit(item.task_id, 'system', `[pipeline] Test task enqueued: ${testTaskId}`);
-        } catch (pipeErr) {
-          console.warn('[Runner] Failed to enqueue test pipeline task:', pipeErr);
-        }
-      }
-
-      if (hasPipelineReview) {
-        try {
-          const reviewTaskId = `${item.task_id}-review`;
-          await queueStore.enqueue(
-            item.session_id,
-            item.task_group_id,
-            `[CODE REVIEW MODE]\n\nReview the changes made by the task.\nCheck for: correctness, security, code quality, test coverage.\nProvide a structured report.\n\nOriginal task: ${basePrompt}`,
+            reviewPrompt,
             reviewTaskId,
             'READ_INFO',
             item.project_path,
             item.task_id,
           );
-          console.log(`[Runner] Review pipeline task enqueued: ${reviewTaskId}`);
-          log.app.info('Review pipeline task enqueued', { parentTaskId: item.task_id, reviewTaskId });
-          stateStream.emit(item.task_id, 'system', `[pipeline] Review task enqueued: ${reviewTaskId}`);
+          enqueuedIds.push(reviewTaskId);
+          console.log(`[Runner] Review subtask enqueued: ${reviewTaskId}`);
+          stateStream.emit(item.task_id, 'system', `[pipeline] Review subtask enqueued: ${reviewTaskId}`);
         } catch (pipeErr) {
-          console.warn('[Runner] Failed to enqueue review pipeline task:', pipeErr);
+          console.warn('[Runner] Failed to enqueue review subtask:', pipeErr);
         }
       }
+
+      if (item.add_test === true) {
+        try {
+          const testTaskId = `${item.task_id}-sub-test`;
+          const testPrompt =
+            `[サブタスク (親タスク: ${item.task_id}) - Test Writing]\n\n` +
+            `**注意**: 回答は必ず日本語で行ってください。\n\n` +
+            `## テスト対象\n親タスクが実装した変更に対してテストを書いてください。対象スコープは以下に**厳密に**限定し、親タスクの要求に含まれていないコンポーネントはテストしないでください。\n\n` +
+            `## 親タスクの元の要求\n${basePrompt}\n` +
+            outputSection +
+            `\n## テスト方針\n` +
+            `1. **第三者視点**: 親タスクの実装コード詳細を深く読まず、仕様・公開インターフェース・受入条件に基づいてテストを設計する\n` +
+            `2. **スコープ厳守**: 親タスクの要求に明記された機能のみテストする。関係ないファイル・git diff に惑わされないこと\n` +
+            `3. **ハッピーパス + エラーケース**: 正常系と少なくとも1つの異常系をカバーする\n` +
+            `4. **既存テスト規約に従う**: プロジェクトの既存テストパターン (Playwright / Jest / vitest など) を踏襲\n\n` +
+            `## 完了条件\n` +
+            `- 親タスクの要求を検証するテストが追加されている\n` +
+            `- 新規テストがすべてパスする\n` +
+            `- 既存テストが回帰しない\n\n` +
+            `**重要**: 親タスクの要求に存在しない機能・コンポーネント・API を発明してテストしてはいけません。`;
+          await queueStore.enqueue(
+            item.session_id,
+            item.task_group_id,
+            testPrompt,
+            testTaskId,
+            'IMPLEMENTATION',
+            item.project_path,
+            item.task_id,
+          );
+          enqueuedIds.push(testTaskId);
+          console.log(`[Runner] Test subtask enqueued: ${testTaskId}`);
+          stateStream.emit(item.task_id, 'system', `[pipeline] Test subtask enqueued: ${testTaskId}`);
+        } catch (pipeErr) {
+          console.warn('[Runner] Failed to enqueue test subtask:', pipeErr);
+        }
+      }
+      return enqueuedIds;
     };
 
     // ── LLM Relay Step 1: Meta Prompt Generation + Split Judgment ──
     // Transform the user's raw prompt into structured instructions for Claude Code.
     // Also determines if the task should be split into subtasks (LLM-based).
-    // This is the PRE-PROCESSING step of the LLM relay loop.
+    //
+    // IMPORTANT: Meta prompt generation is SKIPPED for subtasks (item.parent_task_id set)
+    // because the parent's decomposition already produced structured prompts with acceptance
+    // criteria. Re-running meta prompt on subtasks has historically caused hallucination
+    // (e.g. inventing component names like "ASH" that were not in the original user request).
     let metaPromptUsed = false;
     let promptForClaude = effectivePrompt;
     let llmSplitResult: { shouldSplit: boolean; subtasks?: Array<{ prompt: string; type: string; acceptance_criteria?: string[] }>; splitReason?: string } | undefined;
-    if (!item.conversation_history || item.conversation_history.length === 0) {
-      // Only generate meta prompt for initial execution (not re-runs after reply)
+    const isSubtask = !!item.parent_task_id;
+    const isInitialExecution = !item.conversation_history || item.conversation_history.length === 0;
+    if (isInitialExecution && !isSubtask) {
+      // Only generate meta prompt for root-task initial execution.
       try {
         stateStream.emit(item.task_id, 'system', `[llm-relay] Generating meta prompt from user input...`);
         writeLlmTraceEvent({ type: 'llm_processing', action: 'meta_prompt_start', content: 'Generating meta prompt from user input...' });
@@ -768,7 +813,15 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
           writeLlmTraceEvent({ type: 'llm_processing', action: 'meta_prompt_skipped', content: 'No enhancement needed, using raw prompt' });
         }
         // Capture LLM split judgment for use in decomposition check
-        if (metaResult.shouldSplit && metaResult.subtasks && metaResult.subtasks.length >= 2) {
+        // NOTE: If user requested test/review pipeline (add_test / add_review), we SUPPRESS
+        // LLM split here. The pipeline subtasks are generated deterministically after the
+        // parent task completes, via enqueuePipelineSubtasks().
+        if (item.add_test || item.add_review) {
+          if (metaResult.shouldSplit) {
+            console.log('[Runner] Suppressing LLM split because add_test/add_review pipeline is active');
+            stateStream.emit(item.task_id, 'system', '[llm-relay] LLM split suppressed — using deterministic pipeline subtasks');
+          }
+        } else if (metaResult.shouldSplit && metaResult.subtasks && metaResult.subtasks.length >= 2) {
           llmSplitResult = {
             shouldSplit: true,
             subtasks: metaResult.subtasks,
@@ -781,12 +834,15 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
         console.warn('[Runner] Meta prompt generation failed, using raw prompt:', metaErr);
         writeLlmTraceEvent({ type: 'llm_processing', action: 'meta_prompt_failed', content: 'Meta prompt generation failed, using raw prompt' });
       }
+    } else if (isSubtask && isInitialExecution) {
+      // Subtask: explicit log that we're skipping meta prompt
+      writeLlmTraceEvent({ type: 'llm_processing', action: 'meta_prompt_skipped_subtask', content: 'Subtask inherits structured prompt from parent decomposition — skipping meta prompt to avoid re-hallucination' });
+      stateStream.emit(item.task_id, 'system', '[llm-relay] Skipping meta prompt (subtask uses parent-generated structured prompt)');
     }
 
-    // Detect and strip pipeline markers before sending to Claude Code
-    const hasPipelineTest = item.prompt.includes('[PIPELINE:TEST]');
-    const hasPipelineReview = item.prompt.includes('[PIPELINE:REVIEW]');
-    // Strip pipeline markers from the prompt so Claude Code doesn't see them
+    // NOTE: [PIPELINE:TEST] / [PIPELINE:REVIEW] markers are no longer used —
+    // addTest/addReview are persisted as QueueItem fields (item.add_test / item.add_review).
+    // Keep a strip pass for backwards compatibility with any legacy in-flight tasks.
     const promptForClaudeClean = promptForClaude.replace(/\n*\[PIPELINE:(TEST|REVIEW)\]/g, '');
 
     // Inject TaskContext and OutputRules into the prompt for all Web Chat tasks
@@ -844,7 +900,8 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
             }
 
             const summary = `Task decomposed by LLM into ${subtaskIds.length} subtasks (${llmSplitResult.splitReason}):\n${subtaskIds.map((id, i) => `  ${i + 1}. ${id} [${llmSplitResult!.subtasks![i].type}]: ${llmSplitResult!.subtasks![i].prompt.substring(0, 100)}`).join('\n')}`;
-            return { status: 'COMPLETE' as const, output: summary };
+            stateStream.emit(item.task_id, 'state', `[state] WAITING_CHILDREN (${subtaskIds.length} subtasks)`);
+            return { status: 'WAITING_CHILDREN' as const, output: summary };
           } catch (llmSplitErr) {
             console.warn('[Runner] LLM split enqueue failed, falling back to regex:', llmSplitErr);
           }
@@ -880,7 +937,8 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
               }
 
               const summary = `Task decomposed into ${subtaskIds.length} subtasks:\n${subtaskIds.map((id, i) => `  ${i + 1}. ${id}: ${analysis.suggested_subtasks![i].prompt.substring(0, 100)}`).join('\n')}`;
-              return { status: 'COMPLETE' as const, output: summary };
+              stateStream.emit(item.task_id, 'state', `[state] WAITING_CHILDREN (${subtaskIds.length} subtasks)`);
+              return { status: 'WAITING_CHILDREN' as const, output: summary };
             }
           } catch (decompErr) {
             console.warn('[Runner] Task decomposition check failed, proceeding with single execution:', decompErr);
@@ -1197,7 +1255,11 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
               console.log(`[Runner] Auto-answer retry succeeded -> COMPLETE`);
               stateStream.emit(item.task_id, 'state', `[state] COMPLETE (auto-answer resolved)`);
               if (checkpoint) { await cleanupCheckpoint(checkpoint); }
-              await enqueuePipelineTasks(item.prompt);
+              const enqueuedAfterAutoAnswer = await enqueuePipelineSubtasks(item.prompt, reClean);
+              if (enqueuedAfterAutoAnswer.length > 0) {
+                stateStream.emit(item.task_id, 'state', `[state] WAITING_CHILDREN (${enqueuedAfterAutoAnswer.length} pipeline subtasks)`);
+                return { status: 'WAITING_CHILDREN', output: reClean };
+              }
               return { status: 'COMPLETE', output: reClean };
             } else {
               // Retry produced no output — fall through to normal status handling
@@ -1240,7 +1302,11 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
         stateStream.emit(item.task_id, 'state', `[state] COMPLETE`);
         // Clean up checkpoint on success
         if (checkpoint) { await cleanupCheckpoint(checkpoint); }
-        await enqueuePipelineTasks(item.prompt);
+        const enqueuedCompleteIds = await enqueuePipelineSubtasks(item.prompt, cleanOutput);
+        if (enqueuedCompleteIds.length > 0) {
+          stateStream.emit(item.task_id, 'state', `[state] WAITING_CHILDREN (${enqueuedCompleteIds.length} pipeline subtasks)`);
+          return { status: 'WAITING_CHILDREN', output: cleanOutput || undefined };
+        }
         return { status: 'COMPLETE', output: cleanOutput || undefined };
       } else if (result.status === 'ERROR') {
         stateStream.emit(item.task_id, 'state', `[state] ERROR`);
@@ -1274,7 +1340,11 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
           console.log(`[Runner] READ_INFO/REPORT ${result.status} with output -> COMPLETE`);
           stateStream.emit(item.task_id, 'state', `[state] COMPLETE (${result.status} with output)`);
           if (checkpoint) { await cleanupCheckpoint(checkpoint); }
-          await enqueuePipelineTasks(item.prompt);
+          const enqueuedReadInfoIds = await enqueuePipelineSubtasks(item.prompt, cleanOutput);
+          if (enqueuedReadInfoIds.length > 0) {
+            stateStream.emit(item.task_id, 'state', `[state] WAITING_CHILDREN (${enqueuedReadInfoIds.length} pipeline subtasks)`);
+            return { status: 'WAITING_CHILDREN', output: cleanOutput };
+          }
           return { status: 'COMPLETE', output: cleanOutput };
         } else {
           // No output -> needs clarification (AWAITING_RESPONSE, never ERROR)
@@ -1305,7 +1375,11 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
           console.log(`[Runner] ${taskType} ${result.status} but exit=0 + output -> COMPLETE (file verification override)`);
           stateStream.emit(item.task_id, 'state', `[state] COMPLETE (${taskType} ${result.status}, exit=0 override)`);
           if (checkpoint) { await cleanupCheckpoint(checkpoint); }
-          await enqueuePipelineTasks(item.prompt);
+          const enqueuedOverrideIds = await enqueuePipelineSubtasks(item.prompt, cleanOutput);
+          if (enqueuedOverrideIds.length > 0) {
+            stateStream.emit(item.task_id, 'state', `[state] WAITING_CHILDREN (${enqueuedOverrideIds.length} pipeline subtasks)`);
+            return { status: 'WAITING_CHILDREN', output: cleanOutput };
+          }
           return { status: 'COMPLETE', output: cleanOutput };
         }
         // Non-COMPLETE with no output or non-zero exit -> ERROR
@@ -1987,46 +2061,90 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
       );
       if (siblings.length === 0) return;
 
+      // Propagate AWAITING_RESPONSE from any child to the parent as soon as it happens
+      // (do not wait for all siblings). This matches user expectation: if a child needs
+      // user input, the parent is also effectively waiting.
+      const parentItem = await queueStore.getItem(item.parent_task_id);
+      const anyAwaiting = siblings.some((t) => t.status === 'AWAITING_RESPONSE');
+      if (anyAwaiting && parentItem && parentItem.status === 'WAITING_CHILDREN') {
+        try {
+          await queueStore.updateStatus(
+            item.parent_task_id,
+            'AWAITING_RESPONSE',
+            undefined,
+            parentItem.output
+          );
+          console.log(`[Runner] Parent ${item.parent_task_id} → AWAITING_RESPONSE (child awaiting)`);
+        } catch (transitionErr) {
+          console.warn('[Runner] Failed to propagate AWAITING to parent:', transitionErr);
+        }
+      }
+
       const terminalStatuses = ['COMPLETE', 'ERROR', 'CANCELLED'] as const;
       const allDone = siblings.every((t) =>
         (terminalStatuses as readonly string[]).includes(t.status)
       );
       if (!allDone) return;
 
-      const rawParentId = item.parent_task_id.includes(':')
-        ? item.parent_task_id.split(':').slice(1).join(':')
-        : item.parent_task_id;
-
-      const parentRun = await dal.findRunByTaskRunId(rawParentId);
-      if (!parentRun) return;
-
-      const messages = await dal.listConversationMessages(parentRun.projectId);
-      const parentMsg = messages.find(
-        (m) => m.runId === parentRun.runId && m.role === 'assistant'
-      );
-      if (!parentMsg || parentMsg.status !== 'processing') return;
-
+      // All children are in terminal state — build aggregated summary and
+      // transition the parent queue task to its final status.
       const hasErrors = siblings.some((t) => t.status === 'ERROR');
-      const finalStatus = hasErrors ? 'error' : 'complete';
+      const parentFinalStatus: QueueItemStatus = hasErrors ? 'ERROR' : 'COMPLETE';
 
       const lines = siblings.map((t) => {
         const rawId = t.task_id.includes(':')
           ? t.task_id.split(':').slice(1).join(':')
           : t.task_id;
-        const preview = t.output ? (' — ' + t.output.substring(0, 100)) : '';
+        const preview = t.output ? (' — ' + t.output.substring(0, 150)) : '';
         return `- ${rawId}: ${t.status}${preview}`;
       });
       const doneCount = siblings.filter((t) => t.status === 'COMPLETE').length;
-      const summary = `全サブタスク完了 (${doneCount}/${siblings.length} 成功):\n${lines.join('\n')}`;
+      const headline = hasErrors
+        ? `⚠ サブタスク終了 (${doneCount}/${siblings.length} 成功, ${siblings.length - doneCount} 失敗):`
+        : `✓ 全サブタスク完了 (${doneCount}/${siblings.length} 成功):`;
+      const summary = `${headline}\n${lines.join('\n')}\n\n---\n\n## 各サブタスクの詳細出力\n\n${siblings.map(t => {
+        const rawId = t.task_id.includes(':') ? t.task_id.split(':').slice(1).join(':') : t.task_id;
+        const out = t.output ? t.output.substring(0, 1500) : '(output なし)';
+        return `### ${rawId} [${t.status}]\n${out}${t.output && t.output.length > 1500 ? '\n...(truncated)' : ''}`;
+      }).join('\n\n')}`;
 
-      await dal.updateConversationMessage(parentRun.projectId, parentMsg.messageId, {
-        content: summary,
-        status: finalStatus,
-      });
-      await dal.updateRun(parentRun.runId, {
-        status: finalStatus === 'complete' ? 'COMPLETE' : 'ERROR',
-      });
-      console.log(`[Runner] Aggregated parent task ${item.parent_task_id} → ${finalStatus}`);
+      // 1. Update the parent queue task (so the UI / Task Groups page reflects the final state)
+      if (parentItem) {
+        try {
+          await queueStore.updateStatus(
+            item.parent_task_id,
+            parentFinalStatus,
+            hasErrors ? 'One or more subtasks ended in ERROR' : undefined,
+            summary
+          );
+          console.log(`[Runner] Parent ${item.parent_task_id} → ${parentFinalStatus} (aggregated from ${siblings.length} subtasks)`);
+        } catch (parentUpdateErr) {
+          console.warn('[Runner] Failed to update parent queue task status:', parentUpdateErr);
+        }
+      }
+
+      // 2. Update the DAL conversation message (Chat UI view)
+      const rawParentId = item.parent_task_id.includes(':')
+        ? item.parent_task_id.split(':').slice(1).join(':')
+        : item.parent_task_id;
+
+      const parentRun = await dal.findRunByTaskRunId(rawParentId);
+      if (parentRun) {
+        const messages = await dal.listConversationMessages(parentRun.projectId);
+        const parentMsg = messages.find(
+          (m) => m.runId === parentRun.runId && m.role === 'assistant'
+        );
+        if (parentMsg && parentMsg.status === 'processing') {
+          await dal.updateConversationMessage(parentRun.projectId, parentMsg.messageId, {
+            content: summary,
+            status: hasErrors ? 'error' : 'complete',
+          });
+          await dal.updateRun(parentRun.runId, {
+            status: hasErrors ? 'ERROR' : 'COMPLETE',
+          });
+        }
+      }
+      console.log(`[Runner] Aggregated parent task ${item.parent_task_id} → ${parentFinalStatus}`);
     } catch (err) {
       console.error('[Runner] Failed to aggregate parent conversation:', err);
     }
@@ -2051,6 +2169,13 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     console.error(`[Runner] Task ${item.task_id} error:`, error.message);
     log.app.error('Task failed', { taskId: item.task_id, error: error.message });
     updateConversationFromTask(item, 'error', error.message).catch(() => {});
+    if (item.parent_task_id) aggregateParentConversation(item).catch(() => {});
+  });
+  // When a child transitions to AWAITING_RESPONSE (clarification needed),
+  // propagate that state to the parent so the Task Groups UI reflects the
+  // user-expected behavior: if any child is awaiting user input, the parent
+  // is also effectively waiting.
+  poller.on('clarification_needed', (item: QueueItem) => {
     if (item.parent_task_id) aggregateParentConversation(item).catch(() => {});
   });
   poller.on('stale-recovered', (count: number) => {

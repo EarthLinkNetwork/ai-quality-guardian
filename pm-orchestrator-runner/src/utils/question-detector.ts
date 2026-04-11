@@ -922,6 +922,13 @@ Instructions for meta prompt:
 5. Keep it concise — do not write an essay
 6. CRITICAL: Always write the meta prompt in the SAME LANGUAGE as the user's input. If the user writes in Japanese, the meta prompt must be in Japanese. If in English, write in English. Never translate or switch languages.
 
+ANTI-HALLUCINATION GUARDS (absolute, must be followed):
+- NEVER invent component names, class names, function names, API names, file names, or acronyms that are not present in the user's raw request above.
+- NEVER reference systems, libraries, or features the user did not mention.
+- If the user's request is vague, use generic placeholders like "the target feature" / "the mentioned component" instead of inventing specifics.
+- When building subtasks, each subtask prompt MUST quote the user's actual words and scope — do not substitute invented names.
+- If you cannot make a subtask concrete without inventing, SET shouldSplit=false instead. A single well-scoped task is always better than multiple invented ones.
+
 Instructions for split judgment:
 Split the task into subtasks if:
 1. Multiple independent changes are requested (e.g., "Add A and also fix B")

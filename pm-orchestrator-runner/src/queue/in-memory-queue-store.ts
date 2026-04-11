@@ -28,6 +28,7 @@ import {
   isValidStatusTransition,
   IQueueStore,
   TaskTypeValue,
+  EnqueueOptions,
   deriveTaskGroupStatus,
 } from './queue-store';
 
@@ -133,7 +134,8 @@ export class InMemoryQueueStore implements IQueueStore {
     taskId?: string,
     taskType?: TaskTypeValue,
     projectPath?: string,
-    parentTaskId?: string
+    parentTaskId?: string,
+    options?: EnqueueOptions
   ): Promise<QueueItem> {
     const now = new Date().toISOString();
     const item: QueueItem = {
@@ -148,6 +150,9 @@ export class InMemoryQueueStore implements IQueueStore {
       task_type: taskType,
       ...(projectPath ? { project_path: projectPath } : {}),
       ...(parentTaskId ? { parent_task_id: parentTaskId } : {}),
+      ...(options?.addTest ? { add_test: true } : {}),
+      ...(options?.addReview ? { add_review: true } : {}),
+      ...(options?.projectAlias ? { project_alias: options.projectAlias } : {}),
     };
 
     this.tasks.set(this.getTaskKey(item.task_id), item);
@@ -476,7 +481,7 @@ export class InMemoryQueueStore implements IQueueStore {
           existing.latestStatusTime = item.updated_at;
         }
       } else {
-        const statusCounts = { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 } as Record<QueueItemStatus, number>;
+        const statusCounts = { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, WAITING_CHILDREN: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 } as Record<QueueItemStatus, number>;
         statusCounts[item.status] = 1;
         groupMap.set(item.task_group_id, {
           count: 1,

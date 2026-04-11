@@ -420,15 +420,11 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
         if (outputTemplateText) {
           promptParts.push('[OutputRules]\n' + outputTemplateText + '\n[/OutputRules]');
         }
-        let finalContent = promptParts.join('\n\n---\n\n');
+        const finalContent = promptParts.join('\n\n---\n\n');
 
-        // Append pipeline markers for post-execution pipeline (test/review)
-        if (addTest === true) {
-          finalContent += '\n\n[PIPELINE:TEST]';
-        }
-        if (addReview === true) {
-          finalContent += '\n\n[PIPELINE:REVIEW]';
-        }
+        // NOTE: addTest / addReview are now persisted as QueueItem fields (add_test/add_review)
+        // instead of being smuggled into the prompt as [PIPELINE:*] markers. This prevents
+        // the markers from confusing generateMetaPrompt and causing hallucinated subtasks.
 
         // Create user message (with optional image attachments in metadata)
         const userMessage = await dal.createConversationMessage({
@@ -507,9 +503,15 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
               finalContent,
               taskRunId,
               taskType,
-              project.projectPath
+              project.projectPath,
+              undefined, // parentTaskId: none at root
+              {
+                addTest: addTest === true,
+                addReview: addReview === true,
+                projectAlias: project.alias,
+              }
             );
-            log.app.info('Task enqueued', { taskId: taskRunId, taskGroupId, projectId });
+            log.app.info('Task enqueued', { taskId: taskRunId, taskGroupId, projectId, addTest: addTest === true, addReview: addReview === true });
             // Emit task_queued activity event with full identifier chain
             try {
               await dal.createActivityEvent({

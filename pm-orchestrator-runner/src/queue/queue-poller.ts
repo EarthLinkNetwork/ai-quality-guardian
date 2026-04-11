@@ -19,7 +19,7 @@ import { log } from '../logging/app-logger';
  */
 export type TaskExecutor = (
   item: QueueItem
-) => Promise<{ status: 'COMPLETE' | 'ERROR'; errorMessage?: string; output?: string }>;
+) => Promise<{ status: 'COMPLETE' | 'ERROR' | 'WAITING_CHILDREN'; errorMessage?: string; output?: string }>;
 
 /**
  * Poller configuration
@@ -294,6 +294,11 @@ export class QueuePoller extends EventEmitter {
       if (result.status === 'COMPLETE') {
         this.tasksProcessed++;
         this.emit('completed', item);
+      } else if (result.status === 'WAITING_CHILDREN') {
+        // Parent task has decomposed into children; not a completion event yet.
+        // Children will run next; when all finish, aggregateParentConversation
+        // transitions this parent to its final status (COMPLETE/ERROR/AWAITING_RESPONSE).
+        log.app.info('Task waiting for children', { taskId: item.task_id });
       } else {
         this.errors++;
         this.emit('error', item, new Error(result.errorMessage || 'Task failed'));

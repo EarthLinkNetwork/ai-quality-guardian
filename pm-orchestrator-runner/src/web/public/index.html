@@ -3335,6 +3335,7 @@
         'ERROR': 'badge-error',
         'CANCELLED': 'badge-cancelled',
         'AWAITING_RESPONSE': 'badge-awaiting',
+        'WAITING_CHILDREN': 'badge-running',  // Parent waiting for subtasks — display as "running" (in progress)
       };
       return map[status] || 'badge-queued';
     }

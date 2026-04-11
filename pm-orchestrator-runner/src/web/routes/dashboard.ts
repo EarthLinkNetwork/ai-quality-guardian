@@ -12,6 +12,7 @@ import {
 } from '../dal/no-dynamo';
 import { initDAL, getDAL, isDALInitialized } from '../dal/dal-factory';
 import type { IQueueStore } from '../../queue/queue-store';
+import type { TaskState } from '../dal/types';
 import { buildProjectCostInfo, getAllModelCostInfo } from '../services/ai-cost-service';
 import { log } from '../../logging/app-logger';
 
@@ -353,7 +354,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
               run_id: 'N/A',
               task_group_id: item.task_group_id,
               projectId,
-              status: item.status,
+              status: item.status as TaskState,
               summary: item.prompt?.substring(0, 120) || item.task_id,
               started_at: item.created_at,
               updated_at: item.updated_at,
@@ -363,7 +364,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
             // Update status from queue store (more current than runs)
             const existing = recentTasks.find(t => t.task_id === item.task_id);
             if (existing && item.status !== existing.status) {
-              existing.status = item.status;
+              existing.status = item.status as TaskState;
               existing.updated_at = item.updated_at;
             }
           }
@@ -379,7 +380,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
             tg.task_count = Math.max(tg.task_count, groupTasks.length);
             tg.task_ids = groupTasks.map(i => i.task_id);
             // Build status_counts from queue store (accurate real-time status)
-            const sc: Record<string, number> = { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 };
+            const sc: Record<string, number> = { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, WAITING_CHILDREN: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 };
             for (const t of groupTasks) { sc[t.status] = (sc[t.status] || 0) + 1; }
             (tg as any).status_counts = sc;
             // Set latest_status from most recent task

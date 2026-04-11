@@ -53,17 +53,19 @@ export const RUNNERS_TABLE_NAME = 'pm-runner-runners';
  * Per spec/20: QUEUED / RUNNING / COMPLETE / ERROR / CANCELLED
  * v2.1: Added AWAITING_RESPONSE for clarification flow
  */
-export type QueueItemStatus = 'QUEUED' | 'RUNNING' | 'AWAITING_RESPONSE' | 'COMPLETE' | 'ERROR' | 'CANCELLED';
+export type QueueItemStatus = 'QUEUED' | 'RUNNING' | 'AWAITING_RESPONSE' | 'WAITING_CHILDREN' | 'COMPLETE' | 'ERROR' | 'CANCELLED';
 
 /**
  * Valid status transitions
  * Per spec/20_QUEUE_STORE.md
  * v2.1: Added AWAITING_RESPONSE transitions
+ * v2.2: Added WAITING_CHILDREN for parent tasks waiting on subtask completion
  */
 export const VALID_STATUS_TRANSITIONS: Record<QueueItemStatus, QueueItemStatus[]> = {
   QUEUED: ['RUNNING', 'CANCELLED'],
-  RUNNING: ['COMPLETE', 'ERROR', 'CANCELLED', 'AWAITING_RESPONSE'],
+  RUNNING: ['COMPLETE', 'ERROR', 'CANCELLED', 'AWAITING_RESPONSE', 'WAITING_CHILDREN'],
   AWAITING_RESPONSE: ['QUEUED', 'RUNNING', 'CANCELLED', 'ERROR', 'COMPLETE'], // User response re-queues, or rejudge/manual -> COMPLETE
+  WAITING_CHILDREN: ['COMPLETE', 'ERROR', 'AWAITING_RESPONSE', 'CANCELLED'], // Parent waiting for subtasks — resolves when children finish
   COMPLETE: [], // Terminal state
   ERROR: ['AWAITING_RESPONSE', 'QUEUED', 'COMPLETE'], // Allow recovery: user can continue, retry, or rejudge to COMPLETE
   CANCELLED: ['AWAITING_RESPONSE', 'QUEUED'], // Allow recovery: user can continue or retry
@@ -180,6 +182,24 @@ export interface QueueItem {
   project_path?: string;
   /** Parent task ID when this is a subtask created by task decomposition */
   parent_task_id?: string;
+  /** User-requested pipeline: append a Test subtask after this task completes */
+  add_test?: boolean;
+  /** User-requested pipeline: append a Review subtask after this task completes */
+  add_review?: boolean;
+  /** Project alias at creation time (for display in process monitor / subtasks) */
+  project_alias?: string;
+}
+
+/**
+ * Extra options for enqueue() — optional fields that don't fit in positional args.
+ */
+export interface EnqueueOptions {
+  /** User-requested pipeline: create Test subtask after parent completes */
+  addTest?: boolean;
+  /** User-requested pipeline: create Review subtask after parent completes */
+  addReview?: boolean;
+  /** Project alias for display */
+  projectAlias?: string;
 }
 
 /**
@@ -297,7 +317,7 @@ export interface IQueueStore {
   runnersTableExists(): Promise<boolean>;
   ensureTable(): Promise<void>;
   deleteTable(): Promise<void>;
-  enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string, taskType?: TaskTypeValue, projectPath?: string, parentTaskId?: string): Promise<QueueItem>;
+  enqueue(sessionId: string, taskGroupId: string, prompt: string, taskId?: string, taskType?: TaskTypeValue, projectPath?: string, parentTaskId?: string, options?: EnqueueOptions): Promise<QueueItem>;
   getItem(taskId: string, targetNamespace?: string): Promise<QueueItem | null>;
   claim(): Promise<ClaimResult>;
   updateStatus(taskId: string, status: QueueItemStatus, errorMessage?: string, output?: string): Promise<void>;
@@ -577,7 +597,8 @@ export class QueueStore implements IQueueStore {
     taskId?: string,
     taskType?: TaskTypeValue,
     projectPath?: string,
-    parentTaskId?: string
+    parentTaskId?: string,
+    options?: EnqueueOptions
   ): Promise<QueueItem> {
     const now = new Date().toISOString();
     const item: QueueItem = {
@@ -592,6 +613,9 @@ export class QueueStore implements IQueueStore {
       task_type: taskType,
       ...(projectPath ? { project_path: projectPath } : {}),
       ...(parentTaskId ? { parent_task_id: parentTaskId } : {}),
+      ...(options?.addTest ? { add_test: true } : {}),
+      ...(options?.addReview ? { add_review: true } : {}),
+      ...(options?.projectAlias ? { project_alias: options.projectAlias } : {}),
     };
 
     await this.docClient.send(
@@ -1089,7 +1113,7 @@ export class QueueStore implements IQueueStore {
           existing.latestStatusTime = item.updated_at;
         }
       } else {
-        const statusCounts = { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 } as Record<QueueItemStatus, number>;
+        const statusCounts = { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, WAITING_CHILDREN: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 } as Record<QueueItemStatus, number>;
         statusCounts[item.status] = 1;
         groupMap.set(item.task_group_id, {
           count: 1,
