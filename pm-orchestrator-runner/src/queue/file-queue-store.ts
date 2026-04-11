@@ -33,6 +33,7 @@ import {
   IQueueStore,
   TaskTypeValue,
   EnqueueOptions,
+  RollbackHistoryEntry,
   deriveTaskGroupStatus,
 } from './queue-store';
 
@@ -928,6 +929,32 @@ export class FileQueueStore implements IQueueStore {
     const key = this.getRunnerKey(runnerId);
     this.runners.delete(key);
     this.saveRunners();
+  }
+
+  /**
+   * v2.3: Set or clear checkpoint_ref on a task
+   */
+  async setCheckpointRef(taskId: string, ref: string | undefined): Promise<void> {
+    const item = this.tasks.get(this.getTaskKey(taskId));
+    if (!item) return;
+    if (ref === undefined) {
+      delete item.checkpoint_ref;
+    } else {
+      item.checkpoint_ref = ref;
+    }
+    item.updated_at = new Date().toISOString();
+    this.saveTasks();
+  }
+
+  private readonly _rollbackHistory: RollbackHistoryEntry[] = [];
+
+  async appendRollbackHistory(entry: RollbackHistoryEntry): Promise<void> {
+    this._rollbackHistory.unshift(entry);
+    if (this._rollbackHistory.length > 200) this._rollbackHistory.length = 200;
+  }
+
+  async getRollbackHistory(limit: number = 20): Promise<RollbackHistoryEntry[]> {
+    return this._rollbackHistory.slice(0, limit);
   }
 
   /**

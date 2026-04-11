@@ -92,7 +92,43 @@ import {
 import { getExecutorOutputStream } from '../executor/executor-output-stream';
 import type { ExecutorOutputStream, ExecutorOutputChunk } from '../executor/executor-output-stream';
 import { getDAL } from '../web/dal/dal-factory';
+import * as os from 'os';
 // Task Tracker removed (v2.3) — see spec/36_LIVE_TASKS_AND_RECOVERY.md
+
+/**
+ * v2.3: Read stale-task threshold with precedence:
+ *   1. CLI flag: --stale-threshold-ms=<n>
+ *   2. Env: PM_RUNNER_STALE_THRESHOLD_MS
+ *   3. ~/.pm-orchestrator-runner/config.json → recovery.staleThresholdMs
+ *   4. Default: 10 * 60 * 1000 (10 minutes)
+ *
+ * Exported so other modules (e.g. API endpoints) can return the effective value.
+ */
+export function getStaleThresholdMs(): number {
+  const cliFlag = process.argv.find(a => a.startsWith('--stale-threshold-ms='));
+  if (cliFlag) {
+    const v = parseInt(cliFlag.split('=')[1], 10);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  const envVal = process.env.PM_RUNNER_STALE_THRESHOLD_MS;
+  if (envVal) {
+    const v = parseInt(envVal, 10);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  try {
+    const cfgPath = path.join(os.homedir(), '.pm-orchestrator-runner', 'config.json');
+    if (fs.existsSync(cfgPath)) {
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        recovery?: { staleThresholdMs?: number };
+      };
+      const v = cfg?.recovery?.staleThresholdMs;
+      if (typeof v === 'number' && v > 0) return v;
+    }
+  } catch {
+    // ignore — fall through to default
+  }
+  return 10 * 60 * 1000; // 10 minutes default (spec/36 §7)
+}
 
 /**
  * Help text
@@ -947,18 +983,41 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
       }
 
     // ── Checkpoint (Rollback Safety Net) ──
-    // Create checkpoint before Claude Code execution for rollback on failure
+    // v2.3: Only ROOT tasks create checkpoints. Subtasks inherit their parent's
+    // checkpoint. This ensures that rollback of any descendant walks up to the
+    // root and restores a single coherent pre-execution state.
+    // See spec/36_LIVE_TASKS_AND_RECOVERY.md §5.
     let checkpoint: Checkpoint | undefined;
-    try {
-      const checkpointResult = await createCheckpoint(effectiveWorkingDir, item.task_id);
-      checkpoint = checkpointResult.checkpoint;
-      if (checkpoint && checkpoint.type !== 'none') {
-        console.log(`[Runner] Checkpoint created: ${checkpoint.type} for task ${item.task_id}`);
-        log.app.info('Checkpoint created', { type: checkpoint.type, taskId: item.task_id });
-        stateStream.emit(item.task_id, 'system', `[checkpoint] ${checkpoint.type} checkpoint created`);
+    if (!item.parent_task_id) {
+      // Root task: create a new checkpoint
+      try {
+        const checkpointResult = await createCheckpoint(effectiveWorkingDir, item.task_id);
+        checkpoint = checkpointResult.checkpoint;
+        if (checkpoint && checkpoint.type !== 'none') {
+          console.log(`[Runner] Checkpoint created (root): ${checkpoint.type} for task ${item.task_id}`);
+          log.app.info('Checkpoint created', { type: checkpoint.type, taskId: item.task_id });
+          stateStream.emit(item.task_id, 'system', `[checkpoint] ${checkpoint.type} checkpoint created (root task)`);
+          // Persist to queue store so rollback can find it after restart
+          try {
+            await queueStore.setCheckpointRef(item.task_id, JSON.stringify(checkpoint));
+          } catch (persistErr) {
+            console.warn('[Runner] Failed to persist checkpoint_ref:', persistErr);
+          }
+        }
+      } catch (cpErr) {
+        console.warn('[Runner] Checkpoint creation failed, proceeding without rollback safety:', cpErr);
       }
-    } catch (cpErr) {
-      console.warn('[Runner] Checkpoint creation failed, proceeding without rollback safety:', cpErr);
+    } else {
+      // Subtask: inherit parent's checkpoint (read-only — for in-process rollback on failure)
+      try {
+        const parent = await queueStore.getItem(item.parent_task_id);
+        if (parent && parent.checkpoint_ref) {
+          checkpoint = JSON.parse(parent.checkpoint_ref) as Checkpoint;
+          stateStream.emit(item.task_id, 'system', `[checkpoint] Inherited from parent ${item.parent_task_id}`);
+        }
+      } catch (parentErr) {
+        console.warn('[Runner] Failed to load parent checkpoint:', parentErr);
+      }
     }
 
     try {
@@ -1796,7 +1855,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     pollIntervalMs: 1000,
     recoverOnStartup: true,
     projectRoot: projectPath,
-    maxStaleTaskAgeMs: 30 * 60 * 1000, // 30 minutes (was 5 min, too aggressive for long-running Claude Code tasks)
+    maxStaleTaskAgeMs: getStaleThresholdMs(), // v2.3: configurable, default 10 min (spec/36 §7)
   });
 
   // Self-restart handler for Web UI (Build & Restart)
@@ -2573,7 +2632,7 @@ async function startAgentOnly(agentArgs: AgentArguments): Promise<void> {
     pollIntervalMs: 1000,
     recoverOnStartup: true,
     projectRoot: projectPath,
-    maxStaleTaskAgeMs: 30 * 60 * 1000, // 30 minutes (was 5 min, too aggressive for long-running Claude Code tasks)
+    maxStaleTaskAgeMs: getStaleThresholdMs(), // v2.3: configurable, default 10 min (spec/36 §7)
   });
 
   poller.on('started', () => console.log('[Agent] Queue poller started'));

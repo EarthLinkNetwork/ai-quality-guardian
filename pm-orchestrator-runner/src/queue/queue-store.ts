@@ -188,6 +188,24 @@ export interface QueueItem {
   add_review?: boolean;
   /** Project alias at creation time (for display in process monitor / subtasks) */
   project_alias?: string;
+  /** v2.3: Serialized checkpoint (only on root tasks — parent_task_id undefined) for rollback */
+  checkpoint_ref?: string;
+  /** v2.3: ISO timestamp set when a rollback was performed for this task */
+  rolled_back_at?: string;
+}
+
+/**
+ * Rollback history entry — recorded each time /api/tasks/:id/rollback runs
+ */
+export interface RollbackHistoryEntry {
+  rollback_id: string;
+  rolled_back_task_id: string;
+  project_path: string;
+  checkpoint_type: 'git-stash' | 'file-snapshot' | 'none';
+  success: boolean;
+  cancelled_count: number;
+  triggered_at: string;
+  error?: string;
 }
 
 /**
@@ -352,6 +370,12 @@ export interface IQueueStore {
   setTaskGroupArchived(taskGroupId: string, archived: boolean, targetNamespace?: string): Promise<boolean>;
   /** Set group status override (active/complete/archived). null clears the override and returns to derived status. */
   setTaskGroupStatus(taskGroupId: string, status: TaskGroupStatus | null, targetNamespace?: string): Promise<boolean>;
+  /** v2.3: set/clear checkpoint_ref for rollback (root tasks only) */
+  setCheckpointRef(taskId: string, ref: string | undefined): Promise<void>;
+  /** v2.3: append a rollback history entry */
+  appendRollbackHistory(entry: RollbackHistoryEntry): Promise<void>;
+  /** v2.3: list recent rollback history entries, newest first */
+  getRollbackHistory(limit?: number): Promise<RollbackHistoryEntry[]>;
   destroy(): void;
 }
 
@@ -1484,6 +1508,48 @@ export class QueueStore implements IQueueStore {
         },
       })
     );
+  }
+
+  /**
+   * v2.3: Set or clear checkpoint_ref on a task (root tasks only)
+   */
+  async setCheckpointRef(taskId: string, ref: string | undefined): Promise<void> {
+    const now = new Date().toISOString();
+    if (ref === undefined) {
+      await this.docClient.send(
+        new UpdateCommand({
+          TableName: QUEUE_TABLE_NAME,
+          Key: { namespace: this.namespace, task_id: taskId },
+          UpdateExpression: 'REMOVE checkpoint_ref SET updated_at = :now',
+          ExpressionAttributeValues: { ':now': now },
+        })
+      );
+      return;
+    }
+    await this.docClient.send(
+      new UpdateCommand({
+        TableName: QUEUE_TABLE_NAME,
+        Key: { namespace: this.namespace, task_id: taskId },
+        UpdateExpression: 'SET checkpoint_ref = :ref, updated_at = :now',
+        ExpressionAttributeValues: { ':ref': ref, ':now': now },
+      })
+    );
+  }
+
+  // In-memory rollback history (single process). For production multi-node
+  // setups this would be a DynamoDB table; we keep it simple for now since
+  // rollback history is primarily a local audit log.
+  private readonly _rollbackHistory: RollbackHistoryEntry[] = [];
+
+  async appendRollbackHistory(entry: RollbackHistoryEntry): Promise<void> {
+    this._rollbackHistory.unshift(entry);
+    if (this._rollbackHistory.length > 200) {
+      this._rollbackHistory.length = 200;
+    }
+  }
+
+  async getRollbackHistory(limit: number = 20): Promise<RollbackHistoryEntry[]> {
+    return this._rollbackHistory.slice(0, limit);
   }
 
   /**

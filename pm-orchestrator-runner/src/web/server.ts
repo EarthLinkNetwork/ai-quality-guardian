@@ -23,7 +23,7 @@ import crypto from 'crypto';
 import { exec as execCb } from 'child_process';
 import { promisify } from 'util';
 const exec = promisify(execCb);
-import { IQueueStore, QueueItemStatus, TaskGroupStatus } from '../queue/index';
+import { IQueueStore, QueueItem, QueueItemStatus, TaskGroupStatus } from '../queue/index';
 import { ConversationTracer } from '../trace/conversation-tracer';
 import { createApiKeyAuth, createPublicPathBypass, type AuthConfig, type AuthenticatedRequest } from './middleware/auth';
 import { createSettingsRoutes } from './routes/settings';
@@ -507,6 +507,360 @@ export function createApp(config: WebServerConfig): Express {
       } else {
         res.status(404).json({ error: 'NOT_FOUND', message: 'Process already gone' } as ErrorResponse);
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  // ==========================================================================
+  // Live Tasks + Recovery endpoints (spec/36_LIVE_TASKS_AND_RECOVERY.md)
+  // ==========================================================================
+
+  // Helper: load project alias lookup (shared by live-tasks / recovery)
+  const loadProjectAliasMap = async (): Promise<Map<string, string>> => {
+    const map = new Map<string, string>();
+    if (!isDALInitialized()) return map;
+    try {
+      const dal = getDAL();
+      const projs = await dal.listProjectIndexes();
+      for (const p of projs.items) {
+        if (p.projectPath) {
+          map.set(p.projectPath, p.alias || p.projectPath.split('/').pop() || p.projectPath);
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+    return map;
+  };
+
+  // Helper: find the root ancestor by walking parent_task_id
+  const findRootAncestor = async (item: QueueItem): Promise<QueueItem> => {
+    let current = item;
+    // Safety cap to avoid infinite loops on broken data
+    for (let i = 0; i < 20 && current.parent_task_id; i++) {
+      const parent = await queueStore.getItem(current.parent_task_id);
+      if (!parent) break;
+      current = parent;
+    }
+    return current;
+  };
+
+  /**
+   * GET /api/live-tasks
+   * List all in-flight tasks across the current namespace.
+   * spec/36_LIVE_TASKS_AND_RECOVERY.md §3
+   */
+  app.get('/api/live-tasks', async (req: Request, res: Response) => {
+    try {
+      const { getStaleThresholdMs } = await import('../cli/index');
+      const staleThresholdMs = getStaleThresholdMs();
+      const targetNamespace = (req.query.namespace as string) || namespace;
+      const limit = parseInt((req.query.limit as string) || '100', 10);
+      const includeQueued = req.query.includeQueued === 'true';
+
+      const [running, waiting, awaiting, queued] = await Promise.all([
+        queueStore.getByStatus('RUNNING'),
+        queueStore.getByStatus('WAITING_CHILDREN'),
+        queueStore.getByStatus('AWAITING_RESPONSE'),
+        includeQueued ? queueStore.getByStatus('QUEUED') : Promise.resolve([] as QueueItem[]),
+      ]);
+
+      const allTasks = [...running, ...waiting, ...awaiting, ...queued]
+        .filter(t => t.namespace === targetNamespace);
+
+      const aliasMap = await loadProjectAliasMap();
+      const now = Date.now();
+
+      const tasks = allTasks.map(t => {
+        const updatedMs = Date.parse(t.updated_at);
+        const createdMs = Date.parse(t.created_at);
+        const age_ms = Number.isFinite(updatedMs) ? now - updatedMs : 0;
+        const elapsed_ms = Number.isFinite(createdMs) ? now - createdMs : 0;
+        return {
+          task_id: t.task_id,
+          task_group_id: t.task_group_id,
+          project_path: t.project_path,
+          project_alias: t.project_path ? aliasMap.get(t.project_path) : undefined,
+          status: t.status,
+          parent_task_id: t.parent_task_id,
+          created_at: t.created_at,
+          updated_at: t.updated_at,
+          elapsed_ms,
+          age_ms,
+          is_stale: age_ms > staleThresholdMs,
+        };
+      }).sort((a, b) => b.elapsed_ms - a.elapsed_ms).slice(0, limit);
+
+      res.json({
+        tasks,
+        stale_count: tasks.filter(t => t.is_stale).length,
+        stale_threshold_ms: staleThresholdMs,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * GET /api/recovery/stale
+   * Stale tasks (RUNNING / WAITING_CHILDREN older than threshold).
+   */
+  app.get('/api/recovery/stale', async (_req: Request, res: Response) => {
+    try {
+      const { getStaleThresholdMs } = await import('../cli/index');
+      const staleThresholdMs = getStaleThresholdMs();
+
+      const [running, waiting] = await Promise.all([
+        queueStore.getByStatus('RUNNING'),
+        queueStore.getByStatus('WAITING_CHILDREN'),
+      ]);
+
+      const now = Date.now();
+      const candidates = [...running, ...waiting]
+        .filter(t => t.namespace === namespace)
+        .map(t => ({ item: t, age_ms: now - Date.parse(t.updated_at) }))
+        .filter(x => x.age_ms > staleThresholdMs);
+
+      const aliasMap = await loadProjectAliasMap();
+
+      const tasks = await Promise.all(candidates.map(async ({ item, age_ms }) => {
+        const root = await findRootAncestor(item);
+        return {
+          task_id: item.task_id,
+          task_group_id: item.task_group_id,
+          project_path: item.project_path,
+          project_alias: item.project_path ? aliasMap.get(item.project_path) : undefined,
+          status: item.status,
+          age_ms,
+          parent_task_id: item.parent_task_id,
+          is_root: !item.parent_task_id,
+          has_checkpoint: !!root.checkpoint_ref,
+        };
+      }));
+
+      res.json({ stale_threshold_ms: staleThresholdMs, tasks });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * GET /api/recovery/failed
+   * Recent failed tasks (status=ERROR within since_hours).
+   */
+  app.get('/api/recovery/failed', async (req: Request, res: Response) => {
+    try {
+      const sinceHours = parseInt((req.query.since_hours as string) || '24', 10);
+      const limit = parseInt((req.query.limit as string) || '50', 10);
+      const sinceMs = Date.now() - sinceHours * 60 * 60 * 1000;
+
+      const errorTasks = await queueStore.getByStatus('ERROR');
+      const filtered = errorTasks
+        .filter(t => t.namespace === namespace)
+        .filter(t => Date.parse(t.updated_at) >= sinceMs)
+        .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+        .slice(0, limit);
+
+      const aliasMap = await loadProjectAliasMap();
+
+      const tasks = await Promise.all(filtered.map(async t => {
+        const root = await findRootAncestor(t);
+        return {
+          task_id: t.task_id,
+          task_group_id: t.task_group_id,
+          project_path: t.project_path,
+          project_alias: t.project_path ? aliasMap.get(t.project_path) : undefined,
+          status: t.status,
+          error_message: t.error_message,
+          updated_at: t.updated_at,
+          parent_task_id: t.parent_task_id,
+          has_checkpoint: !!root.checkpoint_ref,
+        };
+      }));
+
+      res.json({ tasks });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * GET /api/recovery/rollback-history
+   * Recent rollback operations (audit log).
+   */
+  app.get('/api/recovery/rollback-history', async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt((req.query.limit as string) || '20', 10);
+      const entries = await queueStore.getRollbackHistory(limit);
+      res.json({ entries });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * POST /api/tasks/:id/retry
+   * Transition ERROR / CANCELLED task → QUEUED for re-execution.
+   */
+  app.post('/api/tasks/:id/retry', async (req: Request, res: Response) => {
+    try {
+      const taskId = req.params.id as string;
+      const item = await queueStore.getItem(taskId);
+      if (!item) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Task not found' } as ErrorResponse);
+        return;
+      }
+      if (item.status !== 'ERROR' && item.status !== 'CANCELLED') {
+        res.status(400).json({
+          error: 'INVALID_STATE',
+          message: `Task status is ${item.status}; only ERROR or CANCELLED can be retried`,
+        } as ErrorResponse);
+        return;
+      }
+      await queueStore.updateStatus(taskId, 'QUEUED');
+      res.json({ success: true, new_status: 'QUEUED' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
+    }
+  });
+
+  /**
+   * POST /api/tasks/:id/rollback
+   * Walk to root ancestor, restore its checkpoint, cascade CANCELLED to all
+   * descendants. See spec/36_LIVE_TASKS_AND_RECOVERY.md §5.
+   */
+  app.post('/api/tasks/:id/rollback', async (req: Request, res: Response) => {
+    try {
+      const { rollback } = await import('../checkpoint');
+      const taskId = req.params.id as string;
+      const item = await queueStore.getItem(taskId);
+      if (!item) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Task not found' } as ErrorResponse);
+        return;
+      }
+
+      // 1. Walk up to root
+      const root = await findRootAncestor(item);
+
+      // 2. Load checkpoint
+      if (!root.checkpoint_ref) {
+        res.status(409).json({
+          error: 'NO_CHECKPOINT',
+          message: 'Root task has no checkpoint — rollback unavailable (the task may have already been rolled back, or the runner was restarted without a checkpoint)',
+        } as ErrorResponse);
+        return;
+      }
+
+      type CheckpointPayload = {
+        type: 'git-stash' | 'file-snapshot' | 'none';
+        taskId: string;
+        projectPath: string;
+        stashRef?: string;
+        createdAt: string;
+        snapshotDir?: string;
+        files?: string[];
+      };
+      let checkpoint: CheckpointPayload;
+      try {
+        checkpoint = JSON.parse(root.checkpoint_ref) as CheckpointPayload;
+      } catch {
+        res.status(500).json({
+          error: 'CORRUPT_CHECKPOINT',
+          message: 'checkpoint_ref is malformed',
+        } as ErrorResponse);
+        return;
+      }
+
+      // 3. Execute rollback
+      const rbResult = await rollback(checkpoint);
+      const rollbackId = 'rb_' + crypto.randomUUID();
+      if (!rbResult.success) {
+        await queueStore.appendRollbackHistory({
+          rollback_id: rollbackId,
+          rolled_back_task_id: root.task_id,
+          project_path: root.project_path || '',
+          checkpoint_type: checkpoint.type,
+          success: false,
+          cancelled_count: 0,
+          triggered_at: new Date().toISOString(),
+          error: rbResult.error || 'Rollback failed',
+        });
+        res.status(500).json({
+          success: false,
+          error: rbResult.error || 'Rollback failed',
+          checkpoint_type: checkpoint.type,
+        });
+        return;
+      }
+
+      // 4. Collect the tree (root + all descendants) via BFS
+      const groupTasks = await queueStore.getByTaskGroup(root.task_group_id);
+      const tree: string[] = [];
+      const seen = new Set<string>();
+      const bfsQueue: string[] = [root.task_id];
+      while (bfsQueue.length > 0) {
+        const id = bfsQueue.shift();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        tree.push(id);
+        for (const t of groupTasks) {
+          if (t.parent_task_id === id && !seen.has(t.task_id)) {
+            bfsQueue.push(t.task_id);
+          }
+        }
+      }
+
+      // 5. Cancel each tree member (skip already-terminal COMPLETE/CANCELLED)
+      const cancelled: string[] = [];
+      for (const id of tree) {
+        const t = groupTasks.find(x => x.task_id === id);
+        if (!t) continue;
+        if (t.status === 'CANCELLED') continue;
+        try {
+          await queueStore.updateStatus(
+            id,
+            'CANCELLED',
+            'Rolled back as part of tree (root=' + root.task_id + ')',
+            t.output
+          );
+          cancelled.push(id);
+        } catch (cancelErr) {
+          console.warn('[Recovery] Failed to cancel task ' + id + ':', cancelErr);
+        }
+      }
+
+      // 6. Clear checkpoint_ref on root (stash was popped)
+      try {
+        await queueStore.setCheckpointRef(root.task_id, undefined);
+      } catch {
+        // Non-fatal
+      }
+
+      // 7. Record audit entry
+      await queueStore.appendRollbackHistory({
+        rollback_id: rollbackId,
+        rolled_back_task_id: root.task_id,
+        project_path: root.project_path || '',
+        checkpoint_type: checkpoint.type,
+        success: true,
+        cancelled_count: cancelled.length,
+        triggered_at: new Date().toISOString(),
+      });
+
+      res.json({
+        success: true,
+        rolled_back_task_id: root.task_id,
+        cancelled_descendants: cancelled,
+        checkpoint_type: checkpoint.type,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: 'INTERNAL_ERROR', message } as ErrorResponse);
@@ -1634,7 +1988,7 @@ export function createApp(config: WebServerConfig): Express {
    * - AC-OPS-2: Returns web_pid for restart verification
    * - AC-OPS-3: Returns build_sha for build tracking
    */
-  app.get('/api/health', (_req: Request, res: Response) => {
+  app.get('/api/health', async (_req: Request, res: Response) => {
     // Read build info from environment (set by ProcessSupervisor/self-restart) or build-meta.json
     let buildSha: string | undefined = process.env.PM_BUILD_SHA;
     let buildTimestamp: string | undefined = process.env.PM_BUILD_TIMESTAMP;
@@ -1652,6 +2006,15 @@ export function createApp(config: WebServerConfig): Express {
       }
     }
 
+    // v2.3: expose configured stale threshold (spec/36 §7)
+    let staleThresholdMs = 10 * 60 * 1000;
+    try {
+      const { getStaleThresholdMs } = await import('../cli/index');
+      staleThresholdMs = getStaleThresholdMs();
+    } catch {
+      // Fall back to default
+    }
+
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -1665,6 +2028,7 @@ export function createApp(config: WebServerConfig): Express {
         table_name: queueStore.getTableName(),
       },
       project_root: projectRoot,
+      stale_threshold_ms: staleThresholdMs,
     });
   });
 
@@ -1847,6 +2211,16 @@ export function createApp(config: WebServerConfig): Express {
       'PATCH /api/tasks/:task_id/status',
       'POST /api/tasks/:task_id/rejudge',
       'POST /api/tasks/:task_id/reply',
+      // v2.3 Live Tasks + Recovery
+      'GET /api/live-tasks',
+      'GET /api/recovery/stale',
+      'GET /api/recovery/failed',
+      'GET /api/recovery/rollback-history',
+      'POST /api/tasks/:task_id/retry',
+      'POST /api/tasks/:task_id/rollback',
+      // System
+      'GET /api/system/processes',
+      'POST /api/system/processes/:pid/kill',
       'GET /api/required-actions',
       'GET /api/health',
       'GET /api/namespace',
