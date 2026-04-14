@@ -2,7 +2,7 @@
  * PR Review Routes
  *
  * Provides REST API endpoints for PR Review Automation.
- * Follows the same pattern as task-tracker.ts routes.
+ * Follows the same REST route pattern.
  *
  * @see spec/35_PR_REVIEW_AUTOMATION.md Section 10
  */

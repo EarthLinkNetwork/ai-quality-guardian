@@ -11,7 +11,7 @@
  * - LLM client is injected as an interface (DI for testability)
  * - Low-confidence results are escalated to human review
  * - Graceful degradation on LLM failure (all comments → ESCALATE)
- * - Follows LLMSummarizerClient pattern from task-tracker
+ * - Follows LLMSummarizerClient pattern (TaskTracker removed in v2.3)
  *
  * @see spec/35_PR_REVIEW_AUTOMATION.md Section 5.2
  */

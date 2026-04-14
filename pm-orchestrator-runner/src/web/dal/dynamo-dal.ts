@@ -30,15 +30,6 @@ import {
 } from "./types";
 import type { NoDynamoRun, NoDynamoEvent, InspectionPacket } from "./no-dynamo";
 import type {
-  TaskTracker,
-  TaskPlan,
-  TrackedTask,
-  TaskSnapshot,
-  TaskSummary,
-  CreateTaskSnapshotInput,
-  CreateTaskSummaryInput,
-} from "./task-tracker-types";
-import type {
   PRReviewState,
   PRReviewComment,
   PRReviewCycle,
@@ -504,75 +495,6 @@ export class DynamoDAL implements IDataAccessLayer {
   }
 
 
-  // ==================== Task Tracker (fallback to NoDynamo) ====================
-  // TODO: Migrate to DynamoDB with optimistic locking
-
-  async getTaskTracker(projectId: string): Promise<TaskTracker | null> {
-    return this.fallback.getTaskTracker(projectId);
-  }
-
-  async upsertTaskTracker(tracker: TaskTracker): Promise<TaskTracker> {
-    return this.fallback.upsertTaskTracker(tracker);
-  }
-
-  async updateTaskTrackerPlan(
-    projectId: string,
-    plan: TaskPlan,
-    expectedVersion: number
-  ): Promise<TaskTracker> {
-    return this.fallback.updateTaskTrackerPlan(projectId, plan, expectedVersion);
-  }
-
-  async updateTaskTrackerTasks(
-    projectId: string,
-    tasks: TrackedTask[],
-    expectedVersion: number
-  ): Promise<TaskTracker> {
-    return this.fallback.updateTaskTrackerTasks(projectId, tasks, expectedVersion);
-  }
-
-  async updateTaskTrackerContext(
-    projectId: string,
-    contextSummary: string,
-    recoveryHint: string | null,
-    expectedVersion: number
-  ): Promise<TaskTracker> {
-    return this.fallback.updateTaskTrackerContext(projectId, contextSummary, recoveryHint, expectedVersion);
-  }
-
-  async deleteTaskTracker(projectId: string): Promise<void> {
-    return this.fallback.deleteTaskTracker(projectId);
-  }
-
-  // ==================== Task Snapshots (fallback to NoDynamo) ====================
-  // TODO: Migrate to DynamoDB
-
-  async createTaskSnapshot(input: CreateTaskSnapshotInput): Promise<TaskSnapshot> {
-    return this.fallback.createTaskSnapshot(input);
-  }
-
-  async getLatestTaskSnapshot(projectId: string): Promise<TaskSnapshot | null> {
-    return this.fallback.getLatestTaskSnapshot(projectId);
-  }
-
-  async listTaskSnapshots(projectId: string, limit?: number): Promise<TaskSnapshot[]> {
-    return this.fallback.listTaskSnapshots(projectId, limit);
-  }
-
-  // ==================== Task Summaries (fallback to NoDynamo) ====================
-  // TODO: Migrate to DynamoDB
-
-  async createTaskSummary(input: CreateTaskSummaryInput): Promise<TaskSummary> {
-    return this.fallback.createTaskSummary(input);
-  }
-
-  async getTaskSummary(projectId: string, taskId: string): Promise<TaskSummary | null> {
-    return this.fallback.getTaskSummary(projectId, taskId);
-  }
-
-  async listTaskSummaries(projectId: string): Promise<TaskSummary[]> {
-    return this.fallback.listTaskSummaries(projectId);
-  }
   // ==================== PR Review State (fallback to NoDynamo) ====================
   // TODO: Migrate to DynamoDB
 

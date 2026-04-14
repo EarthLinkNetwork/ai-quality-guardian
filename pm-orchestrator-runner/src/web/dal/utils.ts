@@ -50,24 +50,19 @@ export function decodeCursor(cursor: string | undefined): Record<string, unknown
   }
 }
 
-// ==================== Task Tracker SK helpers ====================
-
-export function taskTrackerSK(projectId: string): string {
-  return `TRACKER#${projectId}`;
+/**
+ * Error thrown when optimistic lock version check fails
+ */
+export class OptimisticLockError extends Error {
+  constructor(
+    public readonly expectedVersion: number,
+    public readonly actualVersion?: number
+  ) {
+    super(
+      `Optimistic lock failed: expected version ${expectedVersion}` +
+        (actualVersion !== undefined ? `, got ${actualVersion}` : "")
+    );
+    this.name = "OptimisticLockError";
+  }
 }
 
-export function taskSnapshotSK(projectId: string, snapshotId: string): string {
-  return `TSNAP#${projectId}#${snapshotId}`;
-}
-
-export function taskSnapshotSKPrefix(projectId: string): string {
-  return `TSNAP#${projectId}#`;
-}
-
-export function taskSummarySK(projectId: string, taskId: string): string {
-  return `TSUM#${projectId}#${taskId}`;
-}
-
-export function taskSummarySKPrefix(projectId: string): string {
-  return `TSUM#${projectId}#`;
-}
