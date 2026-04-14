@@ -409,6 +409,7 @@ export interface CreateActivityEventInput {
 
 export interface ListActivityEventsOptions {
   projectId?: string;
+  orgId?: string;
   types?: ActivityEventType[];
   importance?: ActivityEventImportance;
   since?: string;
@@ -528,6 +529,7 @@ export interface ProjectIndex {
   };
   aiModel?: string;              // AI model ID used by this project (e.g. "gpt-4o")
   aiProvider?: string;            // AI provider used by this project (e.g. "openai")
+  projectType?: ProjectType;     // 'normal' or 'runner-dev'
   defaultCommand?: string | null; // Default command auto-prepended to every chat message (e.g. "/orchestrate")
   createdAt: string;
   updatedAt: string;

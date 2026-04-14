@@ -262,19 +262,19 @@ export class NoDynamoDAL {
       },
       createdAt: now,
       updatedAt: now,
-    } as ProjectIndex & { projectType?: string };
+    } as ProjectIndex;
 
     // Add projectType if provided
     if (input.projectType) {
-      (project as any).projectType = input.projectType;
+      project.projectType = input.projectType;
     }
 
     // Add AI model/provider if provided
     if (input.aiModel) {
-      (project as any).aiModel = input.aiModel;
+      project.aiModel = input.aiModel;
     }
     if (input.aiProvider) {
-      (project as any).aiProvider = input.aiProvider;
+      project.aiProvider = input.aiProvider;
     }
 
     const filePath = path.join(this.projectsDir, projectId + ".json");
@@ -819,7 +819,7 @@ export class NoDynamoDAL {
     }
 
     // Apply org isolation for activity events
-    const activityOrgId = (options as any).orgId || this.orgId;
+    const activityOrgId = options.orgId || this.orgId;
     if (activityOrgId) {
       events = events.filter((e) => !e.orgId || e.orgId === activityOrgId);
     }

@@ -21,6 +21,12 @@ import * as fs from "fs";
 import * as path from "path";
 import { initDAL, getDAL, isDALInitialized } from '../dal/dal-factory';
 
+/** Request with project context injected by auth middleware */
+interface ProjectRequest extends Request {
+  project?: { projectId: string };
+  projectRoot?: string;
+}
+
 /**
  * Session info for tree display
  */
@@ -388,8 +394,8 @@ export function createSessionLogsRoutes(stateDir: string): Router {
         return;
       }
 
-      (req as any).project = project;
-      (req as any).projectRoot = project.projectPath;
+      (req as ProjectRequest).project = project;
+      (req as ProjectRequest).projectRoot = project.projectPath;
       next();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -410,7 +416,7 @@ export function createSessionLogsRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
+          const project = (req as ProjectRequest).project!;
           const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const limit = parseInt(req.query.limit as string) || 100;
 
@@ -460,7 +466,7 @@ export function createSessionLogsRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
+          const project = (req as ProjectRequest).project!;
           const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const limit = parseInt(req.query.limit as string) || 50;
           const dateFilter = req.query.date as string; // YYYY-MM-DD
@@ -512,7 +518,7 @@ export function createSessionLogsRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
+          const project = (req as ProjectRequest).project!;
           const runId = req.params.runId as string;
           const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
 
@@ -569,7 +575,7 @@ export function createSessionLogsRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
+          const project = (req as ProjectRequest).project!;
           const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const { label, summary } = req.body as { label?: string; summary?: string };
 
@@ -607,7 +613,7 @@ export function createSessionLogsRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
+          const project = (req as ProjectRequest).project!;
           const sessionId = req.params.sessionId as string;
           const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const updates = req.body as Partial<SessionInfo>;
@@ -649,7 +655,7 @@ export function createSessionLogsRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
+          const project = (req as ProjectRequest).project!;
           const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const limit = parseInt(req.query.limit as string) || 20;
 
@@ -685,7 +691,7 @@ export function createSessionLogsRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
+          const project = (req as ProjectRequest).project!;
           const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
 
           const sessionDir = getSessionDir(stateDir, namespace);

@@ -14,6 +14,15 @@ import { spawn, execSync, SpawnOptions } from "child_process";
 import { initDAL, getDAL, isDALInitialized } from '../dal/dal-factory';
 
 /**
+ * Request with project context injected by the devConsoleAuth middleware.
+ * Avoids `(req as any).project` / `(req as any).projectRoot` casts.
+ */
+interface ProjectRequest extends Request {
+  project?: { projectId: string };
+  projectRoot?: string;
+}
+
+/**
  * File entry in directory listing
  */
 interface FileEntry {
@@ -325,8 +334,8 @@ export function createDevconsoleRoutes(stateDir: string): Router {
         return;
       }
 
-      (req as any).project = project;
-      (req as any).projectRoot = project.projectPath;
+      (req as ProjectRequest).project = project;
+      (req as ProjectRequest).projectRoot = project.projectPath;
       next();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -343,7 +352,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const projectRoot = (req as any).projectRoot as string;
+          const projectRoot = (req as ProjectRequest).projectRoot!;
           const rootParam = (req.query.root as string) || ".";
 
           const targetPath = resolveSafePath(projectRoot, rootParam);
@@ -421,7 +430,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const projectRoot = (req as any).projectRoot as string;
+          const projectRoot = (req as ProjectRequest).projectRoot!;
           const filePath = req.query.path as string;
 
           if (!filePath) {
@@ -484,7 +493,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const projectRoot = (req as any).projectRoot as string;
+          const projectRoot = (req as ProjectRequest).projectRoot!;
           const { query: queryParam, root } = req.body as { query?: string; root?: string };
 
           if (!queryParam) {
@@ -586,7 +595,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const projectRoot = (req as any).projectRoot as string;
+          const projectRoot = (req as ProjectRequest).projectRoot!;
           const { patch } = req.body as { patch?: string };
 
           if (!patch) {
@@ -662,8 +671,8 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
-          const projectRoot = (req as any).projectRoot as string;
+          const project = (req as ProjectRequest).project!;
+          const projectRoot = (req as ProjectRequest).projectRoot!;
           const { command, cwd, sessionId } = req.body as { command?: string; cwd?: string; sessionId?: string };
 
           if (!command) {
@@ -785,7 +794,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
+          const project = (req as ProjectRequest).project!;
           const runId = req.params.runId as string;
 
           const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -814,7 +823,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
+          const project = (req as ProjectRequest).project!;
           const limit = parseInt(req.query.limit as string) || 20;
 
           const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -839,7 +848,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const projectRoot = (req as any).projectRoot as string;
+          const projectRoot = (req as ProjectRequest).projectRoot!;
 
           let branch = "unknown";
           try {
@@ -919,7 +928,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const projectRoot = (req as any).projectRoot as string;
+          const projectRoot = (req as ProjectRequest).projectRoot!;
           const staged = req.query.staged === "true";
 
           let diff = "";
@@ -948,7 +957,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const projectRoot = (req as any).projectRoot as string;
+          const projectRoot = (req as ProjectRequest).projectRoot!;
           const limit = parseInt(req.query.limit as string) || 10;
 
           const entries: GitLogEntry[] = [];
@@ -992,7 +1001,7 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
+          const project = (req as ProjectRequest).project!;
           const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const logDir = getCmdLogDir(stateDir, namespace);
 
@@ -1022,8 +1031,8 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
-          const projectRoot = (req as any).projectRoot as string;
+          const project = (req as ProjectRequest).project!;
+          const projectRoot = (req as ProjectRequest).projectRoot!;
           const { message: commitMessage } = req.body as { message?: string };
 
           if (!commitMessage || typeof commitMessage !== "string" || commitMessage.trim() === "") {
@@ -1109,8 +1118,8 @@ export function createDevconsoleRoutes(stateDir: string): Router {
     async (req: Request, res: Response) => {
       await verifySelfhostRunner(req, res, () => {
         try {
-          const project = (req as any).project as { projectId: string };
-          const projectRoot = (req as any).projectRoot as string;
+          const project = (req as ProjectRequest).project!;
+          const projectRoot = (req as ProjectRequest).projectRoot!;
 
           const namespace = project.projectId.replace(/[^a-zA-Z0-9_-]/g, "_");
           const logDir = getCmdLogDir(stateDir, namespace);

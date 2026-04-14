@@ -301,6 +301,8 @@ export interface QueuedTask {
   clarificationReason?: string;
   /** Response summary (set on completion) */
   responseSummary?: string;
+  /** User response text (set by /respond command) */
+  userResponse?: string;
   /**
    * Task type for completion judgment.
    * READ_INFO/REPORT tasks don't require file changes - response output becomes evidence.
@@ -2904,7 +2906,7 @@ export class REPLInterface extends EventEmitter {
     this.print('Resuming task ' + targetTask.id + ' with response...');
 
     // Store the response in the task for the executor to use
-    (targetTask as any).userResponse = responseText;
+    targetTask.userResponse = responseText;
 
     // Check if there's a pending auto-resolve response to resolve
     // This handles the case where AutoResolvingExecutor is waiting for user input

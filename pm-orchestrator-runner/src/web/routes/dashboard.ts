@@ -12,7 +12,7 @@ import {
 } from '../dal/no-dynamo';
 import { initDAL, getDAL, isDALInitialized } from '../dal/dal-factory';
 import type { IQueueStore } from '../../queue/queue-store';
-import type { TaskState } from '../dal/types';
+import type { TaskState, ProjectIndexStatus, ProjectUserStatus, ProjectSortField, SortDirection, ProjectIndex } from '../dal/types';
 import { buildProjectCostInfo, getAllModelCostInfo } from '../services/ai-cost-service';
 import { log } from '../../logging/app-logger';
 
@@ -58,8 +58,8 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
       const authReq = req as AuthenticatedRequest;
       const projectStatus = (req.query.projectStatus as string) || 'active';
       const [projectsResult, activityResult, stats] = await Promise.all([
-        dal.listProjectIndexes({ limit: 50, projectStatus: projectStatus === 'all' ? undefined : projectStatus as any, orgId: authReq.orgId }),
-        dal.listActivityEvents({ limit: 20, orgId: authReq.orgId } as any),
+        dal.listProjectIndexes({ limit: 50, projectStatus: projectStatus === 'all' ? undefined : projectStatus as ProjectUserStatus, orgId: authReq.orgId }),
+        dal.listActivityEvents({ limit: 20, orgId: authReq.orgId }),
         dal.getStats(authReq.orgId),
       ]);
 
@@ -93,19 +93,19 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
 
       const result = await dal.listProjectIndexes({
         includeArchived,
-        status: status as any,
-        projectStatus: projectStatus as any,
+        status: status as ProjectIndexStatus | undefined,
+        projectStatus: projectStatus as ProjectUserStatus | undefined,
         favoriteOnly,
         search,
-        sortBy: sortBy as any,
-        sortDirection: sortDirection as any,
+        sortBy: sortBy as ProjectSortField | undefined,
+        sortDirection: sortDirection as SortDirection | undefined,
         limit: 50,
         orgId: authReq.orgId,
       });
 
       // Enrich projects with cost info
       const projectsWithCost = result.items.map(p => {
-        const proj = p as any;
+        const proj = p as ProjectIndex & { aiModel?: string; aiProvider?: string };
         const costInfo = proj.aiModel
           ? buildProjectCostInfo(proj.aiModel, proj.aiProvider)
           : null;
@@ -268,7 +268,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
       if (queueStore) {
         try {
           const allQueueItems = await queueStore.getAllItemsSummary();
-          const projectPath = (project as any).projectPath;
+          const projectPath = project.projectPath;
           queueTasksForProject = allQueueItems.filter(
             item => item.project_path === projectPath ||
                     // Include tasks without project_path if their task_group belongs to this project
@@ -324,7 +324,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
 
       // Build recentTasks from runs that have matching activity events (filters out old orgId orphans)
       const projectRunsWithActivity = projectRuns.filter(r =>
-        activityResult.items.some(e => e.taskId === r.taskRunId || (e.details as any)?.taskRunId === r.taskRunId)
+        activityResult.items.some(e => e.taskId === r.taskRunId || (e.details as Record<string, unknown> | undefined)?.taskRunId === r.taskRunId)
       );
       const recentTasks = projectRunsWithActivity.slice(0, 20).map(r => {
         const resolvedGroupId = taskIdToGroupId.get(r.taskRunId) || 'N/A';
@@ -382,16 +382,16 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
             // Build status_counts from queue store (accurate real-time status)
             const sc: Record<string, number> = { QUEUED: 0, RUNNING: 0, AWAITING_RESPONSE: 0, WAITING_CHILDREN: 0, COMPLETE: 0, ERROR: 0, CANCELLED: 0 };
             for (const t of groupTasks) { sc[t.status] = (sc[t.status] || 0) + 1; }
-            (tg as any).status_counts = sc;
+            (tg as Record<string, unknown>).status_counts = sc;
             // Set latest_status from most recent task
             const sorted = [...groupTasks].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
-            if (sorted.length > 0) (tg as any).latest_status = sorted[0].status;
+            if (sorted.length > 0) (tg as Record<string, unknown>).latest_status = sorted[0].status;
           }
         }
       }
 
       // Build cost info for the project
-      const proj = project as any;
+      const proj = project as ProjectIndex & { aiModel?: string; aiProvider?: string };
       const costInfo = proj.aiModel
         ? buildProjectCostInfo(proj.aiModel, proj.aiProvider)
         : null;
@@ -588,7 +588,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
         limit,
         since,
         orgId: authReq.orgId,
-      } as any);
+      });
 
       // Build lookup from runs for identifier recovery
       let runLookup: Map<string, { sessionId: string; projectId: string; taskRunId: string }> = new Map();
