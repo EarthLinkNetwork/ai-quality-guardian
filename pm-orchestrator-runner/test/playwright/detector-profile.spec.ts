@@ -171,9 +171,28 @@ test('Assistant page shows repo profile panel', async ({ page }) => {
   await expect(page.locator('[data-testid="repo-profile-panel"]')).toContainText('npm');
 });
 
-test('Assistant page has Propose and Quality tabs', async ({ page }) => {
+test('Assistant page has Propose and Quality tabs that switch content', async ({ page }) => {
   await page.goto(`${BASE_URL}/assistant`);
 
-  await expect(page.locator('[data-testid="tab-propose"]')).toBeVisible();
-  await expect(page.locator('[data-testid="tab-quality"]')).toBeVisible();
+  const proposeTab = page.locator('[data-testid="tab-propose"]');
+  const qualityTab = page.locator('[data-testid="tab-quality"]');
+  await expect(proposeTab).toBeVisible();
+  await expect(qualityTab).toBeVisible();
+
+  // Verify tab labels
+  await expect(proposeTab).toHaveText('Propose');
+  await expect(qualityTab).toHaveText('Quality');
+
+  // Click Quality tab and verify content changes
+  await qualityTab.click();
+  const tabContent = page.locator('#assistant-tab-content');
+  // Quality tab renders evaluation buttons
+  await expect(tabContent.locator('[data-testid="run-eval-btn"]')).toBeVisible();
+
+  // Click Propose tab and verify content switches back
+  await proposeTab.click();
+  // Propose tab should NOT have the eval button
+  await expect(tabContent.locator('[data-testid="run-eval-btn"]')).toHaveCount(0);
+  // Propose tab renders the assistant layout (prompt area)
+  await expect(tabContent.locator('.assistant-layout')).toBeVisible();
 });

@@ -281,31 +281,39 @@ test.describe('Context persists across page navigation', () => {
 
 test.describe('Per-page scope selectors removed', () => {
 
-  test('Hooks page has no scope-bar', async ({ page }) => {
+  test('Hooks page has no scope-bar and no "Scope:" text in content area', async ({ page }) => {
     await page.goto(`${BASE_URL}/hooks`);
     await page.waitForTimeout(2000);
 
-    // Old scope bar should not exist on the page content
-    const oldScopeBar = page.locator('.scope-bar');
-    // The sidebar context selector exists, but NOT within the page content area
+    // Old scope bar should not exist within the main app content area
     const pageContent = page.locator('#app .scope-bar');
     await expect(pageContent).toHaveCount(0);
+
+    // Also verify page content does not contain the old scope label text
+    const appText = await page.locator('#app').textContent();
+    expect(appText).not.toContain('Scope:');
   });
 
-  test('Commands page has no scope-bar', async ({ page }) => {
+  test('Commands page has no scope-bar and no "Scope:" text in content area', async ({ page }) => {
     await page.goto(`${BASE_URL}/commands`);
     await page.waitForTimeout(2000);
 
     const pageContent = page.locator('#app .scope-bar');
     await expect(pageContent).toHaveCount(0);
+
+    const appText = await page.locator('#app').textContent();
+    expect(appText).not.toContain('Scope:');
   });
 
-  test('Agents page has no scope-bar', async ({ page }) => {
+  test('Agents page has no scope-bar and no "Scope:" text in content area', async ({ page }) => {
     await page.goto(`${BASE_URL}/agents`);
     await page.waitForTimeout(2000);
 
     const pageContent = page.locator('#app .scope-bar');
     await expect(pageContent).toHaveCount(0);
+
+    const appText = await page.locator('#app').textContent();
+    expect(appText).not.toContain('Scope:');
   });
 });
 
@@ -323,13 +331,14 @@ test.describe('Pages use sidebar context for API calls', () => {
     await page.locator('[data-testid="nav-hooks"]').click();
     await page.waitForTimeout(2000);
 
-    // Page should show hooks path matching the context project
+    // The hooks-path element is always rendered by renderHooksPage
     const pathText = page.locator('[data-testid="hooks-path"]');
-    if (await pathText.count() > 0) {
-      const text = await pathText.textContent();
-      const selectedProject = await page.locator('[data-testid="context-project-select"]').inputValue();
-      expect(text).toContain(selectedProject);
-    }
+    await expect(pathText).toHaveCount(1);
+
+    // The path text must contain the selected project path (settings.json location)
+    const selectedProject = await page.locator('[data-testid="context-project-select"]').inputValue();
+    const text = await pathText.textContent();
+    expect(text).toContain(selectedProject);
   });
 
   test('Agents page shows correct files for selected project', async ({ page }) => {
@@ -343,23 +352,38 @@ test.describe('Pages use sidebar context for API calls', () => {
     // Explicitly select Project Alpha (tempProjectDir) which has test-agent.md
     const dropdown = page.locator('[data-testid="context-project-select"]');
     const options = await dropdown.locator('option').all();
-    // Find the option that matches tempProjectDir (Project Alpha)
+    let alphaSelected = false;
     for (const opt of options) {
       const text = await opt.textContent();
       if (text && text.includes('Project Alpha')) {
         const val = await opt.getAttribute('value');
         await dropdown.selectOption(val!);
+        alphaSelected = true;
         break;
       }
     }
+    expect(alphaSelected).toBe(true);
     await page.waitForTimeout(500);
 
     // Navigate to Agents
     await page.locator('[data-testid="nav-agents"]').click();
     await page.waitForTimeout(2000);
 
-    // Should see "test-agent" in the list (created in tempProjectDir)
+    // Should see "test-agent" in the list (created in tempProjectDir setup)
     const agentItem = page.locator('[data-testid="agent-item-test-agent"]');
     await expect(agentItem).toBeVisible();
+    // Verify the agent item contains the name text
+    await expect(agentItem).toContainText('test-agent');
+
+    // Verify no agents from Project Beta are shown (Beta has no agents)
+    // The list should only contain agents belonging to the selected project
+    const allAgentItems = page.locator('[data-testid^="agent-item-"]');
+    const count = await allAgentItems.count();
+    expect(count).toBeGreaterThanOrEqual(1);
+    // Each displayed agent item should not reference Project Beta's path
+    for (let i = 0; i < count; i++) {
+      const itemText = await allAgentItems.nth(i).textContent();
+      expect(itemText).not.toContain('Project Beta');
+    }
   });
 });

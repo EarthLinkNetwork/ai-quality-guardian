@@ -204,7 +204,7 @@ test.describe('Browser E2E: Runner Controls UI (AC-UI-RC-1 to AC-UI-RC-4)', () =
       await expect(stopBtn).toHaveText('Stop');
     });
 
-    test('Status indicator is visible', async ({ page }) => {
+    test('Status indicator is visible and shows a known status text', async ({ page }) => {
       await page.goto(`${BASE_URL}/settings`);
       await page.waitForLoadState('networkidle');
 
@@ -213,6 +213,11 @@ test.describe('Browser E2E: Runner Controls UI (AC-UI-RC-1 to AC-UI-RC-4)', () =
 
       const statusLabel = page.locator('#runner-status-label');
       await expect(statusLabel).toBeVisible();
+
+      // Wait for status to resolve from "Checking..." to a final state
+      await page.waitForTimeout(1500);
+      // Status label must show one of the known states set by updateRunnerControlsUI
+      await expect(statusLabel).toContainText(/Running|Stopped|Operation in progress/);
     });
 
     test('Runner Controls has all required elements in correct layout', async ({ page }) => {
@@ -230,6 +235,11 @@ test.describe('Browser E2E: Runner Controls UI (AC-UI-RC-1 to AC-UI-RC-4)', () =
       // Verify all 3 buttons are within the actions section
       const buttons = actionsSection.locator('button');
       await expect(buttons).toHaveCount(3);
+
+      // Verify each button individually by text content within the actions section
+      await expect(actionsSection.locator('button', { hasText: 'Build Only' })).toBeVisible();
+      await expect(actionsSection.locator('button', { hasText: 'Build & Restart' })).toBeVisible();
+      await expect(actionsSection.locator('button', { hasText: 'Stop' })).toBeVisible();
     });
   });
 
@@ -266,6 +276,21 @@ test.describe('Browser E2E: Runner Controls UI (AC-UI-RC-1 to AC-UI-RC-4)', () =
         return typeof (window as any).runnerBuild === 'function';
       });
       expect(hasFunction).toBe(true);
+
+      // Mock the build API endpoint and click the button to verify API call fires
+      await page.route('**/api/runner/build', route => {
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, message: 'Build completed (mocked)', build_sha: 'abc123', duration_ms: 100 }),
+        });
+      });
+
+      const [response] = await Promise.all([
+        page.waitForResponse(resp => resp.url().includes('/api/runner/build')),
+        buildBtn.click(),
+      ]);
+      expect(response.status()).toBe(200);
     });
 
     test('Result div exists for feedback display', async ({ page }) => {

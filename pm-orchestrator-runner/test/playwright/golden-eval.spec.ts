@@ -174,32 +174,84 @@ test('Evaluate result items have correct structure', async ({ page }) => {
 
 // ─── UI Tests ──────────────────────────────────────────────
 
-test('Quality tab shows golden evaluation UI', async ({ page }) => {
+test('Quality tab shows golden evaluation UI with action buttons and containers', async ({ page }) => {
   await page.goto(`${BASE_URL}/assistant`);
   await page.waitForSelector('[data-testid="tab-quality"]');
 
   // Switch to Quality tab
   await page.click('[data-testid="tab-quality"]');
 
+  // Verify both action buttons are visible
   await expect(page.locator('[data-testid="run-eval-btn"]')).toBeVisible();
   await expect(page.locator('[data-testid="load-golden-btn"]')).toBeVisible();
+
+  // Verify button labels
+  await expect(page.locator('[data-testid="run-eval-btn"]')).toHaveText('Run Evaluation');
+  await expect(page.locator('[data-testid="load-golden-btn"]')).toHaveText('View Cases');
+
+  // Verify containers for cases and results exist in the DOM
+  await expect(page.locator('[data-testid="golden-cases-list"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid="eval-results"]')).toHaveCount(1);
 });
 
-test('Load golden cases in UI', async ({ page }) => {
+test('Load golden cases in UI shows case IDs and prompts', async ({ page }) => {
   await page.goto(`${BASE_URL}/assistant`);
   await page.click('[data-testid="tab-quality"]');
 
   await page.click('[data-testid="load-golden-btn"]');
-  await expect(page.locator('[data-testid="golden-cases-list"]')).toContainText('gs-01', { timeout: 5000 });
-  await expect(page.locator('[data-testid="golden-cases-list"]')).toContainText('cases loaded');
+
+  const casesList = page.locator('[data-testid="golden-cases-list"]');
+  // Wait for cases to load
+  await expect(casesList).toContainText('gs-01', { timeout: 5000 });
+  await expect(casesList).toContainText('cases loaded');
+
+  // Verify multiple case IDs are present (the golden set has >=25 cases)
+  await expect(casesList).toContainText('gs-02');
+  await expect(casesList).toContainText('gs-03');
+
+  // Verify child elements exist (each case renders a div with id and prompt)
+  const caseItems = casesList.locator('div[style*="border-bottom"]');
+  const itemCount = await caseItems.count();
+  expect(itemCount).toBeGreaterThanOrEqual(25);
+
+  // Verify first case item contains both an ID (bold) and prompt text
+  const firstItem = caseItems.first();
+  const firstText = await firstItem.textContent();
+  expect(firstText).toMatch(/gs-\d+/);
+  // Prompt text should be non-empty (contains more than just the ID)
+  expect(firstText!.length).toBeGreaterThan(5);
 });
 
-test('Run evaluation shows results in UI (mock)', async ({ page }) => {
+test('Run evaluation shows results in UI (mock) with pass/fail counts and result items', async ({ page }) => {
   await page.goto(`${BASE_URL}/assistant?mock=true`);
   await page.click('[data-testid="tab-quality"]');
 
   await page.click('[data-testid="run-eval-btn"]');
-  await expect(page.locator('[data-testid="eval-results"]')).toContainText('Pass Rate', { timeout: 15000 });
-  await expect(page.locator('[data-testid="eval-results"]')).toContainText('100%');
-  await expect(page.locator('[data-testid="eval-result-item"]').first()).toBeVisible();
+
+  const evalResults = page.locator('[data-testid="eval-results"]');
+  await expect(evalResults).toContainText('Pass Rate', { timeout: 15000 });
+  await expect(evalResults).toContainText('100%');
+
+  // Verify the Passed count is displayed (format: "N/N" e.g. "25/25")
+  const resultsText = await evalResults.textContent();
+  // The report shows "passed / totalCases" - verify both match
+  const passedMatch = resultsText!.match(/(\d+)\s*\/\s*(\d+)/);
+  expect(passedMatch).toBeTruthy();
+  const [, passed, total] = passedMatch!;
+  expect(Number(passed)).toBe(Number(total)); // mock always passes all
+  expect(Number(total)).toBeGreaterThanOrEqual(25);
+
+  // Verify Duration is shown
+  await expect(evalResults).toContainText('Duration');
+
+  // Verify individual result items are rendered
+  const resultItems = page.locator('[data-testid="eval-result-item"]');
+  const itemCount = await resultItems.count();
+  expect(itemCount).toBeGreaterThanOrEqual(25);
+
+  // First result item should contain PASS and a case ID
+  const firstItem = resultItems.first();
+  await expect(firstItem).toBeVisible();
+  await expect(firstItem).toContainText('PASS');
+  await expect(firstItem).toContainText(/gs-\d+/);
 });
