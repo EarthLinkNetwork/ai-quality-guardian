@@ -9,6 +9,7 @@
 import { Router, Request, Response } from "express";
 import * as fs from "fs";
 import * as path from "path";
+import { loadGlobalConfig, saveGlobalConfig } from "../../config/global-config";
 
 /**
  * Project Settings data structure
@@ -311,7 +312,6 @@ export function createSettingsRoutes(stateDir: string): Router {
    */
   router.get("/internal-llm", (_req: Request, res: Response) => {
     try {
-      const { loadGlobalConfig } = require('../../config/global-config');
       const gc = loadGlobalConfig();
       // Prefer internalLlm, fall back to deprecated questionDetection
       const provider = gc.internalLlm?.provider || gc.questionDetection?.provider || null;
@@ -337,7 +337,6 @@ export function createSettingsRoutes(stateDir: string): Router {
   router.put("/internal-llm", (req: Request, res: Response) => {
     try {
       const { provider, model } = req.body;
-      const { loadGlobalConfig, saveGlobalConfig } = require('../../config/global-config');
       const gc = loadGlobalConfig();
 
       gc.internalLlm = {

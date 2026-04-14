@@ -9,6 +9,7 @@
  */
 
 import { PickerItem, PickerSelection } from '../diagnostics/picker';
+import * as readline from 'readline';
 
 /**
  * ANSI escape sequences for picker rendering.
@@ -206,7 +207,6 @@ export class InteractivePicker<T = unknown> {
     }
 
     return new Promise<PickerSelection<T>>((resolve) => {
-      const readline = require('readline');
       readline.emitKeypressEvents(process.stdin);
 
       const wasRaw = process.stdin.isRaw;
@@ -310,7 +310,7 @@ export class InteractivePicker<T = unknown> {
     process.stdout.write(lines.join('\n') + '\n');
 
     return new Promise<PickerSelection<T>>((resolve) => {
-      const rl = require('readline').createInterface({
+      const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
       });

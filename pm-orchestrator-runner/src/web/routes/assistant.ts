@@ -10,6 +10,7 @@
 import { Router, Request, Response } from "express";
 import * as path from "path";
 import * as fs from "fs/promises";
+import { readFileSync } from "fs";
 import { randomUUID } from "crypto";
 import {
   ProposalPlanSet,
@@ -482,11 +483,10 @@ export function createAssistantRoutes(config: AssistantRoutesConfig): Router {
 // === Golden Set Helpers ===
 
 function loadGoldenSet(): GoldenCase[] {
-  // Use require for JSON (synchronous, cached)
   const goldenSetPath = path.join(__dirname, "golden-set.json");
   try {
-    const data = require(goldenSetPath);
-    return data as GoldenCase[];
+    const raw = readFileSync(goldenSetPath, 'utf-8');
+    return JSON.parse(raw) as GoldenCase[];
   } catch {
     return [];
   }

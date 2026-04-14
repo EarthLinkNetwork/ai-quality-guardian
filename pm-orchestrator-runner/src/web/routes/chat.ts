@@ -25,6 +25,7 @@ import { IQueueStore, TaskTypeValue } from "../../queue/queue-store";
 import { detectTaskType } from "../../utils/task-type-detector";
 import { parseCommand, getCommandRegistry, CommandContext } from "../services/custom-command-registry";
 import { log } from "../../logging/app-logger";
+import { TemplateStore } from "../../template";
 
 /**
  * Error response format
@@ -384,7 +385,6 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
         let outputTemplateName = '';
         if (extendedProject.inputTemplateId || extendedProject.outputTemplateId) {
           try {
-            const { TemplateStore } = require('../../template');
             const templateStore = new TemplateStore();
             await templateStore.initialize();
 

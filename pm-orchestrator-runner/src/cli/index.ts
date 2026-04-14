@@ -15,6 +15,8 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import { execSync, exec as execCb, spawn as spawnCb } from 'child_process';
+import { promisify } from 'util';
 
 // Load .env file if present (lightweight, no dotenv dependency)
 function loadEnvFile() {
@@ -221,8 +223,7 @@ Web UI Verification:
 /**
  * Version - read from package.json
  */
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const VERSION: string = require('../../package.json').version;
+const VERSION: string = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf-8')).version;
 
 /**
  * REPL arguments interface
@@ -522,7 +523,7 @@ export function buildTaskContext(item: QueueItem): string {
   // Use centralized getApiKey() for DI compliance - no direct process.env access
   const openaiKey = getApiKey('openai');
   const hasOpenAIKey = !!(openaiKey && openaiKey.length > 0);
-  const hasRunnerDevDir = require('fs').existsSync(path.join(process.cwd(), '.claude'));
+  const hasRunnerDevDir = fs.existsSync(path.join(process.cwd(), '.claude'));
 
   const lines = [
     '[TaskContext]',
@@ -1668,7 +1669,6 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
     // Ensure public files are copied
     if (!checkPublicFilesCopied(projectRoot)) {
       console.log('[Web] Public files not found, copying...');
-      const { execSync } = require('child_process');
       try {
         execSync('cp -r src/web/public dist/web/', { cwd: projectRoot, stdio: 'pipe' });
       } catch (e) {
@@ -1865,10 +1865,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
   const runnerRestartHandler = async () => {
     const oldPid = process.pid;
 
-    const { exec, spawn } = require('child_process');
-    const { promisify } = require('util');
-    const fs = require('fs');
-    const execAsync = promisify(exec);
+    const execAsync = promisify(execCb);
 
     try {
       const { stdout, stderr } = await execAsync('npm run build', {
@@ -1878,7 +1875,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
 
       // Ensure public assets are present after build (CRITICAL for index.html updates)
       try {
-        const { execSync } = require('child_process');
+        // execSync imported at top level
         execSync('cp -r src/web/public dist/web/', { cwd: projectPath, stdio: 'pipe' });
         // Verify the copy succeeded by checking file exists and is recent
         const publicHtmlSrc = path.join(projectPath, 'src', 'web', 'public', 'index.html');
@@ -1936,7 +1933,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
 
         // Kill all stale pm-orchestrator-runner processes (but not this one and not Claude Code)
         try {
-          const { execSync } = require('child_process');
+          // execSync imported at top level
           const currentPid = process.pid;
           // Find all node processes running dist/cli/index.js (pm-orchestrator-runner)
           const psOutput = execSync("ps aux | grep 'dist/cli/index.js' | grep -v grep", { stdio: 'pipe', timeout: 5000 }).toString();
@@ -1990,7 +1987,7 @@ async function startWebServer(webArgs: WebArguments): Promise<void> {
           }
         } catch { /* ignore .env read errors */ }
 
-        const child = spawn(process.execPath, [modulePath, ...args], {
+        const child = spawnCb(process.execPath, [modulePath, ...args], {
           cwd: projectPath,
           detached: true,
           stdio: 'ignore',
