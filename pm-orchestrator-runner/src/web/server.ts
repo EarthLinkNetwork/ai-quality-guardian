@@ -52,7 +52,7 @@ import { createSkillsRoutes } from './routes/skills';
 import { detectTaskType } from '../utils/task-type-detector';
 import { detectQuestionsWithLlm } from '../utils/question-detector';
 import { initDAL, isDALInitialized, getDAL } from './dal/dal-factory';
-import { getLogEntries } from '../logging/app-logger';
+import { log, getLogEntries } from '../logging/app-logger';
 import { killTaskProcess } from '../executor/process-registry';
 
 /**
@@ -833,7 +833,7 @@ export function createApp(config: WebServerConfig): Express {
           );
           cancelled.push(id);
         } catch (cancelErr) {
-          console.warn('[Recovery] Failed to cancel task ' + id + ':', cancelErr);
+          log.sys.warn('Recovery failed to cancel task', { taskId: id, error: cancelErr instanceof Error ? cancelErr.message : String(cancelErr) });
         }
       }
 
@@ -1729,13 +1729,13 @@ export function createApp(config: WebServerConfig): Express {
           context: taskItem.prompt,
         }, undefined, output);
         if (!awResult.success) {
-          console.warn(`[rejudge] setAwaitingResponse failed: ${awResult.message}`);
+          log.sys.warn('Rejudge setAwaitingResponse failed', { taskId: task_id, message: awResult.message });
         }
       } else {
         newStatus = 'COMPLETE';
         const upResult = await queueStore.updateStatusWithValidation(task_id, 'COMPLETE');
         if (!upResult.success) {
-          console.warn(`[rejudge] updateStatus failed: ${upResult.message}`);
+          log.sys.warn('Rejudge updateStatus failed', { taskId: task_id, message: upResult.message });
           res.status(400).json({ error: 'STATUS_UPDATE_FAILED', message: upResult.message });
           return;
         }

@@ -364,7 +364,7 @@ export function createRunnerControlsRoutes(config: RunnerControlsConfig): Router
                 result.postResponse?.();
               } catch (error) {
                 // Best-effort; can't report after response
-                console.warn('[RunnerControls] postResponse failed:', error);
+                log.sys.warn('postResponse failed', { error: error instanceof Error ? error.message : String(error) });
               }
             }, 0);
           }

@@ -270,8 +270,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
               if (groupBelongs) {
                 effectiveTaskGroupId = requestedTaskGroupId.trim();
               } else {
-                console.warn(`[Chat] Rejected command taskGroupId ${requestedTaskGroupId} - belongs to different project.`);
-                log.app.warn('Command task group project mismatch', {
+                log.app.warn('Rejected command taskGroupId - belongs to different project', {
                   requestedTaskGroupId,
                   projectId,
                   projectPath: project.projectPath,
@@ -403,7 +402,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
               }
             }
           } catch (tplError) {
-            console.warn('[chat] Failed to load templates:', tplError);
+            log.app.warn('Failed to load templates', { error: tplError instanceof Error ? tplError.message : String(tplError) });
           }
         }
 
@@ -471,8 +470,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
           if (taskGroupBelongsToProject) {
             taskGroupId = requestedTaskGroupId.trim();
           } else {
-            console.warn(`[Chat] Rejected taskGroupId ${requestedTaskGroupId} - belongs to different project. Creating new group.`);
-            log.app.warn('Task group project mismatch', {
+            log.app.warn('Rejected taskGroupId - belongs to different project, creating new group', {
               requestedTaskGroupId,
               projectId,
               projectPath: project.projectPath,
@@ -536,7 +534,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
             }
           } catch (queueError) {
             // Log but don't fail the request if TaskGroup creation fails
-            console.error("[chat] Failed to create TaskGroup:", queueError);
+            log.app.error("Failed to create TaskGroup", { error: queueError instanceof Error ? queueError.message : String(queueError) });
           }
         }
 
@@ -564,7 +562,7 @@ export function createChatRoutes(stateDirOrConfig: string | ChatRoutesConfig): R
           });
           activityId = activity.id;
         } catch (actError) {
-          console.error("[chat] Failed to create activity event:", actError);
+          log.app.error("Failed to create activity event", { error: actError instanceof Error ? actError.message : String(actError) });
         }
 
         // Also emit a task_started event for project detail resolution

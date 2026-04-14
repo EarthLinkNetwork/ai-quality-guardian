@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as os from 'os';
+import { log } from '../logging/app-logger';
 
 // ============================================================================
 // Types and Interfaces (Section 2.1)
@@ -245,7 +246,7 @@ function migrateSettings(
       return settings as ProjectSettings;
     default:
       // Unknown version - return defaults
-      console.warn(`[WARN] Unknown settings version: ${version} - using defaults`);
+      log.sys.warn('Unknown settings version, using defaults', { version });
       return createDefaultSettings(projectPath, projectHash);
   }
 }
@@ -319,7 +320,7 @@ export class ProjectSettingsStore {
       }
     } catch {
       // Corrupted file - use defaults
-      console.warn(`[WARN] Project settings corrupted: ${projectHash}.json - using defaults`);
+      log.sys.warn('Project settings corrupted, using defaults', { projectHash });
       this.emitEvent({ type: 'SETTINGS_ERROR', error: `Corrupted settings file: ${settingsPath}` });
       settings = createDefaultSettings(resolvedPath, projectHash);
     }
@@ -523,7 +524,7 @@ export class ProjectSettingsStore {
 
       // Check size limit
       if (content.length > SETTINGS_LIMITS.MAX_FILE_SIZE) {
-        console.warn('[WARN] Settings file exceeds size limit');
+        log.sys.warn('Settings file exceeds size limit');
         this.emitEvent({ type: 'SETTINGS_ERROR', error: 'Settings file exceeds size limit' });
         return;
       }
@@ -531,7 +532,7 @@ export class ProjectSettingsStore {
       fs.writeFileSync(settingsPath, content, { mode: 0o600 });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[WARN] Failed to save settings: ${message}`);
+      log.sys.warn('Failed to save settings', { error: message });
       this.emitEvent({ type: 'SETTINGS_ERROR', error: `Failed to save settings: ${message}` });
       // In-memory state is preserved even if write fails
     }
@@ -553,7 +554,7 @@ export class ProjectSettingsStore {
       }
     } catch {
       // Corrupted index - start fresh
-      console.warn('[WARN] Project index corrupted - creating new index');
+      log.sys.warn('Project index corrupted, creating new index');
       index = { version: 1, projects: [] };
     }
 
@@ -584,7 +585,7 @@ export class ProjectSettingsStore {
       fs.writeFileSync(indexPath, JSON.stringify(index, null, 2), { mode: 0o600 });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[WARN] Failed to update index: ${message}`);
+      log.sys.warn('Failed to update index', { error: message });
     }
   }
 
@@ -627,7 +628,7 @@ export class ProjectSettingsStore {
       try {
         this.onEvent(event);
       } catch (error) {
-        console.error('[ERROR] Event handler error:', error);
+        log.sys.error('Event handler error', { error: error instanceof Error ? error.message : String(error) });
       }
     }
   }

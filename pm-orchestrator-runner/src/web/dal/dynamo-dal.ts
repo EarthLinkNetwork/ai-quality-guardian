@@ -40,6 +40,7 @@ import type {
 } from "./pr-review-types";
 import { NoDynamoDALWithConversations, NoDynamoConfig } from "./no-dynamo";
 import * as projectIndexDAL from "./project-index-dal";
+import { log } from "../../logging/app-logger";
 
 /**
  * DynamoDAL - Hybrid DynamoDB + local file implementation
@@ -94,7 +95,7 @@ export class DynamoDAL implements IDataAccessLayer {
     } catch (err: unknown) {
       const errorName = (err as { name?: string })?.name;
       if (errorName === "ResourceNotFoundException") {
-        console.log("[DynamoDAL] Table not found, creating pm-project-indexes...");
+        log.sys.info("Table not found, creating pm-project-indexes...");
         try {
           await this.createTable();
           this.dynamoAvailable = true;
@@ -102,7 +103,7 @@ export class DynamoDAL implements IDataAccessLayer {
           await this.migrateLocalData();
           return true;
         } catch (createErr) {
-          console.warn("[DynamoDAL] Failed to create table, falling back to local files:", (createErr as Error).message);
+          log.sys.warn("Failed to create table, falling back to local files", { error: (createErr as Error).message });
           this.dynamoAvailable = false;
           this.tableEnsured = true; // Permanent failure
           return false;
@@ -110,10 +111,10 @@ export class DynamoDAL implements IDataAccessLayer {
       }
       if (isTransientError(err)) {
         // Don't set tableEnsured — retry on next call
-        console.warn("[DynamoDAL] Transient DynamoDB error, will retry:", (err as Error).message);
+        log.sys.warn("Transient DynamoDB error, will retry", { error: (err as Error).message });
         return false;
       }
-      console.warn("[DynamoDAL] DynamoDB unavailable, falling back to local files:", (err as Error).message);
+      log.sys.warn("DynamoDB unavailable, falling back to local files", { error: (err as Error).message });
       this.dynamoAvailable = false;
       this.tableEnsured = true; // Permanent failure
       return false;
@@ -155,7 +156,7 @@ export class DynamoDAL implements IDataAccessLayer {
       ],
       BillingMode: "PAY_PER_REQUEST",
     }));
-    console.log("[DynamoDAL] Table pm-project-indexes created");
+    log.sys.info("Table pm-project-indexes created");
 
     // Wait for table to be active
     for (let i = 0; i < 30; i++) {
@@ -177,7 +178,7 @@ export class DynamoDAL implements IDataAccessLayer {
       const localResult = await this.fallback.listProjectIndexes({ includeArchived: true });
       if (localResult.items.length === 0) return; // No local data to migrate
 
-      console.log(`[DynamoDAL] Migrating ${localResult.items.length} projects from local files to DynamoDB...`);
+      log.sys.info("Migrating projects from local files to DynamoDB", { count: localResult.items.length });
       for (const project of localResult.items) {
         try {
           const created = await projectIndexDAL.createProjectIndex({
@@ -205,12 +206,12 @@ export class DynamoDAL implements IDataAccessLayer {
             );
           }
         } catch (err) {
-          console.warn(`[DynamoDAL] Failed to migrate project ${project.projectId}:`, (err as Error).message);
+          log.sys.warn("Failed to migrate project", { projectId: project.projectId, error: (err as Error).message });
         }
       }
-      console.log(`[DynamoDAL] Migration complete`);
+      log.sys.info("Migration complete");
     } catch (err) {
-      console.warn("[DynamoDAL] Migration failed (non-fatal):", (err as Error).message);
+      log.sys.warn("Migration failed (non-fatal)", { error: (err as Error).message });
     }
   }
 
@@ -222,9 +223,9 @@ export class DynamoDAL implements IDataAccessLayer {
         return await op();
       } catch (err) {
         if (isTransientError(err)) {
-          console.warn("[DynamoDAL] Transient error in project operation, falling back:", (err as Error).message);
+          log.sys.warn("Transient error in project operation, falling back", { error: (err as Error).message });
         } else {
-          console.error("[DynamoDAL] DynamoDB project operation failed:", (err as Error).message);
+          log.sys.error("DynamoDB project operation failed", { error: (err as Error).message });
         }
       }
     }
@@ -247,7 +248,7 @@ export class DynamoDAL implements IDataAccessLayer {
         if (result) return result;
       } catch (err) {
         if (!isTransientError(err)) {
-          console.error("[DynamoDAL] getProjectIndex failed:", (err as Error).message);
+          log.sys.error("getProjectIndex failed", { error: (err as Error).message });
         }
       }
     }
@@ -261,7 +262,7 @@ export class DynamoDAL implements IDataAccessLayer {
         if (result) return result;
       } catch (err) {
         if (!isTransientError(err)) {
-          console.error("[DynamoDAL] getProjectIndexByPath failed:", (err as Error).message);
+          log.sys.error("getProjectIndexByPath failed", { error: (err as Error).message });
         }
       }
     }

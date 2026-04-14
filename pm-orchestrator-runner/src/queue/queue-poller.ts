@@ -133,8 +133,7 @@ export class QueuePoller extends EventEmitter {
         }
       } catch (error) {
         // Log but don't fail startup
-        // eslint-disable-next-line no-console
-        console.error('[QueuePoller] Failed to recover stale tasks:', error);
+        log.sys.error('Failed to recover stale tasks', { error: error instanceof Error ? error.message : String(error) });
       }
     }
 
@@ -143,8 +142,6 @@ export class QueuePoller extends EventEmitter {
     // Start polling loop
     this.pollTimer = setInterval(() => {
       this.poll().catch(error => {
-        // eslint-disable-next-line no-console
-        console.error('[QueuePoller] Poll error:', error);
         log.sys.error('Poll error', { error: error instanceof Error ? error.message : String(error) });
       });
     }, this.pollIntervalMs);
@@ -155,14 +152,11 @@ export class QueuePoller extends EventEmitter {
     this.staleRecoveryTimer = setInterval(() => {
       this.store.recoverStaleTasks(this.maxStaleTaskAgeMs).then(count => {
         if (count > 0) {
-          // eslint-disable-next-line no-console
-          console.log(`[QueuePoller] Periodic stale recovery: ${count} task(s) recovered`);
           log.sys.warn('Periodic stale tasks recovered', { count });
           this.emit('stale-recovered', count);
         }
       }).catch(error => {
-        // eslint-disable-next-line no-console
-        console.error('[QueuePoller] Periodic stale recovery error:', error);
+        log.sys.error('Periodic stale recovery error', { error: error instanceof Error ? error.message : String(error) });
       });
     }, staleRecoveryIntervalMs);
 
@@ -195,8 +189,7 @@ export class QueuePoller extends EventEmitter {
       await this.store.markRunnerStopped(this.runnerId);
     } catch (error) {
       // Log but don't fail stop - marking stopped is best-effort
-      // eslint-disable-next-line no-console
-      console.error('[QueuePoller] Failed to mark runner as stopped:', error);
+      log.sys.error('Failed to mark runner as stopped', { error: error instanceof Error ? error.message : String(error) });
     }
 
     this.emit('stopped');
@@ -225,8 +218,7 @@ export class QueuePoller extends EventEmitter {
       // Only log first failure and then every 10th to avoid log spam
       this.heartbeatFailCount = (this.heartbeatFailCount || 0) + 1;
       if (this.heartbeatFailCount === 1 || this.heartbeatFailCount % 10 === 0) {
-        const msg = error instanceof Error ? error.message : String(error);
-        console.warn(`[QueuePoller] Heartbeat update failed (${this.heartbeatFailCount}x): ${msg.substring(0, 150)}`);
+        log.sys.warn('Heartbeat update failed', { failCount: this.heartbeatFailCount, error: (error instanceof Error ? error.message : String(error)).substring(0, 150) });
       }
     }
 
@@ -313,8 +305,7 @@ export class QueuePoller extends EventEmitter {
         await this.store.updateStatus(item.task_id, 'ERROR', errorMessage);
       } catch (updateError) {
         // Log but don't throw - we've already failed
-        // eslint-disable-next-line no-console
-        console.error('[QueuePoller] Failed to update error status:', updateError);
+        log.sys.error('Failed to update error status', { taskId: item.task_id, error: updateError instanceof Error ? updateError.message : String(updateError) });
       }
 
       this.emit('error', item, error instanceof Error ? error : new Error(String(error)));

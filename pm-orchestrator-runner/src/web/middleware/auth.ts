@@ -8,6 +8,7 @@
 
 import type { Request, Response, NextFunction } from 'express';
 import { ApiKeyManager } from '../../auth/api-key-manager';
+import { log } from '../../logging/app-logger';
 
 /**
  * User roles for access control
@@ -73,7 +74,7 @@ export function createApiKeyAuth(config: AuthConfig) {
       req.orgId = apiKeyData.userId + ':' + apiKeyData.deviceName; // orgId = userId:device for machine-level isolation
       next();
     } catch (error) {
-      console.error('[Auth] API key validation error:', error);
+      log.sys.error('API key validation error', { error: error instanceof Error ? error.message : String(error) });
       return res.status(500).json({ error: 'Authentication service error' });
     }
   };
