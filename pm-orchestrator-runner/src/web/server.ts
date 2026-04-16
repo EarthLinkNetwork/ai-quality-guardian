@@ -256,6 +256,45 @@ export function createApp(config: WebServerConfig): Express {
   }
 
   // ===================
+  // Shared helpers (used by multiple route groups)
+  // ===================
+
+  /**
+   * Load a lookup map of projectPath → project_alias.
+   * Returns an empty map when DAL is not initialized or listing fails.
+   */
+  const loadProjectAliasMap = async (): Promise<Map<string, string>> => {
+    const map = new Map<string, string>();
+    if (!isDALInitialized()) return map;
+    try {
+      const dal = getDAL();
+      const projs = await dal.listProjectIndexes();
+      for (const p of projs.items) {
+        if (p.projectPath) {
+          map.set(p.projectPath, p.alias || p.projectPath.split('/').pop() || p.projectPath);
+        }
+      }
+    } catch {
+      // Non-fatal — caller handles missing aliases gracefully
+    }
+    return map;
+  };
+
+  /**
+   * Walk up the parent_task_id chain to find the root ancestor.
+   * Safety cap at 20 hops to avoid infinite loops on corrupt data.
+   */
+  const findRootAncestor = async (item: QueueItem): Promise<QueueItem> => {
+    let current = item;
+    for (let i = 0; i < 20 && current.parent_task_id; i++) {
+      const parent = await queueStore.getItem(current.parent_task_id);
+      if (!parent) break;
+      current = parent;
+    }
+    return current;
+  };
+
+  // ===================
   // Application Log Routes
   // ===================
 
@@ -407,21 +446,8 @@ export function createApp(config: WebServerConfig): Express {
         }
       }
 
-      // Build project alias lookup if DAL is initialized
-      const projectAliasByPath = new Map<string, string>();
-      if (isDALInitialized()) {
-        try {
-          const dal = getDAL();
-          const allProjects = await dal.listProjectIndexes();
-          for (const p of allProjects.items) {
-            if (p.projectPath) {
-              projectAliasByPath.set(p.projectPath, p.alias || p.projectPath.split('/').pop() || p.projectPath);
-            }
-          }
-        } catch {
-          // Non-fatal
-        }
-      }
+      // Build project alias lookup via shared helper
+      const projectAliasByPath = await loadProjectAliasMap();
 
       const processes = snapshots.map(snap => {
         const os = psInfo.get(snap.pid);
@@ -516,36 +542,8 @@ export function createApp(config: WebServerConfig): Express {
   // ==========================================================================
   // Live Tasks + Recovery endpoints (spec/36_LIVE_TASKS_AND_RECOVERY.md)
   // ==========================================================================
-
-  // Helper: load project alias lookup (shared by live-tasks / recovery)
-  const loadProjectAliasMap = async (): Promise<Map<string, string>> => {
-    const map = new Map<string, string>();
-    if (!isDALInitialized()) return map;
-    try {
-      const dal = getDAL();
-      const projs = await dal.listProjectIndexes();
-      for (const p of projs.items) {
-        if (p.projectPath) {
-          map.set(p.projectPath, p.alias || p.projectPath.split('/').pop() || p.projectPath);
-        }
-      }
-    } catch {
-      // Non-fatal
-    }
-    return map;
-  };
-
-  // Helper: find the root ancestor by walking parent_task_id
-  const findRootAncestor = async (item: QueueItem): Promise<QueueItem> => {
-    let current = item;
-    // Safety cap to avoid infinite loops on broken data
-    for (let i = 0; i < 20 && current.parent_task_id; i++) {
-      const parent = await queueStore.getItem(current.parent_task_id);
-      if (!parent) break;
-      current = parent;
-    }
-    return current;
-  };
+  // NOTE: loadProjectAliasMap / findRootAncestor are defined above (shared
+  // helpers section) and used throughout this route group.
 
   /**
    * GET /api/live-tasks
