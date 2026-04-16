@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as yaml from 'yaml';
 import { RunnerCore, RunnerOptions } from '../core/runner-core';
 import { OverallStatus, LifecyclePhase } from '../models/enums';
+import { match } from 'ts-pattern';
 import { ErrorCode, getErrorMessage } from '../errors/error-codes';
 import { SessionStatus } from '../models/session';
 
@@ -339,21 +340,17 @@ export class CLI extends EventEmitter {
     if (args.quiet) this.quiet = true;
 
     // Handle commands (per spec 05_CLI.md L20-26)
-    switch (args.command) {
-      case 'start':
-        return this.startCommand(args);
-      case 'continue':
-        return this.continueCommand(args);
-      case 'status':
-        return this.statusCommand(args);
-      case 'validate':
-        return this.validateCommand(args);
-      default:
+    return match(args.command)
+      .with('start', () => this.startCommand(args))
+      .with('continue', () => this.continueCommand(args))
+      .with('status', () => this.statusCommand(args))
+      .with('validate', () => this.validateCommand(args))
+      .otherwise(() => {
         throw new CLIError(
           ErrorCode.E104_CONFIGURATION_SCHEMA_VALIDATION_FAILURE,
           `Unknown command: ${args.command}`
         );
-    }
+      });
   }
 
   /**
@@ -673,20 +670,13 @@ export class CLI extends EventEmitter {
    * Get exit code for a status
    */
   getExitCodeForStatus(status: OverallStatus): number {
-    switch (status) {
-      case OverallStatus.COMPLETE:
-        return 0;
-      case OverallStatus.INCOMPLETE:
-        return 1;
-      case OverallStatus.NO_EVIDENCE:
-        return 2;
-      case OverallStatus.ERROR:
-        return 3;
-      case OverallStatus.INVALID:
-        return 4;
-      default:
-        return 5;
-    }
+    return match(status)
+      .with(OverallStatus.COMPLETE, () => 0)
+      .with(OverallStatus.INCOMPLETE, () => 1)
+      .with(OverallStatus.NO_EVIDENCE, () => 2)
+      .with(OverallStatus.ERROR, () => 3)
+      .with(OverallStatus.INVALID, () => 4)
+      .otherwise(() => 5);
   }
 
   /**

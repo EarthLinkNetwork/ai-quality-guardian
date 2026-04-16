@@ -9,6 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { match } from 'ts-pattern';
 
 /**
  * Conversation trace event types
@@ -372,51 +373,38 @@ export class ConversationTracer {
       const iterStr =
         entry.iteration_index !== undefined ? `[${entry.iteration_index}]` : '';
 
-      switch (entry.event) {
-        case 'USER_REQUEST':
-          lines.push(`[${time}] USER_REQUEST: ${truncate(entry.data.prompt as string, 100)}`);
-          break;
-        case 'SYSTEM_RULES':
-          lines.push(`[${time}] SYSTEM_RULES: (Mandatory Rules injected)`);
-          break;
-        case 'CHUNKING_PLAN':
+      const line = match(entry.event)
+        .with('USER_REQUEST', () =>
+          `[${time}] USER_REQUEST: ${truncate(entry.data.prompt as string, 100)}`)
+        .with('SYSTEM_RULES', () =>
+          `[${time}] SYSTEM_RULES: (Mandatory Rules injected)`)
+        .with('CHUNKING_PLAN', () => {
           const subtasks = entry.data.subtasks as SubtaskPlan[];
-          lines.push(`[${time}] CHUNKING_PLAN: ${subtasks.length} subtasks`);
-          break;
-        case 'LLM_REQUEST':
-          lines.push(`[${time}] LLM_REQUEST${iterStr}: (prompt sent)`);
-          break;
-        case 'LLM_RESPONSE':
-          lines.push(
-            `[${time}] LLM_RESPONSE${iterStr}: ${truncate(entry.data.output as string, 100)}`
-          );
-          break;
-        case 'QUALITY_JUDGMENT':
+          return `[${time}] CHUNKING_PLAN: ${subtasks.length} subtasks`;
+        })
+        .with('LLM_REQUEST', () =>
+          `[${time}] LLM_REQUEST${iterStr}: (prompt sent)`)
+        .with('LLM_RESPONSE', () =>
+          `[${time}] LLM_RESPONSE${iterStr}: ${truncate(entry.data.output as string, 100)}`)
+        .with('QUALITY_JUDGMENT', () => {
           const criteria = entry.data.criteria_results as CriteriaResult[];
           const failed = criteria.filter((c) => !c.passed);
           const failedStr =
             failed.length > 0
               ? ` (${failed.map((c) => `${c.id}: ${c.reason || 'failed'}`).join(', ')})`
               : '';
-          lines.push(
-            `[${time}] QUALITY_JUDGMENT${iterStr}: ${entry.data.judgment}${failedStr}`
-          );
-          break;
-        case 'REJECTION_DETAILS':
-          lines.push(
-            `[${time}] REJECTION_DETAILS${iterStr}: ${truncate(entry.data.modification_prompt as string, 100)}`
-          );
-          break;
-        case 'ITERATION_END':
-          lines.push(
-            `[${time}] ITERATION_END${iterStr}: ${entry.data.judgment}`
-          );
-          break;
-        case 'FINAL_SUMMARY':
-          lines.push(
-            `[${time}] FINAL_SUMMARY: ${entry.data.status} (${entry.data.total_iterations} iterations)`
-          );
-          break;
+          return `[${time}] QUALITY_JUDGMENT${iterStr}: ${entry.data.judgment}${failedStr}`;
+        })
+        .with('REJECTION_DETAILS', () =>
+          `[${time}] REJECTION_DETAILS${iterStr}: ${truncate(entry.data.modification_prompt as string, 100)}`)
+        .with('ITERATION_END', () =>
+          `[${time}] ITERATION_END${iterStr}: ${entry.data.judgment}`)
+        .with('FINAL_SUMMARY', () =>
+          `[${time}] FINAL_SUMMARY: ${entry.data.status} (${entry.data.total_iterations} iterations)`)
+        .otherwise(() => null);
+
+      if (line) {
+        lines.push(line);
       }
     }
 
@@ -523,38 +511,22 @@ export function verifyConversationTrace(
     }
 
     // Count event types
-    switch (entry.event) {
-      case 'USER_REQUEST':
-        result.summary.userRequests++;
-        break;
-      case 'SYSTEM_RULES':
-        result.summary.systemRules++;
-        break;
-      case 'CHUNKING_PLAN':
-        result.summary.chunkingPlans++;
-        break;
-      case 'LLM_REQUEST':
-        result.summary.llmRequests++;
-        break;
-      case 'LLM_RESPONSE':
-        result.summary.llmResponses++;
-        break;
-      case 'QUALITY_JUDGMENT':
+    match(entry.event)
+      .with('USER_REQUEST', () => { result.summary.userRequests++; })
+      .with('SYSTEM_RULES', () => { result.summary.systemRules++; })
+      .with('CHUNKING_PLAN', () => { result.summary.chunkingPlans++; })
+      .with('LLM_REQUEST', () => { result.summary.llmRequests++; })
+      .with('LLM_RESPONSE', () => { result.summary.llmResponses++; })
+      .with('QUALITY_JUDGMENT', () => {
         result.summary.qualityJudgments++;
         if (entry.data.judgment) {
           result.summary.judgments.push(entry.data.judgment as string);
         }
-        break;
-      case 'REJECTION_DETAILS':
-        result.summary.rejectionDetails++;
-        break;
-      case 'ITERATION_END':
-        result.summary.iterationEnds++;
-        break;
-      case 'FINAL_SUMMARY':
-        result.summary.finalSummaries++;
-        break;
-    }
+      })
+      .with('REJECTION_DETAILS', () => { result.summary.rejectionDetails++; })
+      .with('ITERATION_END', () => { result.summary.iterationEnds++; })
+      .with('FINAL_SUMMARY', () => { result.summary.finalSummaries++; })
+      .otherwise(() => {});
   }
 
   result.summary.totalIterations = maxIteration + 1;

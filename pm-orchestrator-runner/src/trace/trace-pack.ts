@@ -9,6 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { match } from 'ts-pattern';
 
 /**
  * Trace entry types
@@ -434,35 +435,17 @@ export function verifyTraceFile(filePath: string): VerifyResult {
       }
 
       // Count event types
-      switch (entry.event) {
-        case 'SESSION_START':
-          result.summary.sessionStarts++;
-          break;
-        case 'SESSION_END':
-          result.summary.sessionEnds++;
-          break;
-        case 'TASK_GROUP_START':
-          result.summary.taskGroupStarts++;
-          break;
-        case 'TASK_GROUP_END':
-          result.summary.taskGroupEnds++;
-          break;
-        case 'TASK_START':
-          result.summary.taskStarts++;
-          break;
-        case 'TASK_END':
-          result.summary.taskEnds++;
-          break;
-        case 'TASK_STATE_CHANGE':
-          result.summary.stateChanges++;
-          break;
-        case 'VERIFICATION_RESULT':
-          result.summary.verificationResults++;
-          break;
-        case 'ERROR':
-          result.summary.errors++;
-          break;
-      }
+      match(entry.event)
+        .with('SESSION_START', () => { result.summary.sessionStarts++; })
+        .with('SESSION_END', () => { result.summary.sessionEnds++; })
+        .with('TASK_GROUP_START', () => { result.summary.taskGroupStarts++; })
+        .with('TASK_GROUP_END', () => { result.summary.taskGroupEnds++; })
+        .with('TASK_START', () => { result.summary.taskStarts++; })
+        .with('TASK_END', () => { result.summary.taskEnds++; })
+        .with('TASK_STATE_CHANGE', () => { result.summary.stateChanges++; })
+        .with('VERIFICATION_RESULT', () => { result.summary.verificationResults++; })
+        .with('ERROR', () => { result.summary.errors++; })
+        .otherwise(() => {});
 
       // Validate state change events have from_state and to_state
       if (entry.event === 'TASK_STATE_CHANGE') {

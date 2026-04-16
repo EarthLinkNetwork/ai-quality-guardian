@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as os from 'os';
+import { match } from 'ts-pattern';
 import { log } from '../logging/app-logger';
 
 // ============================================================================
@@ -238,17 +239,16 @@ function migrateSettings(
   const settingsObj = settings as Record<string, unknown>;
   const version = (settingsObj?.version as number) ?? 0;
 
-  switch (version) {
-    case 0:
+  return match(version)
+    .with(0, () => {
       onEvent?.({ type: 'SETTINGS_MIGRATION', fromVersion: 0, toVersion: 1 });
       return migrateV0ToV1(settingsObj, projectPath, projectHash);
-    case 1:
-      return settings as ProjectSettings;
-    default:
-      // Unknown version - return defaults
+    })
+    .with(1, () => settings as ProjectSettings)
+    .otherwise(() => {
       log.sys.warn('Unknown settings version, using defaults', { version });
       return createDefaultSettings(projectPath, projectHash);
-  }
+    });
 }
 
 /**

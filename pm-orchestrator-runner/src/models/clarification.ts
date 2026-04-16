@@ -5,6 +5,8 @@
  * Each clarification has a type that determines the UI component used.
  */
 
+import { match } from 'ts-pattern';
+
 /**
  * ClarificationType - determines which UI to present.
  *
@@ -27,25 +29,15 @@ export enum ClarificationType {
  * ClarificationType is the new type-based system for UI routing.
  */
 export function reasonToType(reason: string): ClarificationType {
-  switch (reason) {
-    case 'target_file_exists':
-      return ClarificationType.CONFIRM;
-    case 'target_file_ambiguous':
-      return ClarificationType.TARGET_FILE;
-    case 'target_action_ambiguous':
-      return ClarificationType.SELECT_ONE;
-    case 'missing_required_info':
-      return ClarificationType.FREE_TEXT;
-    // auto-resolve-executor types
-    case 'scope_unclear':
-      return ClarificationType.SELECT_ONE;
-    case 'action_ambiguous':
-      return ClarificationType.SELECT_ONE;
-    case 'missing_context':
-      return ClarificationType.FREE_TEXT;
-    default:
-      return ClarificationType.FREE_TEXT;
-  }
+  return match(reason)
+    .with('target_file_exists', () => ClarificationType.CONFIRM)
+    .with('target_file_ambiguous', () => ClarificationType.TARGET_FILE)
+    .with('target_action_ambiguous', () => ClarificationType.SELECT_ONE)
+    .with('missing_required_info', () => ClarificationType.FREE_TEXT)
+    .with('scope_unclear', () => ClarificationType.SELECT_ONE)
+    .with('action_ambiguous', () => ClarificationType.SELECT_ONE)
+    .with('missing_context', () => ClarificationType.FREE_TEXT)
+    .otherwise(() => ClarificationType.FREE_TEXT);
 }
 
 /**

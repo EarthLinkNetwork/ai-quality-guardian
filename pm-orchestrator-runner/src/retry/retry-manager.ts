@@ -13,6 +13,7 @@
  * Fail-Closed Principle: When in doubt, ESCALATE to human.
  */
 
+import { match } from 'ts-pattern';
 import type { ConversationTracer } from '../trace/conversation-tracer';
 
 // ============================================================
@@ -375,27 +376,14 @@ export function calculateBackoff(
   strategy: BackoffStrategy,
   retryCount: number
 ): number {
-  let delay: number;
-
-  switch (strategy.type) {
-    case 'fixed':
-      delay = strategy.initial_delay_ms;
-      break;
-
-    case 'linear':
-      delay = strategy.initial_delay_ms * (retryCount + 1);
-      break;
-
-    case 'exponential': {
+  let delay: number = match(strategy.type)
+    .with('fixed', () => strategy.initial_delay_ms)
+    .with('linear', () => strategy.initial_delay_ms * (retryCount + 1))
+    .with('exponential', () => {
       const multiplier = strategy.multiplier ?? 2;
-      delay = strategy.initial_delay_ms * Math.pow(multiplier, retryCount);
-      break;
-    }
-
-    default:
-      // Fail-closed: use initial delay
-      delay = strategy.initial_delay_ms;
-  }
+      return strategy.initial_delay_ms * Math.pow(multiplier, retryCount);
+    })
+    .otherwise(() => strategy.initial_delay_ms);
 
   // Apply max limit
   delay = Math.min(delay, strategy.max_delay_ms);
@@ -606,46 +594,41 @@ export function generateUserMessage(report: EscalationReport): string {
     .map((a, i) => `${i + 1}. ${a}`)
     .join('\n');
 
-  switch (reason.type) {
-    case 'MAX_RETRIES':
-      return `タスク (ID: ${task_id}) は ${failure_summary.total_attempts} 回試行しましたが完了できませんでした。
+  return match(reason.type)
+    .with('MAX_RETRIES', () =>
+      `タスク (ID: ${task_id}) は ${failure_summary.total_attempts} 回試行しましたが完了できませんでした。
 
 主な問題: ${failure_summary.last_failure.message}
 
 推奨アクション:
 ${actionsText}
 
-詳細: /trace ${task_id}`;
-
-    case 'FATAL_ERROR':
-      return `タスク (ID: ${task_id}) で回復不能なエラーが発生しました。
+詳細: /trace ${task_id}`)
+    .with('FATAL_ERROR', () =>
+      `タスク (ID: ${task_id}) で回復不能なエラーが発生しました。
 
 エラー: ${failure_summary.last_failure.message}
 
 推奨アクション:
-${actionsText}`;
-
-    case 'HUMAN_JUDGMENT':
-      return `タスク (ID: ${task_id}) は人間の判断が必要です。
+${actionsText}`)
+    .with('HUMAN_JUDGMENT', () =>
+      `タスク (ID: ${task_id}) は人間の判断が必要です。
 
 理由: ${reason.description}
 
 推奨アクション:
-${actionsText}`;
-
-    case 'RESOURCE_EXHAUSTED':
-      return `タスク (ID: ${task_id}) はリソース制限により中断されました。
+${actionsText}`)
+    .with('RESOURCE_EXHAUSTED', () =>
+      `タスク (ID: ${task_id}) はリソース制限により中断されました。
 
 制限: ${reason.description}
 
 推奨アクション:
-${actionsText}`;
+${actionsText}`)
+    .otherwise(() =>
+      `タスク (ID: ${task_id}) でエラーが発生しました。
 
-    default:
-      return `タスク (ID: ${task_id}) でエラーが発生しました。
-
-詳細: /trace ${task_id}`;
-  }
+詳細: /trace ${task_id}`);
 }
 
 /**
@@ -681,37 +664,26 @@ export function generateEscalationReport(
   };
 
   // Generate recommended actions based on reason type
-  let recommended_actions: string[];
-  switch (reason.type) {
-    case 'MAX_RETRIES':
-      recommended_actions = [
-        'タスクを小さく分割してください',
-        'より具体的な指示を提供してください',
-        `/trace ${task_id} で詳細を確認してください`,
-      ];
-      break;
-    case 'FATAL_ERROR':
-      recommended_actions = [
-        '認証情報を確認してください',
-        'API Keyを確認してください',
-        '/keys set で再設定してください',
-      ];
-      break;
-    case 'HUMAN_JUDGMENT':
-      recommended_actions = [
-        '要件を明確化してください',
-        'どちらの方法を選択するか指定してください',
-      ];
-      break;
-    case 'RESOURCE_EXHAUSTED':
-      recommended_actions = [
-        'タスクを小さく分割してください',
-        'コスト制限を確認してください',
-      ];
-      break;
-    default:
-      recommended_actions = [`/trace ${task_id} で詳細を確認してください`];
-  }
+  const recommended_actions: string[] = match(reason.type)
+    .with('MAX_RETRIES', () => [
+      'タスクを小さく分割してください',
+      'より具体的な指示を提供してください',
+      `/trace ${task_id} で詳細を確認してください`,
+    ])
+    .with('FATAL_ERROR', () => [
+      '認証情報を確認してください',
+      'API Keyを確認してください',
+      '/keys set で再設定してください',
+    ])
+    .with('HUMAN_JUDGMENT', () => [
+      '要件を明確化してください',
+      'どちらの方法を選択するか指定してください',
+    ])
+    .with('RESOURCE_EXHAUSTED', () => [
+      'タスクを小さく分割してください',
+      'コスト制限を確認してください',
+    ])
+    .otherwise(() => [`/trace ${task_id} で詳細を確認してください`]);
 
   const report: EscalationReport = {
     task_id,

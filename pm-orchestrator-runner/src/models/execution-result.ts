@@ -3,6 +3,7 @@
  * Based on 05_DATA_MODELS.md L65-78
  */
 
+import { match } from 'ts-pattern';
 import { OverallStatus } from './enums';
 import { Task } from './task';
 
@@ -72,39 +73,22 @@ export class ExecutionResultValidationError extends Error {
  * Determine if next action is allowed based on status
  */
 function determineNextAction(status: OverallStatus): boolean {
-  switch (status) {
-    case OverallStatus.COMPLETE:
-      return true;
-    case OverallStatus.INCOMPLETE:
-      // Requires explicit continuation approval
-      return false;
-    case OverallStatus.ERROR:
-    case OverallStatus.INVALID:
-    case OverallStatus.NO_EVIDENCE:
-      return false;
-    default:
-      return false;
-  }
+  return match(status)
+    .with(OverallStatus.COMPLETE, () => true)
+    .otherwise(() => false);
 }
 
 /**
  * Generate next action reason based on status
  */
 function generateNextActionReason(status: OverallStatus, tasks: Task[]): string {
-  switch (status) {
-    case OverallStatus.COMPLETE:
-      return 'All tasks completed successfully';
-    case OverallStatus.INCOMPLETE:
-      return 'Session incomplete - continuation approval required';
-    case OverallStatus.ERROR:
-      return 'Session terminated due to error';
-    case OverallStatus.INVALID:
-      return 'Session invalid - critical validation failure';
-    case OverallStatus.NO_EVIDENCE:
-      return 'Session incomplete - missing required evidence';
-    default:
-      return 'Unknown status';
-  }
+  return match(status)
+    .with(OverallStatus.COMPLETE, () => 'All tasks completed successfully')
+    .with(OverallStatus.INCOMPLETE, () => 'Session incomplete - continuation approval required')
+    .with(OverallStatus.ERROR, () => 'Session terminated due to error')
+    .with(OverallStatus.INVALID, () => 'Session invalid - critical validation failure')
+    .with(OverallStatus.NO_EVIDENCE, () => 'Session incomplete - missing required evidence')
+    .otherwise(() => 'Unknown status');
 }
 
 /**

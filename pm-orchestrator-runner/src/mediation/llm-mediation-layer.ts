@@ -15,6 +15,8 @@
  * - This layer decides follow-up actions based on user answers
  */
 
+import { match } from 'ts-pattern';
+
 /**
  * Clarification reason codes from Runner (structured, no conversation)
  */
@@ -131,27 +133,17 @@ export class LLMMediationLayer {
     }
 
     // Generate appropriate question based on clarification reason
-    switch (signal.clarification_reason) {
-      case 'target_file_exists':
-        return this.handleFileExistsCase(signal);
-
-      case 'target_file_ambiguous':
-        return this.handleFileAmbiguousCase(signal);
-
-      case 'target_action_ambiguous':
-        return this.handleActionAmbiguousCase(signal);
-
-      case 'missing_required_info':
-        return this.handleMissingInfoCase(signal);
-
-      default:
+    return match(signal.clarification_reason)
+      .with('target_file_exists', () => this.handleFileExistsCase(signal))
+      .with('target_file_ambiguous', () => this.handleFileAmbiguousCase(signal))
+      .with('target_action_ambiguous', () => this.handleActionAmbiguousCase(signal))
+      .with('missing_required_info', () => this.handleMissingInfoCase(signal))
+      .otherwise(() => ({
         // Unknown reason - ask for general clarification
-        return {
-          needs_user_input: true,
-          question: 'タスクの詳細を教えてください。',
-          suggested_responses: [],
-        };
-    }
+        needs_user_input: true,
+        question: 'タスクの詳細を教えてください。',
+        suggested_responses: [],
+      }));
   }
 
   /**
@@ -173,19 +165,11 @@ export class LLMMediationLayer {
     }
 
     // Parse based on context
-    switch (context.clarification_reason) {
-      case 'target_file_exists':
-        return this.parseOverwriteResponse(userInput);
-
-      case 'target_file_ambiguous':
-        return this.parseFileSpecification(userInput);
-
-      case 'target_action_ambiguous':
-        return this.parseActionSpecification(userInput);
-
-      default:
-        return { type: 'unknown', raw_input: userInput };
-    }
+    return match(context.clarification_reason)
+      .with('target_file_exists', () => this.parseOverwriteResponse(userInput))
+      .with('target_file_ambiguous', () => this.parseFileSpecification(userInput))
+      .with('target_action_ambiguous', () => this.parseActionSpecification(userInput))
+      .otherwise(() => ({ type: 'unknown' as const, raw_input: userInput }));
   }
 
   /**
@@ -211,47 +195,39 @@ export class LLMMediationLayer {
       user_response: parsedResponse.raw_input,
     };
 
-    switch (parsedResponse.type) {
-      case 'overwrite':
-        return {
-          explicit_prompt: `${signal.target_file} を上書きして作成してください`,
-          target_file: signal.target_file,
-          action: 'overwrite',
-          original_context: context,
-        };
-
-      case 'new_name':
+    return match(parsedResponse.type)
+      .with('overwrite', () => ({
+        explicit_prompt: `${signal.target_file} を上書きして作成してください`,
+        target_file: signal.target_file,
+        action: 'overwrite' as const,
+        original_context: context,
+      }))
+      .with('new_name', () => {
         const newFileName = parsedResponse.new_file_name || this.generateAlternativeName(signal.target_file);
         return {
           explicit_prompt: `${newFileName} を新規作成してください`,
           target_file: newFileName,
-          action: 'create_new',
+          action: 'create_new' as const,
           original_context: context,
         };
-
-      case 'specify_file':
-        return {
-          explicit_prompt: `${parsedResponse.new_file_name} を作成してください`,
-          target_file: parsedResponse.new_file_name,
-          action: 'create',
-          original_context: context,
-        };
-
-      case 'specify_action':
-        return {
-          explicit_prompt: parsedResponse.specified_action || originalPrompt,
-          action: 'modify',
-          original_context: context,
-        };
-
-      default:
+      })
+      .with('specify_file', () => ({
+        explicit_prompt: `${parsedResponse.new_file_name} を作成してください`,
+        target_file: parsedResponse.new_file_name,
+        action: 'create' as const,
+        original_context: context,
+      }))
+      .with('specify_action', () => ({
+        explicit_prompt: parsedResponse.specified_action || originalPrompt,
+        action: 'modify' as const,
+        original_context: context,
+      }))
+      .otherwise(() => ({
         // Unknown response - return original prompt with context
-        return {
-          explicit_prompt: originalPrompt,
-          action: 'create',
-          original_context: context,
-        };
-    }
+        explicit_prompt: originalPrompt,
+        action: 'create' as const,
+        original_context: context,
+      }));
   }
 
   // ============================================================
@@ -309,19 +285,17 @@ export class LLMMediationLayer {
   private generateStatusMessage(signal: RunnerSignal): string {
     if (signal.execution_result) {
       const result = signal.execution_result;
-      switch (result.status) {
-        case 'COMPLETE':
+      return match(result.status)
+        .with('COMPLETE', () => {
           const files = result.verified_files?.filter(f => f.exists).map(f => f.path) || [];
           return files.length > 0
             ? `完了しました。作成されたファイル: ${files.join(', ')}`
             : '完了しました。';
-        case 'INCOMPLETE':
-          return 'タスクは部分的に完了しました。';
-        case 'NO_EVIDENCE':
-          return 'タスクの完了を確認できませんでした。';
-        case 'ERROR':
-          return 'エラーが発生しました。';
-      }
+        })
+        .with('INCOMPLETE', () => 'タスクは部分的に完了しました。')
+        .with('NO_EVIDENCE', () => 'タスクの完了を確認できませんでした。')
+        .with('ERROR', () => 'エラーが発生しました。')
+        .exhaustive();
     }
     return 'タスクを処理中です。';
   }

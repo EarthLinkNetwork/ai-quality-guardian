@@ -12,6 +12,7 @@
  * - claude-code: NOT recommended by default, requires explicit opt-in (--provider claude-code)
  */
 
+import { match } from 'ts-pattern';
 import { Provider } from './repl-state';
 
 /**
@@ -107,16 +108,11 @@ export const ANTHROPIC_MODELS: ModelInfo[] = [
  * @returns Array of available models (empty for claude-code)
  */
 export function getModelsForProvider(provider: Provider): ModelInfo[] {
-  switch (provider) {
-    case 'openai':
-      return OPENAI_MODELS;
-    case 'anthropic':
-      return ANTHROPIC_MODELS;
-    case 'claude-code':
-      return []; // Claude Code manages models internally
-    default:
-      return [];
-  }
+  return match(provider)
+    .with('openai', () => OPENAI_MODELS)
+    .with('anthropic', () => ANTHROPIC_MODELS)
+    .with('claude-code', () => [] as ModelInfo[])
+    .otherwise(() => [] as ModelInfo[]);
 }
 
 /**

@@ -12,6 +12,7 @@
  * - Output structure is ALWAYS stable regardless of LLM text variation
  */
 
+import { match } from 'ts-pattern';
 import { LLMClient, LLMProvider } from './llm-client';
 import {
   ClarificationReason,
@@ -148,47 +149,39 @@ Do not include any explanation, only the JSON.`,
     // Map parsed response to normalized task
     // This mapping is DETERMINISTIC - no LLM involved
     // Structure is always stable regardless of how we got here
-    switch (parsedResponse.type) {
-      case 'overwrite':
-        return {
-          explicit_prompt: await this.generateExplicitPrompt('overwrite', signal.target_file, originalPrompt),
-          target_file: signal.target_file,
-          action: 'overwrite',
-          original_context: context,
-        };
-
-      case 'new_name':
+    return match(parsedResponse.type)
+      .with('overwrite', async () => ({
+        explicit_prompt: await this.generateExplicitPrompt('overwrite', signal.target_file, originalPrompt),
+        target_file: signal.target_file,
+        action: 'overwrite' as const,
+        original_context: context,
+      }))
+      .with('new_name', async () => {
         const newFileName = parsedResponse.new_file_name || this.generateAlternativeName(signal.target_file);
         return {
           explicit_prompt: await this.generateExplicitPrompt('create_new', newFileName, originalPrompt),
           target_file: newFileName,
-          action: 'create_new',
+          action: 'create_new' as const,
           original_context: context,
         };
-
-      case 'specify_file':
-        return {
-          explicit_prompt: await this.generateExplicitPrompt('create', parsedResponse.new_file_name, originalPrompt),
-          target_file: parsedResponse.new_file_name,
-          action: 'create',
-          original_context: context,
-        };
-
-      case 'specify_action':
-        return {
-          explicit_prompt: parsedResponse.specified_action || originalPrompt,
-          action: 'modify',
-          original_context: context,
-        };
-
-      default:
+      })
+      .with('specify_file', async () => ({
+        explicit_prompt: await this.generateExplicitPrompt('create', parsedResponse.new_file_name, originalPrompt),
+        target_file: parsedResponse.new_file_name,
+        action: 'create' as const,
+        original_context: context,
+      }))
+      .with('specify_action', async () => ({
+        explicit_prompt: parsedResponse.specified_action || originalPrompt,
+        action: 'modify' as const,
+        original_context: context,
+      }))
+      .otherwise(async () => ({
         // Unknown response - return original prompt with context
-        return {
-          explicit_prompt: originalPrompt,
-          action: 'create',
-          original_context: context,
-        };
-    }
+        explicit_prompt: originalPrompt,
+        action: 'create' as const,
+        original_context: context,
+      }));
   }
 
   // ============================================================
@@ -269,47 +262,32 @@ Respond with ONLY the message text, no explanations.`,
   ): Promise<string> {
     // For simplicity and stability, use template-based prompts
     // This ensures the structure passed to Runner is always predictable
-    switch (action) {
-      case 'overwrite':
-        return `${targetFile} を上書きして作成してください。元のリクエスト: ${originalPrompt}`;
-      case 'create_new':
-        return `${targetFile} を新規作成してください。元のリクエスト: ${originalPrompt}`;
-      case 'create':
-        return `${targetFile} を作成してください。元のリクエスト: ${originalPrompt}`;
-    }
+    return match(action)
+      .with('overwrite', () => `${targetFile} を上書きして作成してください。元のリクエスト: ${originalPrompt}`)
+      .with('create_new', () => `${targetFile} を新規作成してください。元のリクエスト: ${originalPrompt}`)
+      .with('create', () => `${targetFile} を作成してください。元のリクエスト: ${originalPrompt}`)
+      .exhaustive();
   }
 
   /**
    * Get human-readable description for clarification reason
    */
   private getReasonDescription(reason?: ClarificationReason): string {
-    switch (reason) {
-      case 'target_file_exists':
-        return 'A file with the same name already exists. Need to decide whether to overwrite or create with a new name.';
-      case 'target_file_ambiguous':
-        return 'Cannot determine which file to target from the request. Need the user to specify a file name or path.';
-      case 'target_action_ambiguous':
-        return 'Cannot determine what action to take. Need the user to clarify what they want to do.';
-      case 'missing_required_info':
-        return 'Missing required information to proceed. Need the user to provide more details.';
-      default:
-        return 'Need clarification from the user.';
-    }
+    return match(reason)
+      .with('target_file_exists', () => 'A file with the same name already exists. Need to decide whether to overwrite or create with a new name.')
+      .with('target_file_ambiguous', () => 'Cannot determine which file to target from the request. Need the user to specify a file name or path.')
+      .with('target_action_ambiguous', () => 'Cannot determine what action to take. Need the user to clarify what they want to do.')
+      .with('missing_required_info', () => 'Missing required information to proceed. Need the user to provide more details.')
+      .otherwise(() => 'Need clarification from the user.');
   }
 
   /**
    * Get suggested responses for clarification reason
    */
   private getSuggestedResponses(reason?: ClarificationReason): string[] {
-    switch (reason) {
-      case 'target_file_exists':
-        return ['overwrite', 'new', 'cancel'];
-      case 'target_file_ambiguous':
-      case 'target_action_ambiguous':
-      case 'missing_required_info':
-      default:
-        return [];
-    }
+    return match(reason)
+      .with('target_file_exists', () => ['overwrite', 'new', 'cancel'])
+      .otherwise(() => []);
   }
 
   /**

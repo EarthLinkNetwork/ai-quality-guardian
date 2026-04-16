@@ -42,6 +42,7 @@ function loadEnvFile() {
 }
 loadEnvFile();
 
+import { match, P } from 'ts-pattern';
 import { CLI, CLIError } from './cli-interface';
 import { REPLInterface, ProjectMode } from '../repl/repl-interface';
 import { WebServer } from '../web/server';
@@ -899,12 +900,11 @@ function createTaskExecutor(projectPath: string, queueStore: IQueueStore): TaskE
       if (!item.conversation_history?.length && !item.parent_task_id) {
         // Map task subtask type to TaskTypeValue
         const subtaskTypeToTaskType = (type: string): typeof item.task_type => {
-          switch (type) {
-            case 'test': return 'IMPLEMENTATION';
-            case 'review': return 'READ_INFO';
-            case 'research': return 'READ_INFO';
-            default: return item.task_type;
-          }
+          return match(type)
+            .with('test', () => 'IMPLEMENTATION' as const)
+            .with('review', () => 'READ_INFO' as const)
+            .with('research', () => 'READ_INFO' as const)
+            .otherwise(() => item.task_type);
         };
 
         let decomposed = false;
@@ -2397,29 +2397,27 @@ async function stopWebServer(args: WebStopArguments): Promise<void> {
 
   const result = await stopCmd.execute(namespaceConfig.namespace);
 
-  switch (result.exitCode) {
-    case WebStopExitCode.SUCCESS:
+  match(result.exitCode)
+    .with(WebStopExitCode.SUCCESS, () => {
       console.log(result.message);
       if (result.pid) {
         console.log(`PID: ${result.pid}`);
       }
       process.exit(0);
-      break;
-
-    case WebStopExitCode.PID_FILE_NOT_FOUND:
+    })
+    .with(WebStopExitCode.PID_FILE_NOT_FOUND, () => {
       console.error(result.message);
       console.error(`PID file location: ${pidManager.getPidFilePath(namespaceConfig.namespace)}`);
       process.exit(1);
-      break;
-
-    case WebStopExitCode.FORCE_KILLED:
+    })
+    .with(WebStopExitCode.FORCE_KILLED, () => {
       console.warn(result.message);
       if (result.pid) {
         console.warn(`PID: ${result.pid}`);
       }
       process.exit(2);
-      break;
-  }
+    })
+    .otherwise(() => {});
 }
 
 /**
@@ -2460,8 +2458,8 @@ Logs Options:
     process.exit(0);
   }
 
-  switch (subCommand) {
-    case 'install': {
+  match(subCommand)
+    .with('install', () => {
       let namespace: string | undefined;
       let localDynamodb = false;
       let apiKeyVal: string | undefined;
@@ -2485,17 +2483,13 @@ Logs Options:
         console.error(result.message);
         process.exit(1);
       }
-      break;
-    }
-
-    case 'uninstall': {
+    })
+    .with('uninstall', () => {
       const result = uninstallDaemon();
       console.log(result.message);
       if (!result.success) process.exit(1);
-      break;
-    }
-
-    case 'status': {
+    })
+    .with('status', () => {
       const status = getDaemonStatus();
       console.log(`Label:     ${status.label}`);
       console.log(`Installed: ${status.installed ? 'yes' : 'no'}`);
@@ -2503,10 +2497,8 @@ Logs Options:
       if (status.pid) console.log(`PID:       ${status.pid}`);
       console.log(`Plist:     ${getPlistPath()}`);
       console.log(`Log:       ${getLogPath()}`);
-      break;
-    }
-
-    case 'logs': {
+    })
+    .with('logs', () => {
       let lines = 50;
       for (let i = 1; i < args.length; i++) {
         if (args[i] === '--lines' && args[i + 1]) {
@@ -2514,14 +2506,12 @@ Logs Options:
         }
       }
       console.log(getRecentLogs(lines));
-      break;
-    }
-
-    default:
+    })
+    .otherwise(() => {
       console.error(`Unknown daemon sub-command: ${subCommand}`);
       console.error('Use: pm daemon install | uninstall | status | logs');
       process.exit(1);
-  }
+    });
 
   process.exit(0);
 }
@@ -2696,8 +2686,8 @@ Options:
   try {
     await manager.ensureTable();
 
-    switch (subCommand) {
-      case 'generate': {
+    await match(subCommand)
+      .with('generate', async () => {
         let userId = '';
         let deviceName = '';
         for (let i = 1; i < args.length; i++) {
@@ -2716,10 +2706,8 @@ Options:
         console.log('');
         console.log('Save this key - it cannot be retrieved later.');
         console.log(`Usage: pm web --api-key ${apiKey.key}`);
-        break;
-      }
-
-      case 'list': {
+      })
+      .with('list', async () => {
         let userId = '';
         for (let i = 1; i < args.length; i++) {
           if (args[i] === '--user' && args[i + 1]) userId = args[++i];
@@ -2739,10 +2727,8 @@ Options:
             console.log(`  ${keyPreview}  device=${key.deviceName}  status=${status}  lastUsed=${key.lastUsedAt}`);
           }
         }
-        break;
-      }
-
-      case 'revoke': {
+      })
+      .with('revoke', async () => {
         const keyToRevoke = args.find(a => a.startsWith('pmr_'));
         if (!keyToRevoke) {
           console.error('Usage: pm key revoke <pmr_xxxxx>');
@@ -2750,14 +2736,12 @@ Options:
         }
         await manager.revokeApiKey(keyToRevoke);
         console.log(`API key revoked: ${keyToRevoke.substring(0, 12)}...`);
-        break;
-      }
-
-      default:
+      })
+      .otherwise(async () => {
         console.error(`Unknown key sub-command: ${subCommand}`);
         console.error('Use: pm key generate | list | revoke');
         process.exit(1);
-    }
+      });
   } finally {
     manager.destroy();
   }
@@ -2798,30 +2782,22 @@ async function main(): Promise<void> {
   }
 
   try {
-    switch (command) {
-      case 'repl': {
+    await match(command)
+      .with('repl', async () => {
         const replArgs = parseReplArgs(restArgs);
         await startRepl(replArgs);
-        break;
-      }
-
-      case 'web': {
+      })
+      .with('web', async () => {
         const webArgs = parseWebArgs(restArgs);
         await startWebServer(webArgs);
-        break;
-      }
-
-      case 'web-stop': {
+      })
+      .with('web-stop', async () => {
         // Per spec/19_WEB_UI.md lines 400-432
         const webStopArgs = parseWebStopArgs(restArgs);
         await stopWebServer(webStopArgs);
-        break;
-      }
-
-      case 'start':  // Per spec 05_CLI.md L20
-      case 'continue':
-      case 'status':
-      case 'validate': {  // Per spec 05_CLI.md L23
+      })
+      .with(P.union('start', 'continue', 'status', 'validate'), async () => {
+        // Per spec 05_CLI.md L20, L23
         // Use existing CLI interface for these commands
         const cli = new CLI({
           evidenceDir: path.join(process.cwd(), '.claude', 'evidence'),
@@ -2842,10 +2818,8 @@ async function main(): Promise<void> {
         if (result.overall_status) {
           process.exit(cli.getExitCodeForStatus(result.overall_status));
         }
-        break;
-      }
-
-      case 'selftest': {
+      })
+      .with('selftest', async () => {
         // Run selftest mode per SELFTEST_AI_JUDGE.md specification
         const ciMode = restArgs.includes('--ci');
         const baseDir = process.cwd();
@@ -2869,33 +2843,25 @@ async function main(): Promise<void> {
           console.error(`[selftest] Error: ${(error as Error).message}`);
           process.exit(1);
         }
-        break;
-      }
-
-      case 'agent': {
+      })
+      .with('agent', async () => {
         // Agent-only mode: QueuePoller + TaskExecutor, no Web server
         const agentArgs = parseAgentArgs(restArgs);
         await startAgentOnly(agentArgs);
-        break;
-      }
-
-      case 'daemon': {
+      })
+      .with('daemon', async () => {
         // Daemon management (macOS launchd)
         handleDaemonCommand(restArgs);
-        break;
-      }
-
-      case 'key': {
+      })
+      .with('key', async () => {
         // API Key management commands
         await handleKeyCommand(restArgs);
-        break;
-      }
-
-      default:
+      })
+      .otherwise(async () => {
         console.error(`Unknown command: ${command}`);
         console.log(HELP_TEXT);
         process.exit(1);
-    }
+      });
   } catch (err) {
     if (err instanceof CLIError) {
       console.error(JSON.stringify({

@@ -13,6 +13,7 @@
  * Fail-Closed Principle: When model switch fails, use default model.
  */
 
+import { match, P } from 'ts-pattern';
 import type { ConversationTracer } from '../trace/conversation-tracer';
 import type { FailureType } from '../retry/retry-manager';
 import {
@@ -392,23 +393,11 @@ export const PRESET_PROFILES: Record<string, ModelProfile> = {
  * Map task phase to default model category
  */
 export function getDefaultCategory(phase: TaskPhase): ModelCategory {
-  switch (phase) {
-    case 'PLANNING':
-    case 'SIZE_ESTIMATION':
-    case 'CHUNKING_DECISION':
-      return 'planning';
-
-    case 'IMPLEMENTATION':
-    case 'QUALITY_CHECK':
-    case 'ESCALATION_PREP':
-      return 'standard';
-
-    case 'RETRY':
-      return 'advanced';
-
-    default:
-      return 'standard';
-  }
+  return match(phase)
+    .with(P.union('PLANNING', 'SIZE_ESTIMATION', 'CHUNKING_DECISION'), () => 'planning' as const)
+    .with(P.union('IMPLEMENTATION', 'QUALITY_CHECK', 'ESCALATION_PREP'), () => 'standard' as const)
+    .with('RETRY', () => 'advanced' as const)
+    .otherwise(() => 'standard' as const);
 }
 
 // ============================================================

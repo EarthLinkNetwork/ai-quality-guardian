@@ -12,6 +12,7 @@
  * - Produce DiagnosticResult
  */
 
+import { match } from 'ts-pattern';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
@@ -214,30 +215,28 @@ export class DiagnosticRunner {
       ? precondition.target
       : path.join(this.cwd, precondition.target);
 
-    switch (precondition.type) {
-      case 'file_exists': {
+    return match(precondition.type)
+      .with('file_exists', () => {
         if (!fs.existsSync(resolvedTarget) || !fs.statSync(resolvedTarget).isFile()) {
           return `File not found: ${precondition.target} (${precondition.description})`;
         }
         return null;
-      }
-      case 'dir_exists': {
+      })
+      .with('dir_exists', () => {
         if (!fs.existsSync(resolvedTarget) || !fs.statSync(resolvedTarget).isDirectory()) {
           return `Directory not found: ${precondition.target} (${precondition.description})`;
         }
         return null;
-      }
-      case 'command_available': {
+      })
+      .with('command_available', () => {
         try {
           execSync(`which ${precondition.target}`, { encoding: 'utf-8', timeout: 5000 });
           return null;
         } catch {
           return `Command not available: ${precondition.target} (${precondition.description})`;
         }
-      }
-      default:
-        return null;
-    }
+      })
+      .otherwise(() => null);
   }
 
   /**
@@ -248,23 +247,22 @@ export class DiagnosticRunner {
     const action = step.action;
 
     try {
-      switch (action.type) {
-        case 'glob': {
-          const cwd = action.cwd ? path.resolve(this.cwd, action.cwd) : this.cwd;
-          const files = this.simpleGlob(cwd, action.pattern);
+      return await match(action)
+        .with({ type: 'glob' }, async (a) => {
+          const cwd = a.cwd ? path.resolve(this.cwd, a.cwd) : this.cwd;
+          const files = this.simpleGlob(cwd, a.pattern);
           return {
             stepId: step.id,
             success: true,
             output: files.join('\n'),
             durationMs: Date.now() - startTime,
           };
-        }
-
-        case 'exec': {
-          const cwd = action.cwd ? path.resolve(this.cwd, action.cwd) : this.cwd;
-          const timeout = action.timeout || 30000;
+        })
+        .with({ type: 'exec' }, async (a) => {
+          const cwd = a.cwd ? path.resolve(this.cwd, a.cwd) : this.cwd;
+          const timeout = a.timeout || 30000;
           try {
-            const output = execSync(action.command, {
+            const output = execSync(a.command, {
               cwd,
               encoding: 'utf-8',
               timeout,
@@ -288,19 +286,18 @@ export class DiagnosticRunner {
               error: err.message,
             };
           }
-        }
-
-        case 'read_file': {
-          const filePath = path.isAbsolute(action.path)
-            ? action.path
-            : path.join(this.cwd, action.path);
+        })
+        .with({ type: 'read_file' }, async (a) => {
+          const filePath = path.isAbsolute(a.path)
+            ? a.path
+            : path.join(this.cwd, a.path);
           if (!fs.existsSync(filePath)) {
             return {
               stepId: step.id,
               success: false,
               output: '',
               durationMs: Date.now() - startTime,
-              error: `File not found: ${action.path}`,
+              error: `File not found: ${a.path}`,
             };
           }
           const content = fs.readFileSync(filePath, 'utf-8');
@@ -310,26 +307,25 @@ export class DiagnosticRunner {
             output: content,
             durationMs: Date.now() - startTime,
           };
-        }
+        })
+        .with({ type: 'compare' }, async (a) => {
+          const leftPath = path.isAbsolute(a.left) ? a.left : path.join(this.cwd, a.left);
+          const rightPath = path.isAbsolute(a.right) ? a.right : path.join(this.cwd, a.right);
 
-        case 'compare': {
-          const leftPath = path.isAbsolute(action.left) ? action.left : path.join(this.cwd, action.left);
-          const rightPath = path.isAbsolute(action.right) ? action.right : path.join(this.cwd, action.right);
-
-          switch (action.mode) {
-            case 'exists': {
+          return match(a.mode)
+            .with('exists', () => {
               const leftExists = fs.existsSync(leftPath);
               const rightExists = fs.existsSync(rightPath);
-              const match = leftExists === rightExists;
+              const isMatch = leftExists === rightExists;
               return {
                 stepId: step.id,
-                success: match,
+                success: isMatch,
                 output: `left(${leftExists}) vs right(${rightExists})`,
                 durationMs: Date.now() - startTime,
-                error: match ? undefined : `Existence mismatch: ${action.left}(${leftExists}) vs ${action.right}(${rightExists})`,
+                error: isMatch ? undefined : `Existence mismatch: ${a.left}(${leftExists}) vs ${a.right}(${rightExists})`,
               };
-            }
-            case 'content': {
+            })
+            .with('content', () => {
               if (!fs.existsSync(leftPath) || !fs.existsSync(rightPath)) {
                 return {
                   stepId: step.id,
@@ -341,16 +337,16 @@ export class DiagnosticRunner {
               }
               const leftContent = fs.readFileSync(leftPath, 'utf-8');
               const rightContent = fs.readFileSync(rightPath, 'utf-8');
-              const match = leftContent === rightContent;
+              const isMatch = leftContent === rightContent;
               return {
                 stepId: step.id,
-                success: match,
-                output: match ? 'identical' : 'different',
+                success: isMatch,
+                output: isMatch ? 'identical' : 'different',
                 durationMs: Date.now() - startTime,
-                error: match ? undefined : `Content differs: ${action.left} vs ${action.right}`,
+                error: isMatch ? undefined : `Content differs: ${a.left} vs ${a.right}`,
               };
-            }
-            case 'mtime': {
+            })
+            .with('mtime', () => {
               if (!fs.existsSync(leftPath) || !fs.existsSync(rightPath)) {
                 return {
                   stepId: step.id,
@@ -369,27 +365,24 @@ export class DiagnosticRunner {
                 output: `left(${leftMtime}) vs right(${rightMtime}), left_newer=${leftNewer}`,
                 durationMs: Date.now() - startTime,
               };
-            }
-            default:
-              return {
-                stepId: step.id,
-                success: false,
-                output: '',
-                durationMs: Date.now() - startTime,
-                error: `Unknown compare mode`,
-              };
-          }
-        }
-
-        case 'custom': {
-          const handler = this.customStepHandlers.get(action.handler);
+            })
+            .otherwise(() => ({
+              stepId: step.id,
+              success: false,
+              output: '',
+              durationMs: Date.now() - startTime,
+              error: `Unknown compare mode`,
+            }));
+        })
+        .with({ type: 'custom' }, async (a) => {
+          const handler = this.customStepHandlers.get(a.handler);
           if (!handler) {
             return {
               stepId: step.id,
               success: false,
               output: '',
               durationMs: Date.now() - startTime,
-              error: `Custom handler not found: ${action.handler}`,
+              error: `Custom handler not found: ${a.handler}`,
             };
           }
           const result = await handler(this.cwd);
@@ -400,17 +393,14 @@ export class DiagnosticRunner {
             exitCode: result.exitCode,
             durationMs: Date.now() - startTime,
           };
-        }
-
-        default:
-          return {
-            stepId: step.id,
-            success: false,
-            output: '',
-            durationMs: Date.now() - startTime,
-            error: `Unknown action type`,
-          };
-      }
+        })
+        .otherwise(async () => ({
+          stepId: step.id,
+          success: false,
+          output: '',
+          durationMs: Date.now() - startTime,
+          error: `Unknown action type`,
+        }));
     } catch (err: unknown) {
       return {
         stepId: step.id,
@@ -436,29 +426,27 @@ export class DiagnosticRunner {
 
     const output = stepResult.output;
 
-    switch (assertion.type) {
-      case 'not_empty': {
+    return match(assertion.type)
+      .with('not_empty', () => {
         const passed = output.trim().length > 0;
         return {
           assertion,
           passed,
-          actual: output.length,
+          actual: output.length as string | number | undefined,
           message: passed ? assertion.message : `${assertion.message} (output was empty)`,
         };
-      }
-
-      case 'matches': {
+      })
+      .with('matches', () => {
         const regex = new RegExp(assertion.expected as string);
         const passed = regex.test(output);
         return {
           assertion,
           passed,
-          actual: output.slice(0, 100),
+          actual: output.slice(0, 100) as string | number | undefined,
           message: passed ? assertion.message : `${assertion.message} (no match for /${assertion.expected}/)`,
         };
-      }
-
-      case 'count_eq': {
+      })
+      .with('count_eq', () => {
         const lines = output.trim().split('\n').filter(l => l.length > 0);
         const count = lines.length;
         const expected = assertion.expected as number;
@@ -466,12 +454,11 @@ export class DiagnosticRunner {
         return {
           assertion,
           passed,
-          actual: count,
+          actual: count as string | number | undefined,
           message: passed ? assertion.message : `${assertion.message} (expected ${expected}, got ${count})`,
         };
-      }
-
-      case 'count_gt': {
+      })
+      .with('count_gt', () => {
         const lines = output.trim().split('\n').filter(l => l.length > 0);
         const count = lines.length;
         const expected = assertion.expected as number;
@@ -479,12 +466,11 @@ export class DiagnosticRunner {
         return {
           assertion,
           passed,
-          actual: count,
+          actual: count as string | number | undefined,
           message: passed ? assertion.message : `${assertion.message} (expected >${expected}, got ${count})`,
         };
-      }
-
-      case 'count_lt': {
+      })
+      .with('count_lt', () => {
         const lines = output.trim().split('\n').filter(l => l.length > 0);
         const count = lines.length;
         const expected = assertion.expected as number;
@@ -492,39 +478,37 @@ export class DiagnosticRunner {
         return {
           assertion,
           passed,
-          actual: count,
+          actual: count as string | number | undefined,
           message: passed ? assertion.message : `${assertion.message} (expected <${expected}, got ${count})`,
         };
-      }
-
-      case 'exit_code': {
+      })
+      .with('exit_code', () => {
         const expected = assertion.expected as number;
         const passed = stepResult.exitCode === expected;
         return {
           assertion,
           passed,
-          actual: stepResult.exitCode,
+          actual: stepResult.exitCode as string | number | undefined,
           message: passed ? assertion.message : `${assertion.message} (expected exit ${expected}, got ${stepResult.exitCode})`,
         };
-      }
-
-      case 'contains': {
+      })
+      .with('contains', () => {
         const needle = assertion.expected as string;
         const passed = output.includes(needle);
         return {
           assertion,
           passed,
-          actual: output.slice(0, 100),
+          actual: output.slice(0, 100) as string | number | undefined,
           message: passed ? assertion.message : `${assertion.message} (output does not contain '${needle}')`,
         };
-      }
-
-      case 'custom': {
+      })
+      .with('custom', () => {
         const handler = this.customAssertionHandlers.get(assertion.message);
         if (!handler) {
           return {
             assertion,
             passed: false,
+            actual: undefined as string | number | undefined,
             message: `Custom assertion handler not found: ${assertion.message}`,
           };
         }
@@ -532,17 +516,15 @@ export class DiagnosticRunner {
         return {
           assertion,
           passed: result.passed,
-          actual: result.actual,
+          actual: result.actual as string | number | undefined,
           message: assertion.message,
         };
-      }
-
-      default:
-        return {
-          assertion,
-          passed: false,
-          message: `Unknown assertion type`,
-        };
-    }
+      })
+      .otherwise(() => ({
+        assertion,
+        passed: false,
+        actual: undefined as string | number | undefined,
+        message: `Unknown assertion type`,
+      }));
   }
 }

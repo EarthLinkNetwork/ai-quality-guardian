@@ -11,6 +11,7 @@
  * @see spec/35_PR_REVIEW_AUTOMATION.md Section 9
  */
 
+import { match } from 'ts-pattern';
 import type { IDataAccessLayer } from "../web/dal/dal-interface";
 import type {
   PRReviewState,
@@ -448,38 +449,24 @@ export class PRReviewService {
     let duplicate = 0;
 
     for (const c of comments) {
-      switch (c.judgment) {
-        case "ACCEPT":
-          accepted++;
-          break;
-        case "REJECT":
-          rejected++;
-          break;
-        case "ESCALATE":
-          escalated++;
-          break;
-        case "DUPLICATE":
-          duplicate++;
-          break;
-      }
+      match(c.judgment)
+        .with("ACCEPT", () => { accepted++; })
+        .with("REJECT", () => { rejected++; })
+        .with("ESCALATE", () => { escalated++; })
+        .with("DUPLICATE", () => { duplicate++; })
+        .otherwise(() => {});
     }
 
     return { accepted, rejected, escalated, duplicate };
   }
 
   private decisionToStatus(decision: CycleDecision): PRReviewStatus {
-    switch (decision) {
-      case "CONTINUE":
-        return "AWAITING_APPROVAL";
-      case "COMPLETE":
-        return "REVIEW_COMPLETE";
-      case "ESCALATE":
-        return "ESCALATED";
-      case "CYCLE_LIMIT":
-        return "CYCLE_LIMIT_REACHED";
-      default:
-        return "AWAITING_APPROVAL";
-    }
+    return match(decision)
+      .with("CONTINUE", () => "AWAITING_APPROVAL" as const)
+      .with("COMPLETE", () => "REVIEW_COMPLETE" as const)
+      .with("ESCALATE", () => "ESCALATED" as const)
+      .with("CYCLE_LIMIT", () => "CYCLE_LIMIT_REACHED" as const)
+      .otherwise(() => "AWAITING_APPROVAL" as const);
   }
 
   private async createCycleRecord(

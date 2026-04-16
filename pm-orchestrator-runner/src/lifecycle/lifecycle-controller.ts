@@ -14,6 +14,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { match } from 'ts-pattern';
 import {
   LifecyclePhase,
   PhaseStatus,
@@ -393,36 +394,32 @@ export class LifecycleController extends EventEmitter {
   validateGate(phase: LifecyclePhase, input: { evidence: Record<string, unknown> }): GateResult {
     const failures: string[] = [];
 
-    switch (phase) {
-      case LifecyclePhase.REQUIREMENT_ANALYSIS:
+    match(phase)
+      .with(LifecyclePhase.REQUIREMENT_ANALYSIS, () => {
         if (!input.evidence.requirements ||
             (Array.isArray(input.evidence.requirements) &&
              (input.evidence.requirements as unknown[]).length === 0)) {
           failures.push('requirements are required');
         }
-        break;
-
-      case LifecyclePhase.TASK_DECOMPOSITION:
+      })
+      .with(LifecyclePhase.TASK_DECOMPOSITION, () => {
         if (!input.evidence.tasks ||
             (Array.isArray(input.evidence.tasks) &&
              (input.evidence.tasks as unknown[]).length === 0)) {
           failures.push('tasks are required');
         }
-        break;
-
-      case LifecyclePhase.PLANNING:
+      })
+      .with(LifecyclePhase.PLANNING, () => {
         if (!input.evidence.plan) {
           failures.push('plan is required');
         }
-        break;
-
-      case LifecyclePhase.EXECUTION:
+      })
+      .with(LifecyclePhase.EXECUTION, () => {
         if (!input.evidence.execution_results) {
           failures.push('execution_results are required');
         }
-        break;
-
-      case LifecyclePhase.QA:
+      })
+      .with(LifecyclePhase.QA, () => {
         const qaResults = input.evidence.qa_results as {
           lint_passed?: boolean;
           tests_passed?: boolean;
@@ -438,9 +435,8 @@ export class LifecycleController extends EventEmitter {
           if (!qaResults.type_check_passed) failures.push('type check failed');
           if (!qaResults.build_passed) failures.push('build failed');
         }
-        break;
-
-      case LifecyclePhase.COMPLETION_VALIDATION:
+      })
+      .with(LifecyclePhase.COMPLETION_VALIDATION, () => {
         const evidenceInventory = input.evidence.evidence_inventory as {
           verified?: boolean;
         } | undefined;
@@ -450,14 +446,13 @@ export class LifecycleController extends EventEmitter {
         } else if (!evidenceInventory.verified) {
           failures.push('evidence not verified');
         }
-        break;
-
-      case LifecyclePhase.REPORT:
+      })
+      .with(LifecyclePhase.REPORT, () => {
         if (!input.evidence.report_generated) {
           failures.push('report_generated is required');
         }
-        break;
-    }
+      })
+      .otherwise(() => {});
 
     return {
       passed: failures.length === 0,

@@ -17,6 +17,7 @@
  * - fixed: Use specified directory (persists after exit)
  */
 
+import { match } from 'ts-pattern';
 import * as readline from 'readline';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -1424,85 +1425,34 @@ export class REPLInterface extends EventEmitter {
       };
     }
 
-    switch (command) {
-      case 'help':
-        this.printHelp();
-        return { success: true };
-
-      case 'init':
-        return await this.handleInit(args);
-
-      case 'model':
-        return await this.handleModel(args);
-
-      case 'tasks':
-        await this.handleTasks(args);
-        return { success: true };
-
-      case 'status':
-        await this.handleStatus();
-        return { success: true };
-
-      case 'start':
-        return await this.handleStart(args);
-
-      case 'continue':
-        return await this.handleContinue(args);
-
-      case 'approve':
-        return await this.handleApprove();
-
-      case 'exit':
-        await this.handleExit();
-        return { success: true };
-
-      // New commands per spec 10_REPL_UX.md
-      case 'provider':
-        return await this.handleProvider(args);
-
-      case 'models':
-        return await this.handleModels(args);
-
-      case 'keys':
-        return await this.handleKeys(args);
-
-      case 'logs':
-        return await this.handleLogs(args);
-
-      case 'trace':
-        return await this.handleTrace(args);
-
-      case 'respond':
-        return await this.handleRespond(args);
-
-      // Template and Config commands per spec 32 and 33
-      case 'templates':
-        return await this.handleTemplates(args);
-
-      case 'template':
-        return await this.handleTemplate(args);
-
-      case 'send':
-        return this.handleSend();
-
-      case 'config':
-        return await this.handleConfig(args);
-
-
-      case 'verbose':
-        return this.handleVerbose(args);
-
-      case 'inputmode':
-        return this.handleInputMode(args);
-
-      case 'inspect':
-        return await this.handleInspect(args);
-
-      default:
+    return match(command)
+      .with('help', async () => { this.printHelp(); return { success: true }; })
+      .with('init', () => this.handleInit(args))
+      .with('model', () => this.handleModel(args))
+      .with('tasks', async () => { await this.handleTasks(args); return { success: true }; })
+      .with('status', async () => { await this.handleStatus(); return { success: true }; })
+      .with('start', () => this.handleStart(args))
+      .with('continue', () => this.handleContinue(args))
+      .with('approve', () => this.handleApprove())
+      .with('exit', async () => { await this.handleExit(); return { success: true }; })
+      .with('provider', () => this.handleProvider(args))
+      .with('models', () => this.handleModels(args))
+      .with('keys', () => this.handleKeys(args))
+      .with('logs', () => this.handleLogs(args))
+      .with('trace', () => this.handleTrace(args))
+      .with('respond', () => this.handleRespond(args))
+      .with('templates', () => this.handleTemplates(args))
+      .with('template', () => this.handleTemplate(args))
+      .with('send', async () => this.handleSend())
+      .with('config', () => this.handleConfig(args))
+      .with('verbose', async () => this.handleVerbose(args))
+      .with('inputmode', async () => this.handleInputMode(args))
+      .with('inspect', () => this.handleInspect(args))
+      .otherwise(() => {
         // This should never be reached since unknown commands are handled above
         // If we reach here, KNOWN_COMMANDS list is inconsistent with switch cases
         throw new Error('Internal error: command "' + command + '" is in KNOWN_COMMANDS but not handled in switch');
-    }
+      });
   }
 
   /**
@@ -1709,20 +1659,11 @@ export class REPLInterface extends EventEmitter {
       task.filesModified = result.files_modified;
       task.responseSummary = result.executor_output_summary;
 
-      switch (result.overall_status) {
-        case OverallStatus.COMPLETE:
-          task.state = 'COMPLETE';
-          break;
-        case OverallStatus.INCOMPLETE:
-          task.state = 'INCOMPLETE';
-          break;
-        case OverallStatus.ERROR:
-          task.state = 'ERROR';
-          task.errorMessage = result.error?.message;
-          break;
-        default:
-          task.state = 'COMPLETE';
-      }
+      match(result.overall_status)
+        .with(OverallStatus.COMPLETE, () => { task.state = 'COMPLETE'; })
+        .with(OverallStatus.INCOMPLETE, () => { task.state = 'INCOMPLETE'; })
+        .with(OverallStatus.ERROR, () => { task.state = 'ERROR'; task.errorMessage = result.error?.message; })
+        .otherwise(() => { task.state = 'COMPLETE'; });
 
       // Handle INCOMPLETE with clarification (but don't block)
       if (result.overall_status === OverallStatus.INCOMPLETE &&
@@ -2324,15 +2265,14 @@ export class REPLInterface extends EventEmitter {
 
     // Build PickerItem array from task queue
     const pickerItems: PickerItem<string>[] = this.taskQueue.map(task => {
-      let stateMarker = '';
-      switch (task.state) {
-        case 'RUNNING': stateMarker = '*'; break;
-        case 'QUEUED': stateMarker = ' '; break;
-        case 'COMPLETE': stateMarker = 'v'; break;
-        case 'INCOMPLETE': stateMarker = '!'; break;
-        case 'ERROR': stateMarker = 'X'; break;
-        case 'AWAITING_RESPONSE': stateMarker = '?'; break;
-      }
+      const stateMarker = match(task.state)
+        .with('RUNNING', () => '*')
+        .with('QUEUED', () => ' ')
+        .with('COMPLETE', () => 'v')
+        .with('INCOMPLETE', () => '!')
+        .with('ERROR', () => 'X')
+        .with('AWAITING_RESPONSE', () => '?')
+        .otherwise(() => '');
       const desc = task.description.length > 40
         ? task.description.substring(0, 40) + '...'
         : task.description;
@@ -2394,15 +2334,14 @@ export class REPLInterface extends EventEmitter {
 
     // Build PickerItem array
     const pickerItems: PickerItem<string>[] = this.taskQueue.map(task => {
-      let stateMarker = '';
-      switch (task.state) {
-        case 'RUNNING': stateMarker = '*'; break;
-        case 'QUEUED': stateMarker = ' '; break;
-        case 'COMPLETE': stateMarker = 'v'; break;
-        case 'INCOMPLETE': stateMarker = '!'; break;
-        case 'ERROR': stateMarker = 'X'; break;
-        case 'AWAITING_RESPONSE': stateMarker = '?'; break;
-      }
+      const stateMarker = match(task.state)
+        .with('RUNNING', () => '*')
+        .with('QUEUED', () => ' ')
+        .with('COMPLETE', () => 'v')
+        .with('INCOMPLETE', () => '!')
+        .with('ERROR', () => 'X')
+        .with('AWAITING_RESPONSE', () => '?')
+        .otherwise(() => '');
       const desc = task.description.length > 40
         ? task.description.substring(0, 40) + '...'
         : task.description;
@@ -2586,27 +2525,14 @@ export class REPLInterface extends EventEmitter {
       }
 
       // State indicator with visual marker
-      let stateMarker = '';
-      switch (task.state) {
-        case 'RUNNING':
-          stateMarker = '[*]';
-          break;
-        case 'QUEUED':
-          stateMarker = '[ ]';
-          break;
-        case 'COMPLETE':
-          stateMarker = '[v]';
-          break;
-        case 'INCOMPLETE':
-          stateMarker = '[!]';
-          break;
-        case 'ERROR':
-          stateMarker = '[X]';
-          break;
-        case 'AWAITING_RESPONSE':
-          stateMarker = '[?]';
-          break;
-      }
+      const stateMarker = match(task.state)
+        .with('RUNNING', () => '[*]')
+        .with('QUEUED', () => '[ ]')
+        .with('COMPLETE', () => '[v]')
+        .with('INCOMPLETE', () => '[!]')
+        .with('ERROR', () => '[X]')
+        .with('AWAITING_RESPONSE', () => '[?]')
+        .otherwise(() => '[ ]');
 
       // Show task number prefix for easier reference (e.g., "1. [*] task-123...")
       this.print(taskNum + '. ' + stateMarker + ' ' + task.id + ' | ' + task.state + durationStr);
@@ -3005,16 +2931,11 @@ export class REPLInterface extends EventEmitter {
    * Per spec 05_DATA_MODELS.md: Terminal states are complete/incomplete/error
    */
   private mapToTaskLogStatus(status: OverallStatus): TaskLogStatus {
-    switch (status) {
-      case OverallStatus.COMPLETE:
-        return 'complete';
-      case OverallStatus.INCOMPLETE:
-        return 'incomplete';
-      case OverallStatus.ERROR:
-        return 'error';
-      default:
-        return 'running';
-    }
+    return match(status)
+      .with(OverallStatus.COMPLETE, () => 'complete' as const)
+      .with(OverallStatus.INCOMPLETE, () => 'incomplete' as const)
+      .with(OverallStatus.ERROR, () => 'error' as const)
+      .otherwise(() => 'running' as const);
   }
 
   /**
@@ -3532,20 +3453,10 @@ export class REPLInterface extends EventEmitter {
     }
     await this.initializeStoresForProject(this.session.projectPath);
 
-    switch (subCommand) {
-      case undefined:
-      case 'list': {
-        const result = await this.templateCommand.list();
-        if (result.success && result.templates) {
-          const settings = this.settingsStore.get();
-          this.print(this.templateCommand.formatList(result.templates, settings.template.selectedId));
-        } else if (result.error) {
-          this.print('Error: ' + result.error.message);
-        }
-        return { success: result.success, error: result.error };
-      }
+    if (!subCommand || subCommand === 'list') return this.handleTemplatesSubList();
 
-      case 'new': {
+    return match(subCommand)
+      .with('new', async () => {
         const name = args[1];
         if (!name) {
           this.print('Usage: /templates new <name>');
@@ -3553,7 +3464,7 @@ export class REPLInterface extends EventEmitter {
           return {
             success: false,
             error: { code: 'E421', message: 'Template name required' },
-          };
+          } as CommandResult;
         }
         // For now, create with empty content - user can edit later
         const result = await this.templateCommand.create(name, '', '');
@@ -3562,17 +3473,16 @@ export class REPLInterface extends EventEmitter {
         } else if (result.error) {
           this.print('Error: ' + result.error.message);
         }
-        return { success: result.success, error: result.error };
-      }
-
-      case 'edit': {
+        return { success: result.success, error: result.error } as CommandResult;
+      })
+      .with('edit', async () => {
         const nameOrId = args[1];
         if (!nameOrId) {
           this.print('Usage: /templates edit <name|id>');
           return {
             success: false,
             error: { code: 'E422', message: 'Template name or ID required' },
-          };
+          } as CommandResult;
         }
         // Find the template first
         const listResult = await this.templateCommand.list();
@@ -3584,23 +3494,22 @@ export class REPLInterface extends EventEmitter {
           return {
             success: false,
             error: { code: 'E405', message: 'Template not found' },
-          };
+          } as CommandResult;
         }
         // Show current content
         this.print(this.templateCommand.formatDetail(template));
         this.print('To update, use: /templates edit <name|id> rules "<new rules>"');
         this.print('           or: /templates edit <name|id> format "<new format>"');
-        return { success: true };
-      }
-
-      case 'delete': {
+        return { success: true } as CommandResult;
+      })
+      .with('delete', async () => {
         const nameOrId = args[1];
         if (!nameOrId) {
           this.print('Usage: /templates delete <name|id>');
           return {
             success: false,
             error: { code: 'E423', message: 'Template name or ID required' },
-          };
+          } as CommandResult;
         }
         const result = await this.templateCommand.delete(nameOrId);
         if (result.success) {
@@ -3608,10 +3517,9 @@ export class REPLInterface extends EventEmitter {
         } else if (result.error) {
           this.print('Error: ' + result.error.message);
         }
-        return { success: result.success, error: result.error };
-      }
-
-      case 'copy': {
+        return { success: result.success, error: result.error } as CommandResult;
+      })
+      .with('copy', async () => {
         const sourceNameOrId = args[1];
         const newName = args[2];
         if (!sourceNameOrId || !newName) {
@@ -3619,7 +3527,7 @@ export class REPLInterface extends EventEmitter {
           return {
             success: false,
             error: { code: 'E424', message: 'Source and new name required' },
-          };
+          } as CommandResult;
         }
         const result = await this.templateCommand.copy(sourceNameOrId, newName);
         if (result.success) {
@@ -3627,17 +3535,30 @@ export class REPLInterface extends EventEmitter {
         } else if (result.error) {
           this.print('Error: ' + result.error.message);
         }
-        return { success: result.success, error: result.error };
-      }
-
-      default:
+        return { success: result.success, error: result.error } as CommandResult;
+      })
+      .otherwise(async () => {
         this.print('Unknown subcommand: ' + subCommand);
         this.print('Usage: /templates [list|new|edit|delete|copy]');
         return {
           success: false,
           error: { code: 'E425', message: 'Unknown subcommand: ' + subCommand },
-        };
+        } as CommandResult;
+      });
+  }
+
+  /**
+   * Handle /templates list subcommand (shared between 'list' and default)
+   */
+  private async handleTemplatesSubList(): Promise<CommandResult> {
+    const result = await this.templateCommand.list();
+    if (result.success && result.templates) {
+      const settings = this.settingsStore.get();
+      this.print(this.templateCommand.formatList(result.templates, settings.template.selectedId));
+    } else if (result.error) {
+      this.print('Error: ' + result.error.message);
     }
+    return { success: result.success, error: result.error };
   }
 
   /**
@@ -3657,26 +3578,25 @@ export class REPLInterface extends EventEmitter {
     }
     await this.initializeStoresForProject(this.session.projectPath);
 
-    switch (subCommand) {
-      case undefined:
-      case 'show': {
-        const result = await this.templateCommand.show();
-        if (result.success) {
-          this.print(result.message || 'No template information available.');
-        } else if (result.error) {
-          this.print('Error: ' + result.error.message);
-        }
-        return { success: result.success, error: result.error };
+    if (!subCommand || subCommand === 'show') {
+      const result = await this.templateCommand.show();
+      if (result.success) {
+        this.print(result.message || 'No template information available.');
+      } else if (result.error) {
+        this.print('Error: ' + result.error.message);
       }
+      return { success: result.success, error: result.error };
+    }
 
-      case 'use': {
+    return match(subCommand)
+      .with('use', async () => {
         const nameOrId = args[1];
         if (!nameOrId) {
           this.print('Usage: /template use <name|id>');
           return {
             success: false,
             error: { code: 'E426', message: 'Template name or ID required' },
-          };
+          } as CommandResult;
         }
         const result = await this.templateCommand.use(nameOrId);
         if (result.success) {
@@ -3684,37 +3604,34 @@ export class REPLInterface extends EventEmitter {
         } else if (result.error) {
           this.print('Error: ' + result.error.message);
         }
-        return { success: result.success, error: result.error };
-      }
-
-      case 'on': {
+        return { success: result.success, error: result.error } as CommandResult;
+      })
+      .with('on', async () => {
         const result = await this.templateCommand.enable();
         if (result.success) {
           this.print(result.message || 'Template injection enabled.');
         } else if (result.error) {
           this.print('Error: ' + result.error.message);
         }
-        return { success: result.success, error: result.error };
-      }
-
-      case 'off': {
+        return { success: result.success, error: result.error } as CommandResult;
+      })
+      .with('off', async () => {
         const result = await this.templateCommand.disable();
         if (result.success) {
           this.print(result.message || 'Template injection disabled.');
         } else if (result.error) {
           this.print('Error: ' + result.error.message);
         }
-        return { success: result.success, error: result.error };
-      }
-
-      default:
+        return { success: result.success, error: result.error } as CommandResult;
+      })
+      .otherwise(async () => {
         this.print('Unknown subcommand: ' + subCommand);
         this.print('Usage: /template [show|use|on|off]');
         return {
           success: false,
           error: { code: 'E427', message: 'Unknown subcommand: ' + subCommand },
-        };
-    }
+        } as CommandResult;
+      });
   }
 
 
@@ -3761,19 +3678,18 @@ export class REPLInterface extends EventEmitter {
     }
     await this.initializeStoresForProject(this.session.projectPath);
 
-    switch (subCommand) {
-      case undefined:
-      case 'show': {
-        const result = await this.configCommand.show();
-        if (result.success) {
-          this.print(result.message || 'No configuration information available.');
-        } else if (result.error) {
-          this.print('Error: ' + result.error.message);
-        }
-        return { success: result.success, error: result.error };
+    if (!subCommand || subCommand === 'show') {
+      const result = await this.configCommand.show();
+      if (result.success) {
+        this.print(result.message || 'No configuration information available.');
+      } else if (result.error) {
+        this.print('Error: ' + result.error.message);
       }
+      return { success: result.success, error: result.error };
+    }
 
-      case 'set': {
+    return match(subCommand)
+      .with('set', async () => {
         const key = args[1];
         const value = args[2];
         if (!key || !value) {
@@ -3782,7 +3698,7 @@ export class REPLInterface extends EventEmitter {
           return {
             success: false,
             error: { code: 'E502', message: 'Key and value required' },
-          };
+          } as CommandResult;
         }
         const result = await this.configCommand.set(key, value);
         if (result.success) {
@@ -3790,32 +3706,29 @@ export class REPLInterface extends EventEmitter {
         } else if (result.error) {
           this.print('Error: ' + result.error.message);
         }
-        return { success: result.success, error: result.error };
-      }
-
-      case 'reset': {
+        return { success: result.success, error: result.error } as CommandResult;
+      })
+      .with('reset', async () => {
         const result = await this.configCommand.reset();
         if (result.success) {
           this.print(result.message || 'Configuration reset to defaults.');
         } else if (result.error) {
           this.print('Error: ' + result.error.message);
         }
-        return { success: result.success, error: result.error };
-      }
-
-      case 'keys': {
+        return { success: result.success, error: result.error } as CommandResult;
+      })
+      .with('keys', async () => {
         this.print(this.configCommand.formatAvailableKeys());
-        return { success: true };
-      }
-
-      default:
+        return { success: true } as CommandResult;
+      })
+      .otherwise(async () => {
         this.print('Unknown subcommand: ' + subCommand);
         this.print('Usage: /config [show|set|reset|keys]');
         return {
           success: false,
           error: { code: 'E505', message: 'Unknown subcommand: ' + subCommand },
-        };
-    }
+        } as CommandResult;
+      });
   }
 
   /**
@@ -3850,22 +3763,22 @@ export class REPLInterface extends EventEmitter {
       return { success: true };
     }
 
-    switch (subCommand) {
-      case "on":
+    return match(subCommand)
+      .with("on", () => {
         setVerboseExecutor(true);
         this.print("Verbose executor logs: ON");
-        return { success: true };
-
-      case "off":
+        return { success: true } as CommandResult;
+      })
+      .with("off", () => {
         setVerboseExecutor(false);
         this.print("Verbose executor logs: OFF");
-        return { success: true };
-
-      case "status":
+        return { success: true } as CommandResult;
+      })
+      .with("status", () => {
         this.print(`Verbose executor logs: ${currentValue ? "ON" : "OFF"}`);
-        return { success: true };
-
-      default:
+        return { success: true } as CommandResult;
+      })
+      .otherwise(() => {
         this.print("Usage: /verbose [on|off|status]");
         this.print("  /verbose       - Toggle verbose mode");
         this.print("  /verbose on    - Enable verbose executor logs");
@@ -3874,8 +3787,8 @@ export class REPLInterface extends EventEmitter {
         return {
           success: false,
           error: { code: "E410", message: "Invalid verbose option: " + subCommand },
-        };
-    }
+        } as CommandResult;
+      });
   }
 
   /**
@@ -3895,22 +3808,22 @@ export class REPLInterface extends EventEmitter {
       return { success: true };
     }
 
-    switch (subCommand) {
-      case "single":
+    return match(subCommand)
+      .with("single", () => {
         setSingleLineMode(true);
         this.print("Input mode: single-line (Enter to send)");
-        return { success: true };
-
-      case "multi":
+        return { success: true } as CommandResult;
+      })
+      .with("multi", () => {
         setSingleLineMode(false);
         this.print("Input mode: multi-line (Enter x2 to send)");
-        return { success: true };
-
-      case "status":
+        return { success: true } as CommandResult;
+      })
+      .with("status", () => {
         this.print(`Input mode: ${currentMode ? "single-line (Enter to send)" : "multi-line (Enter x2 to send)"}`);
-        return { success: true };
-
-      default:
+        return { success: true } as CommandResult;
+      })
+      .otherwise(() => {
         this.print("Usage: /inputmode [single|multi|status]");
         this.print("  /inputmode        - Toggle input mode");
         this.print("  /inputmode single - Single-line mode (Enter to send)");
@@ -3919,8 +3832,8 @@ export class REPLInterface extends EventEmitter {
         return {
           success: false,
           error: { code: "E411", message: "Invalid inputmode option: " + subCommand },
-        };
-    }
+        } as CommandResult;
+      });
   }
 
   /**

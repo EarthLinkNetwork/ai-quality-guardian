@@ -8,6 +8,8 @@
  * - fail-closed on missing API key
  */
 
+import { match } from 'ts-pattern';
+
 /**
  * LLM Provider types
  */
@@ -74,12 +76,10 @@ export class LLMAPIError extends Error {
  * Get environment variable name for API key
  */
 function getEnvVarName(provider: LLMProvider): string {
-  switch (provider) {
-    case 'openai':
-      return 'OPENAI_API_KEY';
-    case 'anthropic':
-      return 'ANTHROPIC_API_KEY';
-  }
+  return match(provider)
+    .with('openai', () => 'OPENAI_API_KEY')
+    .with('anthropic', () => 'ANTHROPIC_API_KEY')
+    .exhaustive();
 }
 
 /**
@@ -161,12 +161,10 @@ export class LLMClient {
    * @param options.responseFormat - For OpenAI: { type: "json_object" } to force JSON output
    */
   async chat(messages: ChatMessage[], options?: { responseFormat?: { type: string } }): Promise<LLMResponse> {
-    switch (this.config.provider) {
-      case 'openai':
-        return this.chatOpenAI(messages, options?.responseFormat);
-      case 'anthropic':
-        return this.chatAnthropic(messages);
-    }
+    return match(this.config.provider)
+      .with('openai', () => this.chatOpenAI(messages, options?.responseFormat))
+      .with('anthropic', () => this.chatAnthropic(messages))
+      .exhaustive();
   }
 
   /**

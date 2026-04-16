@@ -22,6 +22,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { createHash } from "crypto";
 import { v4 as uuidv4 } from "uuid";
+import { match } from 'ts-pattern';
 import {
   ProjectIndex,
   ProjectIndexStatus,
@@ -369,22 +370,11 @@ export class NoDynamoDAL {
       if (a.favorite && !b.favorite) return -1;
       if (!a.favorite && b.favorite) return 1;
 
-      let cmp = 0;
-      switch (sortField) {
-        case 'name':
-          cmp = (a.alias || a.projectPath).localeCompare(b.alias || b.projectPath);
-          break;
-        case 'createdAt':
-          cmp = a.createdAt.localeCompare(b.createdAt);
-          break;
-        case 'lastActivityAt':
-          cmp = a.lastActivityAt.localeCompare(b.lastActivityAt);
-          break;
-        case 'updatedAt':
-        default:
-          cmp = a.updatedAt.localeCompare(b.updatedAt);
-          break;
-      }
+      const cmp = match(sortField)
+        .with('name', () => (a.alias || a.projectPath).localeCompare(b.alias || b.projectPath))
+        .with('createdAt', () => a.createdAt.localeCompare(b.createdAt))
+        .with('lastActivityAt', () => a.lastActivityAt.localeCompare(b.lastActivityAt))
+        .otherwise(() => a.updatedAt.localeCompare(b.updatedAt));
       return sortDir === 'asc' ? cmp : -cmp;
     });
 

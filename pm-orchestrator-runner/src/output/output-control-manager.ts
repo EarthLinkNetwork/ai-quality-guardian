@@ -23,6 +23,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { match } from 'ts-pattern';
 import { OverallStatus, TaskStatus } from '../models/enums';
 import { ErrorCode, getErrorMessage } from '../errors/error-codes';
 
@@ -336,20 +337,13 @@ export class OutputControlManager {
    * Get reason for next_action
    */
   private getNextActionReason(status: OverallStatus, errorMessage?: string): string {
-    switch (status) {
-      case OverallStatus.COMPLETE:
-        return 'All tasks completed successfully';
-      case OverallStatus.INCOMPLETE:
-        return 'Some tasks are incomplete';
-      case OverallStatus.ERROR:
-        return errorMessage || 'An error occurred during execution';
-      case OverallStatus.INVALID:
-        return 'Session status is invalid';
-      case OverallStatus.NO_EVIDENCE:
-        return 'No evidence collected';
-      default:
-        return 'Unknown status';
-    }
+    return match(status)
+      .with(OverallStatus.COMPLETE, () => 'All tasks completed successfully')
+      .with(OverallStatus.INCOMPLETE, () => 'Some tasks are incomplete')
+      .with(OverallStatus.ERROR, () => errorMessage || 'An error occurred during execution')
+      .with(OverallStatus.INVALID, () => 'Session status is invalid')
+      .with(OverallStatus.NO_EVIDENCE, () => 'No evidence collected')
+      .otherwise(() => 'Unknown status');
   }
 
   /**

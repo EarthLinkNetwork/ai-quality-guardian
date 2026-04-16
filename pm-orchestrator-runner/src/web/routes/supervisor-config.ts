@@ -11,6 +11,7 @@
  * - Restart mode
  */
 
+import { match } from 'ts-pattern';
 import { Router, Request, Response } from 'express';
 import {
   Supervisor,
@@ -267,14 +268,9 @@ function getTimeoutProfile(timeoutMs: number): 'standard' | 'long' | 'extended' 
 }
 
 function getProfileDescription(name: string): string {
-  switch (name) {
-    case 'standard':
-      return 'Standard timeout (60s idle, 10m hard)';
-    case 'long':
-      return 'Long timeout (120s idle, 30m hard)';
-    case 'extended':
-      return 'Extended timeout (300s idle, 60m hard)';
-    default:
-      return 'Unknown profile';
-  }
+  return match(name)
+    .with('standard', () => 'Standard timeout (60s idle, 10m hard)')
+    .with('long', () => 'Long timeout (120s idle, 30m hard)')
+    .with('extended', () => 'Extended timeout (300s idle, 60m hard)')
+    .otherwise(() => 'Unknown profile');
 }

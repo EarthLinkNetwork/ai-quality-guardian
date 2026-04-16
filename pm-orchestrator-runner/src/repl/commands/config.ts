@@ -7,6 +7,7 @@
  * - /config reset: Reset to defaults
  */
 
+import { match } from 'ts-pattern';
 import {
   ProjectSettingsStore,
   ProjectSettings,
@@ -172,10 +173,8 @@ export class ConfigCommand {
    * Parse a string value to the appropriate type
    */
   private parseValue(key: ConfigKey, value: string): boolean | number | null {
-    switch (key) {
-      case 'autoChunking':
-      case 'costWarningEnabled':
-        // Boolean parsing
+    return match(key)
+      .with('autoChunking', 'costWarningEnabled', () => {
         const lower = value.toLowerCase();
         if (lower === 'true' || lower === 'yes' || lower === '1' || lower === 'on') {
           return true;
@@ -184,18 +183,15 @@ export class ConfigCommand {
           return false;
         }
         return null;
-
-      case 'costWarningThreshold':
-        // Number parsing
+      })
+      .with('costWarningThreshold', () => {
         const num = parseFloat(value);
         if (isNaN(num) || num < 0) {
           return null;
         }
         return num;
-
-      default:
-        return null;
-    }
+      })
+      .otherwise(() => null);
   }
 
   /**

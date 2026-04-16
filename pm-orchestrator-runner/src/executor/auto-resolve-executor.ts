@@ -13,6 +13,7 @@
  * - User preferences can be learned over time
  */
 
+import { match } from 'ts-pattern';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ClaudeCodeExecutor, ExecutorConfig, ExecutorTask, ExecutorResult, IExecutor, AuthCheckResult } from './claude-code-executor';
@@ -410,17 +411,10 @@ export class AutoResolvingExecutor implements IExecutor {
     );
 
     // Step 3: Route based on classification
-    switch (classification.category) {
-      case 'best_practice':
-        return this.resolveBestPractice(classification, originalPrompt, clarification);
-
-      case 'case_by_case':
-        return this.handleCaseByCase(classification, originalPrompt, clarification, category);
-
-      default:
-        // Unknown - try LLM inference as fallback
-        return this.autoResolve(clarification, originalPrompt);
-    }
+    return match(classification.category)
+      .with('best_practice', () => this.resolveBestPractice(classification, originalPrompt, clarification))
+      .with('case_by_case', () => this.handleCaseByCase(classification, originalPrompt, clarification, category))
+      .otherwise(() => this.autoResolve(clarification, originalPrompt));
   }
 
   /**
@@ -555,71 +549,51 @@ export class AutoResolvingExecutor implements IExecutor {
     resolvedValue: string,
     reasoning: string
   ): string {
-    switch (clarification.type) {
-      case 'target_file_ambiguous':
-        return `${originalPrompt}
+    return match(clarification.type)
+      .with('target_file_ambiguous', () => `${originalPrompt}
 
 Important: Save the file to: ${resolvedValue}
 Reason: ${reasoning}
-Do not ask for clarification. Create the file at the specified path.`;
-
-      case 'scope_unclear':
-        return `${originalPrompt}
+Do not ask for clarification. Create the file at the specified path.`)
+      .with('scope_unclear', () => `${originalPrompt}
 
 Scope clarification: ${resolvedValue}
 Reason: ${reasoning}
-Do not ask for clarification. Proceed with the clarified scope.`;
-
-      case 'action_ambiguous':
-        return `${originalPrompt}
+Do not ask for clarification. Proceed with the clarified scope.`)
+      .with('action_ambiguous', () => `${originalPrompt}
 
 Action to take: ${resolvedValue}
 Reason: ${reasoning}
-Do not ask for clarification. Proceed with the specified action.`;
-
-      default:
-        return `${originalPrompt}
+Do not ask for clarification. Proceed with the specified action.`)
+      .otherwise(() => `${originalPrompt}
 
 Clarification: ${resolvedValue}
 Reason: ${reasoning}
-Do not ask for further clarification. Proceed with the above.`;
-    }
+Do not ask for further clarification. Proceed with the above.`);
   }
 
   /**
    * Map clarification type to preference category
    */
   private mapClarificationTypeToCategory(type: ClarificationType): string {
-    switch (type) {
-      case 'target_file_ambiguous':
-        return 'file_location';
-      case 'scope_unclear':
-        return 'task_scope';
-      case 'action_ambiguous':
-        return 'action_choice';
-      case 'missing_context':
-        return 'context_clarification';
-      default:
-        return 'general';
-    }
+    return match(type)
+      .with('target_file_ambiguous', () => 'file_location')
+      .with('scope_unclear', () => 'task_scope')
+      .with('action_ambiguous', () => 'action_choice')
+      .with('missing_context', () => 'context_clarification')
+      .otherwise(() => 'general');
   }
 
   /**
    * Generate a question from clarification type
    */
   private generateQuestionFromType(type: ClarificationType): string {
-    switch (type) {
-      case 'target_file_ambiguous':
-        return 'Where should the file be saved?';
-      case 'scope_unclear':
-        return 'What is the scope of this task?';
-      case 'action_ambiguous':
-        return 'What action should be taken?';
-      case 'missing_context':
-        return 'Can you provide more context?';
-      default:
-        return 'Need clarification';
-    }
+    return match(type)
+      .with('target_file_ambiguous', () => 'Where should the file be saved?')
+      .with('scope_unclear', () => 'What is the scope of this task?')
+      .with('action_ambiguous', () => 'What action should be taken?')
+      .with('missing_context', () => 'Can you provide more context?')
+      .otherwise(() => 'Need clarification');
   }
 
   /**
@@ -685,19 +659,11 @@ Do not ask for further clarification. Proceed with the above.`;
   ): Promise<AutoResolution> {
     this.emitLLMLog(`auto-resolve via LLM inference type=${clarification.type}`);
     try {
-      switch (clarification.type) {
-        case 'target_file_ambiguous':
-          return this.resolveFilePath(originalPrompt, clarification);
-
-        case 'scope_unclear':
-          return this.resolveScope(originalPrompt, clarification);
-
-        case 'action_ambiguous':
-          return this.resolveAction(originalPrompt, clarification);
-
-        default:
-          return { resolved: false };
-      }
+      return match(clarification.type)
+        .with('target_file_ambiguous', () => this.resolveFilePath(originalPrompt, clarification))
+        .with('scope_unclear', () => this.resolveScope(originalPrompt, clarification))
+        .with('action_ambiguous', () => this.resolveAction(originalPrompt, clarification))
+        .otherwise(() => Promise.resolve({ resolved: false } as AutoResolution));
     } catch (error) {
       console.error('[AutoResolvingExecutor] Auto-resolve error:', error);
       return { resolved: false };

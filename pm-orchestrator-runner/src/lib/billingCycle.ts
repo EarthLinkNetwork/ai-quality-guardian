@@ -3,6 +3,8 @@
  * Pure functions for computing billing periods, proration, and due dates.
  */
 
+import { match } from 'ts-pattern';
+
 export type BillingInterval = 'monthly' | 'quarterly' | 'yearly';
 
 export type BillingPeriod = {
@@ -37,19 +39,11 @@ export function daysInMonth(year: number, month: number): number {
 export function nextBillingDate(anchor: Date, interval: BillingInterval): Date {
   const result = new Date(anchor);
 
-  switch (interval) {
-    case 'monthly':
-      result.setMonth(result.getMonth() + 1);
-      break;
-    case 'quarterly':
-      result.setMonth(result.getMonth() + 3);
-      break;
-    case 'yearly':
-      result.setFullYear(result.getFullYear() + 1);
-      break;
-    default:
-      throw new Error(`Unknown billing interval: "${interval}"`);
-  }
+  match(interval)
+    .with('monthly', () => { result.setMonth(result.getMonth() + 1); })
+    .with('quarterly', () => { result.setMonth(result.getMonth() + 3); })
+    .with('yearly', () => { result.setFullYear(result.getFullYear() + 1); })
+    .otherwise(() => { throw new Error(`Unknown billing interval: "${interval}"`); });
 
   return result;
 }

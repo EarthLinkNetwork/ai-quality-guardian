@@ -9,6 +9,7 @@
  * - Alert banners for failed tasks
  */
 
+import { match } from 'ts-pattern';
 import { RunnerCore } from '../../core/runner-core';
 import { TaskStatus } from '../../models/enums';
 
@@ -51,41 +52,33 @@ export function getHumanReadableError(errorMessage: string): string {
  */
 export function getErrorGuidance(status: string): string[] {
   const normalizedStatus = normalizeStatus(status);
-  
-  switch (normalizedStatus) {
-    case 'NO_EVIDENCE':
-      return [
-        'The task ran but no files were verified on disk.',
-        '',
-        'To resolve:',
-        '  1. Check task description - was a file path specified?',
-        '  2. Run /logs <task-id> to see execution details',
-        '  3. Try rephrasing your request with explicit file paths',
-        '     Example: "Create a file at src/utils/helper.ts with..."',
-      ];
-    
-    case 'ERROR':
-      return [
-        'The task encountered an error during execution.',
-        '',
-        'To resolve:',
-        '  1. Run /logs <task-id> --full for detailed error logs',
-        '  2. Check if the task description is clear and specific',
-        '  3. Retry the task or break it into smaller steps',
-      ];
-    
-    case 'INVALID':
-      return [
-        'The task or its result was invalid.',
-        '',
-        'To resolve:',
-        '  1. Run /logs <task-id> to see what went wrong',
-        '  2. Ensure your request is clear and actionable',
-      ];
-    
-    default:
-      return [];
-  }
+
+  return match(normalizedStatus)
+    .with('NO_EVIDENCE', () => [
+      'The task ran but no files were verified on disk.',
+      '',
+      'To resolve:',
+      '  1. Check task description - was a file path specified?',
+      '  2. Run /logs <task-id> to see execution details',
+      '  3. Try rephrasing your request with explicit file paths',
+      '     Example: "Create a file at src/utils/helper.ts with..."',
+    ])
+    .with('ERROR', () => [
+      'The task encountered an error during execution.',
+      '',
+      'To resolve:',
+      '  1. Run /logs <task-id> --full for detailed error logs',
+      '  2. Check if the task description is clear and specific',
+      '  3. Retry the task or break it into smaller steps',
+    ])
+    .with('INVALID', () => [
+      'The task or its result was invalid.',
+      '',
+      'To resolve:',
+      '  1. Run /logs <task-id> to see what went wrong',
+      '  2. Ensure your request is clear and actionable',
+    ])
+    .otherwise(() => []);
 }
 
 /**
@@ -369,17 +362,11 @@ export class StatusCommands {
    * Get status icon
    */
   private getStatusIcon(status: string): string {
-    switch (status) {
-      case 'completed':
-        return '[x]';
-      case 'in_progress':
-        return '[>]';
-      case 'pending':
-        return '[ ]';
-      case 'failed':
-        return '[!]';
-      default:
-        return '[?]';
-    }
+    return match(status)
+      .with('completed', () => '[x]')
+      .with('in_progress', () => '[>]')
+      .with('pending', () => '[ ]')
+      .with('failed', () => '[!]')
+      .otherwise(() => '[?]');
   }
 }

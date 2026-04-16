@@ -16,6 +16,7 @@
  * - Fail-Closed: Unknown situations result in REJECT
  */
 
+import { match } from 'ts-pattern';
 import type { IExecutor, ExecutorTask, ExecutorResult } from '../executor/claude-code-executor';
 import { PromptAssembler, ModificationPromptInput } from '../prompt';
 import { ConversationTracer, CriteriaResult as TraceCriteriaResult } from '../trace/conversation-tracer';
@@ -183,21 +184,20 @@ export const DEFAULT_REVIEW_LOOP_CONFIG: ReviewLoopConfig = {
  * Get human-readable name for quality criteria
  */
 function getCriteriaName(criteriaId: QualityCriteriaId): string {
-  switch (criteriaId) {
-    case 'Q1': return 'Files Verified';
-    case 'Q2': return 'No TODO/FIXME';
-    case 'Q3': return 'No Omission Markers';
-    case 'Q4': return 'No Incomplete Syntax';
-    case 'Q5': return 'Evidence Present';
-    case 'Q6': return 'No Early Termination';
-    case 'Q7': return 'Lint Pass';
-    case 'Q8': return 'Test Pass';
-    case 'Q9': return 'Build Pass';
-    case 'Q10': return 'No Tautological Tests';
-    case 'Q11': return 'Spec Traceability';
-    case 'Q12': return 'Implementation Isolation Compliance';
-    default: return `Criteria ${criteriaId}`;
-  }
+  return match(criteriaId)
+    .with('Q1', () => 'Files Verified')
+    .with('Q2', () => 'No TODO/FIXME')
+    .with('Q3', () => 'No Omission Markers')
+    .with('Q4', () => 'No Incomplete Syntax')
+    .with('Q5', () => 'Evidence Present')
+    .with('Q6', () => 'No Early Termination')
+    .with('Q7', () => 'Lint Pass')
+    .with('Q8', () => 'Test Pass')
+    .with('Q9', () => 'Build Pass')
+    .with('Q10', () => 'No Tautological Tests')
+    .with('Q11', () => 'Spec Traceability')
+    .with('Q12', () => 'Implementation Isolation Compliance')
+    .otherwise(() => `Criteria ${criteriaId}`);
 }
 
 // ============================================================================
@@ -719,40 +719,19 @@ export function performQualityJudgment(
 
   // Check each mandatory criteria
   for (const criteriaId of config.mandatory_criteria) {
-    let result_: CriteriaResult;
+    const result_: CriteriaResult | null = match(criteriaId)
+      .with('Q1', () => checkQ1FilesVerified(result))
+      .with('Q2', () => checkQ2NoTodoLeft(result))
+      .with('Q3', () => checkQ3NoOmissionMarkers(result, config.omission_patterns))
+      .with('Q4', () => checkQ4NoIncompleteSyntax(result))
+      .with('Q5', () => checkQ5EvidencePresent(result))
+      .with('Q6', () => checkQ6NoEarlyTermination(result, config.early_termination_patterns))
+      .with('Q10', () => checkQ10TautologicalTest(result))
+      .with('Q11', () => checkQ11SpecTraceability(result))
+      .with('Q12', () => checkQ12ImplementationIsolation(result, taskPrompt || ''))
+      .otherwise(() => null); // Q7-Q9 are optional and need external validation
 
-    switch (criteriaId) {
-      case 'Q1':
-        result_ = checkQ1FilesVerified(result);
-        break;
-      case 'Q2':
-        result_ = checkQ2NoTodoLeft(result);
-        break;
-      case 'Q3':
-        result_ = checkQ3NoOmissionMarkers(result, config.omission_patterns);
-        break;
-      case 'Q4':
-        result_ = checkQ4NoIncompleteSyntax(result);
-        break;
-      case 'Q5':
-        result_ = checkQ5EvidencePresent(result);
-        break;
-      case 'Q6':
-        result_ = checkQ6NoEarlyTermination(result, config.early_termination_patterns);
-        break;
-      case 'Q10':
-        result_ = checkQ10TautologicalTest(result);
-        break;
-      case 'Q11':
-        result_ = checkQ11SpecTraceability(result);
-        break;
-      case 'Q12':
-        result_ = checkQ12ImplementationIsolation(result, taskPrompt || '');
-        break;
-      default:
-        // Q7-Q9 are optional and need external validation
-        continue;
-    }
+    if (!result_) continue;
 
     criteria_results.push(result_);
     if (!result_.passed) {
@@ -847,38 +826,17 @@ export function generateIssuesFromCriteria(
   for (const cr of criteriaResults) {
     if (cr.passed) continue;
 
-    let type: IssueDetail['type'];
-    switch (cr.criteria_id) {
-      case 'Q1':
-        type = 'missing_file';
-        break;
-      case 'Q2':
-        type = 'todo_left';
-        break;
-      case 'Q3':
-        type = 'omission';
-        break;
-      case 'Q4':
-        type = 'syntax_error';
-        break;
-      case 'Q5':
-        type = 'incomplete';
-        break;
-      case 'Q6':
-        type = 'early_termination';
-        break;
-      case 'Q10':
-        type = 'tautological_test';
-        break;
-      case 'Q11':
-        type = 'missing_spec_traceability';
-        break;
-      case 'Q12':
-        type = 'isolation_violation';
-        break;
-      default:
-        type = 'incomplete';
-    }
+    const type: IssueDetail['type'] = match(cr.criteria_id)
+      .with('Q1', () => 'missing_file' as const)
+      .with('Q2', () => 'todo_left' as const)
+      .with('Q3', () => 'omission' as const)
+      .with('Q4', () => 'syntax_error' as const)
+      .with('Q5', () => 'incomplete' as const)
+      .with('Q6', () => 'early_termination' as const)
+      .with('Q10', () => 'tautological_test' as const)
+      .with('Q11', () => 'missing_spec_traceability' as const)
+      .with('Q12', () => 'isolation_violation' as const)
+      .otherwise(() => 'incomplete' as const);
 
     issues.push({
       type,

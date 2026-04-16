@@ -4,6 +4,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { match } from 'ts-pattern';
 import { RunnerCore } from '../core/runner-core';
 import { OverallStatus } from '../models/enums';
 
@@ -140,23 +141,13 @@ export class ExecutorSupervisor extends EventEmitter {
       });
 
       // Handle different statuses
-      switch (overallStatus) {
-        case OverallStatus.COMPLETE:
-          this.handleComplete();
-          break;
-        case OverallStatus.ERROR:
-          await this.handleError();
-          break;
-        case OverallStatus.INCOMPLETE:
-          // Still running, continue monitoring
-          break;
-        case OverallStatus.NO_EVIDENCE:
-          await this.handleNoEvidence();
-          break;
-        case OverallStatus.INVALID:
-          await this.handleInvalid();
-          break;
-      }
+      await match(overallStatus)
+        .with(OverallStatus.COMPLETE, async () => { this.handleComplete(); })
+        .with(OverallStatus.ERROR, async () => { await this.handleError(); })
+        .with(OverallStatus.INCOMPLETE, async () => { /* Still running, continue monitoring */ })
+        .with(OverallStatus.NO_EVIDENCE, async () => { await this.handleNoEvidence(); })
+        .with(OverallStatus.INVALID, async () => { await this.handleInvalid(); })
+        .otherwise(async () => {});
     } catch (err) {
       this.emit('error', { error: (err as Error).message });
     }

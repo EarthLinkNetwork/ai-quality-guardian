@@ -8,6 +8,7 @@
  * Silent failures and timeout masking are prohibited.
  */
 
+import { match } from 'ts-pattern';
 import { execSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -398,20 +399,17 @@ export function runPreflightChecks(executorType: ExecutorType): PreflightReport 
   checks.push(checkNetwork());
 
   // Executor-specific checks
-  switch (executorType) {
-    case 'claude-code':
+  match(executorType)
+    .with('claude-code', () => {
       checks.push(checkClaudeCodeAuth());
-      break;
-
-    case 'openai-api':
+    })
+    .with('openai-api', () => {
       checks.push(checkOpenAIKey());
-      break;
-
-    case 'anthropic-api':
+    })
+    .with('anthropic-api', () => {
       checks.push(checkAnthropicKey());
-      break;
-
-    case 'auto':
+    })
+    .with('auto', () => {
       // For auto mode, check what's available
       const claudeResult = checkClaudeCodeAuth();
       const openaiResult = checkOpenAIKey();
@@ -432,8 +430,8 @@ export function runPreflightChecks(executorType: ExecutorType): PreflightReport 
         if (openaiResult.ok) checks.push(openaiResult);
         if (anthropicResult.ok) checks.push(anthropicResult);
       }
-      break;
-  }
+    })
+    .otherwise(() => {});
 
   // Collect fatal errors
   const fatal_errors = checks.filter(c => c.fatal && !c.ok);

@@ -10,6 +10,7 @@
  * Zero overhead when template not selected.
  */
 
+import { match } from 'ts-pattern';
 import type { ExecutorResult } from '../executor/claude-code-executor';
 import type { CriteriaResult, IssueDetail, QualityCriteriaId } from './review-loop';
 import {
@@ -81,28 +82,26 @@ export interface GoalDriftIntegrationResult {
  * GD5 (scope reduction) -> Q3 (Omission Markers style - hidden reduction)
  */
 export function mapGoalDriftToQCriteria(gdId: GoalDriftCriteriaId): QualityCriteriaId {
-  switch (gdId) {
-    case 'GD1': return 'Q2';  // Escape phrases -> problematic language
-    case 'GD2': return 'Q5';  // Premature completion -> incomplete work
-    case 'GD3': return 'Q5';  // Missing checklist -> no verification
-    case 'GD4': return 'Q5';  // Invalid completion -> false claims
-    case 'GD5': return 'Q3';  // Scope reduction -> hidden omission
-    default: return 'Q5';     // Default to evidence check
-  }
+  return match(gdId)
+    .with('GD1', () => 'Q2' as const)   // Escape phrases -> problematic language
+    .with('GD2', () => 'Q5' as const)   // Premature completion -> incomplete work
+    .with('GD3', () => 'Q5' as const)   // Missing checklist -> no verification
+    .with('GD4', () => 'Q5' as const)   // Invalid completion -> false claims
+    .with('GD5', () => 'Q3' as const)   // Scope reduction -> hidden omission
+    .otherwise(() => 'Q5' as const);     // Default to evidence check
 }
 
 /**
  * Get human-readable name for Goal Drift criteria
  */
 export function getGoalDriftCriteriaName(gdId: GoalDriftCriteriaId): string {
-  switch (gdId) {
-    case 'GD1': return 'No Escape Phrases';
-    case 'GD2': return 'No Premature Completion';
-    case 'GD3': return 'Requirement Checklist Present';
-    case 'GD4': return 'Valid Completion Statement';
-    case 'GD5': return 'No Scope Reduction';
-    default: return 'Goal Drift ' + gdId;
-  }
+  return match(gdId)
+    .with('GD1', () => 'No Escape Phrases')
+    .with('GD2', () => 'No Premature Completion')
+    .with('GD3', () => 'Requirement Checklist Present')
+    .with('GD4', () => 'Valid Completion Statement')
+    .with('GD5', () => 'No Scope Reduction')
+    .otherwise(() => 'Goal Drift ' + gdId);
 }
 
 /**
@@ -139,20 +138,13 @@ export function mapGoalDriftResultToReviewLoop(
  * Get suggestion for fixing a Goal Drift violation
  */
 function getSuggestionForViolation(violationType: ExtendedIssueDetail['type']): string {
-  switch (violationType) {
-    case 'escape_phrase':
-      return 'Remove escape phrases like "if needed", "optional", "consider adding". Be definitive about what was done.';
-    case 'premature_completion':
-      return 'Do not claim "basic implementation" or ask user to verify. Complete all requirements yourself.';
-    case 'missing_checklist':
-      return 'Add a requirement checklist with checkbox items: "- [ ] Requirement 1: [status]"';
-    case 'invalid_completion_statement':
-      return 'Use "COMPLETE: All N requirements fulfilled" or "INCOMPLETE: Requirements X, Y, Z remain"';
-    case 'scope_reduction':
-      return 'Do not reduce scope with phrases like "simplified version" or "for now". Complete the full requirement.';
-    default:
-      return 'Review Goal Drift Guard rules and ensure all requirements are fully addressed.';
-  }
+  return match(violationType)
+    .with('escape_phrase', () => 'Remove escape phrases like "if needed", "optional", "consider adding". Be definitive about what was done.')
+    .with('premature_completion', () => 'Do not claim "basic implementation" or ask user to verify. Complete all requirements yourself.')
+    .with('missing_checklist', () => 'Add a requirement checklist with checkbox items: "- [ ] Requirement 1: [status]"')
+    .with('invalid_completion_statement', () => 'Use "COMPLETE: All N requirements fulfilled" or "INCOMPLETE: Requirements X, Y, Z remain"')
+    .with('scope_reduction', () => 'Do not reduce scope with phrases like "simplified version" or "for now". Complete the full requirement.')
+    .otherwise(() => 'Review Goal Drift Guard rules and ensure all requirements are fully addressed.');
 }
 
 // ============================================================================

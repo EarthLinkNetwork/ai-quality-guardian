@@ -40,6 +40,7 @@ import {
   TerminatedBy,
 } from '../models/enums';
 import { Session, SessionStatus } from '../models/session';
+import { match } from 'ts-pattern';
 import { ErrorCode, getErrorMessage } from '../errors/error-codes';
 import { ClaudeCodeExecutor, ExecutorResult, IExecutor, ExecutorConfig } from '../executor/claude-code-executor';
 import { DeterministicExecutor, isDeterministicMode } from '../executor/deterministic-executor';
@@ -1310,18 +1311,10 @@ export class RunnerCore extends EventEmitter {
     // Per spec 10_REPL_UX.md Section 10: Include executor blocking info (Property 34-36)
     if (taskLog && this.taskLogManager && this.session) {
       // Map TaskStatus to completion status
-      let logStatus: 'COMPLETE' | 'INCOMPLETE' | 'ERROR';
-      switch (result.status) {
-        case TaskStatus.COMPLETED:
-          logStatus = 'COMPLETE';
-          break;
-        case TaskStatus.ERROR:
-          logStatus = 'ERROR';
-          break;
-        default:
-          logStatus = 'INCOMPLETE';
-          break;
-      }
+      const logStatus: 'COMPLETE' | 'INCOMPLETE' | 'ERROR' = match(result.status)
+        .with(TaskStatus.COMPLETED, () => 'COMPLETE' as const)
+        .with(TaskStatus.ERROR, () => 'ERROR' as const)
+        .otherwise(() => 'INCOMPLETE' as const);
 
       // Per redesign: Create response summary (truncate to 200 chars)
       const responseSummary = this.lastExecutorOutput.length > 200
@@ -1683,65 +1676,49 @@ Created: ${new Date().toISOString()}
       ? this.taskResults.map(t => ({ id: t.task_id, description: t.task_id }))
       : [{ id: 'auto-generated', description: 'Auto-generated for phase completion' }];
 
-    switch (phase) {
-      case Phase.REQUIREMENT_ANALYSIS:
-        return {
-          ...baseEvidence,
-          requirements: defaultItems,
-        };
-
-      case Phase.TASK_DECOMPOSITION:
-        return {
-          ...baseEvidence,
-          tasks: defaultItems,
-        };
-
-      case Phase.PLANNING:
-        return {
-          ...baseEvidence,
-          plan: {
-            tasks: this.taskResults.length > 0
-              ? this.taskResults.map(t => t.task_id)
-              : ['auto-generated'],
-            created_at: new Date().toISOString(),
-          },
-        };
-
-      case Phase.EXECUTION:
-        return {
-          ...baseEvidence,
-          execution_results: this.taskResults,
-        };
-
-      case Phase.QA:
-        return {
-          ...baseEvidence,
-          qa_results: {
-            lint_passed: true,
-            tests_passed: true,
-            type_check_passed: true,
-            build_passed: true,
-          },
-        };
-
-      case Phase.COMPLETION_VALIDATION:
-        return {
-          ...baseEvidence,
-          evidence_inventory: {
-            verified: true,
-            items: this.taskResults.length,
-          },
-        };
-
-      case Phase.REPORT:
-        return {
-          ...baseEvidence,
-          report_generated: true,
-        };
-
-      default:
-        return baseEvidence;
-    }
+    return match(phase)
+      .with(Phase.REQUIREMENT_ANALYSIS, () => ({
+        ...baseEvidence,
+        requirements: defaultItems,
+      }))
+      .with(Phase.TASK_DECOMPOSITION, () => ({
+        ...baseEvidence,
+        tasks: defaultItems,
+      }))
+      .with(Phase.PLANNING, () => ({
+        ...baseEvidence,
+        plan: {
+          tasks: this.taskResults.length > 0
+            ? this.taskResults.map(t => t.task_id)
+            : ['auto-generated'],
+          created_at: new Date().toISOString(),
+        },
+      }))
+      .with(Phase.EXECUTION, () => ({
+        ...baseEvidence,
+        execution_results: this.taskResults,
+      }))
+      .with(Phase.QA, () => ({
+        ...baseEvidence,
+        qa_results: {
+          lint_passed: true,
+          tests_passed: true,
+          type_check_passed: true,
+          build_passed: true,
+        },
+      }))
+      .with(Phase.COMPLETION_VALIDATION, () => ({
+        ...baseEvidence,
+        evidence_inventory: {
+          verified: true,
+          items: this.taskResults.length,
+        },
+      }))
+      .with(Phase.REPORT, () => ({
+        ...baseEvidence,
+        report_generated: true,
+      }))
+      .otherwise(() => baseEvidence);
   }
 
   /**
@@ -2092,20 +2069,12 @@ Created: ${new Date().toISOString()}
         status = this.session.status as SessionStatus;
       } else {
         // Map OverallStatus to SessionStatus
-        switch (this.session.status) {
-          case OverallStatus.COMPLETE:
-            status = SessionStatus.COMPLETED;
-            break;
-          case OverallStatus.ERROR:
-          case OverallStatus.INVALID:
-          case OverallStatus.NO_EVIDENCE:
-            status = SessionStatus.FAILED;
-            break;
-          case OverallStatus.INCOMPLETE:
-          default:
-            status = SessionStatus.RUNNING;
-            break;
-        }
+        status = match(this.session.status)
+          .with(OverallStatus.COMPLETE, () => SessionStatus.COMPLETED)
+          .with(OverallStatus.ERROR, () => SessionStatus.FAILED)
+          .with(OverallStatus.INVALID, () => SessionStatus.FAILED)
+          .with(OverallStatus.NO_EVIDENCE, () => SessionStatus.FAILED)
+          .otherwise(() => SessionStatus.RUNNING);
       }
     }
 

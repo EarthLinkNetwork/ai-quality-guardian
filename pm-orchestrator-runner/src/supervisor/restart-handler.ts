@@ -9,6 +9,7 @@
  * - COMPLETE/ERROR → none
  */
 
+import { match } from 'ts-pattern';
 import { detectRestartState, TaskState } from './supervisor';
 import { IQueueStore, QueueItem, QueueItemStatus } from '../queue/queue-store';
 import { RestartAction, RestartState } from './types';
@@ -79,18 +80,14 @@ export class RestartHandler {
       if (restartState.action !== 'none') {
         result.needsAction.push(restartState);
 
-        switch (restartState.action) {
-          case 'continue':
-            result.continueTasks.push(task.task_id);
-            break;
-          case 'resume':
-            result.continueTasks.push(task.task_id);
-            break;
-          case 'rollback_replay':
+        match(restartState.action)
+          .with('continue', () => { result.continueTasks.push(task.task_id); })
+          .with('resume', () => { result.continueTasks.push(task.task_id); })
+          .with('rollback_replay', () => {
             result.rollbackTasks.push(task.task_id);
             result.staleTasks.push(task.task_id);
-            break;
-        }
+          })
+          .otherwise(() => {});
       }
     }
 
@@ -123,29 +120,26 @@ export class RestartHandler {
    * Apply restart action to a task
    */
   private async applyRestartAction(task: QueueItem, restartState: RestartState): Promise<void> {
-    switch (restartState.action) {
-      case 'continue':
+    await match(restartState.action)
+      .with('continue', async () => {
         // Task is AWAITING_RESPONSE, no action needed - can continue when user responds
-        break;
-
-      case 'resume':
+      })
+      .with('resume', async () => {
         // Task has complete artifacts, can be resumed
         // No state change needed - executor will pick up from last checkpoint
-        break;
-
-      case 'rollback_replay':
+      })
+      .with('rollback_replay', async () => {
         // Task is stale without complete artifacts - mark as ERROR for re-queue
         await this.options.queueStore.updateStatus(
           task.task_id,
           'ERROR',
           `Stale task detected: ${restartState.reason}. Needs re-queue.`
         );
-        break;
-
-      case 'none':
+      })
+      .with('none', async () => {
         // No action needed
-        break;
-    }
+      })
+      .otherwise(async () => {});
   }
 
   /**

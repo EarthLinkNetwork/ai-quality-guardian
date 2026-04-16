@@ -30,6 +30,7 @@
  *   - No RUNNING residue in session state
  */
 
+import { match } from 'ts-pattern';
 import type {
   IExecutor,
   ExecutorTask,
@@ -135,17 +136,11 @@ export class RecoveryExecutor implements IExecutor {
     console.log(`[RecoveryExecutor] mode=recovery-stub`);
     console.log(`[RecoveryExecutor] Scenario: ${this.scenario}, task: ${task.id}`);
 
-    switch (this.scenario) {
-      case 'timeout':
-        return this.simulateTimeout(task, startTime, cwd);
-      case 'blocked':
-        return this.simulateBlocked(task, startTime, cwd);
-      case 'fail-closed':
-        return this.simulateFailClosed(task, startTime, cwd);
-      default:
-        // Should never happen, but fail-closed for safety
-        return this.simulateFailClosed(task, startTime, cwd);
-    }
+    return match(this.scenario)
+      .with('timeout', () => this.simulateTimeout(task, startTime, cwd))
+      .with('blocked', () => this.simulateBlocked(task, startTime, cwd))
+      .with('fail-closed', () => this.simulateFailClosed(task, startTime, cwd))
+      .otherwise(() => this.simulateFailClosed(task, startTime, cwd));
   }
 
   /**

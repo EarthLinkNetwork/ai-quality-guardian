@@ -1,3 +1,5 @@
+import { match } from 'ts-pattern';
+
 /**
  * API Key Validator
  *
@@ -119,18 +121,14 @@ export async function validateApiKey(
 ): Promise<KeyValidationResult> {
   const normalizedProvider = provider.toLowerCase();
 
-  switch (normalizedProvider) {
-    case 'openai':
-      return validateOpenAIKey(key);
-    case 'anthropic':
-      return validateAnthropicKey(key);
-    default:
-      return {
-        valid: false,
-        provider: 'openai', // fallback for type
-        error: `Unknown provider: ${provider}`,
-      };
-  }
+  return match(normalizedProvider)
+    .with('openai', () => validateOpenAIKey(key))
+    .with('anthropic', () => validateAnthropicKey(key))
+    .otherwise(() => ({
+      valid: false,
+      provider: 'openai' as const,
+      error: `Unknown provider: ${provider}`,
+    }));
 }
 
 /**
@@ -144,14 +142,8 @@ export function isKeyFormatValid(provider: string, key: string): boolean {
 
   const normalizedProvider = provider.toLowerCase();
 
-  switch (normalizedProvider) {
-    case 'openai':
-      // OpenAI keys typically start with 'sk-'
-      return key.startsWith('sk-');
-    case 'anthropic':
-      // Anthropic keys typically start with 'sk-ant-'
-      return key.startsWith('sk-ant-');
-    default:
-      return key.length >= 10;
-  }
+  return match(normalizedProvider)
+    .with('openai', () => key.startsWith('sk-'))
+    .with('anthropic', () => key.startsWith('sk-ant-'))
+    .otherwise(() => key.length >= 10);
 }
