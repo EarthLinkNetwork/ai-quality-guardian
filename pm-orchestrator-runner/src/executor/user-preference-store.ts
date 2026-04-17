@@ -11,6 +11,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { log } from '../logging/app-logger';
 
 /**
  * A single recorded preference
@@ -98,10 +99,10 @@ export class UserPreferenceStore {
           this.preferences.set(pref.id, pref);
         }
         
-        console.log(`[UserPreferenceStore] Loaded ${this.preferences.size} preferences`);
+        log.app.info('Loaded preferences', { count: this.preferences.size });
       }
     } catch (error) {
-      console.error('[UserPreferenceStore] Failed to load preferences:', error);
+      log.sys.error('Failed to load preferences', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -131,7 +132,7 @@ export class UserPreferenceStore {
         'utf-8'
       );
     } catch (error) {
-      console.error('[UserPreferenceStore] Failed to save preferences:', error);
+      log.sys.error('Failed to save preferences', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -200,7 +201,7 @@ export class UserPreferenceStore {
       this.preferences.set(existing.id, existing);
       this.saveToDisk();
       
-      console.log(`[UserPreferenceStore] Updated preference: ${existing.id} (confidence: ${existing.confidence})`);
+      log.app.info('Updated preference', { preferenceId: existing.id, confidence: existing.confidence });
       return existing;
     }
     
@@ -232,7 +233,7 @@ export class UserPreferenceStore {
     this.preferences.set(newPref.id, newPref);
     this.saveToDisk();
     
-    console.log(`[UserPreferenceStore] Created preference: ${newPref.id}`);
+    log.app.info('Created preference', { preferenceId: newPref.id });
     return newPref;
   }
 

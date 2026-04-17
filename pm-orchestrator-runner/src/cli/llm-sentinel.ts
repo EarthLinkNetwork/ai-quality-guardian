@@ -15,6 +15,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { log } from '../logging/app-logger';
 import {
   checkExecutionGate,
   generateCombinedVerdict,
@@ -114,13 +115,15 @@ function main() {
 
   console.log('');
   console.log('='.repeat(70));
-  console.log('[LLM Sentinel] Real LLM Test Verification');
+  log.sys.info('LLM Sentinel verification started');
+  console.log('LLM Sentinel - Real LLM Test Verification');
   console.log('='.repeat(70));
   console.log('');
 
   // Check gate
   const gate = checkExecutionGate();
-  console.log('[Gate Status]');
+  log.sys.info('Gate status check', { canExecute: gate.canExecute, provider: gate.provider || 'openai', skipReason: gate.skipReason });
+  console.log('Gate Status:');
   console.log(`  LLM_TEST_MODE: ${process.env.LLM_TEST_MODE || '(not set)'}`);
   console.log(`  Provider: ${gate.provider || 'openai (default)'}`);
   console.log(`  API Key Env: ${gate.envVar || 'OPENAI_API_KEY'}`);
@@ -136,7 +139,8 @@ function main() {
     evidenceDir = findEvidenceDir();
   }
 
-  console.log('[Evidence Status]');
+  log.sys.info('Evidence status check', { evidenceDir: evidenceDir || '(not found)' });
+  console.log('Evidence Status:');
   if (evidenceDir && fs.existsSync(evidenceDir)) {
     console.log(`  Directory: ${evidenceDir}`);
     const evidence = collectEvidence(evidenceDir);
@@ -171,7 +175,8 @@ function main() {
   }
 
   console.log('');
-  console.log('[Reproduction Commands]');
+  log.sys.info('LLM Sentinel verification completed');
+  console.log('Reproduction Commands:');
   console.log('  # Gate CLOSED (no API key):');
   console.log('  unset OPENAI_API_KEY && unset LLM_TEST_MODE && npm run llm:sentinel');
   console.log('');

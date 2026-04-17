@@ -7,6 +7,8 @@
  * - AWAITING_RESPONSE: Contains questions requiring user input
  */
 
+import { log } from '../logging/app-logger';
+
 /**
  * LLM usage information for cost tracking.
  * Accumulated per-call and retrieved via getPendingUsage().
@@ -541,7 +543,7 @@ export async function detectQuestionsWithLlm(
     }
 
     const prompt = buildDetectionPrompt(output, taskPrompt);
-    console.log(`[question-detector] Using ${resolved.provider}/${resolved.model} for question detection`);
+    log.app.info('Question detection using LLM', { provider: resolved.provider, model: resolved.model });
 
     if (resolved.provider === 'openai') {
       return await callOpenAI(resolved.apiKey, resolved.model, prompt);
@@ -552,7 +554,7 @@ export async function detectQuestionsWithLlm(
     }
   } catch (error) {
     // Fallback to regex-based detection
-    console.warn('[question-detector] LLM detection failed, falling back to regex:', error instanceof Error ? error.message : String(error));
+    log.sys.warn('LLM question detection failed, falling back to regex', { error: error instanceof Error ? error.message : String(error) });
     const regexResult = detectQuestions(output);
     return {
       hasQuestions: regexResult.hasQuestions,
@@ -636,7 +638,7 @@ export async function detectFileChangeClaimsWithLlm(
     }
 
     const prompt = buildFileChangeClaimPrompt(assistantText);
-    console.log(`[completion-detector] Using ${resolved.provider}/${resolved.model} for file change claim detection`);
+    log.app.info('File change claim detection using LLM', { provider: resolved.provider, model: resolved.model });
 
     let parsed: { hasClaims: boolean; reasoning: string };
 
@@ -687,7 +689,7 @@ export async function detectFileChangeClaimsWithLlm(
       usedModel: resolved.model,
     };
   } catch (error) {
-    console.warn('[completion-detector] LLM detection failed, falling back to regex:', error instanceof Error ? error.message : String(error));
+    log.sys.warn('LLM file change claim detection failed, falling back to regex', { error: error instanceof Error ? error.message : String(error) });
     return detectFileChangeClaimsRegex(assistantText);
   }
 }
@@ -780,7 +782,7 @@ export async function tryAutoAnswerQuestion(
     }
 
     const prompt = buildAutoAnswerPrompt(questionSummary, originalPrompt, claudeOutput);
-    console.log(`[auto-answer] Using ${resolved.provider}/${resolved.model} to evaluate question auto-answer`);
+    log.app.info('Auto-answer evaluation using LLM', { provider: resolved.provider, model: resolved.model });
 
     let parsed: { canAnswer: boolean; answer: string; reasoning: string };
 
@@ -824,7 +826,7 @@ export async function tryAutoAnswerQuestion(
       throw new Error(`Unsupported provider: ${resolved.provider}`);
     }
 
-    console.log(`[auto-answer] Result: canAnswer=${parsed.canAnswer}, reasoning=${parsed.reasoning}`);
+    log.app.info('Auto-answer result', { canAnswer: parsed.canAnswer, reasoning: parsed.reasoning });
 
     return {
       canAnswer: parsed.canAnswer === true,
@@ -833,7 +835,7 @@ export async function tryAutoAnswerQuestion(
       usedProvider: resolved.provider,
     };
   } catch (error) {
-    console.warn('[auto-answer] LLM auto-answer failed:', error instanceof Error ? error.message : String(error));
+    log.sys.warn('LLM auto-answer failed', { error: error instanceof Error ? error.message : String(error) });
     return { canAnswer: false, reasoning: `LLM error: ${error instanceof Error ? error.message : String(error)}` };
   }
 }
@@ -900,7 +902,7 @@ export async function generateMetaPrompt(
   try {
     const resolved = await resolveProvider(config, stateDir);
     if (!resolved) {
-      console.warn('[meta-prompt] No LLM provider available, using raw prompt');
+      log.sys.warn('No LLM provider available, using raw prompt');
       return { metaPrompt: userPrompt, enhancements: 'No LLM provider, passed through', shouldSplit: false };
     }
 
@@ -954,7 +956,7 @@ CRITICAL: Every subtask MUST include acceptance_criteria — a list of specific,
 - For refactoring: ["Existing tests still pass", "No new TypeScript errors"]
 DO NOT write vague criteria like "works correctly" or "is implemented". Each criterion must be independently verifiable.`;
 
-    console.log(`[meta-prompt] Using ${resolved.provider}/${resolved.model} to generate meta prompt`);
+    log.app.info('Meta prompt generation using LLM', { provider: resolved.provider, model: resolved.model });
 
     let parsed: {
       metaPrompt: string;
@@ -1004,9 +1006,9 @@ DO NOT write vague criteria like "works correctly" or "is implemented". Each cri
       throw new Error(`Unsupported provider: ${resolved.provider}`);
     }
 
-    console.log(`[meta-prompt] Enhancements: ${parsed.enhancements}`);
+    log.app.info('Meta prompt enhancements applied', { enhancements: parsed.enhancements });
     if (parsed.shouldSplit) {
-      console.log(`[meta-prompt] Split recommended: ${parsed.splitReason} (${parsed.subtasks?.length || 0} subtasks)`);
+      log.app.info('Task split recommended', { splitReason: parsed.splitReason, subtaskCount: parsed.subtasks?.length || 0 });
     }
 
     // Normalize subtask types to valid values and preserve acceptance_criteria
@@ -1030,7 +1032,7 @@ DO NOT write vague criteria like "works correctly" or "is implemented". Each cri
       splitReason: parsed.splitReason || undefined,
     };
   } catch (error) {
-    console.warn('[meta-prompt] Meta prompt generation failed, using raw prompt:', error instanceof Error ? error.message : String(error));
+    log.sys.warn('Meta prompt generation failed, using raw prompt', { error: error instanceof Error ? error.message : String(error) });
     return { metaPrompt: userPrompt, enhancements: `Failed: ${error instanceof Error ? error.message : String(error)}`, shouldSplit: false };
   }
 }
@@ -1100,7 +1102,7 @@ Mark as PASSED (passed=true) only when:
 Respond in this exact JSON format (no markdown):
 {"passed":true/false,"issues":["issue1","issue2"],"reworkInstructions":"concrete instructions for what to fix, or empty if passed"}`;
 
-    console.log(`[output-qa] Using ${resolved.provider}/${resolved.model} to evaluate output quality`);
+    log.app.info('Output QA evaluation using LLM', { provider: resolved.provider, model: resolved.model });
 
     let parsed: { passed: boolean; issues: string[]; reworkInstructions: string };
 
@@ -1144,7 +1146,7 @@ Respond in this exact JSON format (no markdown):
       throw new Error(`Unsupported provider: ${resolved.provider}`);
     }
 
-    console.log(`[output-qa] Result: passed=${parsed.passed}, issues=${JSON.stringify(parsed.issues)}`);
+    log.app.info('Output QA result', { passed: parsed.passed, issues: parsed.issues });
 
     return {
       passed: parsed.passed === true,
@@ -1153,7 +1155,7 @@ Respond in this exact JSON format (no markdown):
       usedProvider: resolved.provider,
     };
   } catch (error) {
-    console.warn('[output-qa] QA evaluation failed, assuming passed:', error instanceof Error ? error.message : String(error));
+    log.sys.warn('QA evaluation failed, assuming passed', { error: error instanceof Error ? error.message : String(error) });
     return { passed: true, issues: [] };
   }
 }
@@ -1243,7 +1245,7 @@ export async function verifyClaimsWithLlm(
     const systemPrompt = buildClaimVerificationSystemPrompt();
     const userPrompt = `Original task: ${originalPrompt.substring(0, 500)}\n\nAssistant's output to verify:\n${truncatedOutput}`;
 
-    console.log(`[claim-verify] Using ${resolved.provider}/${resolved.model} for claim verification`);
+    log.app.info('Claim verification using LLM', { provider: resolved.provider, model: resolved.model });
 
     let parsed: { claims: Array<{ claim: string; reason: string }> };
 
@@ -1303,7 +1305,7 @@ export async function verifyClaimsWithLlm(
     };
   } catch (error) {
     // Silently fail - claim verification is best-effort
-    console.warn('[claim-verify] Claim verification failed:', error instanceof Error ? error.message : String(error));
+    log.sys.warn('Claim verification failed', { error: error instanceof Error ? error.message : String(error) });
     return { hasUnverifiedClaims: false, claims: [] };
   }
 }

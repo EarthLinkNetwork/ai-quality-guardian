@@ -9,6 +9,7 @@
  */
 
 import { execSync } from 'child_process';
+import { log } from '../logging/app-logger';
 
 export interface UpdateCheckResult {
   hasUpdate: boolean;
@@ -60,7 +61,7 @@ export function checkForUpdates(projectPath: string): UpdateCheckResult {
       branch,
     };
   } catch (error) {
-    console.warn('[AutoUpdate] Failed to check for updates:', error instanceof Error ? error.message : String(error));
+    log.sys.warn('Failed to check for updates', { error: error instanceof Error ? error.message : String(error) });
     return {
       hasUpdate: false,
       currentSha: 'unknown',
@@ -112,15 +113,15 @@ export function performUpdate(projectPath: string): UpdateResult {
     return { success: true, oldSha, newSha };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('[AutoUpdate] Update failed:', errorMessage);
+    log.sys.error('Update failed', { error: errorMessage });
 
     // Attempt to recover: reset to previous state
     try {
       execSync(`git reset --hard ${oldSha}`, { cwd: projectPath, stdio: 'pipe' });
       execSync('npm run build', { cwd: projectPath, stdio: 'pipe', timeout: 120000 });
-      console.log('[AutoUpdate] Rolled back to previous state');
+      log.sys.info('Rolled back to previous state');
     } catch (rollbackErr) {
-      console.error('[AutoUpdate] Rollback also failed:', rollbackErr);
+      log.sys.error('Rollback also failed', { error: rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr) });
     }
 
     return { success: false, oldSha, newSha: oldSha, error: errorMessage };
@@ -139,30 +140,30 @@ export function startAutoUpdateLoop(
   projectPath: string,
   intervalMs: number = 5 * 60 * 1000
 ): () => void {
-  console.log(`[AutoUpdate] Started (check interval: ${intervalMs / 1000}s)`);
+  log.sys.info('Auto-update started', { checkIntervalSec: intervalMs / 1000 });
 
   const timer = setInterval(() => {
-    console.log('[AutoUpdate] Checking for updates...');
+    log.sys.info('Checking for updates');
     const check = checkForUpdates(projectPath);
 
     if (check.hasUpdate) {
-      console.log(`[AutoUpdate] Update available: ${check.currentSha.substring(0, 7)} → ${check.remoteSha.substring(0, 7)} (${check.branch})`);
+      log.sys.info('Update available', { currentSha: check.currentSha.substring(0, 7), remoteSha: check.remoteSha.substring(0, 7), branch: check.branch });
       const result = performUpdate(projectPath);
 
       if (result.success) {
-        console.log(`[AutoUpdate] Updated: ${result.oldSha.substring(0, 7)} → ${result.newSha.substring(0, 7)}`);
-        console.log('[AutoUpdate] Exiting for restart (launchd KeepAlive will restart)...');
+        log.sys.info('Update applied', { oldSha: result.oldSha.substring(0, 7), newSha: result.newSha.substring(0, 7) });
+        log.sys.info('Exiting for restart (launchd KeepAlive will restart)');
         process.exit(0);
       } else {
-        console.error(`[AutoUpdate] Update failed: ${result.error}`);
+        log.sys.error('Update failed', { error: result.error });
       }
     } else {
-      console.log('[AutoUpdate] No updates available');
+      log.sys.info('No updates available');
     }
   }, intervalMs);
 
   return () => {
     clearInterval(timer);
-    console.log('[AutoUpdate] Stopped');
+    log.sys.info('Auto-update stopped');
   };
 }

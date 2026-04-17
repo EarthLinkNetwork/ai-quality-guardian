@@ -11,6 +11,7 @@
  */
 
 import { LLMClient } from '../mediation/llm-client';
+import { log } from '../logging/app-logger';
 
 /**
  * Decision category for clarification routing
@@ -292,7 +293,7 @@ Respond with ONLY a JSON object:
         suggestedResolution: parsed.suggested_resolution,
       };
     } catch (error) {
-      console.error('[DecisionClassifier] LLM classification failed:', error);
+      log.sys.error('LLM classification failed', { error: (error as Error).message });
       this.log(`classifier error: ${truncateForLog((error as Error).message, 200)}`);
       return {
         category: 'case_by_case', // Fail-safe

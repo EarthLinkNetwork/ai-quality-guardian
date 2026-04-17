@@ -31,6 +31,7 @@
  */
 
 import { match } from 'ts-pattern';
+import { log } from '../logging/app-logger';
 import type {
   IExecutor,
   ExecutorTask,
@@ -72,8 +73,8 @@ export function isRecoveryMode(): boolean {
  */
 export function assertRecoveryModeAllowed(): void {
   if (process.env.PM_EXECUTOR_MODE === 'recovery-stub' && isProductionEnvironment()) {
-    console.error('[FATAL] recovery-stub is forbidden in production (NODE_ENV=production)');
-    console.error('[FATAL] mode=recovery-stub rejected');
+    log.sys.error('recovery-stub is forbidden in production', { nodeEnv: 'production' });
+    log.sys.error('mode=recovery-stub rejected');
     process.exit(1);
   }
 }
@@ -133,8 +134,7 @@ export class RecoveryExecutor implements IExecutor {
     const cwd = task.workingDir;
 
     // Evidence marker for E2E verification
-    console.log(`[RecoveryExecutor] mode=recovery-stub`);
-    console.log(`[RecoveryExecutor] Scenario: ${this.scenario}, task: ${task.id}`);
+    log.sys.info('RecoveryExecutor activated', { mode: 'recovery-stub', scenario: this.scenario, taskId: task.id });
 
     return match(this.scenario)
       .with('timeout', () => this.simulateTimeout(task, startTime, cwd))
@@ -153,7 +153,7 @@ export class RecoveryExecutor implements IExecutor {
     startTime: number,
     cwd: string
   ): Promise<ExecutorResult> {
-    console.log('[RecoveryExecutor] Simulating TIMEOUT - blocking for extended period');
+    log.sys.info('Simulating TIMEOUT - blocking for extended period');
 
     // Block for a very long time (the wrapper should kill us before this completes)
     // Using a reasonable time that exceeds hard timeout (default 120s)
@@ -194,7 +194,7 @@ export class RecoveryExecutor implements IExecutor {
     startTime: number,
     cwd: string
   ): Promise<ExecutorResult> {
-    console.log('[RecoveryExecutor] Simulating BLOCKED - returning interactive prompt output');
+    log.sys.info('Simulating BLOCKED - returning interactive prompt output');
 
     // Small delay to simulate some processing
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -228,7 +228,7 @@ export class RecoveryExecutor implements IExecutor {
     startTime: number,
     cwd: string
   ): Promise<ExecutorResult> {
-    console.log('[RecoveryExecutor] Simulating FAIL_CLOSED - returning error immediately');
+    log.sys.info('Simulating FAIL_CLOSED - returning error immediately');
 
     // Small delay to simulate some processing
     await new Promise((resolve) => setTimeout(resolve, 50));

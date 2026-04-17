@@ -10,6 +10,8 @@
  * - Recent output buffer for late joiners
  */
 
+import { log } from '../logging/app-logger';
+
 /**
  * Output chunk from executor
  */
@@ -326,7 +328,7 @@ export class ExecutorOutputStream {
         subscriber.onOutput(chunk);
       } catch (error) {
         // Don't let subscriber errors affect other subscribers
-        console.error('[ExecutorOutputStream] Subscriber error:', error);
+        log.sys.error('Subscriber notification error', { error: error instanceof Error ? error.message : String(error) });
       }
     }
   }

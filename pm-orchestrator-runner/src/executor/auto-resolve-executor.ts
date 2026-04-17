@@ -16,6 +16,7 @@
 import { match } from 'ts-pattern';
 import * as fs from 'fs';
 import * as path from 'path';
+import { log } from '../logging/app-logger';
 import { ClaudeCodeExecutor, ExecutorConfig, ExecutorTask, ExecutorResult, IExecutor, AuthCheckResult } from './claude-code-executor';
 import { LLMClient } from '../mediation/llm-client';
 import { DecisionClassifier, ClassificationResult, BestPracticeRule } from './decision-classifier';
@@ -107,12 +108,12 @@ export function applyBlockedOutputGuard(result: ExecutorResult, task: ExecutorTa
                         result.output.includes('？');
 
     if (hasQuestion) {
-      console.log('[BlockedOutputGuard] INV-1: BLOCKED output already has question');
+      log.app.info('BLOCKED output already has question', { guard: 'BlockedOutputGuard', invariant: 'INV-1' });
       return result;
     }
 
     // Add fallback question to existing output
-    console.log('[BlockedOutputGuard] INV-1: Adding fallback question to BLOCKED output');
+    log.app.info('Adding fallback question to BLOCKED output', { guard: 'BlockedOutputGuard', invariant: 'INV-1' });
     const fallbackQuestion = selectFallbackQuestion(result, task);
     return {
       ...result,
@@ -121,7 +122,7 @@ export function applyBlockedOutputGuard(result: ExecutorResult, task: ExecutorTa
   }
 
   // No output - generate fallback question based on blocked reason
-  console.log('[BlockedOutputGuard] INV-1: BLOCKED with empty output, generating fallback question');
+  log.app.info('BLOCKED with empty output, generating fallback question', { guard: 'BlockedOutputGuard', invariant: 'INV-1' });
   const fallbackQuestion = selectFallbackQuestion(result, task);
   return {
     ...result,
@@ -246,7 +247,7 @@ export class AutoResolvingExecutor implements IExecutor {
       );
     } catch (e) {
       this.llmUnavailableReason = (e as Error).message;
-      console.log(`[AutoResolvingExecutor] LLM client not available (auto-resolution disabled): ${this.llmUnavailableReason}`);
+      log.app.info('LLM client not available, auto-resolution disabled', { reason: this.llmUnavailableReason });
     }
     this.llmClient = llmClient;
     this.classifier = classifier;
@@ -256,9 +257,9 @@ export class AutoResolvingExecutor implements IExecutor {
       config.preferenceStoreConfig || {}
     );
 
-    console.log('[AutoResolvingExecutor] Initialized with decision classification and preference learning');
+    log.app.info('Initialized with decision classification and preference learning');
     const stats = this.preferenceStore.getStats();
-    console.log(`[AutoResolvingExecutor] Loaded ${stats.totalPreferences} preferences (${stats.highConfidenceCount} high-confidence)`);
+    log.app.info('Loaded preferences', { totalPreferences: stats.totalPreferences, highConfidenceCount: stats.highConfidenceCount });
   }
 
   /**
@@ -291,7 +292,7 @@ export class AutoResolvingExecutor implements IExecutor {
 
     while (attempts < this.maxRetries) {
       attempts++;
-      console.log(`[AutoResolvingExecutor] Attempt ${attempts}/${this.maxRetries}`);
+      log.app.info('Execution attempt', { attempt: attempts, maxRetries: this.maxRetries });
 
       // Execute with inner executor
       const result = await this.innerExecutor.execute(currentTask);
@@ -299,7 +300,7 @@ export class AutoResolvingExecutor implements IExecutor {
 
       // If successful, return
       if (result.status === 'COMPLETE') {
-        console.log('[AutoResolvingExecutor] Task completed successfully');
+        log.app.info('Task completed successfully');
         guardStream.emit(task.id, 'guard', `[guard] decision=PROCEED status=COMPLETE`);
         return result;
       }
@@ -308,7 +309,7 @@ export class AutoResolvingExecutor implements IExecutor {
       // If we have output, treat as COMPLETE regardless of file evidence status
       if ((task.taskType === 'READ_INFO' || task.taskType === 'REPORT') &&
           result.output && result.output.trim().length > 0) {
-        console.log(`[AutoResolvingExecutor] ${task.taskType} task completed with output (file evidence not required)`);
+        log.app.info('Task completed with output, file evidence not required', { taskType: task.taskType });
         return {
           ...result,
           status: 'COMPLETE',
@@ -325,7 +326,7 @@ export class AutoResolvingExecutor implements IExecutor {
         // This replaces the previous INV-2 (IMPLEMENTATION-only prohibition)
         if (!canTaskTypeBeBlocked(task.taskType)) {
           const taskTypeStr = task.taskType || 'unknown';
-          console.log(`[AutoResolvingExecutor] AC D Guard: Converting ${taskTypeStr} BLOCKED to INCOMPLETE (only DANGEROUS_OP can be BLOCKED)`);
+          log.app.info('AC D Guard: Converting BLOCKED to INCOMPLETE', { taskType: taskTypeStr, reason: 'only DANGEROUS_OP can be BLOCKED' });
           guardStream.emit(task.id, 'guard', `[guard] decision=BLOCKED_TO_INCOMPLETE taskType=${taskTypeStr}`);
           return {
             ...guardedResult,
@@ -335,7 +336,7 @@ export class AutoResolvingExecutor implements IExecutor {
         }
 
         // DANGEROUS_OP: Allow BLOCKED status (requires explicit user confirmation)
-        console.log('[AutoResolvingExecutor] AC D Guard: DANGEROUS_OP task allowed to be BLOCKED');
+        log.app.info('AC D Guard: DANGEROUS_OP task allowed to be BLOCKED');
         guardStream.emit(task.id, 'guard', `[guard] decision=BLOCKED (DANGEROUS_OP)`);
         return guardedResult;
       }
@@ -344,11 +345,11 @@ export class AutoResolvingExecutor implements IExecutor {
       const clarification = this.detectClarification(result.output, result.error);
 
       if (!clarification || clarification.type === 'unknown') {
-        console.log('[AutoResolvingExecutor] No resolvable clarification detected');
+        log.app.info('No resolvable clarification detected');
         return result;
       }
 
-      console.log(`[AutoResolvingExecutor] Clarification detected: ${clarification.type}`);
+      log.app.info('Clarification detected', { type: clarification.type });
       this.emitLLMLog(
         `clarification detected type=${clarification.type} question="${truncateForLog(clarification.question, 140)}"`
       );
@@ -357,11 +358,11 @@ export class AutoResolvingExecutor implements IExecutor {
       const resolution = await this.smartResolve(clarification, currentTask.prompt);
 
       if (!resolution.resolved || !resolution.explicitPrompt) {
-        console.log('[AutoResolvingExecutor] Could not resolve, returning original result');
+        log.app.info('Could not resolve, returning original result');
         return result;
       }
 
-      console.log(`[AutoResolvingExecutor] Resolved via ${resolution.resolutionMethod}: ${resolution.reasoning}`);
+      log.app.info('Clarification resolved', { method: resolution.resolutionMethod, reasoning: resolution.reasoning });
       this.emitLLMLog(
         `resolved via ${resolution.resolutionMethod || 'unknown'} value="${truncateForLog(resolution.resolvedValue, 120)}"`
       );
@@ -374,7 +375,7 @@ export class AutoResolvingExecutor implements IExecutor {
       };
     }
 
-    console.log('[AutoResolvingExecutor] Max retries reached');
+    log.app.warn('Max retries reached');
     return lastResult!;
   }
 
@@ -392,7 +393,7 @@ export class AutoResolvingExecutor implements IExecutor {
     const preferenceMatch = this.preferenceStore.findMatch(category, question, clarification.context);
     
     if (preferenceMatch && this.preferenceStore.canAutoApply(preferenceMatch)) {
-      console.log(`[AutoResolvingExecutor] Found high-confidence preference: ${preferenceMatch.preference.choice}`);
+      log.app.info('Found high-confidence preference', { choice: preferenceMatch.preference.choice });
       this.emitLLMLog(`preference applied choice="${truncateForLog(preferenceMatch.preference.choice, 120)}"`);
       
       return this.applyPreference(preferenceMatch, originalPrompt, clarification);
@@ -400,12 +401,12 @@ export class AutoResolvingExecutor implements IExecutor {
 
     // Step 2: Classify the clarification (requires LLM client)
     if (!this.classifier) {
-      console.log('[AutoResolvingExecutor] No classifier available, cannot auto-resolve');
+      log.app.info('No classifier available, cannot auto-resolve');
       this.emitLLMLog(`auto-resolve unavailable: ${this.llmUnavailableReason || 'classifier not initialized'}`);
       return { resolved: false };
     }
     const classification = await this.classifier.classifyFull(question, clarification.context);
-    console.log(`[AutoResolvingExecutor] Classification: ${classification.category} (confidence: ${classification.confidence})`);
+    log.app.info('Classification result', { category: classification.category, confidence: classification.confidence });
     this.emitLLMLog(
       `classification ${classification.category} confidence=${classification.confidence.toFixed(2)} reason="${truncateForLog(classification.reasoning, 140)}"`
     );
@@ -491,13 +492,13 @@ export class AutoResolvingExecutor implements IExecutor {
 
     // Check if we have a user response handler
     if (!this.userResponseHandler) {
-      console.log('[AutoResolvingExecutor] No user response handler, falling back to LLM');
+      log.app.info('No user response handler, falling back to LLM');
       this.emitLLMLog('case_by_case -> fallback to LLM inference (no user handler)');
       return this.autoResolve(clarification, originalPrompt);
     }
 
     // Ask the user
-    console.log(`[AutoResolvingExecutor] Asking user: ${question}`);
+    log.app.info('Asking user for case-by-case decision', { question });
     
     try {
       const contextStr = clarification.context || 'No additional context';
@@ -533,7 +534,7 @@ export class AutoResolvingExecutor implements IExecutor {
         resolutionMethod: 'user_input',
       };
     } catch (error) {
-      console.error('[AutoResolvingExecutor] User response error:', error);
+      log.sys.error('User response error', { error: (error as Error).message });
       this.emitLLMLog(`user response error: ${truncateForLog((error as Error).message, 160)}`);
       // Fallback to LLM inference
       return this.autoResolve(clarification, originalPrompt);
@@ -665,7 +666,7 @@ Do not ask for further clarification. Proceed with the above.`);
         .with('action_ambiguous', () => this.resolveAction(originalPrompt, clarification))
         .otherwise(() => Promise.resolve({ resolved: false } as AutoResolution));
     } catch (error) {
-      console.error('[AutoResolvingExecutor] Auto-resolve error:', error);
+      log.sys.error('Auto-resolve error', { error: (error as Error).message });
       return { resolved: false };
     }
   }
@@ -940,6 +941,6 @@ Clarify the action.`,
    */
   clearPreferences(): void {
     this.preferenceStore.clear();
-    console.log('[AutoResolvingExecutor] All preferences cleared');
+    log.app.info('All preferences cleared');
   }
 }

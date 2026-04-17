@@ -15,6 +15,7 @@ import {
   IExecutor,
   AuthCheckResult,
 } from './claude-code-executor';
+import { log } from '../logging/app-logger';
 import {
   estimateTaskSize,
   quickEstimateProfile,
@@ -137,13 +138,14 @@ export class DynamicTimeoutExecutor implements IExecutor {
     };
 
     if (this.logProfileSelection) {
-      console.log(`[DynamicTimeoutExecutor] Task analysis:
-  Category: ${estimate.category}
-  Confidence: ${(estimate.confidence * 100).toFixed(0)}%
-  Profile: ${profile.name}
-  Idle timeout: ${profile.idle_timeout_ms}ms
-  Hard timeout: ${profile.hard_timeout_ms}ms
-  Factors: ${estimate.factors.map(f => `${f.name}(${f.score.toFixed(2)})`).join(', ')}`);
+      log.app.info('Task analysis', {
+        category: estimate.category,
+        confidence: Number((estimate.confidence * 100).toFixed(0)),
+        profile: profile.name,
+        idleTimeoutMs: profile.idle_timeout_ms,
+        hardTimeoutMs: profile.hard_timeout_ms,
+        factors: estimate.factors.map(f => `${f.name}(${f.score.toFixed(2)})`).join(', '),
+      });
     }
 
     return {
