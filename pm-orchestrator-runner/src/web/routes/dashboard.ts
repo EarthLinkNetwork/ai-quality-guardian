@@ -591,7 +591,7 @@ export function createDashboardRoutes(stateDirOrConfig: string | DashboardRoutes
       });
 
       // Build lookup from runs for identifier recovery
-      let runLookup: Map<string, { sessionId: string; projectId: string; taskRunId: string }> = new Map();
+      const runLookup: Map<string, { sessionId: string; projectId: string; taskRunId: string }> = new Map();
       try {
         const runs = await dal.listRuns();
         for (const r of runs) {

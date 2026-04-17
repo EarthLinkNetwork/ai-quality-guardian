@@ -878,7 +878,7 @@ export function createApp(config: WebServerConfig): Express {
       ]);
 
       // Build project lookup from activity events if DAL is available
-      let projectLookup: Map<string, { projectId: string; projectAlias?: string; projectPath?: string }> = new Map();
+      const projectLookup: Map<string, { projectId: string; projectAlias?: string; projectPath?: string }> = new Map();
       if (isDALInitialized()) {
         try {
           const dal = getDAL();
