@@ -11,6 +11,10 @@ import { describe, it } from 'mocha';
 import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const REPL_SRC_PATH = path.resolve(__dirname, '../../../src/repl/repl-interface.ts');
 const PICKER_SRC_PATH = path.resolve(__dirname, '../../../src/repl/interactive-picker.ts');

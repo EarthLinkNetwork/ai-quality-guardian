@@ -14,7 +14,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import assert from 'node:assert/strict';
 
-const PROJECT_ROOT = path.resolve(__dirname, '../..');
+const PROJECT_ROOT = process.cwd();
 const TMP_DIR = path.join(PROJECT_ROOT, '.tmp');
 
 // Ensure .tmp directory exists

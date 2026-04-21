@@ -267,12 +267,21 @@ describe('Custom Command Registry', () => {
     });
 
     describe('unknown command', () => {
-      it('should return failure for unregistered command', async () => {
+      it('should passthrough unregistered command as slash command', async () => {
         const ctx: CommandContext = { projectId: 'test' };
         const result = await registry.execute('nonexistent', '', ctx);
-        assert.equal(result.success, false);
-        assert.ok(result.output.includes('Unknown command'));
-        assert.ok(result.output.includes('/help'));
+        assert.equal(result.success, true);
+        assert.equal(result.passthrough, true);
+        assert.equal(result.passthroughPrompt, '/nonexistent');
+        assert.equal(result.metadata?.isSlashCommand, true);
+      });
+
+      it('should passthrough unregistered command with args', async () => {
+        const ctx: CommandContext = { projectId: 'test' };
+        const result = await registry.execute('nonexistent', 'some args', ctx);
+        assert.equal(result.success, true);
+        assert.equal(result.passthrough, true);
+        assert.equal(result.passthroughPrompt, '/nonexistent some args');
       });
     });
 

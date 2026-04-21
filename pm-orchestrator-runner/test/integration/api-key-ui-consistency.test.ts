@@ -10,7 +10,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import assert from 'node:assert/strict';
 
-const PROJECT_ROOT = path.resolve(__dirname, '../..');
+const PROJECT_ROOT = process.cwd();
 const TMP_DIR = path.join(PROJECT_ROOT, '.tmp');
 const LOG_FILE = path.join(TMP_DIR, 'api-key-ui-consistency.log');
 

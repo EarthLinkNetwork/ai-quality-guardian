@@ -272,7 +272,7 @@ async function runRealREPL(
   timedOut: boolean;
 }> {
   return new Promise((resolve) => {
-    const cliPath = path.join(__dirname, '../../dist/cli/index.js');
+    const cliPath = path.join(process.cwd(), 'dist/cli/index.js');
     const timeoutMs = options.timeoutMs || 120000;
 
     let stdout = '';

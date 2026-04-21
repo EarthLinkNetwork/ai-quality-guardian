@@ -75,7 +75,7 @@ describe('Real LLM E2E Tests (opt-in: REAL_LLM_TESTS=1)', function() {
     evidenceDir = path.join(tempDir, 'evidence');
 
     // Copy fixture to temp directory
-    fixtureDir = path.resolve(__dirname, '../../fixtures/e2e-tiny-cli');
+    fixtureDir = path.resolve(process.cwd(), 'fixtures/e2e-tiny-cli');
 
     // Copy fixture
     fs.cpSync(fixtureDir, projectDir, { recursive: true });

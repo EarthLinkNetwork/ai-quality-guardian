@@ -613,7 +613,7 @@ async function runREPLWithInput(
   options: { expectError?: boolean; timeout?: number; projectMode?: 'temp' | 'fixed' } = {}
 ): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
   return new Promise((resolve) => {
-    const cliPath = path.join(__dirname, '../../dist/cli/index.js');
+    const cliPath = path.join(process.cwd(), 'dist/cli/index.js');
     const defaultTimeout = process.env.CI ? 5000 : 25000;
     const timeoutMs = options.timeout || defaultTimeout;
 

@@ -17,6 +17,7 @@ import request from 'supertest';
 import { Express } from 'express';
 import { createApp } from '../../../src/web/server';
 import { QueueItem, QueueItemStatus, ClaimResult, TaskGroupSummary, TaskGroupStatus } from '../../../src/queue';
+import { resetDAL } from '../../../src/web/dal/dal-factory';
 
 /**
  * Mock QueueStore for Web Server testing
@@ -231,6 +232,7 @@ describe('Web Server', () => {
   const testSessionId = 'test-session-123';
 
   beforeEach(() => {
+    resetDAL();
     store = new MockQueueStore();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     app = createApp({ queueStore: store as any, sessionId: testSessionId, namespace: 'test-namespace', projectRoot: '/tmp/test' });
@@ -564,6 +566,7 @@ describe('Web Server', () => {
         'POST /api/runner/restart',
         'POST /api/runner/stop',
         'POST /api/tasks/:task_id/reply',
+        'POST /api/system/processes/:pid/kill',
       ];
 
       const writeApis = routes.filter((r: string) => r.startsWith('POST /api/'));

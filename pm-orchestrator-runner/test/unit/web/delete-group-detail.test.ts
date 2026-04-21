@@ -162,6 +162,20 @@ class MockQueueStore {
     return true;
   }
 
+  async updateStatusWithValidation(
+    taskId: string,
+    newStatus: QueueItemStatus
+  ): Promise<{ success: boolean; task_id: string; old_status?: string; new_status?: string; error?: string; message?: string }> {
+    const item = this.items.get(taskId);
+    if (!item) {
+      return { success: false, task_id: taskId, error: 'Task not found', message: `Task not found: ${taskId}` };
+    }
+    const oldStatus = item.status;
+    item.status = newStatus;
+    item.updated_at = new Date().toISOString();
+    return { success: true, task_id: taskId, old_status: oldStatus, new_status: newStatus };
+  }
+
   async recoverStaleTasks(_maxAgeMs: number): Promise<number> { return 0; }
   getTableName(): string { return 'pm-runner-queue'; }
   getEndpoint(): string { return 'mock://test'; }

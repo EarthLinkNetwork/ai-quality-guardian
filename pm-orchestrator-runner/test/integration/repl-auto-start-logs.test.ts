@@ -35,7 +35,7 @@ describe('REPL Auto-Start and /logs Consistency (Integration)', function() {
     timeoutMs: number = 30000
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     return new Promise((resolve, reject) => {
-      const cliPath = path.resolve(__dirname, '../../dist/cli/index.js');
+      const cliPath = path.resolve(process.cwd(), 'dist/cli/index.js');
       const proc: ChildProcess = spawn('node', [cliPath, 'repl', '--project', projectDir], {
         env: { ...process.env, NO_COLOR: '1' },
       });

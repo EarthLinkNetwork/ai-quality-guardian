@@ -556,7 +556,7 @@ describe('End-to-End: CLI Entry Point (index.ts)', () => {
 
   let tempDir: string;
   let projectDir: string;
-  const cliPath = path.join(__dirname, '../../dist/cli/index.js');
+  const cliPath = path.join(process.cwd(), 'dist/cli/index.js');
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-runner-cli-entry-'));
