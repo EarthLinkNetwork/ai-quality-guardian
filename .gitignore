@@ -20,3 +20,12 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# PM Orchestrator artifacts (transient, not for commit)
+.orchestra/
+.orchestra-logs/
+.claude/worktrees/
+
+# Test coverage output
+.nyc_output/
+coverage/
