@@ -184,7 +184,7 @@ test.describe('Tier A Critical (shared server)', () => {
   test.afterAll(async () => { await stopServer(); });
 
   // ─── Test 1: XSS prevention ───────────────────────────────
-  test('XSS prevention: javascript: links in README are sanitized to #', async ({ page }) => {
+  test('XSS prevention: javascript: links in README are stripped by DOMPurify', async ({ page }) => {
     // 1. Create README.md with a malicious javascript: link and a safe link
     fs.writeFileSync(
       path.join(tempProjectDir, 'README.md'),
@@ -207,31 +207,43 @@ test.describe('Tier A Critical (shared server)', () => {
     // 3. Navigate to project detail page (README is rendered there)
     await page.goto(`${BASE_URL}/projects/${encodeURIComponent(projectId)}`);
 
+    // 3b. Open the README tab (Project Detail is now tabbed; spec/19_WEB_UI.md "Project Detail ページ仕様").
+    const readmeTab = page.locator('[data-testid="project-detail-tab-readme"]');
+    await expect(readmeTab).toBeVisible({ timeout: 10000 });
+    await readmeTab.click();
+
     // 4. Wait for README content to load
     const readmeBody = page.locator('[data-testid="project-readme-body"]');
     await expect(readmeBody).toBeVisible({ timeout: 10000 });
 
-    // 5. Collect all <a> hrefs inside the README body
+    // 5. Collect every <a> in the README body. The "safe" anchor must
+    //    be present; the "malicious" anchor either has its href stripped
+    //    entirely (DOMPurify's behaviour for javascript: URLs) or, in the
+    //    legacy homegrown parser, was rewritten to "#". Both are acceptable.
     const links = readmeBody.locator('a');
     const count = await links.count();
     expect(count).toBeGreaterThanOrEqual(2);
 
-    const hrefs: string[] = [];
+    const hrefs: (string | null)[] = [];
     for (let i = 0; i < count; i++) {
-      const href = await links.nth(i).getAttribute('href');
-      if (href) hrefs.push(href);
+      hrefs.push(await links.nth(i).getAttribute('href'));
     }
 
-    // 6. Verify: no href contains 'javascript:'
+    // 6. Verify: no href contains 'javascript:'.
     for (const href of hrefs) {
-      expect(href.toLowerCase()).not.toContain('javascript:');
+      if (href !== null) {
+        expect(href.toLowerCase()).not.toContain('javascript:');
+      }
     }
 
-    // 7. Verify: the safe link IS present
-    expect(hrefs).toContain('https://example.com');
+    // 7. Verify: the safe link IS present.
+    const presentHrefs = hrefs.filter((h): h is string => h !== null);
+    expect(presentHrefs).toContain('https://example.com');
 
-    // 8. Verify: the malicious link was replaced with '#'
-    expect(hrefs).toContain('#');
+    // 8. Verify: the malicious link was neutralised (href removed or '#').
+    const maliciousNeutralised =
+      hrefs.some((h) => h === null) || presentHrefs.some((h) => h === '#');
+    expect(maliciousNeutralised).toBe(true);
   });
 
   // ─── Test 2: Concurrent task claim ────────────────────────

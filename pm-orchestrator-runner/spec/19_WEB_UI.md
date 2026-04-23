@@ -665,3 +665,55 @@ Web UI のヘッダーに現在の namespace が表示される。
 - 明示的指定の場合: 通常のバッジ
 
 これにより、どの Queue を操作しているか一目で確認できる。
+
+### Project Detail ページ仕様（v3.x: README タブ化）
+
+*最終更新: 2026-04-23*
+
+#### URL とレンダラー
+
+- URL ハッシュ: `#/projects/{projectId}`
+- レンダラー関数: `renderProjectDetail(projectId)` (`src/web/public/index.html`)
+- API: `GET /api/projects/{projectId}`, `GET /api/projects/{projectId}/readme`
+
+#### タブ構成
+
+Project Detail は **2 タブ構成** で表示する。
+
+| タブ | data-testid | 内容 |
+|------|-------------|------|
+| Overview | `project-detail-tab-overview` | Project Details / Project Metadata / Default Command / Project Actions / Task Groups / Recent Task Groups / Recent Tasks / Recent Activity / Sessions（既存全カード） |
+| README | `project-detail-tab-readme` | プロジェクト直下 `README.md` の Markdown プレビュー |
+
+- 既定で **Overview タブが選択されている**（後方互換）
+- タブ切替時に URL hash は変更しない（軽量）。リロードすると Overview に戻る
+- README タブはプロジェクトに `README.md` が存在しなくても **常に表示**する。中身は「No README found」になる
+
+#### README プレビュー仕様（v3.x: 自前 parser → marked + DOMPurify 置換）
+
+- **レンダリングライブラリ**: `marked` (UMD) + `DOMPurify` (min)
+  - 旧実装の自前 Markdown parser (`renderMarkdownToHtml` / `sanitizeMarkdownUrl`) は **削除**
+  - vendor 配置: `src/web/public/vendor/{marked.umd.js, purify.min.js}` → 同 `dist/web/public/vendor/`
+  - 配信パス: `<script src="/vendor/marked.umd.js">`, `<script src="/vendor/purify.min.js">`
+  - vendor 同期: `node scripts/copy-vendor.cjs`（`postbuild` から自動実行）
+
+- **サニタイズ方針**:
+  - DOMPurify のデフォルト挙動に依存（`javascript:` / `data:` / `vbscript:` URL は属性削除）
+  - リンクは `target="_blank" rel="noopener noreferrer"` を付与（marked renderer で）
+
+- **API**:
+  - `GET /api/projects/{projectId}/readme` → `{ content: string, exists: boolean, path: string }`
+  - 既存実装（`src/web/routes/dashboard.ts`）を流用。バックエンド変更なし
+
+- **DOM 構造**:
+  - タブ pane: `<div data-testid="project-detail-pane-readme">`
+  - プレビュー本体: `<div data-testid="project-readme-body">{sanitized HTML}</div>`
+  - リフレッシュボタン: `<button data-testid="project-readme-refresh-btn">`
+
+#### 3点リンク追記
+
+| メニュー | 仕様書セクション | 実装関数 | テストファイル |
+|---------|----------------|---------|--------------|
+| Project Detail Tabs | spec/19_WEB_UI.md#project-detail-ページ仕様v3x-readme-タブ化 | renderProjectDetail / setProjectDetailTab | test/playwright/project-readme-preview.spec.ts |
+| Project README Preview | spec/19_WEB_UI.md#readme-プレビュー仕様v3x-自前-parser--marked--dompurify-置換 | loadProjectReadme | test/playwright/project-readme-preview.spec.ts, test/playwright/tier-a-critical.spec.ts (XSS) |
+

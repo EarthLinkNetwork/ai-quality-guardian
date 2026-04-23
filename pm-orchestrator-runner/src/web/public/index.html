@@ -3017,6 +3017,10 @@
     }
 
   </style>
+
+  <!-- README Markdown rendering (vendored; see scripts/copy-vendor.cjs) -->
+  <script src="/vendor/marked.umd.js"></script>
+  <script src="/vendor/purify.min.js"></script>
 </head>
 <body>
   <div id="toast-container" class="toast-container"></div>
@@ -6869,16 +6873,87 @@
 
     // ===================
     // ===================
-    // Project Detail README Loader
+    // Project Detail README Loader (marked + DOMPurify)
     // ===================
-    async function loadProjectReadme(projectId) {
+    //
+    // We use vendored marked (UMD) + DOMPurify (min) instead of a homegrown
+    // Markdown parser. They are loaded from /vendor/ via <script> tags in <head>.
+    // See spec/19_WEB_UI.md "README プレビュー仕様" for the contract.
+
+    /**
+     * Convert Markdown text to safe HTML.
+     * - marked.parse handles CommonMark + GFM-ish defaults (headings, lists,
+     *   code, links, blockquotes, hr, inline code, bold/italic).
+     * - DOMPurify strips javascript: / data: / vbscript: URLs and any
+     *   disallowed tags/attributes.
+     * - Links are forced to open in a new tab via DOMPurify hook.
+     */
+    function renderMarkdownToHtml(md) {
+      if (typeof md !== 'string') return '';
+      if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+        // Vendor scripts failed to load; fall back to escaped plain text so we
+        // never inject raw Markdown into the DOM.
+        return '<pre class="readme-code-block"><code>' + escapeHtml(md) + '</code></pre>';
+      }
+      try {
+        // marked v18 returns a string when called with a plain string and the
+        // default async=false setting. Configure once per call to keep the
+        // function pure and idempotent.
+        marked.setOptions({ gfm: true, breaks: false, async: false });
+        var rawHtml = marked.parse(md);
+
+        // Force every <a> link to open in a new tab safely.
+        if (!renderMarkdownToHtml._hookInstalled) {
+          DOMPurify.addHook('afterSanitizeAttributes', function (node) {
+            if (node.tagName === 'A') {
+              node.setAttribute('target', '_blank');
+              node.setAttribute('rel', 'noopener noreferrer');
+            }
+          });
+          renderMarkdownToHtml._hookInstalled = true;
+        }
+        return DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
+      } catch (err) {
+        return '<pre class="readme-code-block"><code>' + escapeHtml(md) + '</code></pre>';
+      }
+    }
+
+    /**
+     * Switch the active pane on the Project Detail page.
+     * paneKey: 'overview' | 'readme'
+     * Idempotent: safe to call repeatedly.
+     */
+    function setProjectDetailTab(paneKey, projectId) {
+      var tabs = document.querySelectorAll('.project-detail-tab');
+      tabs.forEach(function (btn) {
+        var match = btn.getAttribute('data-pane') === paneKey;
+        btn.classList.toggle('active', match);
+        btn.style.color = match ? '#2563eb' : '#6b7280';
+        btn.style.borderBottomColor = match ? '#2563eb' : 'transparent';
+      });
+      var panes = document.querySelectorAll('.project-detail-pane');
+      panes.forEach(function (p) {
+        p.style.display = (p.getAttribute('data-pane') === paneKey) ? 'block' : 'none';
+      });
+      // Lazy refresh README when its tab is opened (no-op if container missing)
+      if (paneKey === 'readme' && projectId) {
+        var c = document.getElementById('project-readme-content');
+        if (c && c.querySelector('[data-testid="project-readme-body"]') == null
+              && c.querySelector('[data-testid="project-readme-empty"]') == null) {
+          loadProjectReadme(projectId);
+        }
+      }
+    }
+    window.setProjectDetailTab = setProjectDetailTab;
+
+        async function loadProjectReadme(projectId) {
       const container = document.getElementById('project-readme-content');
       if (!container) return;
       container.innerHTML = '<div style="color:#9ca3af; font-size:0.85rem;">Loading README...</div>';
       try {
         const data = await api('/projects/' + encodeURIComponent(projectId) + '/readme');
         if (!data || !data.content) {
-          container.innerHTML = '<p style="color:#6b7280; font-size:0.85rem; margin:0;">No README file found in the project root.</p>';
+          container.innerHTML = '<p data-testid="project-readme-empty" style="color:#6b7280; font-size:0.85rem; margin:0;">No README file found in the project root.</p>';
           return;
         }
         const html = renderMarkdownToHtml(data.content);
@@ -6888,7 +6963,7 @@
       } catch (err) {
         const msg = err && err.message ? err.message : 'Error';
         if (/404|not.?found/i.test(msg)) {
-          container.innerHTML = '<p style="color:#6b7280; font-size:0.85rem; margin:0;">No README file found in the project root.</p>';
+          container.innerHTML = '<p data-testid="project-readme-empty" style="color:#6b7280; font-size:0.85rem; margin:0;">No README file found in the project root.</p>';
         } else {
           container.innerHTML = '<p style="color:#ef4444; font-size:0.85rem; margin:0;">Error loading README: ' + escapeHtml(msg) + '</p>';
         }
@@ -6896,7 +6971,7 @@
     }
 
     // ===================
-    // README Section (Markdown Preview)
+    // README Section (Markdown Preview - Settings page variant)
     // ===================
     async function renderReadmeSection(container) {
       container.innerHTML = '<div class="loading">Loading README...</div>';
@@ -6925,162 +7000,6 @@
       } catch (err) {
         container.innerHTML = `<div class="card"><p style="color:#ef4444;">Error loading README: ${escapeHtml(err.message)}</p></div>`;
       }
-    }
-
-    /**
-     * Convert Markdown text to safe HTML for preview.
-     * Handles: headings, bold, italic, inline code, fenced code blocks,
-     * ordered & unordered lists, blockquotes, horizontal rules, links, paragraphs.
-     */
-    function renderMarkdownToHtml(md) {
-      // Split into blocks so we can handle fenced code blocks specially
-      const lines = md.split('\n');
-      const out = [];
-      let i = 0;
-
-      while (i < lines.length) {
-        const line = lines[i];
-
-        // Fenced code block
-        if (/^```/.test(line)) {
-          const lang = line.slice(3).trim();
-          const codeLines = [];
-          i++;
-          while (i < lines.length && !/^```/.test(lines[i])) {
-            codeLines.push(lines[i]);
-            i++;
-          }
-          i++; // skip closing ```
-          const code = escapeHtml(codeLines.join('\n'));
-          out.push('<pre class="readme-code-block"><code' + (lang ? ' class="lang-' + escapeHtml(lang) + '"' : '') + '>' + code + '</code></pre>');
-          continue;
-        }
-
-        // Horizontal rule
-        if (/^[-*_]{3,}\s*$/.test(line)) {
-          out.push('<hr class="readme-hr">');
-          i++;
-          continue;
-        }
-
-        // Headings
-        const hm = line.match(/^(#{1,6})\s+(.+)/);
-        if (hm) {
-          const level = hm[1].length;
-          out.push('<h' + level + ' class="readme-h' + level + '">' + inlineMarkdown(hm[2]) + '</h' + level + '>');
-          i++;
-          continue;
-        }
-
-        // Blockquote
-        if (/^>\s?/.test(line)) {
-          const bqLines = [];
-          while (i < lines.length && /^>\s?/.test(lines[i])) {
-            bqLines.push(lines[i].replace(/^>\s?/, ''));
-            i++;
-          }
-          out.push('<blockquote class="readme-blockquote">' + inlineMarkdown(bqLines.join('<br>')) + '</blockquote>');
-          continue;
-        }
-
-        // Unordered list
-        if (/^[-*+]\s/.test(line)) {
-          const items = [];
-          while (i < lines.length && /^[-*+]\s/.test(lines[i])) {
-            items.push('<li>' + inlineMarkdown(lines[i].replace(/^[-*+]\s/, '')) + '</li>');
-            i++;
-          }
-          out.push('<ul class="readme-ul">' + items.join('') + '</ul>');
-          continue;
-        }
-
-        // Ordered list
-        if (/^\d+\.\s/.test(line)) {
-          const items = [];
-          while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
-            items.push('<li>' + inlineMarkdown(lines[i].replace(/^\d+\.\s/, '')) + '</li>');
-            i++;
-          }
-          out.push('<ol class="readme-ol">' + items.join('') + '</ol>');
-          continue;
-        }
-
-        // Blank line → paragraph break
-        if (line.trim() === '') {
-          i++;
-          continue;
-        }
-
-        // Paragraph: gather consecutive non-special lines
-        const paraLines = [];
-        while (
-          i < lines.length &&
-          lines[i].trim() !== '' &&
-          !/^```/.test(lines[i]) &&
-          !/^#{1,6}\s/.test(lines[i]) &&
-          !/^[-*+]\s/.test(lines[i]) &&
-          !/^\d+\.\s/.test(lines[i]) &&
-          !/^>\s?/.test(lines[i]) &&
-          !/^[-*_]{3,}\s*$/.test(lines[i])
-        ) {
-          paraLines.push(lines[i]);
-          i++;
-        }
-        if (paraLines.length) {
-          out.push('<p class="readme-p">' + inlineMarkdown(paraLines.join(' ')) + '</p>');
-        }
-      }
-
-      return out.join('\n');
-    }
-
-    /**
-     * Render inline Markdown: bold, italic, inline code, links, images.
-     * Input is NOT yet HTML-escaped; we escape as we go.
-     */
-    /**
-     * Sanitize a URL to prevent XSS via javascript:, data:, vbscript: protocols.
-     * Returns '#' for unsafe URLs. Allows http(s):, mailto:, relative, and anchor URLs.
-     */
-    function sanitizeMarkdownUrl(url) {
-      if (!url) return '#';
-      var trimmed = String(url).trim();
-      // Decode common HTML entities that may have been produced by escapeHtml earlier
-      var decoded = trimmed
-        .replace(/&amp;/g, '&')
-        .replace(/&#x2F;/gi, '/')
-        .replace(/&#47;/g, '/');
-      // Block dangerous protocols (case-insensitive, allow leading whitespace/control chars)
-      if (/^[\s\x00-\x1f]*(javascript|data|vbscript|file):/i.test(decoded)) {
-        return '#';
-      }
-      return trimmed;
-    }
-
-    function inlineMarkdown(text) {
-      // Escape HTML first (except we'll inject tags below)
-      let s = escapeHtml(text);
-      // Bold+italic
-      s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-      // Bold
-      s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
-      // Italic
-      s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
-      s = s.replace(/_(.+?)_/g, '<em>$1</em>');
-      // Inline code (escaped backtick: &#96;)
-      s = s.replace(/&#96;(.+?)&#96;/g, '<code class="readme-inline-code">$1</code>');
-      // Strikethrough
-      s = s.replace(/~~(.+?)~~/g, '<del>$1</del>');
-      // Image (before link so ![...](...) matches first)
-      s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_, alt, src) {
-        return '<img src="' + sanitizeMarkdownUrl(src) + '" alt="' + alt + '" style="max-width:100%;border-radius:4px;">';
-      });
-      // Link
-      s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, label, href) {
-        return '<a href="' + sanitizeMarkdownUrl(href) + '" target="_blank" rel="noopener noreferrer" class="readme-link">' + label + '</a>';
-      });
-      return s;
     }
 
     // ===================
@@ -8429,6 +8348,21 @@
             </div>
           </div>
 
+          <!-- Project Detail tabs (Overview / README) — added per spec/19_WEB_UI.md -->
+          <div class="project-detail-tabs" data-testid="project-detail-tabs"
+               style="display:flex; gap:4px; border-bottom:2px solid #e5e7eb; margin-bottom:16px;">
+            <button type="button" class="project-detail-tab active" data-pane="overview"
+                    data-testid="project-detail-tab-overview"
+                    onclick="setProjectDetailTab('overview', '${escapeHtml(projectId)}')"
+                    style="padding:8px 16px; border:none; background:none; cursor:pointer; font-weight:500; font-size:0.88rem; color:#2563eb; border-bottom:2px solid #2563eb; margin-bottom:-2px;">Overview</button>
+            <button type="button" class="project-detail-tab" data-pane="readme"
+                    data-testid="project-detail-tab-readme"
+                    onclick="setProjectDetailTab('readme', '${escapeHtml(projectId)}')"
+                    style="padding:8px 16px; border:none; background:none; cursor:pointer; font-weight:500; font-size:0.88rem; color:#6b7280; border-bottom:2px solid transparent; margin-bottom:-2px;">README</button>
+          </div>
+
+          <div class="project-detail-pane" data-pane="overview" data-testid="project-detail-pane-overview" style="display:block;">
+
           <div class="card" data-testid="project-details-card">
             <h3>Project Details</h3>
             <div class="detail-grid">
@@ -8507,16 +8441,6 @@
           </div>
 
           ${projectActionsHtml}
-
-          <div class="card" data-testid="project-readme-card" id="project-readme-card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-              <h3 style="margin:0;">&#128214; README</h3>
-              <button class="btn btn-secondary" style="font-size:0.75rem; padding:4px 10px;" data-testid="project-readme-refresh-btn" onclick="loadProjectReadme('${escapeHtml(projectId)}')">Refresh</button>
-            </div>
-            <div id="project-readme-content" data-testid="project-readme-content" style="min-height:40px;">
-              <div style="color:#9ca3af; font-size:0.85rem;">Loading README...</div>
-            </div>
-          </div>
 
           <div>
             <h3 style="margin-bottom:12px;">Task Groups (${projectTaskGroups.length})</h3>
@@ -8613,6 +8537,20 @@
 
           ${project.projectType === 'runner-dev' ? '<div id="web-dev-mode-section"></div>' : ''}
           ${project.projectType === 'runner-dev' ? '<div id="dev-console-section"></div>' : ''}
+
+          </div><!-- /pane:overview -->
+
+          <div class="project-detail-pane" data-pane="readme" data-testid="project-detail-pane-readme" style="display:none;">
+            <div class="card" data-testid="project-readme-card" id="project-readme-card">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h3 style="margin:0;">&#128214; README</h3>
+                <button class="btn btn-secondary" style="font-size:0.75rem; padding:4px 10px;" data-testid="project-readme-refresh-btn" onclick="loadProjectReadme('${escapeHtml(projectId)}')">Refresh</button>
+              </div>
+              <div id="project-readme-content" data-testid="project-readme-content" style="min-height:40px;">
+                <div style="color:#9ca3af; font-size:0.85rem;">Loading README...</div>
+              </div>
+            </div>
+          </div><!-- /pane:readme -->
         `;
 
         // Load self-hosting status for runner-dev projects
