@@ -119,3 +119,143 @@ describe('Model Registry - claude-code explicit opt-in', () => {
     });
   });
 });
+
+// ==================================================================
+// Task E: additive-only model registry refresh (2026-04-24)
+// ==================================================================
+// These tests verify that:
+//   1. New OpenAI model IDs (verified live via OpenAI /v1/models API)
+//      are registered without removing any existing models.
+//   2. New Anthropic un-dated aliases are registered, and the
+//      previously-drifting claude-haiku-4-5-20251001 is now formally
+//      in the registry (resolving the gap between model-registry and
+//      internalLlm defaults / UI dropdown / question-detector).
+//   3. New models carry placeholder pricing (0 / TBD); actual pricing
+//      is deferred to a follow-up task tracked in docs/BACKLOG.md.
+// ==================================================================
+
+import {
+  OPENAI_MODELS,
+  ANTHROPIC_MODELS,
+} from '../../../../src/models/repl/model-registry';
+
+describe('Model Registry - Task E: additive OpenAI refresh', () => {
+  const NEW_OPENAI_IDS = [
+    'gpt-5.4',
+    'gpt-5.4-mini',
+    'gpt-5.4-pro',
+    'gpt-5.1',
+    'gpt-5',
+    'gpt-4.1',
+    'gpt-4.1-mini',
+    'o3',
+    'o3-mini',
+    'o4-mini',
+  ] as const;
+
+  const EXISTING_OPENAI_IDS = [
+    'gpt-4o',
+    'gpt-4o-mini',
+    'gpt-4-turbo',
+    'gpt-4',
+    'gpt-3.5-turbo',
+    'o1',
+    'o1-mini',
+    'o1-preview',
+  ] as const;
+
+  it('new OpenAI IDs (verified via live API) must be registered', () => {
+    const ids = OPENAI_MODELS.map((m) => m.id);
+    for (const newId of NEW_OPENAI_IDS) {
+      assert.ok(
+        ids.includes(newId),
+        `OPENAI_MODELS must include "${newId}" (verified live via OpenAI /v1/models on 2026-04-24)`
+      );
+    }
+  });
+
+  it('all pre-existing OpenAI IDs must still be registered (no removal)', () => {
+    const ids = OPENAI_MODELS.map((m) => m.id);
+    for (const existingId of EXISTING_OPENAI_IDS) {
+      assert.ok(
+        ids.includes(existingId),
+        `OPENAI_MODELS must still include legacy "${existingId}" (additive-only refresh; removal is tracked in docs/BACKLOG.md)`
+      );
+    }
+  });
+
+  it('new OpenAI models must carry placeholder pricing (0 / TBD)', () => {
+    for (const newId of NEW_OPENAI_IDS) {
+      const model = OPENAI_MODELS.find((m) => m.id === newId);
+      assert.ok(model, `Model "${newId}" not found`);
+      assert.equal(
+        model!.inputPricePerMillion,
+        0,
+        `"${newId}" inputPricePerMillion must be 0 (TBD, actual pricing deferred to legacy cleanup task)`
+      );
+      assert.equal(
+        model!.outputPricePerMillion,
+        0,
+        `"${newId}" outputPricePerMillion must be 0 (TBD)`
+      );
+    }
+  });
+});
+
+describe('Model Registry - Task E: additive Anthropic refresh', () => {
+  const NEW_ANTHROPIC_IDS = [
+    'claude-opus-4-7',
+    'claude-sonnet-4-6',
+    'claude-haiku-4-5',
+    // Previously referenced by internalLlm defaults / UI / question-detector
+    // but NOT registered → drift. Task E formally registers it.
+    'claude-haiku-4-5-20251001',
+  ] as const;
+
+  const EXISTING_ANTHROPIC_IDS = [
+    'claude-opus-4-20250514',
+    'claude-sonnet-4-20250514',
+    'claude-3-5-sonnet-20241022',
+    'claude-3-5-haiku-20241022',
+    'claude-3-opus-20240229',
+    'claude-3-sonnet-20240229',
+    'claude-3-haiku-20240307',
+  ] as const;
+
+  it('new Anthropic aliases must be registered', () => {
+    const ids = ANTHROPIC_MODELS.map((m) => m.id);
+    for (const newId of NEW_ANTHROPIC_IDS) {
+      assert.ok(
+        ids.includes(newId),
+        `ANTHROPIC_MODELS must include "${newId}" (un-dated alias / drift resolution)`
+      );
+    }
+  });
+
+  it('all pre-existing Anthropic IDs must still be registered (no removal)', () => {
+    const ids = ANTHROPIC_MODELS.map((m) => m.id);
+    for (const existingId of EXISTING_ANTHROPIC_IDS) {
+      assert.ok(
+        ids.includes(existingId),
+        `ANTHROPIC_MODELS must still include "${existingId}" (additive-only refresh)`
+      );
+    }
+  });
+
+  it('new Anthropic models must carry placeholder pricing (0 / TBD)', () => {
+    for (const newId of NEW_ANTHROPIC_IDS) {
+      const model = ANTHROPIC_MODELS.find((m) => m.id === newId);
+      assert.ok(model, `Model "${newId}" not found`);
+      assert.equal(
+        model!.inputPricePerMillion,
+        0,
+        `"${newId}" inputPricePerMillion must be 0 (TBD)`
+      );
+      assert.equal(
+        model!.outputPricePerMillion,
+        0,
+        `"${newId}" outputPricePerMillion must be 0 (TBD)`
+      );
+    }
+  });
+});

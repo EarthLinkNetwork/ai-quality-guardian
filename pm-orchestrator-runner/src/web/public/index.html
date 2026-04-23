@@ -6088,6 +6088,20 @@
                 <option value="claude-3-5-sonnet-20241022" ${globalSettings.llm?.model === 'claude-3-5-sonnet-20241022' ? 'selected' : ''}>Claude 3.5 Sonnet</option>
                 <option value="gpt-4o" ${globalSettings.llm?.model === 'gpt-4o' ? 'selected' : ''}>GPT-4o</option>
                 <option value="gpt-4-turbo" ${globalSettings.llm?.model === 'gpt-4-turbo' ? 'selected' : ''}>GPT-4 Turbo</option>
+                <option value="gpt-5.4" ${globalSettings.llm?.model === 'gpt-5.4' ? 'selected' : ''}>GPT-5.4</option>
+                <option value="gpt-5.4-mini" ${globalSettings.llm?.model === 'gpt-5.4-mini' ? 'selected' : ''}>GPT-5.4 Mini</option>
+                <option value="gpt-5.4-pro" ${globalSettings.llm?.model === 'gpt-5.4-pro' ? 'selected' : ''}>GPT-5.4 Pro</option>
+                <option value="gpt-5.1" ${globalSettings.llm?.model === 'gpt-5.1' ? 'selected' : ''}>GPT-5.1</option>
+                <option value="gpt-5" ${globalSettings.llm?.model === 'gpt-5' ? 'selected' : ''}>GPT-5</option>
+                <option value="gpt-4.1" ${globalSettings.llm?.model === 'gpt-4.1' ? 'selected' : ''}>GPT-4.1</option>
+                <option value="gpt-4.1-mini" ${globalSettings.llm?.model === 'gpt-4.1-mini' ? 'selected' : ''}>GPT-4.1 Mini</option>
+                <option value="o3" ${globalSettings.llm?.model === 'o3' ? 'selected' : ''}>o3</option>
+                <option value="o3-mini" ${globalSettings.llm?.model === 'o3-mini' ? 'selected' : ''}>o3 Mini</option>
+                <option value="o4-mini" ${globalSettings.llm?.model === 'o4-mini' ? 'selected' : ''}>o4 Mini</option>
+                <option value="claude-opus-4-7" ${globalSettings.llm?.model === 'claude-opus-4-7' ? 'selected' : ''}>Claude Opus 4.7</option>
+                <option value="claude-sonnet-4-6" ${globalSettings.llm?.model === 'claude-sonnet-4-6' ? 'selected' : ''}>Claude Sonnet 4.6</option>
+                <option value="claude-haiku-4-5" ${globalSettings.llm?.model === 'claude-haiku-4-5' ? 'selected' : ''}>Claude Haiku 4.5</option>
+                <option value="claude-haiku-4-5-20251001" ${globalSettings.llm?.model === 'claude-haiku-4-5-20251001' ? 'selected' : ''}>Claude Haiku 4.5 (2025-10-01)</option>
               </select>
             </div>
           </div>
@@ -6114,6 +6128,19 @@
                 <option value="gpt-4o" ${settingsData.internalLlm?.model === 'gpt-4o' ? 'selected' : ''}>gpt-4o (OpenAI)</option>
                 <option value="claude-haiku-4-5-20251001" ${settingsData.internalLlm?.model === 'claude-haiku-4-5-20251001' ? 'selected' : ''}>Claude Haiku 4.5 (Anthropic, cheapest)</option>
                 <option value="claude-sonnet-4-20250514" ${settingsData.internalLlm?.model === 'claude-sonnet-4-20250514' ? 'selected' : ''}>Claude Sonnet 4 (Anthropic)</option>
+                <option value="gpt-5.4" ${settingsData.internalLlm?.model === 'gpt-5.4' ? 'selected' : ''}>GPT-5.4 (OpenAI)</option>
+                <option value="gpt-5.4-mini" ${settingsData.internalLlm?.model === 'gpt-5.4-mini' ? 'selected' : ''}>GPT-5.4 Mini (OpenAI)</option>
+                <option value="gpt-5.4-pro" ${settingsData.internalLlm?.model === 'gpt-5.4-pro' ? 'selected' : ''}>GPT-5.4 Pro (OpenAI)</option>
+                <option value="gpt-5.1" ${settingsData.internalLlm?.model === 'gpt-5.1' ? 'selected' : ''}>GPT-5.1 (OpenAI)</option>
+                <option value="gpt-5" ${settingsData.internalLlm?.model === 'gpt-5' ? 'selected' : ''}>GPT-5 (OpenAI)</option>
+                <option value="gpt-4.1" ${settingsData.internalLlm?.model === 'gpt-4.1' ? 'selected' : ''}>GPT-4.1 (OpenAI)</option>
+                <option value="gpt-4.1-mini" ${settingsData.internalLlm?.model === 'gpt-4.1-mini' ? 'selected' : ''}>GPT-4.1 Mini (OpenAI)</option>
+                <option value="o3" ${settingsData.internalLlm?.model === 'o3' ? 'selected' : ''}>o3 (OpenAI)</option>
+                <option value="o3-mini" ${settingsData.internalLlm?.model === 'o3-mini' ? 'selected' : ''}>o3 Mini (OpenAI)</option>
+                <option value="o4-mini" ${settingsData.internalLlm?.model === 'o4-mini' ? 'selected' : ''}>o4 Mini (OpenAI)</option>
+                <option value="claude-opus-4-7" ${settingsData.internalLlm?.model === 'claude-opus-4-7' ? 'selected' : ''}>Claude Opus 4.7 (Anthropic)</option>
+                <option value="claude-sonnet-4-6" ${settingsData.internalLlm?.model === 'claude-sonnet-4-6' ? 'selected' : ''}>Claude Sonnet 4.6 (Anthropic)</option>
+                <option value="claude-haiku-4-5" ${settingsData.internalLlm?.model === 'claude-haiku-4-5' ? 'selected' : ''}>Claude Haiku 4.5 (Anthropic)</option>
               </select>
             </div>
             <div class="form-group">
@@ -6218,6 +6245,20 @@
                 <option value="claude-3-5-sonnet-20241022" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-3-5-sonnet-20241022' ? 'selected' : ''}>Claude 3.5 Sonnet</option>
                 <option value="gpt-4o" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-4o' ? 'selected' : ''}>GPT-4o</option>
                 <option value="gpt-4-turbo" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-4-turbo' ? 'selected' : ''}>GPT-4 Turbo</option>
+                <option value="gpt-5.4" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-5.4' ? 'selected' : ''}>GPT-5.4</option>
+                <option value="gpt-5.4-mini" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-5.4-mini' ? 'selected' : ''}>GPT-5.4 Mini</option>
+                <option value="gpt-5.4-pro" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-5.4-pro' ? 'selected' : ''}>GPT-5.4 Pro</option>
+                <option value="gpt-5.1" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-5.1' ? 'selected' : ''}>GPT-5.1</option>
+                <option value="gpt-5" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-5' ? 'selected' : ''}>GPT-5</option>
+                <option value="gpt-4.1" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-4.1' ? 'selected' : ''}>GPT-4.1</option>
+                <option value="gpt-4.1-mini" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-4.1-mini' ? 'selected' : ''}>GPT-4.1 Mini</option>
+                <option value="o3" ${getEffectiveValue('model', globalSettings.llm?.model) === 'o3' ? 'selected' : ''}>o3</option>
+                <option value="o3-mini" ${getEffectiveValue('model', globalSettings.llm?.model) === 'o3-mini' ? 'selected' : ''}>o3 Mini</option>
+                <option value="o4-mini" ${getEffectiveValue('model', globalSettings.llm?.model) === 'o4-mini' ? 'selected' : ''}>o4 Mini</option>
+                <option value="claude-opus-4-7" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-opus-4-7' ? 'selected' : ''}>Claude Opus 4.7</option>
+                <option value="claude-sonnet-4-6" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-sonnet-4-6' ? 'selected' : ''}>Claude Sonnet 4.6</option>
+                <option value="claude-haiku-4-5" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-haiku-4-5' ? 'selected' : ''}>Claude Haiku 4.5</option>
+                <option value="claude-haiku-4-5-20251001" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-haiku-4-5-20251001' ? 'selected' : ''}>Claude Haiku 4.5 (2025-10-01)</option>
               </select>
             </div>
           </div>

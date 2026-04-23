@@ -51,6 +51,16 @@ Runner は `claude-code` provider 選択時、モデル名を保持しない（n
 | `o1`                  | o1                    | $15.00            | $60.00             | 200K      |
 | `o1-mini`             | o1 Mini               | $3.00             | $12.00             | 128K      |
 | `o1-preview`          | o1 Preview            | $15.00            | $60.00             | 128K      |
+| `gpt-5.4`             | GPT-5.4               | TBD               | TBD                | TBD       |
+| `gpt-5.4-mini`        | GPT-5.4 Mini          | TBD               | TBD                | TBD       |
+| `gpt-5.4-pro`         | GPT-5.4 Pro           | TBD               | TBD                | TBD       |
+| `gpt-5.1`             | GPT-5.1               | TBD               | TBD                | TBD       |
+| `gpt-5`               | GPT-5                 | TBD               | TBD                | TBD       |
+| `gpt-4.1`             | GPT-4.1               | TBD               | TBD                | TBD       |
+| `gpt-4.1-mini`        | GPT-4.1 Mini          | TBD               | TBD                | TBD       |
+| `o3`                  | o3                    | TBD               | TBD                | TBD       |
+| `o3-mini`             | o3 Mini               | TBD               | TBD                | TBD       |
+| `o4-mini`             | o4 Mini               | TBD               | TBD                | TBD       |
 
 #### anthropic
 
@@ -63,6 +73,10 @@ Runner は `claude-code` provider 選択時、モデル名を保持しない（n
 | `claude-3-opus-20240229`      | Claude 3 Opus       | $15.00            | $75.00             | 200K      |
 | `claude-3-sonnet-20240229`    | Claude 3 Sonnet     | $3.00             | $15.00             | 200K      |
 | `claude-3-haiku-20240307`     | Claude 3 Haiku      | $0.25             | $1.25              | 200K      |
+| `claude-opus-4-7`             | Claude Opus 4.7     | TBD               | TBD                | TBD       |
+| `claude-sonnet-4-6`           | Claude Sonnet 4.6   | TBD               | TBD                | TBD       |
+| `claude-haiku-4-5`            | Claude Haiku 4.5    | TBD               | TBD                | TBD       |
+| `claude-haiku-4-5-20251001`   | Claude Haiku 4.5 (2025-10-01) | TBD     | TBD                | TBD       |
 
 ### 2.2 料金情報の出典
 
@@ -74,6 +88,42 @@ Runner は `claude-code` provider 選択時、モデル名を保持しない（n
 - 料金情報はハードコードされた静的データとして保持する
 - Runner は料金の正確性を保証しない（参考情報として表示）
 - 最新の正確な料金は各 Provider の公式サイトを参照すること
+
+### 2.4 Model Registry Refresh History (Task E, 2026-04-24)
+
+Additive-only refresh. No existing model IDs were removed.
+
+- OpenAI additions verified live via `GET https://api.openai.com/v1/models`
+  on 2026-04-24. All 12 candidate IDs responded PRESENT. The 10 rows
+  added above correspond to those candidates minus `gpt-4o` /
+  `gpt-4o-mini` which were already present in the registry.
+- Anthropic additions: three un-dated aliases (`claude-opus-4-7`,
+  `claude-sonnet-4-6`, `claude-haiku-4-5`) plus
+  `claude-haiku-4-5-20251001` to resolve prior drift
+  (that ID was referenced by `internalLlm.defaults.anthropic`, the
+  Web UI dropdown, and `src/utils/question-detector.ts` without being
+  in this registry).
+- Pricing for all Task E additions is `TBD`. Actual pricing
+  verification is **intentionally deferred** to the follow-up cleanup
+  task below.
+
+### 2.5 TODO: Legacy Cleanup
+
+The following legacy OpenAI model IDs are marked `@deprecated` in
+`src/models/repl/model-registry.ts` via JSDoc but have **not been
+removed** (additive-only refresh rule):
+
+- `gpt-3.5-turbo`
+- `o1-preview`
+- `gpt-4-turbo`
+- `o1`
+- `o1-mini`
+
+Cleanup is tracked in `docs/BACKLOG.md` → "Legacy Model Cleanup
+(Task E follow-up)". A forget-proof test
+(`test/unit/legacy-backlog.test.ts`) asserts that the backlog entry
+cannot be silently deleted without failing CI.
+
 
 ---
 

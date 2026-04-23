@@ -10,6 +10,14 @@
  * - openai: RECOMMENDED - API key based, direct control
  * - anthropic: API key based, direct control
  * - claude-code: NOT recommended by default, requires explicit opt-in (--provider claude-code)
+ *
+ * Task E (2026-04-24): additive-only model registry refresh.
+ *   - New OpenAI IDs verified live via OpenAI /v1/models on 2026-04-24.
+ *   - New Anthropic un-dated aliases added.
+ *   - claude-haiku-4-5-20251001 formally registered (drift resolution).
+ *   - Some legacy IDs marked @deprecated (JSDoc only, not removed).
+ *   - Cleanup of @deprecated IDs tracked in docs/BACKLOG.md
+ *     ("Legacy Model Cleanup (Task E follow-up)").
  */
 
 import { match } from 'ts-pattern';
@@ -75,23 +83,63 @@ export const PROVIDER_REGISTRY: Record<Provider, ProviderInfo> = {
 /**
  * OpenAI models
  * Per spec 12_LLM_PROVIDER_AND_MODELS.md Section 2.1
+ *
+ * Existing models retain their validated pricing.
+ * Task E additions (gpt-5.x / gpt-4.1 / o3 / o4-mini) carry
+ * placeholder pricing (0 / TBD) — actual pricing verification is
+ * deferred to the Legacy Model Cleanup follow-up task
+ * (docs/BACKLOG.md). See spec/12 "TODO: Legacy Cleanup" section.
+ *
+ * Models verified live via OpenAI /v1/models on 2026-04-24:
+ *   gpt-5.4, gpt-5.4-mini, gpt-5.4-pro, gpt-5.1, gpt-5,
+ *   gpt-4.1, gpt-4.1-mini, gpt-4o, gpt-4o-mini, o3, o3-mini, o4-mini.
  */
 export const OPENAI_MODELS: ModelInfo[] = [
+  // ---- Existing (pricing validated) ----
   { id: 'gpt-4o', displayName: 'GPT-4o', inputPricePerMillion: 2.50, outputPricePerMillion: 10.00, contextSize: '128K' },
   { id: 'gpt-4o-mini', displayName: 'GPT-4o Mini', inputPricePerMillion: 0.15, outputPricePerMillion: 0.60, contextSize: '128K' },
+  /** @deprecated Legacy (Task E follow-up). See docs/BACKLOG.md "Legacy Model Cleanup". */
   { id: 'gpt-4-turbo', displayName: 'GPT-4 Turbo', inputPricePerMillion: 10.00, outputPricePerMillion: 30.00, contextSize: '128K' },
   { id: 'gpt-4', displayName: 'GPT-4', inputPricePerMillion: 30.00, outputPricePerMillion: 60.00, contextSize: '8K' },
+  /** @deprecated Legacy (Task E follow-up). See docs/BACKLOG.md "Legacy Model Cleanup". */
   { id: 'gpt-3.5-turbo', displayName: 'GPT-3.5 Turbo', inputPricePerMillion: 0.50, outputPricePerMillion: 1.50, contextSize: '16K' },
+  /** @deprecated Legacy (Task E follow-up). See docs/BACKLOG.md "Legacy Model Cleanup". */
   { id: 'o1', displayName: 'o1', inputPricePerMillion: 15.00, outputPricePerMillion: 60.00, contextSize: '200K' },
+  /** @deprecated Legacy (Task E follow-up). See docs/BACKLOG.md "Legacy Model Cleanup". */
   { id: 'o1-mini', displayName: 'o1 Mini', inputPricePerMillion: 3.00, outputPricePerMillion: 12.00, contextSize: '128K' },
+  /** @deprecated Legacy (Task E follow-up). See docs/BACKLOG.md "Legacy Model Cleanup". */
   { id: 'o1-preview', displayName: 'o1 Preview', inputPricePerMillion: 15.00, outputPricePerMillion: 60.00, contextSize: '128K' },
+
+  // ---- Task E additions (2026-04-24, pricing TBD / placeholder 0) ----
+  { id: 'gpt-5.4', displayName: 'GPT-5.4', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  { id: 'gpt-5.4-mini', displayName: 'GPT-5.4 Mini', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  { id: 'gpt-5.4-pro', displayName: 'GPT-5.4 Pro', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  { id: 'gpt-5.1', displayName: 'GPT-5.1', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  { id: 'gpt-5', displayName: 'GPT-5', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  { id: 'gpt-4.1', displayName: 'GPT-4.1', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  { id: 'gpt-4.1-mini', displayName: 'GPT-4.1 Mini', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  { id: 'o3', displayName: 'o3', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  { id: 'o3-mini', displayName: 'o3 Mini', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  { id: 'o4-mini', displayName: 'o4 Mini', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
 ];
 
 /**
  * Anthropic models
  * Per spec 12_LLM_PROVIDER_AND_MODELS.md Section 2.1
+ *
+ * Existing models retain their validated pricing.
+ * Task E additions (un-dated aliases + claude-haiku-4-5-20251001)
+ * carry placeholder pricing (0 / TBD) — actual pricing verification
+ * is deferred to the Legacy Model Cleanup follow-up task
+ * (docs/BACKLOG.md).
+ *
+ * claude-haiku-4-5-20251001 was previously referenced by
+ * internalLlm.defaults.anthropic, the Web UI dropdown, and
+ * utils/question-detector.ts without being in this registry
+ * (drift). Task E formally registers it here.
  */
 export const ANTHROPIC_MODELS: ModelInfo[] = [
+  // ---- Existing (pricing validated) ----
   { id: 'claude-opus-4-20250514', displayName: 'Claude Opus 4', inputPricePerMillion: 15.00, outputPricePerMillion: 75.00, contextSize: '200K' },
   { id: 'claude-sonnet-4-20250514', displayName: 'Claude Sonnet 4', inputPricePerMillion: 3.00, outputPricePerMillion: 15.00, contextSize: '200K' },
   { id: 'claude-3-5-sonnet-20241022', displayName: 'Claude 3.5 Sonnet', inputPricePerMillion: 3.00, outputPricePerMillion: 15.00, contextSize: '200K' },
@@ -99,6 +147,13 @@ export const ANTHROPIC_MODELS: ModelInfo[] = [
   { id: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus', inputPricePerMillion: 15.00, outputPricePerMillion: 75.00, contextSize: '200K' },
   { id: 'claude-3-sonnet-20240229', displayName: 'Claude 3 Sonnet', inputPricePerMillion: 3.00, outputPricePerMillion: 15.00, contextSize: '200K' },
   { id: 'claude-3-haiku-20240307', displayName: 'Claude 3 Haiku', inputPricePerMillion: 0.25, outputPricePerMillion: 1.25, contextSize: '200K' },
+
+  // ---- Task E additions (2026-04-24, pricing TBD / placeholder 0) ----
+  { id: 'claude-opus-4-7', displayName: 'Claude Opus 4.7', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  { id: 'claude-haiku-4-5', displayName: 'Claude Haiku 4.5', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  // Drift resolution: previously referenced elsewhere but not registered
+  { id: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5 (2025-10-01)', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
 ];
 
 /**
