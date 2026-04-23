@@ -3067,6 +3067,7 @@
         <a href="/hooks" data-nav="hooks" data-testid="nav-hooks"><span class="nav-icon">&#9889;</span><span class="nav-label">Hooks</span></a>
         <a href="/commands" data-nav="commands" data-testid="nav-commands"><span class="nav-icon">&#9654;</span><span class="nav-label">Commands</span></a>
         <a href="/agents" data-nav="agents" data-testid="nav-agents"><span class="nav-icon">&#129302;</span><span class="nav-label">Agents</span></a>
+        <a href="/skills" data-nav="skills" data-testid="nav-skills"><span class="nav-icon">&#9889;</span><span class="nav-label">Skills</span></a>
         <a href="/plugins" data-nav="plugins" data-testid="nav-plugins"><span class="nav-icon">&#129513;</span><span class="nav-label">Plugins</span></a>
         <a href="/mcp-servers" data-nav="mcp-servers" data-testid="nav-mcp-servers"><span class="nav-icon">&#128268;</span><span class="nav-label">MCP Servers</span></a>
         </div>
@@ -4062,6 +4063,7 @@
         '/hooks': 'hooks',
         '/commands': 'commands',
         '/agents': 'agents',
+        '/skills': 'skills',
         '/mcp-servers': 'mcp-servers',
         '/assistant': 'assistant',
         '/backup': 'backup',
@@ -10808,6 +10810,9 @@
       if (currentPath === '/agents' && agentPageState.isDirty) {
         agentGuardUnsaved(doSwitch); return;
       }
+      if (currentPath === '/skills' && skillPageState.isDirty) {
+        skillGuardUnsaved(doSwitch); return;
+      }
       doSwitch();
     }
 
@@ -10826,11 +10831,14 @@
       if (currentPath === '/agents' && agentPageState.isDirty) {
         agentGuardUnsaved(doSwitch); return;
       }
+      if (currentPath === '/skills' && skillPageState.isDirty) {
+        skillGuardUnsaved(doSwitch); return;
+      }
       doSwitch();
     }
 
     function reloadCurrentClaudeCodePage() {
-      var claudeCodePages = ['/hooks', '/commands', '/agents', '/plugins', '/mcp-servers', '/ai-generate'];
+      var claudeCodePages = ['/hooks', '/commands', '/agents', '/skills', '/plugins', '/mcp-servers', '/ai-generate'];
       if (claudeCodePages.indexOf(currentPath) >= 0) {
         router();
       }
@@ -11156,14 +11164,13 @@
 
     function renderAgentsContent() {
       var scope = agentPageState.scope;
-      var files = agentPageState.files;
-      var agents = files.filter(function(f) { return f.type === 'agent'; });
-      var skills = files.filter(function(f) { return f.type === 'skill'; });
+      // Task B Q1=α: Agents page shows agents only. Skills moved to /skills.
+      var files = (agentPageState.files || []).filter(function(f) { return f.type === 'agent'; });
+      var agents = files;
 
-      // List items grouped by type
+      // List items (agents only)
       var listItems = '';
       if (agents.length > 0) {
-        listItems += '<div style="padding:6px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;color:#6b7280;background:#f9fafb;">Agents (' + agents.length + ')</div>';
         agents.forEach(function(f) {
           var isActive = agentPageState.selected && agentPageState.selected.name === f.name && agentPageState.selected.type === 'agent';
           listItems += '<div class="pane-list-item' + (isActive ? ' active' : '') + '" data-testid="agent-item-' + escapeHtml(f.name) + '" onclick="selectAgent(\'' + escapeHtml(f.name) + '\',\'agent\')">' +
@@ -11171,20 +11178,11 @@
             '<div class="item-meta"><span class="scope-pill project" style="font-size:0.65rem;">agent</span></div></div></div>';
         });
       }
-      if (skills.length > 0) {
-        listItems += '<div style="padding:6px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;color:#6b7280;background:#f9fafb;">Skills (' + skills.length + ')</div>';
-        skills.forEach(function(f) {
-          var isActive = agentPageState.selected && agentPageState.selected.name === f.name && agentPageState.selected.type === 'skill';
-          listItems += '<div class="pane-list-item' + (isActive ? ' active' : '') + '" data-testid="skill-item-' + escapeHtml(f.name) + '" onclick="selectAgent(\'' + escapeHtml(f.name) + '\',\'skill\')">' +
-            '<div><div class="item-name">' + escapeHtml(f.name) + '</div>' +
-            '<div class="item-meta"><span class="scope-pill global" style="font-size:0.65rem;">skill</span></div></div></div>';
-        });
-      }
       if (files.length === 0) {
         listItems = '<div data-testid="agent-empty-state" style="padding:32px 20px;text-align:center;color:#9ca3af;">' +
-          '<div style="font-size:2rem;margin-bottom:8px;">🤖</div>' +
-          '<div style="font-size:0.9rem;font-weight:600;margin-bottom:4px;">No agents or skills yet</div>' +
-          '<div style="font-size:0.8rem;margin-bottom:12px;">Agents and skills are .md files that define specialized AI behaviors.</div>' +
+          '<div style="font-size:2rem;margin-bottom:8px;">&#129302;</div>' +
+          '<div style="font-size:0.9rem;font-weight:600;margin-bottom:4px;">No agents yet</div>' +
+          '<div style="font-size:0.8rem;margin-bottom:12px;">Agents are .md files in .claude/agents/ that define specialized AI behaviors.</div>' +
           '<button class="btn btn-primary btn-sm" onclick="startNewAgent()">+ Create First Agent</button></div>';
       }
 
@@ -11194,12 +11192,10 @@
       // Editor
       var editorContent = '';
       if (agentPageState.isNew) {
-        editorContent = '<div class="pane-editor-header"><h3>New ' + (agentPageState.newType === 'skill' ? 'Skill' : 'Agent') + '</h3></div>' +
+        // Task B Q1=α: Agents page creates agents only (type selector removed).
+        agentPageState.newType = 'agent';
+        editorContent = '<div class="pane-editor-header"><h3>New Agent</h3></div>' +
           '<div class="pane-editor-body">' +
-          '<div class="hook-field"><label>Type</label>' +
-          '<select id="agent-new-type" data-testid="agent-new-type" onchange="agentPageState.newType=this.value">' +
-          '<option value="agent"' + (agentPageState.newType === 'agent' ? ' selected' : '') + '>Agent (.claude/agents/)</option>' +
-          '<option value="skill"' + (agentPageState.newType === 'skill' ? ' selected' : '') + '>Skill (.claude/skills/)</option></select></div>' +
           '<div class="hook-field"><label>Name (filename without .md)</label>' +
           '<input type="text" id="agent-new-name" data-testid="agent-new-name" placeholder="my-agent" value="' + escapeHtml(agentPageState.newName) + '" /></div>' +
           '<div id="agent-name-error" style="color:#ef4444;font-size:0.8rem;margin-top:-8px;display:none;" data-testid="agent-name-error"></div>' +
@@ -11209,7 +11205,7 @@
             return '<label class="perm-item"><input type="checkbox" value="' + t + '" /> ' + t + '</label>';
           }).join('') + '</div></div>' +
           '<div class="hook-field"><label>Content (Markdown)</label>' +
-          '<textarea id="agent-editor" data-testid="agent-editor" style="min-height:250px;" oninput="agentPageState.isDirty=true">---\nskill: new-' + (agentPageState.newType === 'skill' ? 'skill' : 'agent') + '\nversion: 1.0.0\ndescription: Description here\ntools:\n  - Read\n  - Grep\n---\n\n# Agent Name\n\nDescribe what this agent does.</textarea></div>' +
+          '<textarea id="agent-editor" data-testid="agent-editor" style="min-height:250px;" oninput="agentPageState.isDirty=true">---\nskill: new-agent\nversion: 1.0.0\ndescription: Description here\ntools:\n  - Read\n  - Grep\n---\n\n# Agent Name\n\nDescribe what this agent does.</textarea></div>' +
           '<div style="display:flex;gap:8px;margin-top:12px;">' +
           '<button class="btn btn-primary" data-testid="agent-create-btn" onclick="saveNewAgent()">Create</button>' +
           '<button class="btn btn-secondary" onclick="cancelNewAgent()">Cancel</button></div></div>';
@@ -11243,14 +11239,14 @@
       } else {
         editorContent = '<div class="pane-editor-header"><h3>Editor</h3></div>' +
           '<div class="pane-editor-body"><div class="pane-editor-empty" data-testid="agent-editor-placeholder">' +
-          '<div style="font-size:2rem;margin-bottom:8px;">🤖</div>' +
-          'Select an agent or skill from the list, or click <strong>+ New</strong> to create one.</div></div>';
+          '<div style="font-size:2rem;margin-bottom:8px;">&#129302;</div>' +
+          'Select an agent from the list, or click <strong>+ New</strong> to create one.</div></div>';
       }
 
       app.innerHTML =
-        '<div class="page-header"><h2>Agents &amp; Skills</h2>' +
+        '<div class="page-header"><h2>Agents</h2>' +
         '<span class="scope-path" style="font-size:0.78rem;color:#6b7280;margin-left:auto;">' +
-        'agents: ' + escapeHtml(agentPageState.agentsDir) + ' | skills: ' + escapeHtml(agentPageState.skillsDir) + '</span></div>' +
+        'agents: ' + escapeHtml(agentPageState.agentsDir) + '</span></div>' +
         '<div class="two-pane" data-testid="agent-two-pane"><div class="pane-list">' +
         '<div class="pane-list-header"><h3>Files (' + files.length + ')</h3>' +
         '<button class="btn btn-sm" data-testid="agent-new-btn" onclick="startNewAgent()">+ New</button></div>' +
@@ -11434,6 +11430,309 @@
             agentPageState.savedContent = '';
             agentPageState.isDirty = false;
             renderAgentsPage();
+          } else { showToast('Failed: ' + (data.error || '') + ' - ' + (data.message || 'Unknown error'), 'error'); }
+        } catch (error) { showToast('API error: ' + error.message, 'error'); }
+      }, { danger: true });
+    }
+
+    // =========================================================================
+    // Skills Page (Task B Q1=α: independent from Agents)
+    // Uses the shared /api/claude-files/agents/:scope backend (Q2=c)
+    // but filters to type === 'skill' only.
+    // =========================================================================
+    let skillPageState = {
+      scope: 'global',
+      projectPath: '',
+      files: [],
+      skillsDir: '',
+      selected: null,
+      editorContent: '',
+      savedContent: '',
+      isNew: false,
+      newName: '',
+      isDirty: false,
+    };
+
+    function skillGuardUnsaved(callback) {
+      if (!skillPageState.isDirty) { callback(); return; }
+      showConfirmDialog('Unsaved Changes', 'You have unsaved changes. Discard them?', 'Discard', function() {
+        skillPageState.isDirty = false;
+        callback();
+      }, { danger: true });
+    }
+
+    async function renderSkillsPage() {
+      app.innerHTML = '<div class="loading">Loading Skills...</div>';
+      try {
+        await loadProjectListCached();
+        var scope = getContextScope();
+        skillPageState.scope = scope;
+        skillPageState.projectPath = claudeCodeContext.projectPath;
+        var aPp = getContextProjectParam();
+        var res = await fetch('/api/claude-files/agents/' + scope + aPp);
+        var data = await res.json();
+        // Task B Q1=α: Skills page shows skills only (filter shared API).
+        skillPageState.files = (data.files || []).filter(function(f) { return f.type === 'skill'; });
+        skillPageState.skillsDir = data.skillsDir || '';
+        if (skillPageState.selected) {
+          var found = skillPageState.files.find(function(f) {
+            return f.name === skillPageState.selected.name;
+          });
+          if (!found) {
+            skillPageState.selected = null;
+            skillPageState.editorContent = '';
+          }
+        }
+        renderSkillsContent();
+      } catch (error) {
+        app.innerHTML = '<div class="card"><h2>Error Loading Skills</h2><p>' + escapeHtml(error.message) + '</p><button class="btn btn-primary" onclick="renderSkillsPage()" style="margin-top:16px;">Retry</button></div>';
+      }
+    }
+
+    function renderSkillsContent() {
+      var files = skillPageState.files;
+
+      var listItems = '';
+      if (files.length > 0) {
+        files.forEach(function(f) {
+          var isActive = skillPageState.selected && skillPageState.selected.name === f.name;
+          listItems += '<div class="pane-list-item' + (isActive ? ' active' : '') + '" data-testid="skill-item-' + escapeHtml(f.name) + '" onclick="selectSkill(\'' + escapeHtml(f.name) + '\')">' +
+            '<div><div class="item-name">' + escapeHtml(f.name) + '</div>' +
+            '<div class="item-meta"><span class="scope-pill global" style="font-size:0.65rem;">skill</span></div></div></div>';
+        });
+      }
+      if (files.length === 0) {
+        listItems = '<div data-testid="skill-empty-state" style="padding:32px 20px;text-align:center;color:#9ca3af;">' +
+          '<div style="font-size:2rem;margin-bottom:8px;">&#9889;</div>' +
+          '<div style="font-size:0.9rem;font-weight:600;margin-bottom:4px;">No skills yet</div>' +
+          '<div style="font-size:0.8rem;margin-bottom:12px;">Skills are .md files in .claude/skills/ that define reusable AI capabilities.</div>' +
+          '<button class="btn btn-primary btn-sm" onclick="startNewSkill()">+ Create First Skill</button></div>';
+      }
+
+      var knownTools = ['Bash','Read','Write','Edit','Glob','Grep','WebFetch','WebSearch','Task','TodoRead','TodoWrite','NotebookEdit'];
+
+      var editorContent = '';
+      if (skillPageState.isNew) {
+        editorContent = '<div class="pane-editor-header"><h3>New Skill</h3></div>' +
+          '<div class="pane-editor-body">' +
+          '<div class="hook-field"><label>Name (filename without .md)</label>' +
+          '<input type="text" id="skill-new-name" data-testid="skill-new-name" placeholder="my-skill" value="' + escapeHtml(skillPageState.newName) + '" /></div>' +
+          '<div id="skill-name-error" style="color:#ef4444;font-size:0.8rem;margin-top:-8px;display:none;" data-testid="skill-name-error"></div>' +
+          '<div class="hook-field"><label>Tools (select allowed tools)</label>' +
+          '<div class="permissions-grid" id="skill-tools-new">' +
+          knownTools.map(function(t) {
+            return '<label class="perm-item"><input type="checkbox" value="' + t + '" /> ' + t + '</label>';
+          }).join('') + '</div></div>' +
+          '<div class="hook-field"><label>Content (Markdown)</label>' +
+          '<textarea id="skill-editor" data-testid="skill-editor" style="min-height:250px;" oninput="skillPageState.isDirty=true">---\nskill: new-skill\nversion: 1.0.0\ndescription: Description here\ntools:\n  - Read\n  - Grep\n---\n\n# Skill Name\n\nDescribe what this skill does.</textarea></div>' +
+          '<div style="display:flex;gap:8px;margin-top:12px;">' +
+          '<button class="btn btn-primary" data-testid="skill-create-btn" onclick="saveNewSkill()">Create</button>' +
+          '<button class="btn btn-secondary" onclick="cancelNewSkill()">Cancel</button></div></div>';
+      } else if (skillPageState.selected) {
+        var sel = skillPageState.selected;
+        var currentTools = [];
+        var toolsMatch = skillPageState.editorContent.match(/tools:\s*\n((?:\s+-\s+\S+\n?)*)/);
+        if (toolsMatch) {
+          var lines = toolsMatch[1].split('\n');
+          lines.forEach(function(line) {
+            var m = line.match(/^\s+-\s+(\S+)/);
+            if (m) currentTools.push(m[1]);
+          });
+        }
+        editorContent = '<div class="pane-editor-header"><h3>' + escapeHtml(sel.name) + ' <span style="font-size:0.75rem;color:#6b7280;">(Skill)</span></h3>' +
+          '<button class="btn btn-sm btn-danger" data-testid="skill-delete-btn" onclick="deleteSkill(\'' + escapeHtml(sel.name) + '\')">Delete</button></div>' +
+          '<div class="pane-editor-body">' +
+          '<div class="hook-field"><label>Tools</label>' +
+          '<div class="permissions-grid" id="skill-tools-edit">' +
+          knownTools.map(function(t) {
+            var checked = currentTools.indexOf(t) >= 0 ? ' checked' : '';
+            return '<label class="perm-item"><input type="checkbox" value="' + t + '"' + checked + ' onchange="syncSkillTools()" /> ' + t + '</label>';
+          }).join('') + '</div></div>' +
+          '<div class="hook-field"><label>Content (Markdown)</label>' +
+          '<textarea id="skill-editor" data-testid="skill-editor" style="min-height:300px;" oninput="skillPageState.isDirty=true">' + escapeHtml(skillPageState.editorContent) + '</textarea></div>' +
+          '<div style="display:flex;gap:8px;margin-top:12px;">' +
+          '<button class="btn btn-primary" data-testid="skill-save-btn" onclick="saveSkill(\'' + escapeHtml(sel.name) + '\')">Save</button></div></div>';
+      } else {
+        editorContent = '<div class="pane-editor-header"><h3>Editor</h3></div>' +
+          '<div class="pane-editor-body"><div class="pane-editor-empty" data-testid="skill-editor-placeholder">' +
+          '<div style="font-size:2rem;margin-bottom:8px;">&#9889;</div>' +
+          'Select a skill from the list, or click <strong>+ New</strong> to create one.</div></div>';
+      }
+
+      app.innerHTML =
+        '<div class="page-header"><h2>Skills</h2>' +
+        '<span class="scope-path" style="font-size:0.78rem;color:#6b7280;margin-left:auto;">' +
+        'skills: ' + escapeHtml(skillPageState.skillsDir) + '</span></div>' +
+        '<div class="two-pane" data-testid="skill-two-pane"><div class="pane-list">' +
+        '<div class="pane-list-header"><h3>Files (' + files.length + ')</h3>' +
+        '<button class="btn btn-sm" data-testid="skill-new-btn" onclick="startNewSkill()">+ New</button></div>' +
+        '<div class="pane-list-items" data-testid="skill-list">' + listItems + '</div></div>' +
+        '<div class="pane-editor" data-testid="skill-editor-pane">' + editorContent + '</div></div>';
+    }
+
+    function switchSkillScope(scope) {
+      skillGuardUnsaved(function() {
+        skillPageState.scope = scope;
+        skillPageState.selected = null;
+        skillPageState.editorContent = '';
+        skillPageState.savedContent = '';
+        skillPageState.isNew = false;
+        skillPageState.isDirty = false;
+        renderSkillsPage();
+      });
+    }
+
+    function switchSkillProject(projectPath) {
+      skillGuardUnsaved(function() {
+        skillPageState.projectPath = projectPath;
+        skillPageState.selected = null;
+        skillPageState.editorContent = '';
+        skillPageState.savedContent = '';
+        skillPageState.isNew = false;
+        skillPageState.isDirty = false;
+        renderSkillsPage();
+      });
+    }
+
+    async function selectSkill(name) {
+      if (skillPageState.selected && skillPageState.selected.name === name) return;
+      skillGuardUnsaved(async function() {
+        skillPageState.isNew = false;
+        skillPageState.selected = { name: name, type: 'skill' };
+        skillPageState.isDirty = false;
+        try {
+          var aPp = skillPageState.scope === 'project' ? projectPathParam(skillPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/agents/' + skillPageState.scope + '/skill/' + encodeURIComponent(name) + aPp);
+          var data = await res.json();
+          skillPageState.editorContent = data.content || '';
+          skillPageState.savedContent = skillPageState.editorContent;
+        } catch (error) {
+          showToast('Failed to load: ' + error.message, 'error');
+          skillPageState.editorContent = '';
+          skillPageState.savedContent = '';
+        }
+        renderSkillsContent();
+      });
+    }
+
+    function startNewSkill() {
+      skillGuardUnsaved(function() {
+        skillPageState.isNew = true;
+        skillPageState.selected = null;
+        skillPageState.newName = '';
+        skillPageState.isDirty = false;
+        renderSkillsContent();
+      });
+    }
+
+    function cancelNewSkill() {
+      skillPageState.isNew = false;
+      skillPageState.isDirty = false;
+      renderSkillsContent();
+    }
+
+    function syncSkillTools() {
+      var editorEl = document.getElementById('skill-editor');
+      var toolsContainer = document.getElementById('skill-tools-edit');
+      if (!editorEl || !toolsContainer) return;
+
+      var checked = [];
+      toolsContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb) { checked.push(cb.value); });
+      var toolsYaml = checked.map(function(t) { return '  - ' + t; }).join('\n');
+
+      var content = editorEl.value;
+      var replaced = content.replace(/tools:\s*\n((?:\s+-\s+\S+\n?)*)/, 'tools:\n' + toolsYaml + '\n');
+      if (replaced === content && content.includes('---')) {
+        var parts = content.split('---');
+        if (parts.length >= 3) {
+          parts[1] = parts[1].trimEnd() + '\ntools:\n' + toolsYaml + '\n';
+          replaced = parts.join('---');
+        }
+      }
+      editorEl.value = replaced;
+    }
+
+    function saveNewSkill() {
+      var nameInput = document.getElementById('skill-new-name');
+      var editorEl = document.getElementById('skill-editor');
+      var errorEl = document.getElementById('skill-name-error');
+      var name = nameInput ? nameInput.value.trim() : '';
+      var content = editorEl ? editorEl.value : '';
+      if (!name) {
+        if (errorEl) { errorEl.textContent = 'Name is required.'; errorEl.style.display = 'block'; }
+        showToast('Please enter a name', 'warning'); return;
+      }
+      if (!isValidFilenameClient(name)) {
+        if (errorEl) { errorEl.textContent = 'Invalid name. Must start with a letter or number. Only letters, numbers, dash, underscore, dot allowed.'; errorEl.style.display = 'block'; }
+        showToast('Invalid filename: must start with letter/number, only [a-z0-9._-]', 'warning'); return;
+      }
+      if (errorEl) { errorEl.style.display = 'none'; }
+
+      var toolsContainer = document.getElementById('skill-tools-new');
+      if (toolsContainer) {
+        var checked = [];
+        toolsContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb) { checked.push(cb.value); });
+        if (checked.length > 0) {
+          var toolsYaml = checked.map(function(t) { return '  - ' + t; }).join('\n');
+          content = content.replace(/tools:\s*\n((?:\s+-\s+\S+\n?)*)/, 'tools:\n' + toolsYaml + '\n');
+        }
+      }
+
+      showConfirmDialog('Create skill?', 'Create ' + name + '.md', 'Create', async function() {
+        try {
+          var aPp = skillPageState.scope === 'project' ? projectPathParam(skillPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/agents/' + skillPageState.scope + '/skill/' + encodeURIComponent(name) + aPp, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: content }),
+          });
+          var data = await res.json();
+          if (data.success) {
+            showToast('skill created: ' + name, 'success');
+            skillPageState.isNew = false;
+            skillPageState.selected = { name: name, type: 'skill' };
+            skillPageState.editorContent = content;
+            skillPageState.savedContent = content;
+            skillPageState.isDirty = false;
+            renderSkillsPage();
+          } else { showToast('Failed: ' + (data.error || '') + ' - ' + (data.message || 'Unknown error'), 'error'); }
+        } catch (error) { showToast('API error: ' + error.message, 'error'); }
+      }, { danger: false });
+    }
+
+    function saveSkill(name) {
+      var editorEl = document.getElementById('skill-editor');
+      var content = editorEl ? editorEl.value : '';
+      showConfirmDialog('Save skill?', 'Save ' + name + '.md', 'Save', async function() {
+        try {
+          var aPp = skillPageState.scope === 'project' ? projectPathParam(skillPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/agents/' + skillPageState.scope + '/skill/' + encodeURIComponent(name) + aPp, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: content }),
+          });
+          var data = await res.json();
+          if (data.success) {
+            showToast('skill saved: ' + name, 'success');
+            skillPageState.editorContent = content;
+            skillPageState.savedContent = content;
+            skillPageState.isDirty = false;
+          } else { showToast('Failed: ' + (data.error || '') + ' - ' + (data.message || 'Unknown error'), 'error'); }
+        } catch (error) { showToast('API error: ' + error.message, 'error'); }
+      }, { danger: false });
+    }
+
+    function deleteSkill(name) {
+      showConfirmDialog('Delete skill?', 'Delete ' + name + '.md? This cannot be undone.', 'Delete', async function() {
+        try {
+          var aPp = skillPageState.scope === 'project' ? projectPathParam(skillPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/agents/' + skillPageState.scope + '/skill/' + encodeURIComponent(name) + aPp, { method: 'DELETE' });
+          var data = await res.json();
+          if (data.success) {
+            showToast('skill deleted: ' + name, 'success');
+            skillPageState.selected = null;
+            skillPageState.editorContent = '';
+            skillPageState.savedContent = '';
+            skillPageState.isDirty = false;
+            renderSkillsPage();
           } else { showToast('Failed: ' + (data.error || '') + ' - ' + (data.message || 'Unknown error'), 'error'); }
         } catch (error) { showToast('API error: ' + error.message, 'error'); }
       }, { danger: true });
@@ -12776,6 +13075,7 @@
           var page = '';
           if (f.includes('/commands/')) page = '/commands';
           else if (f.includes('/agents/')) page = '/agents';
+          else if (f.includes('/skills/')) page = '/skills';
           else if (f.includes('/hooks/')) page = '/hooks';
           html += '<li>' + escapeHtml(f);
           if (page) html += ' <a href="' + page + '" onclick="event.preventDefault();navigate(\'' + page + '\');" style="color:#2563eb;font-size:0.8rem;" data-testid="open-created-link">Open</a>';
@@ -13399,6 +13699,8 @@
         renderCommandsPage();
       } else if (path === '/agents') {
         renderAgentsPage();
+      } else if (path === '/skills') {
+        renderSkillsPage();
       } else if (path === '/mcp-servers') {
         renderMcpServersPage();
       } else if (path === '/backup') {

@@ -295,27 +295,12 @@ test('Agents: agent create → save → listed → edit → save', async ({ page
   expect(content).toContain('Updated Agent');
 });
 
-test('Agents: skill create → listed with type distinction', async ({ page }) => {
-  await page.goto(`${BASE_URL}/agents`);
-  await page.waitForSelector('[data-testid="agent-two-pane"]');
-  await switchScope(page, 'global');
-  await page.waitForSelector('[data-testid="agent-list"]');
-
-  // + New → select skill
-  await page.click('[data-testid="agent-new-btn"]');
-  await page.waitForSelector('[data-testid="agent-new-type"]');
-  await page.selectOption('[data-testid="agent-new-type"]', 'skill');
-  await page.fill('[data-testid="agent-new-name"]', 'test-skill');
-  await page.fill('[data-testid="agent-editor"]', '---\nskill: test-skill\ntools:\n  - Read\n---\n\n# Test Skill');
-
-  await page.click('[data-testid="agent-create-btn"]');
-  await confirmDialog(page);
-  await waitForToast(page, 'created');
-
-  // Both should be listed with different testids (agent-item vs skill-item)
-  await expect(page.locator('[data-testid="agent-item-test-agent"]')).toBeVisible();
-  await expect(page.locator('[data-testid="skill-item-test-skill"]')).toBeVisible();
-});
+// Note: the "Agents: skill create → listed with type distinction" test
+// that used to live here was migrated to
+// test/playwright/skills-crud.spec.ts. The Skills page is now
+// independent from Agents (Task B, Q1=α), so the old cross-page
+// assertion ("agent-item-test-agent" and "skill-item-test-skill"
+// visible on the same /agents page) is no longer valid.
 
 test('Agents: project/global scope independence', async ({ page }) => {
   await page.goto(`${BASE_URL}/agents`);

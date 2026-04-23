@@ -388,7 +388,8 @@ tunnels:
 | AI Generate | #/ai-generate | renderAssistantPage | /api/assistant/* | left-menu-navigation.spec.ts |
 | Hooks | #/hooks | renderHooksPage | GET/POST/PUT/DELETE /api/claude-hooks | hooks-crud.spec.ts |
 | Commands | #/commands | renderCommandsPage | GET/POST/PUT/DELETE /api/claude-files/commands | commands-agents-crud.spec.ts |
-| Agents | #/agents | renderAgentsPage | GET/POST/PUT/DELETE /api/claude-files/agents | commands-agents-crud.spec.ts |
+| Agents | #/agents | renderAgentsPage | GET/POST/PUT/DELETE /api/claude-files/agents (type=agent) | commands-agents-crud.spec.ts |
+| Skills | #/skills | renderSkillsPage | GET/POST/PUT/DELETE /api/claude-files/agents (type=skill) | skills-sidebar.spec.ts, skills-crud.spec.ts |
 | Plugins | #/plugins | renderPluginsPage | /api/assistant/plugins* | assistant-save-plugin spec |
 | MCP Servers | #/mcp-servers | renderMcpServersPage | GET/PATCH /api/mcp-servers | left-menu-navigation.spec.ts |
 

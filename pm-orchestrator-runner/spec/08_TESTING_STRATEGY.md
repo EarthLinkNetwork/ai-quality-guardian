@@ -177,3 +177,45 @@ response.
 Newly added IDs may carry `TBD` pricing (input/output both `0`).
 Actual pricing must be backfilled in a separate commit that also
 updates `spec/12` section 2.1.
+
+## Skills page tests
+
+Skills are now a first-class sidebar entry separate from Agents (see
+`spec/19_WEB_UI.md` section 2). Because Skills and Agents share the
+`/api/claude-files/agents/:scope` backend route but are split at the UI
+layer, tests must cover both the server-side route and the client-side
+page separation.
+
+### Unit tests
+
+- `test/unit/web/sidebar-skills.test.ts` — asserts that
+  `src/web/public/index.html` contains a sidebar `<a>` targeting
+  `/skills` with `data-testid="nav-skills"`. Prevents the Agents-only
+  regression from Task B.
+- `test/unit/web/routes/skills-page.test.ts` — asserts that
+  `src/web/public/index.html` defines a `renderSkillsPage` function
+  and that the SPA dispatcher routes `/skills` to it. Prevents
+  accidental removal during refactors.
+- `test/unit/web/web-server.test.ts` — the SPA-shell sweep already
+  includes `/skills` (guarantees the Express route returns the HTML
+  shell so the client-side router can pick up the page).
+
+### Playwright tests
+
+- `test/playwright/skills-sidebar.spec.ts` — clicking the Skills entry
+  in the sidebar navigates to `/skills` and renders the Skills page.
+- `test/playwright/skills-crud.spec.ts` — create / edit / delete a
+  skill on the `/skills` page. Migrated from the old
+  `commands-agents-crud.spec.ts` skill block. The original cross-page
+  assertion (`agent-item-*` and `skill-item-*` visible on the same
+  page) is no longer valid after the split and is removed.
+
+### Scope rules
+
+- Skills CRUD still uses the shared `/api/claude-files/agents/:scope`
+  endpoints (Q2=c). Tests must not exercise `/api/skills/generate` —
+  that route is reserved for the AI-Generate workflow and is not
+  touched by the Skills page.
+- Independent-page design (Q1=α) means Agents page must not list
+  skills and Skills page must not list agents. The client-side filter
+  is applied after the shared API call.
