@@ -160,7 +160,7 @@ export class LLMClient {
    * Send chat completion request to LLM
    * @param options.responseFormat - For OpenAI: { type: "json_object" } to force JSON output
    */
-  async chat(messages: ChatMessage[], options?: { responseFormat?: { type: string } }): Promise<LLMResponse> {
+  async chat(messages: ChatMessage[], options?: { responseFormat?: Record<string, unknown> }): Promise<LLMResponse> {
     return match(this.config.provider)
       .with('openai', () => this.chatOpenAI(messages, options?.responseFormat))
       .with('anthropic', () => this.chatAnthropic(messages))
@@ -170,7 +170,7 @@ export class LLMClient {
   /**
    * OpenAI API call
    */
-  private async chatOpenAI(messages: ChatMessage[], responseFormat?: { type: string }): Promise<LLMResponse> {
+  private async chatOpenAI(messages: ChatMessage[], responseFormat?: Record<string, unknown>): Promise<LLMResponse> {
     const body: Record<string, unknown> = {
       model: this.config.model,
       messages,

@@ -253,3 +253,46 @@ function validateApiKey(providerId: string): ValidationResult {
 - Property 24: API Key Secrecy (spec/06_CORRECTNESS_PROPERTIES.md)
 - ReplState Data Model (spec/05_DATA_MODELS.md)
 - /provider, /models Commands (spec/10_REPL_UX.md)
+
+---
+
+## 6. JSON Output Parse Strategy (AI Generate / `/api/assistant/propose`)
+
+本節は LLM 応答から JSON プロポーザルを安全に抽出するための実装規則を定義する。
+
+### 6.1 抽出パイプライン
+
+`parseProposalResponse` は以下の順序で JSON を抽出すること:
+
+1. **Markdown コードブック剥がし**: ` ```json ... ``` ` 形式があれば中身を取り出す。
+2. **bracket-balanced 抽出**: 最初の `{` から始まり、対応する閉じ `}` までを切り出す。文字列リテラル内の `{`/`}` および `\"` のエスケープを正しくスキップする。
+3. **truncated JSON 修復 (fallback)**: 抽出が `null`、または `JSON.parse` が失敗した場合、`repairTruncatedJson` を呼び出して未閉のブラケットを補完する。
+4. **失敗時のサーバ側ログ**: パース失敗時はフルレスポンスを `console.error` に出力する。クライアントへは先頭 200 文字のみを返却する（漏洩・ペイロード肥大の防止）。
+
+### 6.2 禁止事項
+
+- **greedy regex `/\{[\s\S]*\}/` の使用は禁止**。最初の `{` と最後の `}` の間にある全ての中間 `}` を含む文字列をキャプチャするため、prose 後に `}` が含まれる入力で誤抽出する。
+
+### 6.3 Structured Output (OpenAI)
+
+OpenAI provider 使用時は `response_format: { type: "json_schema", json_schema: { strict: true, ... } }` を必ず指定すること。スキーマ定義 (`PROPOSAL_RESPONSE_JSON_SCHEMA`) は以下を保証する:
+
+- ルートに `choices` 配列を必須化
+- `choices[].artifacts[].kind` は VALID_KINDS と完全一致 (`command`, `agent`, `skill`, `script`, `hook`, `claudeMdPatch`, `settingsJsonPatch`)
+- `additionalProperties: false` を全オブジェクトレベルで指定 (strict mode 必須)
+
+Anthropic provider はネイティブの `response_format` をサポートしないため、prompt-based JSON 出力 + bracket-balanced 抽出の組み合わせを用いる。
+
+### 6.4 maxTokens 既定値
+
+| Provider    | maxTokens (output) | 理由                                                |
+| ----------- | ------------------ | --------------------------------------------------- |
+| `openai`    | 16384              | gpt-4o family の output 上限。truncation を最小化。 |
+| `anthropic` | 8192               | claude 3.x default。全モデルで安全。                |
+
+これより低い値を AI Generate ルートで使用してはならない (truncation の主因)。
+
+### 6.5 関連実装
+
+- `src/web/routes/assistant.ts`: `extractBalancedJson`, `parseProposalResponse`, `repairTruncatedJson`, `buildOpenAIResponseFormat`, `PROPOSAL_RESPONSE_JSON_SCHEMA`
+- `src/mediation/llm-client.ts`: `chat({ responseFormat })` パラメータ

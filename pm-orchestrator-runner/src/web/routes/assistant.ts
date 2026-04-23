@@ -654,12 +654,17 @@ async function generateProposal(
     config.defaultModels?.[provider] ||
     (provider === "openai" ? "gpt-4o-mini" : "claude-3-haiku-20240307");
 
+  // Per-provider maxTokens (Fix A3: avoid mid-response truncation on OpenAI)
+  // - OpenAI: 16384 (gpt-4o family supports up to 16384 output tokens)
+  // - Anthropic: 8192 (claude 3.x default; safe across models)
+  const maxTokens = provider === "openai" ? 16384 : 8192;
+
   const client = new LLMClient({
     provider,
     model,
     apiKey,
     temperature: 0.7,
-    maxTokens: 8192,
+    maxTokens,
   });
 
   const systemPrompt = buildSystemPrompt(scope);
@@ -670,9 +675,12 @@ async function generateProposal(
     userContent = `[Project Context]\n${JSON.stringify(repoProfile, null, 2)}\n\n[User Request]\n${prompt}`;
   }
 
-  // Use JSON mode for OpenAI to guarantee valid JSON output
+  // Fix A4: Structured output for OpenAI (response_format: json_schema strict)
+  // Forces the model to emit JSON conforming to PROPOSAL_RESPONSE_JSON_SCHEMA,
+  // eliminating most parse failures at the source.
+  // Anthropic does not support response_format; we keep the prompt-based JSON path.
   const chatOptions = provider === "openai"
-    ? { responseFormat: { type: "json_object" } }
+    ? { responseFormat: buildOpenAIResponseFormat() }
     : undefined;
 
   const response = await client.chat([
@@ -726,10 +734,138 @@ Scope "${scope}" means files go to ${scope === "global" ? "~/.claude/" : ".claud
 }
 
 /**
+ * Fix A5: log the full LLM response (server-side only) on parse failure
+ * so we can diagnose the underlying cause without leaking large payloads to clients.
+ * Uses console.error because the project does not currently have a structured logger
+ * imported in this module (other modules use console.* directly).
+ */
+function logFullLlmResponseOnFailure(stage: string, fullResponse: string): void {
+  // Print on a separate line to keep stdout/stderr greppable.
+  // eslint-disable-next-line no-console
+  console.error(
+    `[assistant.parseProposalResponse] LLM_PARSE_FAILURE stage=${stage} length=${fullResponse.length}`
+  );
+  // eslint-disable-next-line no-console
+  console.error(`[assistant.parseProposalResponse] full_response=${fullResponse}`);
+}
+
+/**
+ * Fix A1: Bracket-balanced JSON object extractor.
+ *
+ * Returns the substring of `s` from the first '{' to its matching '}',
+ * correctly skipping braces that appear inside JSON string literals
+ * (with escape handling). Returns null if no balanced object exists
+ * (e.g. truncated input where depth never returns to 0).
+ *
+ * This replaces the greedy regex `/\{[\s\S]*\}/` which mishandles
+ * prose containing stray '}' characters after the actual JSON.
+ */
+export function extractBalancedJson(s: string): string | null {
+  const start = s.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\" && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0) return s.substring(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * Fix A4: OpenAI structured output schema for AI Generate proposals.
+ *
+ * Mirrors the runtime validation rules in VALID_KINDS / ALLOWED_EXTENSIONS
+ * so that strict mode rejects any artifact that the validator would later refuse.
+ * NOTE: kept as `any` because the OpenAI JSON-Schema dialect uses some keys
+ * that are not in the standard TS JSON-Schema typings (additionalProperties: false
+ * is required at every level under strict mode).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const PROPOSAL_RESPONSE_JSON_SCHEMA: any = {
+  type: "object",
+  additionalProperties: false,
+  required: ["choices"],
+  properties: {
+    choices: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "summary", "scope", "artifacts", "applySteps", "rollbackSteps", "riskNotes", "questions"],
+        properties: {
+          title: { type: "string" },
+          summary: { type: "string" },
+          scope: { type: "string", enum: ["global", "project", "local"] },
+          artifacts: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["kind", "name"],
+              properties: {
+                kind: {
+                  type: "string",
+                  enum: ["command", "agent", "skill", "script", "hook", "claudeMdPatch", "settingsJsonPatch"],
+                },
+                name: { type: "string" },
+                targetPathHint: { type: "string" },
+                content: { type: "string" },
+                // patch and dependsOn are optional; for OpenAI strict mode we list them explicitly.
+                patch: {
+                  type: "object",
+                  additionalProperties: true,
+                },
+                dependsOn: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+              },
+            },
+          },
+          applySteps: { type: "array", items: { type: "string" } },
+          rollbackSteps: { type: "array", items: { type: "string" } },
+          riskNotes: { type: "array", items: { type: "string" } },
+          questions: { type: "array", items: { type: "string" } },
+        },
+      },
+    },
+  },
+};
+
+/**
+ * Fix A4: builds the OpenAI `response_format` parameter for json_schema strict mode.
+ */
+export function buildOpenAIResponseFormat(): {
+  type: "json_schema";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  json_schema: { name: string; strict: boolean; schema: any };
+} {
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: "AIGenerateProposal",
+      strict: true,
+      schema: PROPOSAL_RESPONSE_JSON_SCHEMA,
+    },
+  };
+}
+
+/**
  * Attempt to repair truncated JSON from LLM output that was cut off mid-response.
  * Closes unclosed brackets/braces and truncates at the last complete element.
  */
-function repairTruncatedJson(input: string): string | null {
+export function repairTruncatedJson(input: string): string | null {
   // Must start with { to be a JSON object
   const trimmed = input.trim();
   if (!trimmed.startsWith("{")) return null;
@@ -804,16 +940,14 @@ function repairTruncatedJson(input: string): string | null {
   }
 }
 
-function parseProposalResponse(
+export function parseProposalResponse(
   rawResponse: string,
   originalPrompt: string
 ): ProposalPlanSet {
   const planSetId = `plan_${randomUUID()}`;
 
-  // Try to extract JSON from various formats
+  // Step 1: strip optional markdown code-block fence
   let jsonStr = rawResponse;
-
-  // Try markdown code block
   const codeBlockMatch = rawResponse.match(
     /```(?:json)?\s*\n?([\s\S]*?)\n?```/
   );
@@ -821,35 +955,42 @@ function parseProposalResponse(
     jsonStr = codeBlockMatch[1];
   }
 
-  // Try to find JSON object
-  const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    // Attempt to repair truncated JSON (LLM output cut off mid-response)
+  // Step 2 (Fix A1): bracket-balanced extraction.
+  // The previous greedy regex /\{[\s\S]*\}/ would capture from the FIRST {
+  // to the LAST }, which is invalid when prose after the JSON contains a stray '}'.
+  // The balanced extractor stops at the matching closing brace.
+  let extracted = extractBalancedJson(jsonStr);
+
+  // Step 3 (Fix A2): always try repair if extraction failed OR parse fails.
+  if (!extracted) {
     const repaired = repairTruncatedJson(jsonStr);
     if (!repaired) {
+      logFullLlmResponseOnFailure("no_balanced_json_found", rawResponse);
       const preview = rawResponse.substring(0, 200);
       throw new Error(`LLM response does not contain valid JSON. Preview: ${preview}`);
     }
-    jsonStr = repaired;
+    extracted = repaired;
   }
 
-  const finalJsonStr = jsonMatch ? jsonMatch[0] : jsonStr;
+  const finalJsonStr = extracted;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let parsed: any;
   try {
     parsed = JSON.parse(finalJsonStr);
   } catch {
-    // Try to repair truncated JSON from a partial match
+    // Even after balanced extraction, parse may fail (e.g. trailing comma); try repair.
     const repaired = repairTruncatedJson(finalJsonStr);
     if (repaired) {
       try {
         parsed = JSON.parse(repaired);
       } catch {
+        logFullLlmResponseOnFailure("malformed_json_after_repair", rawResponse);
         const preview = finalJsonStr.substring(0, 200);
         throw new Error(`LLM response contains malformed JSON. Preview: ${preview}`);
       }
     } else {
+      logFullLlmResponseOnFailure("malformed_json_no_repair", rawResponse);
       const preview = finalJsonStr.substring(0, 200);
       throw new Error(`LLM response contains malformed JSON. Preview: ${preview}`);
     }
