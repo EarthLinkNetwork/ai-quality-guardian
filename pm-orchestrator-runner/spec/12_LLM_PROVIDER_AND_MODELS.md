@@ -264,10 +264,12 @@ function validateApiKey(providerId: string): ValidationResult {
 
 `parseProposalResponse` は以下の順序で JSON を抽出すること:
 
-1. **Markdown コードブック剥がし**: ` ```json ... ``` ` 形式があれば中身を取り出す。
+1. **Markdown コードブック剥がし (限定適用)**: 応答全体が ` ```json ... ``` ` または ` ``` ... ``` ` で **完全に包まれている** 場合のみ、外側の fence を剥がす。応答中に「埋め込まれた」 fence (例: 生成された script の本文に含まれる ` ```bash ... ``` `) は剥がしてはならない。
 2. **bracket-balanced 抽出**: 最初の `{` から始まり、対応する閉じ `}` までを切り出す。文字列リテラル内の `{`/`}` および `\"` のエスケープを正しくスキップする。
 3. **truncated JSON 修復 (fallback)**: 抽出が `null`、または `JSON.parse` が失敗した場合、`repairTruncatedJson` を呼び出して未閉のブラケットを補完する。
 4. **失敗時のサーバ側ログ**: パース失敗時はフルレスポンスを `console.error` に出力する。クライアントへは先頭 200 文字のみを返却する（漏洩・ペイロード肥大の防止）。
+
+> **Phase 1-fix V2 リグレッション教訓**: ステップ 1 で greedy 正規表現 `/```...```/` を入力全体に当てると、`content` フィールド内に埋め込まれた fenced code (LLM が `script` artifact を生成すると頻出) を誤マッチして JSON 本体を破壊する。必ず「先頭が ``` のときだけ、`^```...```$` で 1 回だけマッチ」させること。テスト: `assistant-json-parse.test.ts` "does not strip code fences embedded inside JSON string values"。
 
 ### 6.2 禁止事項
 
@@ -275,13 +277,25 @@ function validateApiKey(providerId: string): ValidationResult {
 
 ### 6.3 Structured Output (OpenAI)
 
-OpenAI provider 使用時は `response_format: { type: "json_schema", json_schema: { strict: true, ... } }` を必ず指定すること。スキーマ定義 (`PROPOSAL_RESPONSE_JSON_SCHEMA`) は以下を保証する:
+OpenAI provider 使用時は `response_format: { type: "json_schema", json_schema: { strict: true, ... } }` を必ず指定すること。スキーマ定義 (`PROPOSAL_RESPONSE_JSON_SCHEMA`) は OpenAI strict mode の以下の要件を **すべて** 満たすこと:
 
 - ルートに `choices` 配列を必須化
 - `choices[].artifacts[].kind` は VALID_KINDS と完全一致 (`command`, `agent`, `skill`, `script`, `hook`, `claudeMdPatch`, `settingsJsonPatch`)
-- `additionalProperties: false` を全オブジェクトレベルで指定 (strict mode 必須)
+- **`additionalProperties: false` を全オブジェクトノードに指定** (strict mode 必須)
+- **`required` 配列は `properties` の全キーを網羅すること**。optional フィールドも省略不可。代わりに型を nullable union (例: `{ "type": ["string", "null"] }`) で表現し、LLM は未使用フィールドに `null` を出す
+- **open object (`additionalProperties: true` の object) は使用禁止**。動的キーが必要な箇所 (artifact の `patch` フィールド等) は **JSON-encoded string** として宣言し (`{ "type": ["string", "null"] }`), サーバ側で `JSON.parse` する
 
-Anthropic provider はネイティブの `response_format` をサポートしないため、prompt-based JSON 出力 + bracket-balanced 抽出の組み合わせを用いる。
+#### 6.3.1 patch フィールドのエンコード規約
+
+`artifact.patch` は OpenAI strict mode との両立のため **JSON 文字列としてエンコード** する:
+
+- LLM への指示 (system prompt) で「patch は JSON 文字列として出力。未使用なら null」と明記
+- 受信側 (`normalizeArtifactPatch`) は string なら `JSON.parse`, object ならそのまま、null/undefined は undefined に正規化
+- 後方互換: Anthropic prompt-based 経路で object literal が来た場合も正しく処理する
+
+#### 6.3.2 Anthropic provider
+
+Anthropic provider はネイティブの `response_format` をサポートしないため、prompt-based JSON 出力 + bracket-balanced 抽出の組み合わせを用いる。`patch` は object literal でも JSON 文字列でも受け付ける (上記 6.3.1)。
 
 ### 6.4 maxTokens 既定値
 

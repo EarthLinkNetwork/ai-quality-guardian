@@ -963,4 +963,56 @@ describe('Web Server', () => {
       assert.ok(response.body.timestamp, 'timestamp should be present');
     });
   });
+
+  /**
+   * SPA routes (Phase 1-fix regression):
+   *
+   * The Web UI is a single-page application served from src/web/public/index.html.
+   * Every left-menu navigable URL must return that index.html so the client-side
+   * router can take over. The /ai-generate route was missing in commit 194c0d1,
+   * causing the menu link to render an Express 404 instead of the SPA shell.
+   *
+   * This block locks down the full set of menu routes in one place so a future
+   * "I added a menu but forgot the server route" regression fails at unit test
+   * time, not in the user's browser.
+   */
+  describe('SPA routes (left-menu navigation)', () => {
+    const spaPaths = [
+      '/',
+      '/dashboard',
+      '/projects',
+      '/task-groups',
+      '/activity',
+      '/processes',
+      '/settings',
+      '/commands',
+      '/agents',
+      '/skills',
+      '/hooks',
+      '/mcp-servers',
+      '/plugins',
+      '/backup',
+      '/assistant',
+      '/ai-generate',
+    ];
+
+    for (const p of spaPaths) {
+      it(`GET ${p} returns 200 with HTML (SPA shell)`, async () => {
+        const response = await request(app).get(p);
+        // Some routes may 401 if auth middleware wraps them; SPA routes must be
+        // public so the login screen itself can render. Accept 200 only.
+        assert.equal(
+          response.status,
+          200,
+          `expected 200 for SPA route ${p}, got ${response.status}`
+        );
+        // Body must look like HTML (the SPA shell), not JSON.
+        const ct = String(response.headers['content-type'] || '');
+        assert.ok(
+          ct.includes('text/html'),
+          `expected text/html content-type for ${p}, got "${ct}"`
+        );
+      });
+    }
+  });
 });

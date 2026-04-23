@@ -729,6 +729,17 @@ Artifact kinds:
 - "claudeMdPatch": Patch to append to .claude/CLAUDE.md
 - "settingsJsonPatch": JSON patch for .claude/settings.json
 
+For artifact kinds that need a structural patch (e.g. settingsJsonPatch), put the patch object
+into the "patch" field as a JSON-encoded STRING (not as a nested JSON object). The server will
+JSON.parse it on receipt. Example value for the "patch" field (note: it is a STRING containing JSON):
+  {"hooks":{"UserPromptSubmit":[{"command":"echo hi"}]}}
+Wrap the entire JSON above in double quotes when emitting it as the value of "patch".
+
+IMPORTANT for OpenAI structured output: every artifact must include all of
+{kind, name, targetPathHint, content, patch, dependsOn}. For fields that are
+not applicable to the chosen artifact kind, emit null (e.g. "patch": null,
+"content": null, "dependsOn": null). Do NOT omit keys.
+
 Generate 1-2 choices (plans). Each choice should be a complete, self-contained solution.
 Scope "${scope}" means files go to ${scope === "global" ? "~/.claude/" : ".claude/ (project root)"}.`;
 }
@@ -812,22 +823,30 @@ export const PROPOSAL_RESPONSE_JSON_SCHEMA: any = {
             items: {
               type: "object",
               additionalProperties: false,
-              required: ["kind", "name"],
+              // Phase 1-fix V2: OpenAI strict-mode requires `required` to list
+              // EVERY property key. Optional fields are represented as nullable
+              // unions (type: ["<t>", "null"]) and the model emits `null` for
+              // unused fields. The runtime normalizer (parseProposalResponse /
+              // normalizeArtifactPatch) treats null and undefined identically.
+              required: ["kind", "name", "targetPathHint", "content", "patch", "dependsOn"],
               properties: {
                 kind: {
                   type: "string",
                   enum: ["command", "agent", "skill", "script", "hook", "claudeMdPatch", "settingsJsonPatch"],
                 },
                 name: { type: "string" },
-                targetPathHint: { type: "string" },
-                content: { type: "string" },
-                // patch and dependsOn are optional; for OpenAI strict mode we list them explicitly.
+                targetPathHint: { type: ["string", "null"] },
+                content: { type: ["string", "null"] },
+                // Phase 1-fix: declared as nullable JSON-encoded string. The consumer
+                // (normalizeArtifactPatch) JSON.parses it back to an object. This is
+                // the only OpenAI strict-mode-compatible way to represent an open
+                // object: nested objects with additionalProperties:true are rejected.
                 patch: {
-                  type: "object",
-                  additionalProperties: true,
+                  type: ["string", "null"],
+                  description: "JSON-encoded patch object. Must be valid JSON (e.g. for settingsJsonPatch this is the merge-patch object stringified). Use null when not applicable.",
                 },
                 dependsOn: {
-                  type: "array",
+                  type: ["array", "null"],
                   items: { type: "string" },
                 },
               },
@@ -946,13 +965,22 @@ export function parseProposalResponse(
 ): ProposalPlanSet {
   const planSetId = `plan_${randomUUID()}`;
 
-  // Step 1: strip optional markdown code-block fence
+  // Step 1: strip optional markdown code-block fence.
+  // Phase 1-fix V2: only strip when the ENTIRE trimmed response is wrapped in
+  // fences. The previous greedy regex (now removed) matched the first ``` and
+  // the next ``` anywhere in the body, which destroyed valid JSON whose
+  // `content` fields contained embedded code fences (e.g. a script artifact
+  // with a bash sample). Detected by R4 regression test and a real OpenAI
+  // proposal request that returned a script artifact containing ```bash...```.
   let jsonStr = rawResponse;
-  const codeBlockMatch = rawResponse.match(
-    /```(?:json)?\s*\n?([\s\S]*?)\n?```/
-  );
-  if (codeBlockMatch) {
-    jsonStr = codeBlockMatch[1];
+  const trimmedRaw = rawResponse.trim();
+  if (trimmedRaw.startsWith("```")) {
+    // Strip the very first fence line (e.g. "```json") and the trailing fence.
+    // Use multi-line regex so we don't gobble across the whole document.
+    const fencedMatch = trimmedRaw.match(/^```(?:json)?\s*\n([\s\S]*?)\n?```\s*$/);
+    if (fencedMatch) {
+      jsonStr = fencedMatch[1];
+    }
   }
 
   // Step 2 (Fix A1): bracket-balanced extraction.
@@ -1014,7 +1042,7 @@ export function parseProposalResponse(
         name: (a.name as string) || "unnamed",
         targetPathHint: (a.targetPathHint as string) || "",
         content: a.content as string | undefined,
-        patch: a.patch as Record<string, unknown> | undefined,
+        patch: normalizeArtifactPatch(a.patch, a.name as string | undefined),
         dependsOn: (a.dependsOn as string[]) || [],
       })),
       applySteps: (c.applySteps as string[]) || [],
@@ -1030,6 +1058,51 @@ export function parseProposalResponse(
     userPrompt: originalPrompt,
     choices,
   };
+}
+
+
+/**
+ * Phase 1-fix: normalize artifact.patch.
+ *
+ * OpenAI strict-mode forced us to declare patch as `type: "string"` in the
+ * JSON schema (open objects are rejected). Anthropic's prompt-based path may
+ * still emit an object literal, so we accept both:
+ *   - string -> JSON.parse  (canonical OpenAI strict-mode path)
+ *   - object -> pass through (Anthropic / legacy compatibility)
+ *   - undefined / null -> undefined
+ *
+ * Throws a descriptive error on invalid JSON so the proposal fails fast with
+ * an actionable message instead of crashing later inside applyJsonPatch.
+ */
+export function normalizeArtifactPatch(
+  raw: unknown,
+  artifactName?: string
+): Record<string, unknown> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (trimmed === "") return undefined;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error(
+          `artifact.patch must JSON-decode to an object, got ${Array.isArray(parsed) ? "array" : typeof parsed}`
+        );
+      }
+      return parsed as Record<string, unknown>;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Invalid JSON in artifact.patch${artifactName ? ` (artifact "${artifactName}")` : ""}: ${msg}`
+      );
+    }
+  }
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  throw new Error(
+    `artifact.patch has unsupported type "${typeof raw}"; expected JSON string or object`
+  );
 }
 
 // === Plan Validation (dry-run safety checks) ===

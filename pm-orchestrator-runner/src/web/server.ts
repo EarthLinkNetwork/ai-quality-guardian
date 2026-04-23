@@ -1975,6 +1975,18 @@ export function createApp(config: WebServerConfig): Express {
     res.sendFile(path.join(publicPath, 'index.html'));
   });
 
+  // SPA routes added in Phase 1-fix to repair left-menu 404s.
+  // /ai-generate was the user-reported regression (commit 194c0d1 added the
+  // menu link without the server route). /skills was discovered by the new
+  // SPA-routes unit test sweep — same root cause, never landed.
+  app.get('/ai-generate', (_req: Request, res: Response) => {
+    res.sendFile(path.join(publicPath, 'index.html'));
+  });
+
+  app.get('/skills', (_req: Request, res: Response) => {
+    res.sendFile(path.join(publicPath, 'index.html'));
+  });
+
   // ===================
   // Health Check
   // ===================
