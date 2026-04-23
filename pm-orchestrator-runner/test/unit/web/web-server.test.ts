@@ -927,4 +927,40 @@ describe('Web Server', () => {
       assert.ok(response.text.includes('PM Orchestrator Runner'));
     });
   });
+
+  describe('Auth bypass for public paths (mount-aware)', () => {
+    let authedApp: Express;
+
+    beforeEach(() => {
+      // Minimal stub ApiKeyManager: any request with auth enabled and no
+      // x-api-key header should hit createApiKeyAuth and be rejected.
+      // For the bypass test we deliberately omit the header to verify the
+      // public-path bypass returns 200 *without* delegating to authMiddleware.
+      const stubApiKeyManager = {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        validateApiKey: async (_key: string) => null,
+      };
+      authedApp = createApp({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        queueStore: store as any,
+        sessionId: testSessionId,
+        namespace: 'test-namespace',
+        projectRoot: '/tmp/test',
+        authConfig: {
+          enabled: true,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          apiKeyManager: stubApiKeyManager as any,
+        },
+      });
+    });
+
+    it('GET /api/health bypasses auth and returns 200 without x-api-key', async () => {
+      const response = await request(authedApp)
+        .get('/api/health')
+        .expect(200);
+
+      assert.equal(response.body.status, 'ok');
+      assert.ok(response.body.timestamp, 'timestamp should be present');
+    });
+  });
 });
