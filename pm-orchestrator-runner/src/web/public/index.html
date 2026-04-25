@@ -12731,9 +12731,13 @@
       // Read persisted AI Generate model override
       var storedProvider = '';
       var storedModel = '';
+      // Batch 5: persisted planKind (auto / spec-first-tdd / plugin-bundle).
+      // Spec: spec/37_AI_GENERATE.md §10.5
+      var storedPlanKind = 'auto';
       try {
         storedProvider = localStorage.getItem('pm-runner-ai-generate-provider') || '';
         storedModel = localStorage.getItem('pm-runner-ai-generate-model') || '';
+        storedPlanKind = localStorage.getItem('pm-runner-ai-generate-plan-kind') || 'auto';
       } catch (_e) { /* ignore storage errors */ }
       var providerOpts =
         '<option value="openai"' + (storedProvider === 'openai' || storedProvider === '' ? ' selected' : '') + '>openai</option>' +
@@ -12751,6 +12755,12 @@
                 <option value="">Select a model</option>
               </select>
               <span style="color:#9ca3af;font-size:0.75rem;">(overrides default for AI Generate only)</span>
+              <label style="color:#6b7280;margin-left:12px;">Plan:</label>
+              <select id="ai-generate-plan-kind" data-testid="ai-generate-plan-kind" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;">
+                <option value="auto"${storedPlanKind === 'auto' ? ' selected' : ''}>auto</option>
+                <option value="spec-first-tdd"${storedPlanKind === 'spec-first-tdd' ? ' selected' : ''}>spec-first-tdd</option>
+                <option value="plugin-bundle"${storedPlanKind === 'plugin-bundle' ? ' selected' : ''}>plugin-bundle</option>
+              </select>
             </div>
             <div class="assistant-chat-messages" id="assistant-messages">
               <div class="assistant-msg system">
@@ -12791,6 +12801,14 @@
       if (modelSel) {
         modelSel.addEventListener('change', function() {
           try { localStorage.setItem('pm-runner-ai-generate-model', modelSel.value || ''); } catch (_e) {}
+        });
+      }
+      // Batch 5: wire planKind change → persist in localStorage.
+      // Spec: spec/37_AI_GENERATE.md §10.5
+      var planKindSel = document.getElementById('ai-generate-plan-kind');
+      if (planKindSel) {
+        planKindSel.addEventListener('change', function() {
+          try { localStorage.setItem('pm-runner-ai-generate-plan-kind', planKindSel.value || 'auto'); } catch (_e) {}
         });
       }
       // Re-render existing messages
@@ -12940,10 +12958,19 @@
       var aiGenModelEl = document.getElementById('ai-generate-model');
       var providerVal = aiGenProviderEl ? aiGenProviderEl.value : '';
       var modelVal = aiGenModelEl ? aiGenModelEl.value : '';
+      // Batch 5: read planKind from selector (or fall back to localStorage).
+      // Spec: spec/37_AI_GENERATE.md §10.5
+      var aiGenPlanKindEl = document.getElementById('ai-generate-plan-kind');
+      var planKindVal = aiGenPlanKindEl ? aiGenPlanKindEl.value : '';
+      if (!planKindVal) {
+        try { planKindVal = localStorage.getItem('pm-runner-ai-generate-plan-kind') || 'auto'; }
+        catch (_e) { planKindVal = 'auto'; }
+      }
       // Persist current selection (belt-and-suspenders; change events also persist)
       try {
         if (providerVal) localStorage.setItem('pm-runner-ai-generate-provider', providerVal);
         if (modelVal) localStorage.setItem('pm-runner-ai-generate-model', modelVal);
+        if (planKindVal) localStorage.setItem('pm-runner-ai-generate-plan-kind', planKindVal);
       } catch (_e) { /* ignore storage errors */ }
 
       assistantState.messages.push({ role: 'user', text: prompt });
@@ -12962,6 +12989,7 @@
           scope: scopeVal,
           provider: hasOverride ? providerVal : undefined,
           model: hasOverride ? modelVal : undefined,
+          planKind: planKindVal || 'auto',
         };
         if (!hasOverride) {
           delete proposeBody.provider;
