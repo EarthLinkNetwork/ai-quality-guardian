@@ -385,11 +385,11 @@ tunnels:
 
 | メニュー名 | URL/ハッシュ | レンダラー関数 | 主要APIエンドポイント | Playwrightテスト |
 |-----------|------------|--------------|-------------------|----------------|
-| AI Generate | #/ai-generate | renderAssistantPage | /api/assistant/* | left-menu-navigation.spec.ts |
+| AI Generate | #/ai-generate | renderAssistantPage | /api/assistant/* | left-menu-navigation.spec.ts, ai-generate-model-selector.spec.ts |
 | Hooks | #/hooks | renderHooksPage | GET/POST/PUT/DELETE /api/claude-hooks | hooks-crud.spec.ts |
 | Commands | #/commands | renderCommandsPage | GET/POST/PUT/DELETE /api/claude-files/commands | commands-agents-crud.spec.ts |
 | Agents | #/agents | renderAgentsPage | GET/POST/PUT/DELETE /api/claude-files/agents (type=agent) | commands-agents-crud.spec.ts |
-| Skills | #/skills | renderSkillsPage | GET/POST/PUT/DELETE /api/claude-files/agents (type=skill) | skills-sidebar.spec.ts, skills-crud.spec.ts |
+| Skills | #/skills | renderSkillsPage | GET/POST/PUT/DELETE /api/claude-files/agents (type=skill); 別経路の `POST /api/skills/generate` は **テンプレートベース** スキャフォールド（LLM 不使用、後述「Skills: Template Scaffold vs AI Generate」を参照） | skills-sidebar.spec.ts, skills-crud.spec.ts |
 | Plugins | #/plugins | renderPluginsPage | /api/assistant/plugins* | assistant-save-plugin spec |
 | MCP Servers | #/mcp-servers | renderMcpServersPage | GET/PATCH /api/mcp-servers | left-menu-navigation.spec.ts |
 
@@ -402,7 +402,178 @@ tunnels:
 | PR Reviews | #/pr-reviews | renderPRReviewsPage | GET/POST/DELETE /api/pr-reviews | left-menu-navigation.spec.ts |
 | Logs | #/logs | renderLogsPage | GET /api/app-logs | left-menu-navigation.spec.ts |
 | Processes | #/processes | renderProcessesPage | GET /api/system/processes, POST /api/system/processes/:pid/kill | processes-page.spec.ts |
-| Settings | #/settings | renderSettingsPage | GET/POST/PATCH/DELETE /api/settings | settings*.spec.ts |
+| Settings | #/settings | renderSettingsPage | GET/POST/PATCH/DELETE /api/settings | settings*.spec.ts, settings-save-buttons.spec.ts |
+
+### Settings ページ: カード別セーブ構造（v3.x 新規）
+
+**目的**: Settings 画面で複数カードに1つの「Save Global Settings」ボタンが配置されていた構成を廃止し、カード単位でセーブボタンを配置する。カードごとに明示的な保存フローを持つことで、「どのボタンを押せば何が保存されるのか」が曖昧な UX バグを解消する。
+
+**背景**:
+v3.x 以前は Settings 画面の末尾に「Save Global Settings」ボタンが 1 つだけ存在し、Default LLM Configuration カードと Default Generation Parameters カードを同時に保存していた。一方で Internal LLM カードだけは自分専用の「Save Internal LLM Settings」ボタンを持っていた。結果、ユーザが Default LLM Configuration を変更して Internal LLM のボタンを押すと LLM 設定が保存されない、という混乱が発生した。
+
+**変更後の構成（1 カード = 1 セーブボタン）**:
+
+| カード | セーブボタン (data-testid) | 保存先 API | 保存される主なフィールド |
+|--------|---------------------------|-----------|------------------------|
+| Default LLM Configuration | `settings-save-default-llm` | PUT `/api/settings/project` | `llm.provider`, `llm.model` |
+| Internal LLM | `settings-save-internal-llm` | PUT `/api/settings/internal-llm` | `internalLlm.provider`, `internalLlm.model` |
+| Default Generation Parameters | `settings-save-default-params` | PUT `/api/settings/project` | `preferences.maxTokens`, `preferences.temperature` |
+
+**廃止**:
+- ページ末尾の `Save Global Settings` ボタンは削除。`resetSettings()` ボタンは残置。
+- JS 関数 `saveGlobalSettings()` は削除し、`saveDefaultLlmSettings()` と `saveDefaultGenerationParams()` に分割。
+- `saveInternalLlmSettings()` は変更しない（既に正しい構成）。
+
+**UI 仕様**:
+- 各カード内、フォーム要素の下に `settings-actions` ブロックを配置し、そのカード固有のセーブボタンを配置する。
+- ボタンラベルはカード名と揃える:
+  - Default LLM Configuration → "Save Default LLM"
+  - Default Generation Parameters → "Save Default Parameters"
+  - Internal LLM → "Save Internal LLM Settings"（既存）
+- 保存成功時は `showToast('... saved', 'success')` を表示。
+
+### Model Dropdown Cost / Tier Display (v3.x 新規 - Batch 2)
+
+**目的**: ユーザが「どのモデルを使った時にどれぐらい頭が良くて、どのぐらい課金がかかるのか」を選択時点で判断できるようにする。従来の model dropdown は `<option>GPT-4o</option>` のように表示名のみで、料金と性能帯が不明だった。
+
+**対象 `<select>` 要素**:
+
+| ID | 画面 | カード |
+|---|---|---|
+| `settings-model` | Settings → App | Default LLM Configuration |
+| `settings-qd-model` | Settings → App | Internal LLM |
+| `project-model` | Settings → Project Overrides | LLM Configuration Override |
+
+**Option 文字列フォーマット** (A-4, 2026-04-25 Batch 2 fix で per-token-direction 表記に変更):
+```
+"{displayName} (${inputPricePerMillion.toFixed(2)}/1M in, ${outputPricePerMillion.toFixed(2)}/1M out • {tier})"
+```
+
+例:
+- `"GPT-4o ($2.50/1M in, $10.00/1M out • flagship)"`
+- `"Claude 3.5 Haiku ($0.80/1M in, $4.00/1M out • standard)"`
+- `"GPT-5.4 ($2.50/1M in, $15.00/1M out • flagship)"`
+
+**Batch 2 fix (2026-04-25) - 削除されたモデル**:
+以下の 3 モデルは publish された API 価格がなく retired と判断、registry から削除された:
+- `gpt-5`, `gpt-5.1`, `o3-mini`
+
+これらは `/v1/models` 応答には残っているが、実際の課金 API が存在しないため
+dropdown に `$0.00 / $0.00` と表示されてユーザを誤解させる恐れがあった。
+公式価格が公開された段階で再追加する。
+
+**`tier` フィールド（ModelInfo 拡張）**:
+
+`src/models/repl/model-registry.ts` の `ModelInfo` インターフェースに `tier: 'basic' | 'standard' | 'advanced' | 'flagship'` を必須フィールドとして追加する。
+
+tier の分類基準（input price per 1M tokens ベースのヒューリスティック）:
+- `flagship`: > $10/M、または最先端世代（GPT-4o, Claude Opus 4, o1, GPT-5.x）
+- `advanced`: $2–$10/M（GPT-4 Turbo, Claude Sonnet 4, Claude 3.5 Sonnet）
+- `standard`: $0.5–$2/M（GPT-3.5 Turbo, Claude 3.5 Haiku）
+- `basic`: < $0.5/M（GPT-4o Mini, Claude 3 Haiku）
+
+pricing TBD（0/0）のモデルは、世代・ポジションで判定する（例: GPT-5.4 Pro → flagship、o4 Mini → advanced）。
+
+**データソース**:
+- registry (`OPENAI_MODELS`, `ANTHROPIC_MODELS`) が唯一の真実。
+- `getAllModelCostInfo()` は各 ProjectCostInfo に `tier` を含めて返す。
+- `GET /api/models` は `getAllModelCostInfo()` の戻り値をそのまま返すので、クライアントは `tier` / `inputPricePerMillion` / `outputPricePerMillion` / `modelDisplayName` を取得可能。
+
+**クライアント実装**:
+- `populateModelDropdown(selectId, provider, selectedValue)` ヘルパ関数を `index.html` に追加する。
+  - `fetch('/api/models')` で一覧取得（Settings 画面表示時に呼ばれる）
+  - provider が指定された場合はその provider のモデルのみを `<option>` に追加
+  - provider 未指定なら openai + anthropic の両方を連結
+  - 各 `<option>` の text は上記フォーマット、value は `modelId`
+  - `selectedValue` に一致する option には `selected` 属性を付与
+- 既存の 3 つの `<select>` のハードコードされた `<option>` は削除し、`<option value="">Loading...</option>` プレースホルダのみを残す。
+- `renderSettings()` は内部 render 完了後に `populateModelDropdown('settings-model', ...)` と `populateModelDropdown('settings-qd-model', ...)` を呼ぶ。
+- `renderProjectOverrides()` は内部 render 完了後に `populateModelDropdown('project-model', ...)` を呼ぶ。
+
+**仕様書↔実装↔テストの3点リンク追記**:
+
+| メニュー | 仕様書セクション | 実装関数 | テストファイル |
+|---------|----------------|---------|--------------|
+| Model Dropdown (Cost/Tier) | spec/19_WEB_UI.md#model-dropdown-cost--tier-display-v3x-新規---batch-2 | populateModelDropdown / renderAppSettings / renderProjectOverrides | test/unit/models/model-registry-tier.test.ts, test/unit/web/ai-cost-service-tier.test.ts, test/unit/web/settings-model-dropdown.test.ts, test/playwright/model-dropdowns-cost.spec.ts |
+
+### AI Generate Model Selector (v3.x 新規 - Batch 3)
+
+**目的**: `/ai-generate` ページで AI 提案を生成する際、ユーザがその場で provider / model を選べるようにする。Settings のデフォルトとは独立に「今回だけ flagship モデルで生成する」ことを可能にし、生成品質（スキル/エージェントのクオリティ）の問題に対する直接的なユーザコントロールを提供する。
+
+**背景**: これまで AI Generate は Settings の `defaultProvider` / `defaultModels` をそのまま使い、初期値は `gpt-4o-mini` / `claude-3-haiku-20240307` （いずれも basic tier）だった。ユーザから生成内容の品質が低いという報告があり、(a) デフォルトをより高品位な flagship / advanced tier に引き上げる、(b) UI からいつでもモデルを切り替えられる、の 2 点を実装する。
+
+**UI 要素**（`renderProposeTab()` 内、`assistant-input-area` の上に配置）:
+
+| data-testid | 要素 | 説明 |
+|---|---|---|
+| `ai-generate-provider` | `<select>` | openai / anthropic を選択（initial: `localStorage['pm-runner-ai-generate-provider']` or Settings default） |
+| `ai-generate-model` | `<select data-dynamic="true">` | provider に対応するモデル一覧（`populateModelDropdown` で描画） |
+
+**UI 動作**:
+- `populateModelDropdown('ai-generate-model', providerValue, selectedValue)` を呼び出して option を描画。
+- provider を切り替えると model select を再描画（そのプロバイダーのモデルのみ）。
+- 両方の選択値を `localStorage['pm-runner-ai-generate-provider']` / `localStorage['pm-runner-ai-generate-model']` に保存。次回ロード時に読み戻す。
+- 「Send」ボタン押下時、POST body に `provider` と `model` を含めて送信する。
+
+**サーバ側デフォルト（`src/web/routes/assistant.ts`）**:
+
+| Provider | 旧デフォルト (basic) | 新デフォルト |
+|---|---|---|
+| openai | `gpt-4o-mini` | `gpt-4o` (flagship) |
+| anthropic | `claude-3-haiku-20240307` | `claude-sonnet-4-20250514` (advanced) |
+
+**POST /api/assistant/propose 入力契約拡張**:
+
+リクエストボディに以下の optional フィールドを許可する:
+- `provider`: `"openai" | "anthropic"` — 明示的に provider を上書きする
+- `model`: `string` — 明示的に model id を上書きする
+
+両方が与えられた場合、registry に実在するモデルかを検証し、不正値は 400 で拒否する。省略時は新デフォルトを用いる。選択されたモデルは `response.meta.selectedProvider` / `response.meta.selectedModel` に含めて返す（デバッグ用）。
+
+**System Prompt 強化（`buildSystemPrompt(scope)`）**:
+
+従来 ~50 行の簡潔な JSON schema 案内だったプロンプトを、約 150 行に拡張する。構成:
+
+1. **Role** — 「あなたは Claude Code の設定アーティファクト（skill / agent / command / hook）を生成するエキスパートエディタです」
+2. **Output format** — JSON schema を厳密に記述、artifact kind 別のパス規約、patch フィールドの JSON-encoded string ルール
+3. **Artifact kind ガイドライン** — skill / agent / command それぞれの書き方（frontmatter 構造、セクション構成、命名）
+4. **Quality guidelines（品質規範）** — 「プロジェクト固有の慣習を尊重する」「具体的なコマンド例を含める」「hallucinated フラグを使わない」「秘密情報を含めない」「既存の artifact と衝突する命名を避ける」
+5. **Few-shot examples** — skill / agent について、入力 prompt → 高品質な出力 JSON の対応例を 2 件
+6. **Constraints（制約）** — content に Claude Code では未サポートのツール API を呼び出さない、禁止拡張子を使わない、targetPathHint は scope と整合すること 等
+
+**仕様書↔実装↔テストの3点リンク追記**:
+
+| メニュー | 仕様書セクション | 実装関数 | テストファイル |
+|---------|----------------|---------|--------------|
+| AI Generate Model Selector | spec/37_AI_GENERATE.md, spec/19_WEB_UI.md#ai-generate-model-selector-v3x-新規---batch-3 | renderProposeTab / assistantSend / generateProposal / buildSystemPrompt | test/unit/web/routes/assistant-defaults.test.ts, test/unit/web/routes/assistant-system-prompt.test.ts, test/unit/web/routes/assistant-model-override.test.ts, test/unit/web/ai-generate-model-selector.test.ts, test/playwright/ai-generate-model-selector.spec.ts |
+
+### Skills: Template Scaffold vs AI Generate (v3.x 新規 - Batch 4)
+
+**目的**: 「スキルの自動生成」に関連するエンドポイントが 2 つ存在し、それぞれ全く異なる仕組みであることを明示する。混同すると「AI 生成のはずなのにモデル選択がない」「品質が低い」といった誤解を招くため、UI とドキュメント両方で明確に区別する。
+
+**2 つのエンドポイント**:
+
+| エンドポイント | 仕組み | LLM 使用 | コスト | 出力の決定性 | 用途 |
+|---|---|---|---|---|---|
+| `POST /api/skills/generate` | **テンプレートベース** スキャフォールド。`scanProject()` が package.json / tsconfig / Cargo.toml 等を読み、`generateSkills()` がプロジェクトに合った定型スキル（project-conventions / test / deploy / project-safety 等）を**プログラム的に**生成する。 | ✗（呼び出さない） | ¥0 | **完全に決定的**（同じ入力 → 同じ出力） | プロジェクト初期化時に最低限のスキル骨格を一括生成 |
+| `POST /api/assistant/propose` | **AI 生成**。`buildSystemPrompt()` で構築した System Prompt と user prompt を LLM（OpenAI / Anthropic）に送り、`ProposalPlanSet` を受け取る。 | ✓ | モデル次第（flagship は高コスト） | 非決定的（同じ入力でも出力が揺れる） | 自然言語の指示から個別の skill / agent / command 等を作成 |
+
+**レスポンスのマーカー**:
+- `POST /api/skills/generate` のレスポンスは常に `template: true` を含める。クライアントから見ても LLM コールが起きていないことが自明になる。
+- `POST /api/assistant/propose` のレスポンスは `meta.selectedProvider` / `meta.selectedModel` を返す（既存仕様）。
+
+**UI 表示ルール**（Skills ページ `renderSkillsContent()`）:
+- 個別スキルの編集は引き続き `/api/claude-files/agents` を使う。Skills ページは AI を呼ばない。
+- ただしユーザが「このページ自体が AI で skill を作るのでは？」と誤解する可能性があるため、Skills ページのヘッダ直下に **常時表示される説明バナー** を 1 行配置する:
+  - `data-testid="skills-template-help"` を持つ要素
+  - 文言（英語）: `Manually edit existing skill files. To create a new skill from a natural-language prompt, use AI Generate. /api/skills/generate (CLI/API only) generates a fixed template scaffold (no AI cost).`
+  - リンクで `/ai-generate` に遷移できること。
+
+**仕様書↔実装↔テストの3点リンク追記**:
+
+| メニュー | 仕様書セクション | 実装関数 | テストファイル |
+|---------|----------------|---------|--------------|
+| Skills Template Scaffold | spec/19_WEB_UI.md#skills-template-scaffold-vs-ai-generate-v3x-新規---batch-4 | createSkillsRoutes / generateSkills / renderSkillsContent | test/unit/web/routes/skills-template-only.test.ts, test/unit/web/skills-page-labels.test.ts |
 
 ### Live Tasks ページ詳細仕様（v2.3 新規）
 

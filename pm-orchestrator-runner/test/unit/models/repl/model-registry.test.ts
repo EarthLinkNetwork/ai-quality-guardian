@@ -140,18 +140,20 @@ import {
 } from '../../../../src/models/repl/model-registry';
 
 describe('Model Registry - Task E: additive OpenAI refresh', () => {
+  // Batch 2 fix: gpt-5, gpt-5.1, o3-mini removed (no published API price,
+  // likely retired). Remaining entries received real pricing.
   const NEW_OPENAI_IDS = [
     'gpt-5.4',
     'gpt-5.4-mini',
     'gpt-5.4-pro',
-    'gpt-5.1',
-    'gpt-5',
     'gpt-4.1',
     'gpt-4.1-mini',
     'o3',
-    'o3-mini',
     'o4-mini',
   ] as const;
+
+  // Models that were removed in Batch 2 fix — must NOT be in the registry.
+  const REMOVED_OPENAI_IDS = ['gpt-5', 'gpt-5.1', 'o3-mini'] as const;
 
   const EXISTING_OPENAI_IDS = [
     'gpt-4o',
@@ -184,19 +186,27 @@ describe('Model Registry - Task E: additive OpenAI refresh', () => {
     }
   });
 
-  it('new OpenAI models must carry placeholder pricing (0 / TBD)', () => {
+  it('new OpenAI models must carry real non-zero pricing (Batch 2 fix)', () => {
     for (const newId of NEW_OPENAI_IDS) {
       const model = OPENAI_MODELS.find((m) => m.id === newId);
       assert.ok(model, `Model "${newId}" not found`);
-      assert.equal(
-        model!.inputPricePerMillion,
-        0,
-        `"${newId}" inputPricePerMillion must be 0 (TBD, actual pricing deferred to legacy cleanup task)`
+      assert.ok(
+        model!.inputPricePerMillion > 0,
+        `"${newId}" inputPricePerMillion must be > 0 (Batch 2 fix: real prices, no placeholders)`
       );
-      assert.equal(
-        model!.outputPricePerMillion,
-        0,
-        `"${newId}" outputPricePerMillion must be 0 (TBD)`
+      assert.ok(
+        model!.outputPricePerMillion > 0,
+        `"${newId}" outputPricePerMillion must be > 0 (Batch 2 fix)`
+      );
+    }
+  });
+
+  it('Batch 2 fix: removed OpenAI models must NOT be in registry', () => {
+    const ids = OPENAI_MODELS.map((m) => m.id);
+    for (const removedId of REMOVED_OPENAI_IDS) {
+      assert.ok(
+        !ids.includes(removedId),
+        `OPENAI_MODELS must NOT include "${removedId}" (Batch 2 fix: removed due to no published API price / likely retired)`
       );
     }
   });
@@ -242,19 +252,17 @@ describe('Model Registry - Task E: additive Anthropic refresh', () => {
     }
   });
 
-  it('new Anthropic models must carry placeholder pricing (0 / TBD)', () => {
+  it('new Anthropic models must carry real non-zero pricing (Batch 2 fix)', () => {
     for (const newId of NEW_ANTHROPIC_IDS) {
       const model = ANTHROPIC_MODELS.find((m) => m.id === newId);
       assert.ok(model, `Model "${newId}" not found`);
-      assert.equal(
-        model!.inputPricePerMillion,
-        0,
-        `"${newId}" inputPricePerMillion must be 0 (TBD)`
+      assert.ok(
+        model!.inputPricePerMillion > 0,
+        `"${newId}" inputPricePerMillion must be > 0 (Batch 2 fix: real prices, no placeholders)`
       );
-      assert.equal(
-        model!.outputPricePerMillion,
-        0,
-        `"${newId}" outputPricePerMillion must be 0 (TBD)`
+      assert.ok(
+        model!.outputPricePerMillion > 0,
+        `"${newId}" outputPricePerMillion must be > 0 (Batch 2 fix)`
       );
     }
   });

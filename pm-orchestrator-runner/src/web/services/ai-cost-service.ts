@@ -9,6 +9,7 @@ import {
   OPENAI_MODELS,
   ANTHROPIC_MODELS,
   type ModelInfo,
+  type ModelTier,
 } from '../../models/repl/model-registry';
 
 /**
@@ -32,6 +33,8 @@ export interface ProjectCostInfo {
   outputPricePerMillion: number;
   /** Context window size (e.g. "128K") */
   contextSize: string;
+  /** Capability tier (basic / standard / advanced / flagship) - see spec/19_WEB_UI.md */
+  tier: ModelTier;
 }
 
 /**
@@ -72,6 +75,7 @@ export function buildProjectCostInfo(
     inputPricePerMillion: info.inputPricePerMillion,
     outputPricePerMillion: info.outputPricePerMillion,
     contextSize: info.contextSize,
+    tier: info.tier,
   };
 }
 
@@ -113,6 +117,7 @@ export function getAllModelCostInfo(): Record<string, ProjectCostInfo[]> {
       inputPricePerMillion: m.inputPricePerMillion,
       outputPricePerMillion: m.outputPricePerMillion,
       contextSize: m.contextSize,
+      tier: m.tier,
     });
   }
 
@@ -124,6 +129,7 @@ export function getAllModelCostInfo(): Record<string, ProjectCostInfo[]> {
       inputPricePerMillion: m.inputPricePerMillion,
       outputPricePerMillion: m.outputPricePerMillion,
       contextSize: m.contextSize,
+      tier: m.tier,
     });
   }
 

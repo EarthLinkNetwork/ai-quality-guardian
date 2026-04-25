@@ -6085,27 +6085,13 @@
             </div>
             <div class="form-group">
               <label for="settings-model" data-testid="settings-model-label">Model</label>
-              <select id="settings-model" data-testid="settings-model" class="settings-select">
-                <option value="claude-sonnet-4-20250514" ${globalSettings.llm?.model === 'claude-sonnet-4-20250514' ? 'selected' : ''}>Claude Sonnet 4</option>
-                <option value="claude-3-5-sonnet-20241022" ${globalSettings.llm?.model === 'claude-3-5-sonnet-20241022' ? 'selected' : ''}>Claude 3.5 Sonnet</option>
-                <option value="gpt-4o" ${globalSettings.llm?.model === 'gpt-4o' ? 'selected' : ''}>GPT-4o</option>
-                <option value="gpt-4-turbo" ${globalSettings.llm?.model === 'gpt-4-turbo' ? 'selected' : ''}>GPT-4 Turbo</option>
-                <option value="gpt-5.4" ${globalSettings.llm?.model === 'gpt-5.4' ? 'selected' : ''}>GPT-5.4</option>
-                <option value="gpt-5.4-mini" ${globalSettings.llm?.model === 'gpt-5.4-mini' ? 'selected' : ''}>GPT-5.4 Mini</option>
-                <option value="gpt-5.4-pro" ${globalSettings.llm?.model === 'gpt-5.4-pro' ? 'selected' : ''}>GPT-5.4 Pro</option>
-                <option value="gpt-5.1" ${globalSettings.llm?.model === 'gpt-5.1' ? 'selected' : ''}>GPT-5.1</option>
-                <option value="gpt-5" ${globalSettings.llm?.model === 'gpt-5' ? 'selected' : ''}>GPT-5</option>
-                <option value="gpt-4.1" ${globalSettings.llm?.model === 'gpt-4.1' ? 'selected' : ''}>GPT-4.1</option>
-                <option value="gpt-4.1-mini" ${globalSettings.llm?.model === 'gpt-4.1-mini' ? 'selected' : ''}>GPT-4.1 Mini</option>
-                <option value="o3" ${globalSettings.llm?.model === 'o3' ? 'selected' : ''}>o3</option>
-                <option value="o3-mini" ${globalSettings.llm?.model === 'o3-mini' ? 'selected' : ''}>o3 Mini</option>
-                <option value="o4-mini" ${globalSettings.llm?.model === 'o4-mini' ? 'selected' : ''}>o4 Mini</option>
-                <option value="claude-opus-4-7" ${globalSettings.llm?.model === 'claude-opus-4-7' ? 'selected' : ''}>Claude Opus 4.7</option>
-                <option value="claude-sonnet-4-6" ${globalSettings.llm?.model === 'claude-sonnet-4-6' ? 'selected' : ''}>Claude Sonnet 4.6</option>
-                <option value="claude-haiku-4-5" ${globalSettings.llm?.model === 'claude-haiku-4-5' ? 'selected' : ''}>Claude Haiku 4.5</option>
-                <option value="claude-haiku-4-5-20251001" ${globalSettings.llm?.model === 'claude-haiku-4-5-20251001' ? 'selected' : ''}>Claude Haiku 4.5 (2025-10-01)</option>
+              <select id="settings-model" data-testid="settings-model" class="settings-select" data-dynamic="true">
+                <option value="">Loading...</option>
               </select>
             </div>
+          </div>
+          <div class="settings-actions" style="margin-top: 8px;">
+            <button class="btn btn-primary" data-testid="settings-save-default-llm" onclick="saveDefaultLlmSettings()" style="font-size: 13px; padding: 6px 16px;">Save Default LLM</button>
           </div>
         </div>
 
@@ -6124,25 +6110,8 @@
             </div>
             <div class="form-group">
               <label for="settings-qd-model">Model</label>
-              <select id="settings-qd-model" class="settings-select">
-                <option value="" ${!settingsData.internalLlm?.model ? 'selected' : ''}>Default (auto per provider)</option>
-                <option value="gpt-4o-mini" ${settingsData.internalLlm?.model === 'gpt-4o-mini' ? 'selected' : ''}>gpt-4o-mini (OpenAI, cheapest)</option>
-                <option value="gpt-4o" ${settingsData.internalLlm?.model === 'gpt-4o' ? 'selected' : ''}>gpt-4o (OpenAI)</option>
-                <option value="claude-haiku-4-5-20251001" ${settingsData.internalLlm?.model === 'claude-haiku-4-5-20251001' ? 'selected' : ''}>Claude Haiku 4.5 (Anthropic, cheapest)</option>
-                <option value="claude-sonnet-4-20250514" ${settingsData.internalLlm?.model === 'claude-sonnet-4-20250514' ? 'selected' : ''}>Claude Sonnet 4 (Anthropic)</option>
-                <option value="gpt-5.4" ${settingsData.internalLlm?.model === 'gpt-5.4' ? 'selected' : ''}>GPT-5.4 (OpenAI)</option>
-                <option value="gpt-5.4-mini" ${settingsData.internalLlm?.model === 'gpt-5.4-mini' ? 'selected' : ''}>GPT-5.4 Mini (OpenAI)</option>
-                <option value="gpt-5.4-pro" ${settingsData.internalLlm?.model === 'gpt-5.4-pro' ? 'selected' : ''}>GPT-5.4 Pro (OpenAI)</option>
-                <option value="gpt-5.1" ${settingsData.internalLlm?.model === 'gpt-5.1' ? 'selected' : ''}>GPT-5.1 (OpenAI)</option>
-                <option value="gpt-5" ${settingsData.internalLlm?.model === 'gpt-5' ? 'selected' : ''}>GPT-5 (OpenAI)</option>
-                <option value="gpt-4.1" ${settingsData.internalLlm?.model === 'gpt-4.1' ? 'selected' : ''}>GPT-4.1 (OpenAI)</option>
-                <option value="gpt-4.1-mini" ${settingsData.internalLlm?.model === 'gpt-4.1-mini' ? 'selected' : ''}>GPT-4.1 Mini (OpenAI)</option>
-                <option value="o3" ${settingsData.internalLlm?.model === 'o3' ? 'selected' : ''}>o3 (OpenAI)</option>
-                <option value="o3-mini" ${settingsData.internalLlm?.model === 'o3-mini' ? 'selected' : ''}>o3 Mini (OpenAI)</option>
-                <option value="o4-mini" ${settingsData.internalLlm?.model === 'o4-mini' ? 'selected' : ''}>o4 Mini (OpenAI)</option>
-                <option value="claude-opus-4-7" ${settingsData.internalLlm?.model === 'claude-opus-4-7' ? 'selected' : ''}>Claude Opus 4.7 (Anthropic)</option>
-                <option value="claude-sonnet-4-6" ${settingsData.internalLlm?.model === 'claude-sonnet-4-6' ? 'selected' : ''}>Claude Sonnet 4.6 (Anthropic)</option>
-                <option value="claude-haiku-4-5" ${settingsData.internalLlm?.model === 'claude-haiku-4-5' ? 'selected' : ''}>Claude Haiku 4.5 (Anthropic)</option>
+              <select id="settings-qd-model" class="settings-select" data-dynamic="true">
+                <option value="">Default (auto per provider)</option>
               </select>
             </div>
             <div class="form-group">
@@ -6170,17 +6139,99 @@
               <input type="number" id="settings-temperature" data-testid="settings-temperature" class="settings-input" value="${globalSettings.temperature}" min="0" max="2" step="0.1" />
             </div>
           </div>
+          <div class="settings-actions" style="margin-top: 8px;">
+            <button class="btn btn-primary" data-testid="settings-save-default-params" onclick="saveDefaultGenerationParams()" style="font-size: 13px; padding: 6px 16px;">Save Default Parameters</button>
+          </div>
         </div>
 
-        <!-- Save Buttons -->
+        <!-- Reset -->
         <div class="settings-actions">
-          <button class="btn btn-primary" onclick="saveGlobalSettings()">Save Global Settings</button>
           <button class="btn btn-secondary" onclick="resetSettings()">Reset to Defaults</button>
         </div>
       `;
 
       // Load Runner Controls status after rendering
       loadRunnerControlsStatus();
+
+      // Populate dynamic model dropdowns (cost + tier display).
+      // See spec/19_WEB_UI.md "Model Dropdown Cost / Tier Display".
+      populateModelDropdown('settings-model', globalSettings.llm?.provider, globalSettings.llm?.model);
+      populateModelDropdown('settings-qd-model', settingsData.internalLlm?.provider, settingsData.internalLlm?.model);
+    }
+
+    // ===================
+    // Model dropdown population (Batch 2)
+    // ===================
+    // Cache of /api/models response. Populated on first call.
+    let _modelRegistryCache = null;
+
+    async function fetchModelRegistry() {
+      if (_modelRegistryCache) return _modelRegistryCache;
+      try {
+        const res = await fetch('/api/models');
+        if (!res.ok) {
+          console.error('[populateModelDropdown] /api/models returned', res.status);
+          return { openai: [], anthropic: [] };
+        }
+        const body = await res.json();
+        _modelRegistryCache = body.models || { openai: [], anthropic: [] };
+        return _modelRegistryCache;
+      } catch (err) {
+        console.error('[populateModelDropdown] fetch failed', err);
+        return { openai: [], anthropic: [] };
+      }
+    }
+
+    /**
+     * Populate a <select> dropdown with models fetched from /api/models.
+     *
+     * Option text format (spec/19_WEB_UI.md, A-4):
+     *   "{displayName} ($X.XX/1M in, $Y.YY/1M out • {tier})"
+     *
+     * @param {string} selectId - Target <select> element id
+     * @param {string|undefined} provider - If set, filter to that provider ("openai"|"anthropic").
+     *                                      Falsy → include both.
+     * @param {string|undefined} selectedValue - Option value to mark as selected.
+     */
+    async function populateModelDropdown(selectId, provider, selectedValue) {
+      const sel = document.getElementById(selectId);
+      if (!sel) return;
+
+      const registry = await fetchModelRegistry();
+      const openaiModels = Array.isArray(registry.openai) ? registry.openai : [];
+      const anthropicModels = Array.isArray(registry.anthropic) ? registry.anthropic : [];
+
+      let models;
+      if (provider === 'openai') {
+        models = openaiModels;
+      } else if (provider === 'anthropic') {
+        models = anthropicModels;
+      } else {
+        models = [...openaiModels, ...anthropicModels];
+      }
+
+      // Preserve the first placeholder option (value="") if present; otherwise use "Select a model".
+      const firstOpt = sel.options[0];
+      const placeholderHtml = firstOpt && firstOpt.value === ''
+        ? `<option value="">${escapeHtml(firstOpt.text)}</option>`
+        : '';
+
+      const opts = models.map(m => {
+        const input = Number(m.inputPricePerMillion || 0).toFixed(2);
+        const output = Number(m.outputPricePerMillion || 0).toFixed(2);
+        const tier = m.tier || '';
+        const text = `${m.modelDisplayName} ($${input}/1M in, $${output}/1M out • ${tier})`;
+        const isSel = m.modelId === selectedValue ? ' selected' : '';
+        return `<option value="${escapeHtml(m.modelId)}"${isSel}>${escapeHtml(text)}</option>`;
+      }).join('');
+
+      sel.innerHTML = placeholderHtml + opts;
+
+      // If selectedValue exists among models, ensure it's selected even if
+      // the placeholder had value="" and matched first. Fallback to empty.
+      if (selectedValue && Array.from(sel.options).some(o => o.value === selectedValue)) {
+        sel.value = selectedValue;
+      }
     }
 
     // ===================
@@ -6242,25 +6293,8 @@
                 <label for="override-model">Override Model</label>
                 ${overrideBadge('model')}
               </div>
-              <select id="project-model" class="settings-select ${projectOverrides?.model === undefined ? 'inherited' : ''}" ${projectOverrides?.model === undefined ? 'disabled' : ''}>
-                <option value="claude-sonnet-4-20250514" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-sonnet-4-20250514' ? 'selected' : ''}>Claude Sonnet 4</option>
-                <option value="claude-3-5-sonnet-20241022" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-3-5-sonnet-20241022' ? 'selected' : ''}>Claude 3.5 Sonnet</option>
-                <option value="gpt-4o" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-4o' ? 'selected' : ''}>GPT-4o</option>
-                <option value="gpt-4-turbo" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-4-turbo' ? 'selected' : ''}>GPT-4 Turbo</option>
-                <option value="gpt-5.4" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-5.4' ? 'selected' : ''}>GPT-5.4</option>
-                <option value="gpt-5.4-mini" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-5.4-mini' ? 'selected' : ''}>GPT-5.4 Mini</option>
-                <option value="gpt-5.4-pro" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-5.4-pro' ? 'selected' : ''}>GPT-5.4 Pro</option>
-                <option value="gpt-5.1" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-5.1' ? 'selected' : ''}>GPT-5.1</option>
-                <option value="gpt-5" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-5' ? 'selected' : ''}>GPT-5</option>
-                <option value="gpt-4.1" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-4.1' ? 'selected' : ''}>GPT-4.1</option>
-                <option value="gpt-4.1-mini" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-4.1-mini' ? 'selected' : ''}>GPT-4.1 Mini</option>
-                <option value="o3" ${getEffectiveValue('model', globalSettings.llm?.model) === 'o3' ? 'selected' : ''}>o3</option>
-                <option value="o3-mini" ${getEffectiveValue('model', globalSettings.llm?.model) === 'o3-mini' ? 'selected' : ''}>o3 Mini</option>
-                <option value="o4-mini" ${getEffectiveValue('model', globalSettings.llm?.model) === 'o4-mini' ? 'selected' : ''}>o4 Mini</option>
-                <option value="claude-opus-4-7" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-opus-4-7' ? 'selected' : ''}>Claude Opus 4.7</option>
-                <option value="claude-sonnet-4-6" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-sonnet-4-6' ? 'selected' : ''}>Claude Sonnet 4.6</option>
-                <option value="claude-haiku-4-5" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-haiku-4-5' ? 'selected' : ''}>Claude Haiku 4.5</option>
-                <option value="claude-haiku-4-5-20251001" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-haiku-4-5-20251001' ? 'selected' : ''}>Claude Haiku 4.5 (2025-10-01)</option>
+              <select id="project-model" class="settings-select ${projectOverrides?.model === undefined ? 'inherited' : ''}" ${projectOverrides?.model === undefined ? 'disabled' : ''} data-dynamic="true">
+                <option value="">Loading...</option>
               </select>
             </div>
           </div>
@@ -6295,6 +6329,12 @@
           <button class="btn btn-secondary" onclick="clearProjectOverrides()">Clear All Overrides</button>
         </div>
       `;
+
+      // Populate dynamic project-model dropdown (cost + tier display).
+      // See spec/19_WEB_UI.md "Model Dropdown Cost / Tier Display".
+      const effectiveProvider = getEffectiveValue('provider', globalSettings.llm?.provider);
+      const effectiveModel = getEffectiveValue('model', globalSettings.llm?.model);
+      populateModelDropdown('project-model', effectiveProvider, effectiveModel);
     }
 
     // ===================
@@ -7241,16 +7281,17 @@
       );
     }
 
-    // Save Global settings (no projectId)
-    async function saveGlobalSettings() {
+    // Save Default LLM Configuration (Provider + Model only)
+    // Batch 1: split from legacy saveGlobalSettings() so that each settings
+    // card owns its own save action. See spec/19_WEB_UI.md
+    // "Settings ページ: カード別セーブ構造".
+    async function saveDefaultLlmSettings() {
       const provider = document.getElementById('settings-provider')?.value;
       const model = document.getElementById('settings-model')?.value;
-      const maxTokens = parseInt(document.getElementById('settings-max-tokens')?.value) || 4096;
-      const temperature = parseFloat(document.getElementById('settings-temperature')?.value) || 0.7;
 
       showConfirmDialog(
-        'Save Global Settings?',
-        'This will update the global LLM configuration for all projects.',
+        'Save Default LLM?',
+        'This will update the default LLM provider and model for all projects.',
         'Save',
         async function() {
           try {
@@ -7258,16 +7299,50 @@
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                llm: { provider, model },
-                preferences: { autoChunking: true, costWarningEnabled: true, costWarningThreshold: 0.5 }
+                llm: { provider, model }
               })
             });
             const data = await response.json();
             if (data.success) {
-              showToast('Global settings saved successfully', 'success');
+              showToast('Default LLM saved successfully', 'success');
               renderSettings();
             } else {
-              showToast(data.message || 'Failed to save settings', 'error');
+              showToast(data.message || 'Failed to save default LLM', 'error');
+            }
+          } catch (error) {
+            showToast(error.message, 'error');
+          }
+        },
+        { danger: false }
+      );
+    }
+
+    // Save Default Generation Parameters (Max Tokens, Temperature)
+    // Batch 1: sibling of saveDefaultLlmSettings(). Persists generation
+    // parameters under preferences via PUT /api/settings/project.
+    async function saveDefaultGenerationParams() {
+      const maxTokens = parseInt(document.getElementById('settings-max-tokens')?.value) || 4096;
+      const temperature = parseFloat(document.getElementById('settings-temperature')?.value) || 0.7;
+
+      showConfirmDialog(
+        'Save Default Parameters?',
+        'This will update the default generation parameters for all projects.',
+        'Save',
+        async function() {
+          try {
+            const response = await fetch('/api/settings/project', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                preferences: { maxTokens, temperature }
+              })
+            });
+            const data = await response.json();
+            if (data.success) {
+              showToast('Default parameters saved successfully', 'success');
+              renderSettings();
+            } else {
+              showToast(data.message || 'Failed to save default parameters', 'error');
             }
           } catch (error) {
             showToast(error.message, 'error');
@@ -11563,6 +11638,14 @@
         '<div class="page-header"><h2>Skills</h2>' +
         '<span class="scope-path" style="font-size:0.78rem;color:#6b7280;margin-left:auto;">' +
         'skills: ' + escapeHtml(skillPageState.skillsDir) + '</span></div>' +
+        '<div data-testid="skills-template-help" style="margin:8px 0 12px;padding:10px 12px;background:#f3f4f6;border-left:3px solid #6b7280;border-radius:4px;font-size:0.8rem;color:#374151;line-height:1.5;">' +
+        '<strong>About this page:</strong> Manually edit existing skill files. ' +
+        'To create a new skill from a natural-language prompt, use ' +
+        '<a href="/ai-generate" onclick="navigate(\'/ai-generate\');return false;" style="color:#2563eb;text-decoration:underline;">AI Generate</a> ' +
+        '(LLM-powered, model selectable, costs API tokens). ' +
+        'The CLI/API endpoint <code>/api/skills/generate</code> generates a fixed Template scaffold ' +
+        '(programmatic project scan, deterministic output, no AI cost).' +
+        '</div>' +
         '<div class="two-pane" data-testid="skill-two-pane"><div class="pane-list">' +
         '<div class="pane-list-header"><h3>Files (' + files.length + ')</h3>' +
         '<button class="btn btn-sm" data-testid="skill-new-btn" onclick="startNewSkill()">+ New</button></div>' +
@@ -12645,10 +12728,30 @@
     function renderProposeTab() {
       var container = document.getElementById('assistant-tab-content');
       if (!container) return;
+      // Read persisted AI Generate model override
+      var storedProvider = '';
+      var storedModel = '';
+      try {
+        storedProvider = localStorage.getItem('pm-runner-ai-generate-provider') || '';
+        storedModel = localStorage.getItem('pm-runner-ai-generate-model') || '';
+      } catch (_e) { /* ignore storage errors */ }
+      var providerOpts =
+        '<option value="openai"' + (storedProvider === 'openai' || storedProvider === '' ? ' selected' : '') + '>openai</option>' +
+        '<option value="anthropic"' + (storedProvider === 'anthropic' ? ' selected' : '') + '>anthropic</option>';
       container.innerHTML = `
         <div class="assistant-layout">
           <div class="assistant-chat">
             <div id="repo-profile-panel" data-testid="repo-profile-panel" style="margin-bottom:12px;"></div>
+            <div id="ai-generate-model-bar" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:0.82rem;">
+              <label style="color:#6b7280;">Model:</label>
+              <select id="ai-generate-provider" data-testid="ai-generate-provider" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;">
+                ${providerOpts}
+              </select>
+              <select id="ai-generate-model" data-testid="ai-generate-model" data-dynamic="true" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;min-width:260px;">
+                <option value="">Select a model</option>
+              </select>
+              <span style="color:#9ca3af;font-size:0.75rem;">(overrides default for AI Generate only)</span>
+            </div>
             <div class="assistant-chat-messages" id="assistant-messages">
               <div class="assistant-msg system">
                 Describe what you want to set up. I'll generate hooks, commands, agents, and other Claude Code configurations for you.
@@ -12669,6 +12772,27 @@
       `;
       // Load repo profile
       assistantLoadRepoProfile();
+      // Populate AI Generate model dropdown based on stored provider (default: openai)
+      var initialProvider = storedProvider || 'openai';
+      populateModelDropdown('ai-generate-model', initialProvider, storedModel);
+      // Wire provider change: persist + repopulate model dropdown for that provider
+      var providerSel = document.getElementById('ai-generate-provider');
+      if (providerSel) {
+        providerSel.addEventListener('change', function() {
+          var p = providerSel.value;
+          try { localStorage.setItem('pm-runner-ai-generate-provider', p); } catch (_e) {}
+          // Reset model choice when provider changes
+          try { localStorage.setItem('pm-runner-ai-generate-model', ''); } catch (_e) {}
+          populateModelDropdown('ai-generate-model', p, '');
+        });
+      }
+      // Wire model change: persist selection
+      var modelSel = document.getElementById('ai-generate-model');
+      if (modelSel) {
+        modelSel.addEventListener('change', function() {
+          try { localStorage.setItem('pm-runner-ai-generate-model', modelSel.value || ''); } catch (_e) {}
+        });
+      }
       // Re-render existing messages
       assistantRenderMessages();
       if (assistantState.planSet) {
@@ -12811,6 +12935,17 @@
       var scope = document.getElementById('assistant-scope');
       var scopeVal = scope ? scope.value : 'project';
 
+      // Read AI Generate model override (persisted in localStorage by renderProposeTab)
+      var aiGenProviderEl = document.getElementById('ai-generate-provider');
+      var aiGenModelEl = document.getElementById('ai-generate-model');
+      var providerVal = aiGenProviderEl ? aiGenProviderEl.value : '';
+      var modelVal = aiGenModelEl ? aiGenModelEl.value : '';
+      // Persist current selection (belt-and-suspenders; change events also persist)
+      try {
+        if (providerVal) localStorage.setItem('pm-runner-ai-generate-provider', providerVal);
+        if (modelVal) localStorage.setItem('pm-runner-ai-generate-model', modelVal);
+      } catch (_e) { /* ignore storage errors */ }
+
       assistantState.messages.push({ role: 'user', text: prompt });
       assistantState.loading = true;
       assistantRenderMessages();
@@ -12818,7 +12953,20 @@
       try {
         var useMock = window.location.search.includes('mock=true');
         var url = '/api/assistant/propose' + (useMock ? '?mock=true' : '');
-        var proposeBody = { prompt: prompt, scope: scopeVal };
+        // Build request body with explicit provider:/model: keys (only forward
+        // the override when BOTH are set; partial overrides are rejected by
+        // the server). Spec: spec/37_AI_GENERATE.md §5.3 POST Body Extension.
+        var hasOverride = !!(providerVal && modelVal);
+        var proposeBody = {
+          prompt: prompt,
+          scope: scopeVal,
+          provider: hasOverride ? providerVal : undefined,
+          model: hasOverride ? modelVal : undefined,
+        };
+        if (!hasOverride) {
+          delete proposeBody.provider;
+          delete proposeBody.model;
+        }
         if (assistantState.repoProfile) proposeBody.repoProfile = assistantState.repoProfile;
         var resp = await fetch(url, {
           method: 'POST',

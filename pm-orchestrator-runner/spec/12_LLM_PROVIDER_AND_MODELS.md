@@ -51,16 +51,18 @@ Runner は `claude-code` provider 選択時、モデル名を保持しない（n
 | `o1`                  | o1                    | $15.00            | $60.00             | 200K      |
 | `o1-mini`             | o1 Mini               | $3.00             | $12.00             | 128K      |
 | `o1-preview`          | o1 Preview            | $15.00            | $60.00             | 128K      |
-| `gpt-5.4`             | GPT-5.4               | TBD               | TBD                | TBD       |
-| `gpt-5.4-mini`        | GPT-5.4 Mini          | TBD               | TBD                | TBD       |
-| `gpt-5.4-pro`         | GPT-5.4 Pro           | TBD               | TBD                | TBD       |
-| `gpt-5.1`             | GPT-5.1               | TBD               | TBD                | TBD       |
-| `gpt-5`               | GPT-5                 | TBD               | TBD                | TBD       |
-| `gpt-4.1`             | GPT-4.1               | TBD               | TBD                | TBD       |
-| `gpt-4.1-mini`        | GPT-4.1 Mini          | TBD               | TBD                | TBD       |
-| `o3`                  | o3                    | TBD               | TBD                | TBD       |
-| `o3-mini`             | o3 Mini               | TBD               | TBD                | TBD       |
-| `o4-mini`             | o4 Mini               | TBD               | TBD                | TBD       |
+| `gpt-5.4`             | GPT-5.4               | $2.50             | $15.00             | TBD       |
+| `gpt-5.4-mini`        | GPT-5.4 Mini          | $0.75             | $4.50              | TBD       |
+| `gpt-5.4-pro`         | GPT-5.4 Pro           | $30.00            | $180.00            | TBD       |
+| `gpt-4.1`             | GPT-4.1               | $2.00             | $8.00              | TBD       |
+| `gpt-4.1-mini`        | GPT-4.1 Mini          | $0.40             | $1.60              | TBD       |
+| `o3`                  | o3                    | $2.00             | $8.00              | TBD       |
+| `o4-mini`             | o4 Mini               | $1.10             | $4.40              | TBD       |
+
+> **Batch 2 fix (2026-04-25)**: `gpt-5`, `gpt-5.1`, `o3-mini` were removed
+> from this table and from `OPENAI_MODELS`. They appear in OpenAI's
+> `/v1/models` enumeration but have no published API price (likely
+> retired / preview-only). Re-add when official pricing is published.
 
 #### anthropic
 
@@ -73,10 +75,10 @@ Runner は `claude-code` provider 選択時、モデル名を保持しない（n
 | `claude-3-opus-20240229`      | Claude 3 Opus       | $15.00            | $75.00             | 200K      |
 | `claude-3-sonnet-20240229`    | Claude 3 Sonnet     | $3.00             | $15.00             | 200K      |
 | `claude-3-haiku-20240307`     | Claude 3 Haiku      | $0.25             | $1.25              | 200K      |
-| `claude-opus-4-7`             | Claude Opus 4.7     | TBD               | TBD                | TBD       |
-| `claude-sonnet-4-6`           | Claude Sonnet 4.6   | TBD               | TBD                | TBD       |
-| `claude-haiku-4-5`            | Claude Haiku 4.5    | TBD               | TBD                | TBD       |
-| `claude-haiku-4-5-20251001`   | Claude Haiku 4.5 (2025-10-01) | TBD     | TBD                | TBD       |
+| `claude-opus-4-7`             | Claude Opus 4.7     | $5.00             | $25.00             | TBD       |
+| `claude-sonnet-4-6`           | Claude Sonnet 4.6   | $3.00             | $15.00             | TBD       |
+| `claude-haiku-4-5`            | Claude Haiku 4.5    | $1.00             | $5.00              | TBD       |
+| `claude-haiku-4-5-20251001`   | Claude Haiku 4.5 (2025-10-01) | $1.00   | $5.00              | TBD       |
 
 ### 2.2 料金情報の出典
 

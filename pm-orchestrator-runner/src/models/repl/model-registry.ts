@@ -24,6 +24,24 @@ import { match } from 'ts-pattern';
 import { Provider } from './repl-state';
 
 /**
+ * Capability tier for a model.
+ *
+ * Used by the Web UI to surface "how smart vs how expensive" alongside
+ * the displayName + price in model dropdowns. See spec/19_WEB_UI.md
+ * "Model Dropdown Cost / Tier Display".
+ *
+ * Heuristic (input price per 1M tokens, with generation override):
+ *   - flagship  : > $10/M, or top-of-line generation (GPT-4o, Opus 4, GPT-5.x, o1)
+ *   - advanced  : $2 – $10/M (GPT-4 Turbo, Sonnet 4, Claude 3.5 Sonnet)
+ *   - standard  : $0.5 – $2/M (GPT-3.5 Turbo, Claude 3.5 Haiku)
+ *   - basic     : < $0.5/M (GPT-4o Mini, Claude 3 Haiku)
+ *
+ * For pricing-TBD entries (input=0, output=0), tier is assigned by
+ * generation/positioning intent (e.g. "Pro" → flagship, "Mini" → advanced).
+ */
+export type ModelTier = 'basic' | 'standard' | 'advanced' | 'flagship';
+
+/**
  * Model information structure
  */
 export interface ModelInfo {
@@ -32,6 +50,11 @@ export interface ModelInfo {
   inputPricePerMillion: number;
   outputPricePerMillion: number;
   contextSize: string;
+  /**
+   * Capability tier (basic / standard / advanced / flagship).
+   * Surfaced in Web UI model dropdowns alongside cost.
+   */
+  tier: ModelTier;
 }
 
 /**
@@ -91,36 +114,50 @@ export const PROVIDER_REGISTRY: Record<Provider, ProviderInfo> = {
  * (docs/BACKLOG.md). See spec/12 "TODO: Legacy Cleanup" section.
  *
  * Models verified live via OpenAI /v1/models on 2026-04-24:
- *   gpt-5.4, gpt-5.4-mini, gpt-5.4-pro, gpt-5.1, gpt-5,
- *   gpt-4.1, gpt-4.1-mini, gpt-4o, gpt-4o-mini, o3, o3-mini, o4-mini.
+ *   gpt-5.4, gpt-5.4-mini, gpt-5.4-pro,
+ *   gpt-4.1, gpt-4.1-mini, gpt-4o, gpt-4o-mini, o3, o4-mini.
+ *
+ * Batch 2 fix (2026-04-25): removed gpt-5, gpt-5.1, o3-mini — these IDs
+ * exist in OpenAI's /v1/models response but have no published API pricing
+ * and are likely retired / preview-only. Display in the dropdown would
+ * have shown "$0.00 / $0.00" misleading the user. Re-add with real
+ * pricing if/when published.
  */
 export const OPENAI_MODELS: ModelInfo[] = [
   // ---- Existing (pricing validated) ----
-  { id: 'gpt-4o', displayName: 'GPT-4o', inputPricePerMillion: 2.50, outputPricePerMillion: 10.00, contextSize: '128K' },
-  { id: 'gpt-4o-mini', displayName: 'GPT-4o Mini', inputPricePerMillion: 0.15, outputPricePerMillion: 0.60, contextSize: '128K' },
+  // GPT-4o is the flagship multimodal model (top-of-line for general use).
+  { id: 'gpt-4o', displayName: 'GPT-4o', inputPricePerMillion: 2.50, outputPricePerMillion: 10.00, contextSize: '128K', tier: 'flagship' },
+  // GPT-4o Mini at $0.15/M is the cheapest first-class model.
+  { id: 'gpt-4o-mini', displayName: 'GPT-4o Mini', inputPricePerMillion: 0.15, outputPricePerMillion: 0.60, contextSize: '128K', tier: 'basic' },
   /** @deprecated Legacy (Task E follow-up). See docs/BACKLOG.md "Legacy Model Cleanup". */
-  { id: 'gpt-4-turbo', displayName: 'GPT-4 Turbo', inputPricePerMillion: 10.00, outputPricePerMillion: 30.00, contextSize: '128K' },
-  { id: 'gpt-4', displayName: 'GPT-4', inputPricePerMillion: 30.00, outputPricePerMillion: 60.00, contextSize: '8K' },
+  // GPT-4 Turbo at $10/M sits at the upper edge of advanced.
+  { id: 'gpt-4-turbo', displayName: 'GPT-4 Turbo', inputPricePerMillion: 10.00, outputPricePerMillion: 30.00, contextSize: '128K', tier: 'advanced' },
+  // Original GPT-4 at $30/$60 is flagship-priced but legacy generation.
+  { id: 'gpt-4', displayName: 'GPT-4', inputPricePerMillion: 30.00, outputPricePerMillion: 60.00, contextSize: '8K', tier: 'flagship' },
   /** @deprecated Legacy (Task E follow-up). See docs/BACKLOG.md "Legacy Model Cleanup". */
-  { id: 'gpt-3.5-turbo', displayName: 'GPT-3.5 Turbo', inputPricePerMillion: 0.50, outputPricePerMillion: 1.50, contextSize: '16K' },
+  // GPT-3.5 Turbo at $0.50/$1.50 is the canonical "standard" tier.
+  { id: 'gpt-3.5-turbo', displayName: 'GPT-3.5 Turbo', inputPricePerMillion: 0.50, outputPricePerMillion: 1.50, contextSize: '16K', tier: 'standard' },
   /** @deprecated Legacy (Task E follow-up). See docs/BACKLOG.md "Legacy Model Cleanup". */
-  { id: 'o1', displayName: 'o1', inputPricePerMillion: 15.00, outputPricePerMillion: 60.00, contextSize: '200K' },
+  // o1 reasoning model at $15/$60 is flagship.
+  { id: 'o1', displayName: 'o1', inputPricePerMillion: 15.00, outputPricePerMillion: 60.00, contextSize: '200K', tier: 'flagship' },
   /** @deprecated Legacy (Task E follow-up). See docs/BACKLOG.md "Legacy Model Cleanup". */
-  { id: 'o1-mini', displayName: 'o1 Mini', inputPricePerMillion: 3.00, outputPricePerMillion: 12.00, contextSize: '128K' },
+  // o1 Mini at $3/$12 is advanced.
+  { id: 'o1-mini', displayName: 'o1 Mini', inputPricePerMillion: 3.00, outputPricePerMillion: 12.00, contextSize: '128K', tier: 'advanced' },
   /** @deprecated Legacy (Task E follow-up). See docs/BACKLOG.md "Legacy Model Cleanup". */
-  { id: 'o1-preview', displayName: 'o1 Preview', inputPricePerMillion: 15.00, outputPricePerMillion: 60.00, contextSize: '128K' },
+  // o1 Preview at $15/$60 mirrors o1 → flagship.
+  { id: 'o1-preview', displayName: 'o1 Preview', inputPricePerMillion: 15.00, outputPricePerMillion: 60.00, contextSize: '128K', tier: 'flagship' },
 
-  // ---- Task E additions (2026-04-24, pricing TBD / placeholder 0) ----
-  { id: 'gpt-5.4', displayName: 'GPT-5.4', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
-  { id: 'gpt-5.4-mini', displayName: 'GPT-5.4 Mini', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
-  { id: 'gpt-5.4-pro', displayName: 'GPT-5.4 Pro', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
-  { id: 'gpt-5.1', displayName: 'GPT-5.1', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
-  { id: 'gpt-5', displayName: 'GPT-5', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
-  { id: 'gpt-4.1', displayName: 'GPT-4.1', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
-  { id: 'gpt-4.1-mini', displayName: 'GPT-4.1 Mini', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
-  { id: 'o3', displayName: 'o3', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
-  { id: 'o3-mini', displayName: 'o3 Mini', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
-  { id: 'o4-mini', displayName: 'o4 Mini', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  // ---- Task E additions (2026-04-24, real pricing applied 2026-04-25 Batch 2 fix) ----
+  // GPT-5.4 lines: main → flagship, mini → advanced, pro → flagship.
+  { id: 'gpt-5.4', displayName: 'GPT-5.4', inputPricePerMillion: 2.50, outputPricePerMillion: 15.00, contextSize: 'TBD', tier: 'flagship' },
+  { id: 'gpt-5.4-mini', displayName: 'GPT-5.4 Mini', inputPricePerMillion: 0.75, outputPricePerMillion: 4.50, contextSize: 'TBD', tier: 'advanced' },
+  { id: 'gpt-5.4-pro', displayName: 'GPT-5.4 Pro', inputPricePerMillion: 30.00, outputPricePerMillion: 180.00, contextSize: 'TBD', tier: 'flagship' },
+  // GPT-4.1 generation: main → advanced, mini → standard.
+  { id: 'gpt-4.1', displayName: 'GPT-4.1', inputPricePerMillion: 2.00, outputPricePerMillion: 8.00, contextSize: 'TBD', tier: 'advanced' },
+  { id: 'gpt-4.1-mini', displayName: 'GPT-4.1 Mini', inputPricePerMillion: 0.40, outputPricePerMillion: 1.60, contextSize: 'TBD', tier: 'standard' },
+  // o3 / o4 reasoning models.
+  { id: 'o3', displayName: 'o3', inputPricePerMillion: 2.00, outputPricePerMillion: 8.00, contextSize: 'TBD', tier: 'flagship' },
+  { id: 'o4-mini', displayName: 'o4 Mini', inputPricePerMillion: 1.10, outputPricePerMillion: 4.40, contextSize: 'TBD', tier: 'advanced' },
 ];
 
 /**
@@ -140,20 +177,28 @@ export const OPENAI_MODELS: ModelInfo[] = [
  */
 export const ANTHROPIC_MODELS: ModelInfo[] = [
   // ---- Existing (pricing validated) ----
-  { id: 'claude-opus-4-20250514', displayName: 'Claude Opus 4', inputPricePerMillion: 15.00, outputPricePerMillion: 75.00, contextSize: '200K' },
-  { id: 'claude-sonnet-4-20250514', displayName: 'Claude Sonnet 4', inputPricePerMillion: 3.00, outputPricePerMillion: 15.00, contextSize: '200K' },
-  { id: 'claude-3-5-sonnet-20241022', displayName: 'Claude 3.5 Sonnet', inputPricePerMillion: 3.00, outputPricePerMillion: 15.00, contextSize: '200K' },
-  { id: 'claude-3-5-haiku-20241022', displayName: 'Claude 3.5 Haiku', inputPricePerMillion: 0.80, outputPricePerMillion: 4.00, contextSize: '200K' },
-  { id: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus', inputPricePerMillion: 15.00, outputPricePerMillion: 75.00, contextSize: '200K' },
-  { id: 'claude-3-sonnet-20240229', displayName: 'Claude 3 Sonnet', inputPricePerMillion: 3.00, outputPricePerMillion: 15.00, contextSize: '200K' },
-  { id: 'claude-3-haiku-20240307', displayName: 'Claude 3 Haiku', inputPricePerMillion: 0.25, outputPricePerMillion: 1.25, contextSize: '200K' },
+  // Opus 4 at $15/$75 → flagship.
+  { id: 'claude-opus-4-20250514', displayName: 'Claude Opus 4', inputPricePerMillion: 15.00, outputPricePerMillion: 75.00, contextSize: '200K', tier: 'flagship' },
+  // Sonnet 4 at $3/$15 → advanced.
+  { id: 'claude-sonnet-4-20250514', displayName: 'Claude Sonnet 4', inputPricePerMillion: 3.00, outputPricePerMillion: 15.00, contextSize: '200K', tier: 'advanced' },
+  // Claude 3.5 Sonnet at $3/$15 → advanced.
+  { id: 'claude-3-5-sonnet-20241022', displayName: 'Claude 3.5 Sonnet', inputPricePerMillion: 3.00, outputPricePerMillion: 15.00, contextSize: '200K', tier: 'advanced' },
+  // Claude 3.5 Haiku at $0.80/$4 → standard.
+  { id: 'claude-3-5-haiku-20241022', displayName: 'Claude 3.5 Haiku', inputPricePerMillion: 0.80, outputPricePerMillion: 4.00, contextSize: '200K', tier: 'standard' },
+  // Claude 3 Opus at $15/$75 → flagship.
+  { id: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus', inputPricePerMillion: 15.00, outputPricePerMillion: 75.00, contextSize: '200K', tier: 'flagship' },
+  // Claude 3 Sonnet at $3/$15 → advanced.
+  { id: 'claude-3-sonnet-20240229', displayName: 'Claude 3 Sonnet', inputPricePerMillion: 3.00, outputPricePerMillion: 15.00, contextSize: '200K', tier: 'advanced' },
+  // Claude 3 Haiku at $0.25/$1.25 → basic (cheapest).
+  { id: 'claude-3-haiku-20240307', displayName: 'Claude 3 Haiku', inputPricePerMillion: 0.25, outputPricePerMillion: 1.25, contextSize: '200K', tier: 'basic' },
 
-  // ---- Task E additions (2026-04-24, pricing TBD / placeholder 0) ----
-  { id: 'claude-opus-4-7', displayName: 'Claude Opus 4.7', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
-  { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
-  { id: 'claude-haiku-4-5', displayName: 'Claude Haiku 4.5', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  // ---- Task E additions (2026-04-24, real pricing applied 2026-04-25 Batch 2 fix) ----
+  // Generation-based positioning (Opus → flagship, Sonnet → advanced, Haiku → basic/standard).
+  { id: 'claude-opus-4-7', displayName: 'Claude Opus 4.7', inputPricePerMillion: 5.00, outputPricePerMillion: 25.00, contextSize: 'TBD', tier: 'flagship' },
+  { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', inputPricePerMillion: 3.00, outputPricePerMillion: 15.00, contextSize: 'TBD', tier: 'advanced' },
+  { id: 'claude-haiku-4-5', displayName: 'Claude Haiku 4.5', inputPricePerMillion: 1.00, outputPricePerMillion: 5.00, contextSize: 'TBD', tier: 'basic' },
   // Drift resolution: previously referenced elsewhere but not registered
-  { id: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5 (2025-10-01)', inputPricePerMillion: 0, outputPricePerMillion: 0, contextSize: 'TBD' },
+  { id: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5 (2025-10-01)', inputPricePerMillion: 1.00, outputPricePerMillion: 5.00, contextSize: 'TBD', tier: 'basic' },
 ];
 
 /**
