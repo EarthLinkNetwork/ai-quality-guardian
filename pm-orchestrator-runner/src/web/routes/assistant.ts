@@ -45,6 +45,47 @@ export function resolveDefaultModel(provider: "openai" | "anthropic"): string {
 }
 
 /**
+ * AI Generate workflow plan kind (Batch 5).
+ *   - "auto"           : default. Existing single-artifact behaviour.
+ *   - "spec-first-tdd" : spec → RED test → impl, with applySteps that
+ *                        verify GREEN via npm test.
+ *   - "plugin-bundle"  : multi-artifact PluginDefinition-style bundle.
+ *
+ * Spec: spec/37_AI_GENERATE.md §10
+ */
+export type PlanKind = "auto" | "spec-first-tdd" | "plugin-bundle";
+
+const VALID_PLAN_KINDS: ReadonlySet<string> = new Set(["auto", "spec-first-tdd", "plugin-bundle"]);
+
+/**
+ * Validate the optional `planKind` body field on POST /api/assistant/propose.
+ *
+ * Behaviour:
+ *   - undefined / null / "" → "auto" (backward compat).
+ *   - one of the 3 valid values → that value.
+ *   - anything else → error (caller returns HTTP 400 VALIDATION_ERROR).
+ *
+ * Spec: spec/37_AI_GENERATE.md §10.4
+ */
+export function validatePlanKind(
+  rawPlanKind: unknown
+): { ok: true; planKind: PlanKind } | { ok: false; error: string } {
+  if (rawPlanKind === undefined || rawPlanKind === null || rawPlanKind === "") {
+    return { ok: true, planKind: "auto" };
+  }
+  if (typeof rawPlanKind !== "string") {
+    return { ok: false, error: `invalid planKind: not a string (got ${typeof rawPlanKind})` };
+  }
+  if (!VALID_PLAN_KINDS.has(rawPlanKind)) {
+    return {
+      ok: false,
+      error: `invalid planKind "${rawPlanKind}"; expected one of "auto", "spec-first-tdd", "plugin-bundle"`,
+    };
+  }
+  return { ok: true, planKind: rawPlanKind as PlanKind };
+}
+
+/**
  * Validate an optional {provider, model} override on POST /api/assistant/propose.
  *
  * Behavior:
@@ -127,6 +168,16 @@ export function createAssistantRoutes(config: AssistantRoutesConfig): Router {
           .json({ error: "VALIDATION_ERROR", message: overrideResult.error });
       }
 
+      // Batch 5: validate optional planKind ("auto" | "spec-first-tdd" | "plugin-bundle").
+      // Spec: spec/37_AI_GENERATE.md §10.4
+      const planKindResult = validatePlanKind(req.body.planKind);
+      if (!planKindResult.ok) {
+        return res
+          .status(400)
+          .json({ error: "VALIDATION_ERROR", message: planKindResult.error });
+      }
+      const selectedPlanKind = planKindResult.planKind;
+
       // Mock mode for E2E tests
       if (req.query.mock === "true") {
         const mockPlan = createMockProposal(prompt, effectiveScope);
@@ -136,6 +187,7 @@ export function createAssistantRoutes(config: AssistantRoutesConfig): Router {
           meta: {
             selectedProvider: overrideResult.provider,
             selectedModel: overrideResult.model,
+            selectedPlanKind,
           },
         });
       }
@@ -150,7 +202,8 @@ export function createAssistantRoutes(config: AssistantRoutesConfig): Router {
         effectiveScope,
         projectRoot,
         req.body.repoProfile,
-        overrideForGenerate
+        overrideForGenerate,
+        selectedPlanKind
       );
       return res.json(plan);
     } catch (err: unknown) {
@@ -733,7 +786,8 @@ async function generateProposal(
   scope: string,
   _projectRoot: string,
   repoProfile?: Record<string, unknown>,
-  override?: { provider: "openai" | "anthropic"; model: string }
+  override?: { provider: "openai" | "anthropic"; model: string },
+  planKind: PlanKind = "auto"
 ): Promise<ProposalPlanSet> {
   const { LLMClient } = await import("../../mediation/llm-client");
   const { loadGlobalConfig, getApiKey } = await import(
@@ -774,7 +828,7 @@ async function generateProposal(
     maxTokens,
   });
 
-  const systemPrompt = buildSystemPrompt(scope);
+  const systemPrompt = buildSystemPrompt(scope, planKind);
 
   // Inject repo profile context if available
   let userContent = prompt;
@@ -804,8 +858,9 @@ async function generateProposal(
     meta: {
       selectedProvider: provider,
       selectedModel: model,
+      selectedPlanKind: planKind,
     },
-  } as ProposalPlanSet & { meta: { selectedProvider: string; selectedModel: string } };
+  } as ProposalPlanSet & { meta: { selectedProvider: string; selectedModel: string; selectedPlanKind: PlanKind } };
 }
 
 /**
@@ -817,11 +872,16 @@ async function generateProposal(
  *
  * Spec: spec/37_AI_GENERATE.md §4 "System Prompt Structure"
  */
-export function buildSystemPrompt(scope: string): string {
+export function buildSystemPrompt(scope: string, planKind: PlanKind = "auto"): string {
   const baseDir =
     scope === "global"
       ? "~/.claude/"
       : ".claude/ (project root)";
+
+  // Batch 5: planKind-driven appendix that adds Example C / Example D and
+  // amends Quality Guideline #8 without altering the legacy auto output.
+  // Spec: spec/37_AI_GENERATE.md §10.5
+  const planKindAppendix = buildPlanKindAppendix(scope, planKind);
 
   return `### Role
 
@@ -877,7 +937,7 @@ real trade-off (e.g. minimal vs. comprehensive), not near-duplicates.
 
 Files target ${baseDir} (scope = "${scope}").
 
-### Artifact Kinds
+### Artifact Kind Guidelines
 
 - **skill** → .claude/skills/{name}.md
   Front-matter (YAML) preferred. Section structure: purpose, when-to-use,
@@ -1009,6 +1069,150 @@ Example B — Output JSON (abbreviated):
   .dll, .so, .dylib are rejected by the validator.
 - Output must be a single JSON object that conforms to the schema above. No
   trailing prose, no leading markdown fence, no commentary.
+${planKindAppendix}`;
+}
+
+/**
+ * Build the planKind-specific appendix appended after the Constraints section.
+ * For `auto` this returns the empty string so backward-compat output is byte-identical.
+ *
+ * Spec: spec/37_AI_GENERATE.md §10.5
+ */
+function buildPlanKindAppendix(scope: string, planKind: PlanKind): string {
+  if (planKind === "auto") return "";
+
+  if (planKind === "spec-first-tdd") {
+    // Example C — spec → RED test → impl. Quality Guideline #8 amendment.
+    return `
+
+### Plan Kind: spec-first-tdd
+
+You have been called with planKind="spec-first-tdd". Return EXACTLY one choice
+whose artifacts include at least one \`spec\` artifact, at least one \`test\`
+artifact, and at least one implementation artifact (\`skill\` or \`script\` or
+\`agent\` or \`command\`). Add "Run npm test and verify GREEN" as one of the
+applySteps so the operator finishes the TDD loop.
+
+Quality Guideline #8 (spec-first-tdd amendment): When planKind=spec-first-tdd,
+return exactly one choice with at least one spec, one test, and one
+implementation artifact, and include 'Run npm test and verify GREEN' as an
+applySteps entry.
+
+### Example C — spec-first-tdd
+
+Example C — User Prompt:
+"Create a spec-first TDD workflow for a CSV-to-JSON converter skill."
+
+Example C — Output JSON (abbreviated):
+{
+  "choices": [
+    {
+      "title": "TDD: csv-to-json converter skill",
+      "summary": "Spec, RED test and implementation skill for converting a CSV string to a JSON array, delivered as a spec-first TDD trio.",
+      "scope": "${scope}",
+      "artifacts": [
+        {
+          "kind": "spec",
+          "name": "csv-to-json-converter",
+          "targetPathHint": "spec/csv-to-json-converter.md",
+          "content": "# csv-to-json-converter\n\n## Requirements\n- Accept a CSV string with a header row.\n- Return a JSON array of objects keyed by header.\n\n## Acceptance Criteria\n- Empty CSV → [].\n- Single header + 1 row → array of length 1.\n- Quoted fields containing commas are preserved.\n",
+          "patch": null,
+          "dependsOn": null
+        },
+        {
+          "kind": "test",
+          "name": "csv-to-json-converter.test",
+          "targetPathHint": "test/unit/csv-to-json-converter.test.ts",
+          "content": "import { strict as assert } from 'assert';\nimport { csvToJson } from '../../src/skills/csv-to-json-converter';\n\ndescribe('csv-to-json-converter', () => {\n  it('returns [] for empty input', () => {\n    assert.deepEqual(csvToJson(''), []);\n  });\n  it('parses header + 1 row', () => {\n    assert.deepEqual(csvToJson('a,b\\n1,2'), [{a:'1',b:'2'}]);\n  });\n});\n",
+          "patch": null,
+          "dependsOn": null
+        },
+        {
+          "kind": "skill",
+          "name": "csv-to-json-converter",
+          "targetPathHint": ".claude/skills/csv-to-json-converter.md",
+          "content": "---\nname: csv-to-json-converter\ndescription: Use when the user provides a CSV string and asks for a JSON array.\n---\n\n## Steps\n1. Split on newline; treat row 1 as header.\n2. Map each subsequent row to an object keyed by header.\n3. Preserve quoted fields containing commas.\n",
+          "patch": null,
+          "dependsOn": null
+        }
+      ],
+      "applySteps": [
+        "Create spec/csv-to-json-converter.md",
+        "Create test/unit/csv-to-json-converter.test.ts",
+        "Create .claude/skills/csv-to-json-converter.md",
+        "Run npm test and verify GREEN"
+      ],
+      "rollbackSteps": [
+        "Delete spec/csv-to-json-converter.md",
+        "Delete test/unit/csv-to-json-converter.test.ts",
+        "Delete .claude/skills/csv-to-json-converter.md"
+      ],
+      "riskNotes": ["TDD trio assumes a TypeScript/Mocha project; adjust extension if not."],
+      "questions": []
+    }
+  ]
+}
+`;
+  }
+
+  // plugin-bundle
+  return `
+
+### Plan Kind: plugin-bundle
+
+You have been called with planKind="plugin-bundle". Group ALL artifacts into a
+single PluginDefinition-compatible bundle (one choice, multiple artifacts) and
+use applySteps to describe an \`pm-orchestrator install\`-style installation
+(e.g. "npm pack && pm-orchestrator install <tarball>"). Prefer artifact paths
+under .claude/ so they map cleanly into a bundle manifest.
+
+Quality Guideline #8 (plugin-bundle amendment): When planKind=plugin-bundle,
+group all artifacts into a single PluginDefinition-compatible bundle and use
+applySteps to describe \`pm-orchestrator install\`-style installation.
+
+### Example D — plugin-bundle
+
+Example D — User Prompt:
+"Pack a hello-world skill plus a slash command into a distributable plugin bundle."
+
+Example D — Output JSON (abbreviated):
+{
+  "choices": [
+    {
+      "title": "Plugin bundle: hello-world (skill + command)",
+      "summary": "PluginDefinition-style bundle with one skill and one slash command, installable via npm pack + pm-orchestrator install.",
+      "scope": "${scope}",
+      "artifacts": [
+        {
+          "kind": "skill",
+          "name": "hello-world",
+          "targetPathHint": ".claude/skills/hello-world.md",
+          "content": "---\nname: hello-world\ndescription: Say hello in the style requested by the user.\n---\n\n## Steps\n1. Greet the user using the requested style.\n",
+          "patch": null,
+          "dependsOn": null
+        },
+        {
+          "kind": "command",
+          "name": "hello",
+          "targetPathHint": ".claude/commands/hello.md",
+          "content": "# /hello — Say hello\n\nGreets the user; defaults to a friendly tone.\n",
+          "patch": null,
+          "dependsOn": null
+        }
+      ],
+      "applySteps": [
+        "npm pack to create the plugin tarball",
+        "pm-orchestrator install <tarball> to place all artifacts under .claude/"
+      ],
+      "rollbackSteps": [
+        "Delete .claude/skills/hello-world.md",
+        "Delete .claude/commands/hello.md"
+      ],
+      "riskNotes": ["Bundle layout assumes pm-orchestrator install copies relative paths verbatim."],
+      "questions": []
+    }
+  ]
+}
 `;
 }
 
@@ -1100,7 +1304,7 @@ export const PROPOSAL_RESPONSE_JSON_SCHEMA: any = {
               properties: {
                 kind: {
                   type: "string",
-                  enum: ["command", "agent", "skill", "script", "hook", "claudeMdPatch", "settingsJsonPatch"],
+                  enum: ["command", "agent", "skill", "script", "hook", "spec", "test", "claudeMdPatch", "settingsJsonPatch"],
                 },
                 name: { type: "string" },
                 targetPathHint: { type: ["string", "null"] },
@@ -1377,15 +1581,20 @@ export function normalizeArtifactPatch(
 
 const VALID_KINDS = new Set([
   "command", "agent", "skill", "script", "hook",
+  "spec", "test",
   "claudeMdPatch", "settingsJsonPatch",
 ]);
 
+// Batch 5 (spec-first-tdd planKind): spec=.md, test=.ts/.js.
+// Spec: spec/37_AI_GENERATE.md §10.3.
 const ALLOWED_EXTENSIONS: Record<string, string[]> = {
   command: [".md"],
   agent: [".md"],
   skill: [".md"],
   script: [".sh"],
   hook: [".sh"],
+  spec: [".md"],
+  test: [".ts", ".js"],
 };
 
 function validateChoice(choice: ProposalChoice): string[] {
