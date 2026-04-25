@@ -52,7 +52,8 @@
     "gate:browser": "ts-node diagnostics/browser-ui.check.ts",
     "test:playwright": "npx playwright test",
     "test:playwright:headed": "npx playwright test --headed",
-    "test:playwright:self-update": "npx playwright test --config playwright.selfupdate.config.ts"
+    "test:playwright:self-update": "npx playwright test --config playwright.selfupdate.config.ts",
+    "test:e2e:llm": "mocha --require ts-node/register 'test/e2e/ai-generate-plan-kind-smoke.test.ts'"
   },
   "keywords": [
     "pm-orchestrator",
