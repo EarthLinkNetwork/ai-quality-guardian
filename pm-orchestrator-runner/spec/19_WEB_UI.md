@@ -385,7 +385,7 @@ tunnels:
 
 | メニュー名 | URL/ハッシュ | レンダラー関数 | 主要APIエンドポイント | Playwrightテスト |
 |-----------|------------|--------------|-------------------|----------------|
-| AI Generate | #/ai-generate | renderAssistantPage | /api/assistant/* | left-menu-navigation.spec.ts, ai-generate-model-selector.spec.ts |
+| AI Generate | #/ai-generate | renderAssistantPage | /api/assistant/* | left-menu-navigation.spec.ts, ai-generate-model-selector.spec.ts, ai-generate-plan-kind-selector.spec.ts |
 | Hooks | #/hooks | renderHooksPage | GET/POST/PUT/DELETE /api/claude-hooks | hooks-crud.spec.ts |
 | Commands | #/commands | renderCommandsPage | GET/POST/PUT/DELETE /api/claude-files/commands | commands-agents-crud.spec.ts |
 | Agents | #/agents | renderAgentsPage | GET/POST/PUT/DELETE /api/claude-files/agents (type=agent) | commands-agents-crud.spec.ts |
@@ -574,6 +574,38 @@ pricing TBD（0/0）のモデルは、世代・ポジションで判定する（
 | メニュー | 仕様書セクション | 実装関数 | テストファイル |
 |---------|----------------|---------|--------------|
 | Skills Template Scaffold | spec/19_WEB_UI.md#skills-template-scaffold-vs-ai-generate-v3x-新規---batch-4 | createSkillsRoutes / generateSkills / renderSkillsContent | test/unit/web/routes/skills-template-only.test.ts, test/unit/web/skills-page-labels.test.ts |
+
+
+### AI Generate Plan Kind Selector (v3.x 新規 - Batch 5)
+
+**目的**: `/ai-generate` ページで AI 提案を生成する際、ユーザがその場で **生成プラン種別 (planKind)** を選べるようにする。これにより「単発 skill 生成」だけでなく「spec → RED test → 実装」の TDD ワークフローや「plugin bundle」形式の出力を 1 リクエストで得られる。
+
+**背景**: Batch 3 でモデル選択は可能になったが、system prompt の few-shot は単発 artifact 前提のままだった。ユーザが「TDD で作って」「配布できる plugin にして」と要求しても、kind=skill 単発で返してしまうケースがあった。Batch 5 はこれを planKind の明示選択で解決する。仕様詳細は `spec/37_AI_GENERATE.md` §10。
+
+**UI 要素**（`renderProposeTab()` 内、provider/model selector の右隣に配置）:
+
+| data-testid | 要素 | 説明 |
+|---|---|---|
+| `ai-generate-plan-kind` | `<select>` | `auto` / `spec-first-tdd` / `plugin-bundle` を選択（initial: `localStorage['pm-runner-ai-generate-plan-kind']` or `auto`） |
+
+**UI 動作**:
+- ページ表示時に `localStorage['pm-runner-ai-generate-plan-kind']` を読み出し、初期値として反映する（無ければ `auto`）。
+- 値変更時に `localStorage['pm-runner-ai-generate-plan-kind']` に保存する。
+- 「Send」ボタン押下時、POST body に `planKind` を含めて送信する（`auto` の場合も明示的に送信して構わない）。
+- 既存の provider / model selector の挙動・配置は変更しない（後方互換厳守）。
+
+**サーバ側挙動（`src/web/routes/assistant.ts`）**:
+
+- `POST /api/assistant/propose` は body の `planKind` を validate（whitelist: `auto` / `spec-first-tdd` / `plugin-bundle`、不正値は 400 `VALIDATION_ERROR`）。
+- 省略・`null`・`""` は `auto` として扱う（後方互換）。
+- `buildSystemPrompt(scope, planKind)` に planKind を渡し、planKind に応じて few-shot を切り替える。
+- レスポンスの `meta.selectedPlanKind` に解決値を返す。
+
+**仕様書↔実装↔テストの3点リンク追記**:
+
+| メニュー | 仕様書セクション | 実装関数 | テストファイル |
+|---------|----------------|---------|--------------|
+| AI Generate Plan Kind Selector | spec/37_AI_GENERATE.md §10, spec/19_WEB_UI.md#ai-generate-plan-kind-selector-v3x-新規---batch-5 | renderProposeTab / assistantSend / generateProposal / buildSystemPrompt(scope, planKind) | test/unit/web/routes/assistant-schema-kinds.test.ts, test/unit/web/routes/assistant-system-prompt-plan-kind.test.ts, test/unit/web/routes/assistant-propose-plan-kind.test.ts, test/unit/web/ai-generate-plan-kind-selector.test.ts, test/playwright/ai-generate-plan-kind-selector.spec.ts |
 
 ### Live Tasks ページ詳細仕様（v2.3 新規）
 

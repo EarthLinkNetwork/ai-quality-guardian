@@ -265,3 +265,50 @@ page separation.
 - Independent-page design (Q1=α) means Agents page must not list
   skills and Skills page must not list agents. The client-side filter
   is applied after the shared API call.
+
+## AI Generate Plan Kind Selector (Batch 5)
+
+`/ai-generate` の planKind 選択（`auto` / `spec-first-tdd` / `plugin-bundle`）と、それに対応する system prompt の few-shot 切替・schema 拡張（`spec` / `test` 新 kind）は以下のテストで担保しなければならない。
+
+### 必須テストケース
+
+1. **Schema kinds (`assistant-schema-kinds.test.ts`)**
+   - `PROPOSAL_RESPONSE_JSON_SCHEMA.properties.choices.items.properties.artifacts.items.properties.kind.enum` に `spec` と `test` が含まれる。
+   - `VALID_KINDS` に `spec` と `test` が含まれる（runtime validator が拒否しない）。
+   - `ALLOWED_EXTENSIONS.spec` に `.md` が含まれる。
+   - `ALLOWED_EXTENSIONS.test` に `.ts` と `.js` が含まれる。
+   - 既存の 7 kind（`command`/`agent`/`skill`/`script`/`hook`/`claudeMdPatch`/`settingsJsonPatch`）はそのまま維持されている（後方互換）。
+
+2. **System prompt by planKind (`assistant-system-prompt-plan-kind.test.ts`)**
+   - `buildSystemPrompt('project', 'auto')` の出力は `buildSystemPrompt('project')`（引数 1 つ版）と完全一致（後方互換厳守、既存 Examples A/B のみ）。
+   - `buildSystemPrompt('project', 'spec-first-tdd')` の出力には auto 時の本文に加えて Example C 相当（`spec` kind を含む few-shot、および `applySteps` に "Run npm test" / "GREEN" を含める指示）が含まれる。
+   - `buildSystemPrompt('project', 'plugin-bundle')` の出力には Example D 相当（複数 artifact + plugin bundle 形式の applySteps）が含まれる。
+   - planKind を渡しても既存の 6 セクション見出し（Role / Output Format / Artifact Kinds / Quality Guidelines / Examples / Constraints）はすべて残っている。
+
+3. **POST /api/assistant/propose planKind validation (`assistant-propose-plan-kind.test.ts`)**
+   - body に `planKind` を省略した場合、レスポンス（mock=true）の `meta.selectedPlanKind === 'auto'`。
+   - body に `planKind: 'spec-first-tdd'` を渡すと `meta.selectedPlanKind === 'spec-first-tdd'`。
+   - body に `planKind: 'plugin-bundle'` を渡すと `meta.selectedPlanKind === 'plugin-bundle'`。
+   - body に `planKind: 'invalid-kind'` を渡すと HTTP 400 で `error: 'VALIDATION_ERROR'` を返す。
+   - body に `planKind: ''` / `null` を渡しても `auto` として扱う（後方互換）。
+
+4. **UI selector presence (`ai-generate-plan-kind-selector.test.ts`)**
+   - `index.html` に `<select id="ai-generate-plan-kind" data-testid="ai-generate-plan-kind">` が存在する。
+   - その option に `auto` / `spec-first-tdd` / `plugin-bundle` の 3 値がすべて含まれる。
+   - `localStorage.setItem('pm-runner-ai-generate-plan-kind', ...)` の書き込み JS が存在する。
+   - `assistantSend` が POST body に `planKind` を含めて送信する。
+
+5. **E2E (`ai-generate-plan-kind-selector.spec.ts`)**
+   - `/ai-generate` を開き、planKind selector が表示される。
+   - `spec-first-tdd` を選択して再読込しても選択が保持される（localStorage 確認）。
+   - mock モードで Send → レスポンス `meta.selectedPlanKind` が選択値と一致する。
+
+### テストファイル
+
+- `test/unit/web/routes/assistant-schema-kinds.test.ts`
+- `test/unit/web/routes/assistant-system-prompt-plan-kind.test.ts`
+- `test/unit/web/routes/assistant-propose-plan-kind.test.ts`
+- `test/unit/web/ai-generate-plan-kind-selector.test.ts`
+- `test/playwright/ai-generate-plan-kind-selector.spec.ts`
+
+これらのテストが失敗する状態でのリリースは禁止される。
