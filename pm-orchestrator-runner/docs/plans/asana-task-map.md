@@ -216,7 +216,16 @@ backlog.md / open-defects.md / 実コード走査による棚卸しを Asana に
 
 ## Phase 4 実機 ops 手順書 (v0.2.0 移行 — TODO)
 
-本セッションの subagent 環境では `mcp__asana__*` ツールが直接 invoke 不可だったため、以下の手順を **次セッション (Asana MCP tool 利用可能な親 Claude / IDE) で実行** する。
+2026-04-29 実行試行の結果、本リポジトリ環境では section の作成・タスクの section 移動・section の delete/rename が **いずれの MCP プロバイダでも書き込み不可** だったため、以下の手順を **Asana Web UI で手動実行 (推奨)** または **書き込み権限を持つ別環境の MCP で実行** する。
+
+実行試行の実測:
+
+- `mcp__asana__asana_create_section` (roychri) → `Unauthorized`
+- `mcp__claude_ai_Asana__*` (OAuth) → `create_section` 自体が tool として未提供。`asana_create_task` を `resource_subtype: "section"` で代用試行 → `bad_request: "You cannot create a section by setting a task's subtype."`
+- `mcp__asana__asana_add_task_to_section` (roychri) → `Unauthorized`
+- 読み取り (`asana_get_project_sections`, `asana_get_task`) は OAuth 側で成功
+
+→ 結論: Asana Web UI での手動実行を採用。下記 4-1〜4-5 の `mcp__asana__*` ツール呼び出しは、書き込み可能な MCP 環境が整った場合の参考手順として残す。
 
 ### 4-1. Active Sprint section の作成
 
@@ -231,6 +240,8 @@ mcp__asana__asana_create_section
 順序: Asana では section 作成順 = 表示順。Active Sprint を先頭にしたい場合は、Asana Web UI で手動 drag-drop するか、あるいは MCP tool に `insert_before` 相当があれば使う (なければ UI で並び替え)。
 
 ### 4-2. Epic 1214330853906421 を Untitled section から Phase B 設計基盤へ移動
+
+2026-04-29 確認済み: Epic `1214330853906421` (`[Epic] ELN claude-plugins 集約: eln-pm-orchestrator + eln-quality-workflow (2 plugin 責務 grouping)`) は Untitled section gid `1214289977522743` に在籍中 (`mcp__claude_ai_Asana__asana_get_task` で実測)。
 
 ```
 mcp__asana__asana_get_task
