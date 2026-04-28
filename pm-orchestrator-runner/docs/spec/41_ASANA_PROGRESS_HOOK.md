@@ -96,6 +96,7 @@ session JSON が真実の source であり、work_log frontmatter は人間が g
 
 | Phase | Section gid |
 |-------|-------------|
+| Active Sprint | `TBD` (Phase 4 実機作成後に asana-task-map.md と本表を更新) |
 | Phase A: 即時対応 | `1214338125692623` |
 | Phase B: 設計基盤 | `1214344784396324` |
 | Phase C: 主要機能実装 | `1214338125749479` |
@@ -194,13 +195,14 @@ type SyncOutput = {
    ↓
 [task-tracker-sync]
   1. asana_get_task(gid) で現在状態を確認
-  2. 現在 section が "Phase A: 即時対応" → そのまま (homePhase に保存)
+  2. 現在 section が "Phase A: 即時対応" → homePhase に保存し、Active Sprint section へ移動 (asana_add_task_to_section, Active Sprint gid)
   3. asanaBindings に追加 (boundBy: "task-tracker-sync.adopt")
   4. asana_create_task_story で
      "🟡 taskRun 開始: 2026-04-29-001
       session: session-2026-04-29-xxx
       operator: pm-orchestrator
-      reason: ユーザー入力 'B-016 の続きやって'"
+      reason: ユーザー入力 'B-016 の続きやって'
+      home phase: Phase A: 即時対応 (Active Sprint へ一時移動)"
    ↓
 [pm-orchestrator] 通常の implementer/qa フローへ
 ```
@@ -221,9 +223,12 @@ type SyncOutput = {
                        projects=[1214289977522742])
      → gid 取得
   2. asana_add_task_to_section(section_gid="1214338125749479" /* Phase C */, task_gid=...)
-  3. asana_add_tag_to_task(task_gid=..., tag_gid="1214344794652240" /* P2 */)
-  4. asanaBindings に追加 (boundBy: "task-tracker-sync.create")
-  5. asana_create_task_story("🟡 taskRun 作成 ...")
+     ※ homePhase = Phase C を asanaBindings に記録
+  3. asana_add_task_to_section(section_gid=<Active Sprint gid>, task_gid=...)
+     ※ adopt/progress 中は Active Sprint に集約
+  4. asana_add_tag_to_task(task_gid=..., tag_gid="1214344794652240" /* P2 */)
+  5. asanaBindings に追加 (boundBy: "task-tracker-sync.create", homePhase: "Phase C: 主要機能実装")
+  6. asana_create_task_story("🟡 taskRun 作成 ...")
 ```
 
 ### 6.3 progress フロー
@@ -249,8 +254,10 @@ type SyncOutput = {
   1. asana_get_task → 現在 notes を取得
   2. notes に "PR: <prUrl>" suffix 追加 (既に同 URL があれば skip) → asana_update_task
   3. asana_add_task_to_section(section_gid="1214344784545305" /* Done */)
+     ※ Active Sprint からは Done への移動で自動的に外れる (Asana の section は単一所属)
   4. asana_create_task_story("🟢 完了: <summary>\nPR: <prUrl>\nCommit: <sha>")
   5. binding.closedAt = now, closeReason = "complete"
+     ※ 完了時に homePhase は記録のみ (元の Phase X には戻さない。Done が終着点)
 ```
 
 ### 6.5 abandon フロー
@@ -261,7 +268,8 @@ type SyncOutput = {
 [pm-orchestrator] task-tracker-sync (event: abandon, reason: "テストが収束せず、ユーザー判断で中断")
    ↓
 [task-tracker-sync]
-  1. section 移動なし (Phase X に据え置き)
+  1. asana_add_task_to_section(section_gid=<homePhase の section gid>, task_gid=...)
+     ※ Active Sprint から外し、元の home phase に戻す (中断タスクは Active Sprint に滞留させない)
   2. asana_create_task_story("🔴 中断: テストが収束せず、ユーザー判断で中断")
   3. binding.closedAt = now, closeReason = "abandon"
 ```
@@ -281,7 +289,8 @@ type SyncOutput = {
    ↓
 [task-tracker-sync]
   1. asanaBindings に新 taskRunId で binding 追加
-  2. asana_create_task_story("🔄 taskRun 再開: 2026-04-29-001 (前回 2026-04-28-003)\n前回までの進捗: <stories から要約>")
+  2. asana_get_task で現在 section を確認 → Active Sprint でなければ asana_add_task_to_section で Active Sprint へ移動 (homePhase は元の section を記録)
+  3. asana_create_task_story("🔄 taskRun 再開: 2026-04-29-001 (前回 2026-04-28-003)\n前回までの進捗: <stories から要約>")
 ```
 
 ## 7. story comment テンプレート
@@ -360,6 +369,16 @@ timestamp: {ISO8601}
 - ユーザー入力に "B-999" を含むが asana-task-map.md に未登録
 - 期待: adopt せず create に進む (false positive 回避)
 
+### AC-41-14: adopt/progress で Active Sprint 移動
+- adopt 時に既存タスクが home phase (例: Phase A) に在籍
+- 期待: section が Active Sprint に移動し、`asanaBindings[].homePhase` に元の Phase 名 ("Phase A: 即時対応") と `homeSectionGid` が保存される。progress event でも Active Sprint 在籍を維持
+- create 時も同様: home phase 記録後 Active Sprint に配置
+
+### AC-41-15: complete 時 Active Sprint から外れて Done のみに到達
+- complete を呼んだ後、対象タスクの section を確認
+- 期待: section が Done (`1214344784545305`) のみで、Active Sprint には在籍していない (Asana は section 単一所属モデルのため自動)
+- abandon の場合は Active Sprint から外れて homePhase の section に戻る (Done には行かない)
+
 ## 9. テスト計画 (Spec-First-TDD)
 
 | AC | テスト種別 | ファイル候補 |
@@ -371,6 +390,8 @@ timestamp: {ISO8601}
 | AC-41-9 | integration (session-manager 連動) | `test/integration/session-manager-asana-resume.test.ts` |
 | AC-41-10 | unit | `test/unit/skills/task-tracker-sync/notes-spec-prefix.test.ts` |
 | AC-41-11 〜 AC-41-13 | unit | `test/unit/skills/task-tracker-sync/existing-task-lookup.test.ts` |
+| AC-41-14 | unit | `test/unit/skills/task-tracker-sync/active-sprint-move.test.ts` |
+| AC-41-15 | unit | `test/unit/skills/task-tracker-sync/complete-vs-abandon-section.test.ts` |
 
 E2E テストは Asana 本番に副作用が出るため、専用のテスト project を別途作成して `ASANA_TEST_PROJECT_GID` env で切り替える。CI からは default で skip (test.skip 禁止に違反しないよう、env 不在時は describe.skip ではなく動的に describe を構築する) にする。
 
