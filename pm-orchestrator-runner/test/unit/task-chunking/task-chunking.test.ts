@@ -317,6 +317,69 @@ describe('Task Chunking Module', () => {
       const result = analyzeTaskForChunking(prompt, DEFAULT_TASK_CHUNKING_CONFIG);
       assert.strictEqual(result.is_decomposable, true);
     });
+
+    // B-016 / DEF-001: extractSubtasksFromPrompt must not extract list items
+    // from inside template sections ([TaskContext]/[OutputRules]/[InputRules]).
+    it('should NOT decompose when only template sections contain numbered lists', () => {
+      const prompt = `Fix the typo in README.md
+[TaskContext]
+- id: abc-123
+- status: pending
+- priority: P1
+[/TaskContext]
+[OutputRules]
+1. Use plain English
+2. Cite TaskContext when referencing IDs
+3. Do NOT fabricate evidence
+[/OutputRules]`;
+      const result = analyzeTaskForChunking(prompt, DEFAULT_TASK_CHUNKING_CONFIG);
+      assert.strictEqual(
+        result.is_decomposable,
+        false,
+        'Lists inside [TaskContext]/[OutputRules] must not trigger decomposition'
+      );
+    });
+
+    it('should NOT extract subtasks from [InputRules] template block', () => {
+      // Plain user task with no enumeration and no large-scope keywords —
+      // any decomposition would have to come from the [InputRules] block.
+      const prompt = `Fix the typo in README.md
+[InputRules]
+1. First rule about input
+2. Second rule about input
+3. Third rule about input
+[/InputRules]`;
+      const result = analyzeTaskForChunking(prompt, DEFAULT_TASK_CHUNKING_CONFIG);
+      // With the [InputRules] block stripped, no valid subtasks remain so the
+      // task must not be decomposable.
+      assert.strictEqual(result.is_decomposable, false);
+    });
+
+    it('should decompose only the user-facing list when template sections also contain lists', () => {
+      const prompt = `Implement the complete module with these steps:
+1. Create the file
+2. Add the header
+3. Add the footer
+[OutputRules]
+1. Use plain English
+2. Cite TaskContext
+3. Do NOT fabricate
+[/OutputRules]`;
+      const result = analyzeTaskForChunking(prompt, DEFAULT_TASK_CHUNKING_CONFIG);
+      assert.strictEqual(result.is_decomposable, true);
+      assert.ok(Array.isArray(result.suggested_subtasks));
+      // Should pick up only the 3 user-facing items, not the 3 OutputRules items
+      assert.strictEqual(
+        result.suggested_subtasks!.length,
+        3,
+        'Only user-facing list items should be extracted, not OutputRules entries'
+      );
+      const promptTexts = result.suggested_subtasks!.map(s => s.prompt).join(' | ');
+      assert.ok(
+        !/Use plain English|Cite TaskContext|fabricate/i.test(promptTexts),
+        `Subtasks must not include OutputRules content. Got: ${promptTexts}`
+      );
+    });
   });
 
   describe('isQuestionOrInvestigationPrompt', () => {

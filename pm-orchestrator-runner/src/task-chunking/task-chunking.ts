@@ -346,27 +346,32 @@ export function analyzeTaskForChunking(
     };
   }
 
+  // B-016: Strip injected template blocks ([TaskContext]/[OutputRules]/[InputRules])
+  // before computing decomposition indicators so rules-formatted lists do not
+  // masquerade as user enumeration or scope keywords.
+  const cleanedPrompt = stripInjectedTemplateSections(prompt);
+
   // Check for explicit enumeration (comma-separated items, numbered list)
   const enumerationPattern = /(?:^|\n)\s*(?:\d+\.\s+|\*\s+|-\s+|[a-z]\)\s+)/gim;
   const commaListPattern = /(?:create|implement|add|build|make|write)\s+(?:\w+(?:,\s*\w+){2,})/gi;
   const andListPattern = /(?:\w+(?:,\s*\w+)+\s+and\s+\w+)/gi;
 
-  const hasEnumeration = enumerationPattern.test(prompt);
-  const hasCommaList = commaListPattern.test(prompt);
-  const hasAndList = andListPattern.test(prompt);
+  const hasEnumeration = enumerationPattern.test(cleanedPrompt);
+  const hasCommaList = commaListPattern.test(cleanedPrompt);
+  const hasAndList = andListPattern.test(cleanedPrompt);
 
   // Check for multiple file indicators
   const multipleFilesPattern = /(?:files?|components?|modules?|functions?|classes?)\s*(?:for|:)/gi;
-  const hasMultipleFiles = multipleFilesPattern.test(prompt);
+  const hasMultipleFiles = multipleFilesPattern.test(cleanedPrompt);
 
   // Check for independent parts indicators
   const independentPartsPattern = /(?:independently|separately|each|respectively)/gi;
-  const hasIndependentParts = independentPartsPattern.test(prompt);
+  const hasIndependentParts = independentPartsPattern.test(cleanedPrompt);
 
   // Check for large scope indicators
   const largeScopeKeywords = ['system', 'module', 'complete', 'full', 'entire', 'all'];
   const hasLargeScope = largeScopeKeywords.some(keyword =>
-    prompt.toLowerCase().includes(keyword)
+    cleanedPrompt.toLowerCase().includes(keyword)
   );
 
   // Determine if decomposable
@@ -407,12 +412,32 @@ export function analyzeTaskForChunking(
 }
 
 /**
+ * Strip injected template sections from the prompt before subtask extraction.
+ *
+ * B-016 / DEF-001: `cli/index.ts#injectTaskContext` and the Web Chat route
+ * append `[TaskContext]`, `[OutputRules]`, and `[InputRules]` blocks containing
+ * numbered/bulleted lists. Without filtering, those rule lines are extracted
+ * as subtasks (e.g. "Use plain English", "Do NOT fabricate evidence"), which
+ * drives the decomposer to invent unrelated work items.
+ */
+function stripInjectedTemplateSections(prompt: string): string {
+  return prompt.replace(
+    /\[(TaskContext|OutputRules|InputRules)\][\s\S]*?\[\/\1\]/g,
+    ''
+  );
+}
+
+/**
  * Extract subtasks from a prompt
  */
 function extractSubtasksFromPrompt(
   prompt: string
 ): Array<{ prompt: string; dependencies: string[]; execution_order: number }> {
   const subtasks: Array<{ prompt: string; dependencies: string[]; execution_order: number }> = [];
+
+  // B-016: Remove [TaskContext]/[OutputRules]/[InputRules] blocks before pattern
+  // matching so their internal lists are not mis-classified as user subtasks.
+  prompt = stripInjectedTemplateSections(prompt);
 
   // Try to extract numbered list items
   const numberedPattern = /(?:^|\n)\s*(\d+)\.\s+(.+?)(?=\n\s*\d+\.|$)/gs;
