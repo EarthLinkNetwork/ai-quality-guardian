@@ -18,7 +18,7 @@
 
 | # | Name | gid |
 |---|---|---|
-| 0 | Active Sprint | `TBD` (Phase 4 実機作成後にここを更新) |
+| 0 | Active Sprint | `1214370576492665` |
 | 1 | Phase A: 即時対応 | `1214338125692623` |
 | 2 | Phase B: 設計基盤 | `1214344784396324` |
 | 3 | Phase C: 主要機能実装 | `1214338125749479` |
@@ -28,8 +28,7 @@
 | 7 | Backlog | `1214344784084921` |
 | 8 | Done | `1214344784545305` |
 
-**除去対象 (Phase 4 実機 ops で処理):**
-- `Untitled section` (gid `1214289977522743`) — タスク退避後 delete 試行 → 拒否時 rename to `[deprecated] Untitled`
+**Untitled section (除去済み):** 旧 gid `1214289977522743` は 2026-04-29 に DELETE 完了。Epic `1214330853906421` は退避先 Phase B (`1214344784396324`) に在籍。
 
 ### Section 配置 (2026-04-28 更新)
 
@@ -214,87 +213,32 @@ backlog.md / open-defects.md / 実コード走査による棚卸しを Asana に
 - `.claude/project-config.json` (taskTracker.provider=asana)
 - `.mcp.json` (project-level Asana MCP 登録)
 
-## Phase 4 実機 ops 手順書 (v0.2.0 移行 — TODO)
+## Phase 4 実機 ops 実行ログ (v0.2.0 移行 — 完了)
 
-2026-04-29 実行試行の結果、本リポジトリ環境では section の作成・タスクの section 移動・section の delete/rename が **いずれの MCP プロバイダでも書き込み不可** だったため、以下の手順を **Asana Web UI で手動実行 (推奨)** または **書き込み権限を持つ別環境の MCP で実行** する。
+2026-04-29 に PAT (`ASANA_ACCESS_TOKEN`) を Bash 環境に export した上で Asana REST API を直接呼び出し、9 セクション構造への移行を **完全自動** で完了した。
 
-実行試行の実測:
+### 認証方式
 
-- `mcp__asana__asana_create_section` (roychri) → `Unauthorized`
-- `mcp__claude_ai_Asana__*` (OAuth) → `create_section` 自体が tool として未提供。`asana_create_task` を `resource_subtype: "section"` で代用試行 → `bad_request: "You cannot create a section by setting a task's subtype."`
-- `mcp__asana__asana_add_task_to_section` (roychri) → `Unauthorized`
-- 読み取り (`asana_get_project_sections`, `asana_get_task`) は OAuth 側で成功
+`@roychri/mcp-server-asana` は `ASANA_ACCESS_TOKEN` 環境変数を起動時に読み込む仕様のため、env 未設定時は全ての書き込みが `Unauthorized` で失敗する。本作業ではセッション中に MCP を再起動できないため、Bash + curl で REST API (`https://app.asana.com/api/1.0/...`) を直接叩いた。今後 PAT が env に常設されていれば `mcp__asana__*` ツールがそのまま利用可能。
 
-→ 結論: Asana Web UI での手動実行を採用。下記 4-1〜4-5 の `mcp__asana__*` ツール呼び出しは、書き込み可能な MCP 環境が整った場合の参考手順として残す。
+### 実行結果
 
-### 4-1. Active Sprint section の作成
+| Step | Endpoint | 結果 |
+|------|----------|------|
+| 4-1 | `POST /projects/1214289977522742/sections` (`name=Active Sprint`, `insert_before=1214338125692623`) | 200 OK / 新 gid `1214370576492665` |
+| 4-2 | `POST /sections/1214344784396324/addTask` (`task=1214330853906421`) | 200 OK (Epic を Phase B 設計基盤へ移動) |
+| 4-3 | `GET /sections/1214289977522743/tasks` | 残タスク 0 件を確認 |
+| 4-4 | `DELETE /sections/1214289977522743` | 200 OK (Untitled section 削除完了、rename フォールバック不要) |
+| 4-5 | このファイル + `docs/spec/41_ASANA_PROGRESS_HOOK.md` §4.3 | Active Sprint gid `1214370576492665` を反映 |
 
-```
-mcp__asana__asana_create_section
-  project_id: 1214289977522742
-  name: "Active Sprint"
-```
+### 完了の定義 (達成済み)
 
-返り値の `gid` を控え、本ファイルの Section 表 row 0 と `docs/spec/41_ASANA_PROGRESS_HOOK.md` §4.3 表の `Active Sprint` 行の `TBD` を上書きする。
+- ✅ Active Sprint section が project 1214289977522742 先頭に存在 (gid `1214370576492665`)
+- ✅ Epic 1214330853906421 が Phase B 設計基盤 (`1214344784396324`) に在籍
+- ✅ Untitled section (旧 gid `1214289977522743`) は DELETE 完了
+- ✅ asana-task-map.md と Spec-41 §4.3 の TBD を実 gid で置換済み
 
-順序: Asana では section 作成順 = 表示順。Active Sprint を先頭にしたい場合は、Asana Web UI で手動 drag-drop するか、あるいは MCP tool に `insert_before` 相当があれば使う (なければ UI で並び替え)。
+### 再実行手順 (将来の参照用)
 
-### 4-2. Epic 1214330853906421 を Untitled section から Phase B 設計基盤へ移動
-
-2026-04-29 確認済み: Epic `1214330853906421` (`[Epic] ELN claude-plugins 集約: eln-pm-orchestrator + eln-quality-workflow (2 plugin 責務 grouping)`) は Untitled section gid `1214289977522743` に在籍中 (`mcp__claude_ai_Asana__asana_get_task` で実測)。
-
-```
-mcp__asana__asana_get_task
-  task_id: 1214330853906421
-  → memberships を確認 (Untitled section gid 1214289977522743 在籍を確認)
-```
-
-```
-mcp__asana__asana_add_task_to_section
-  section_id: 1214344784396324   # Phase B: 設計基盤
-  task_id: 1214330853906421
-```
-
-(注: Asana の section は単一所属のため、Phase B への移動で Untitled から自動的に外れる)
-
-### 4-3. Untitled section に他タスクが残っていないか確認
-
-```
-mcp__asana__asana_get_tasks_for_project
-  project_id: 1214289977522742
-  section: 1214289977522743   # Untitled
-```
-
-タスクが残っている場合は、適切な Phase / Backlog へ `mcp__asana__asana_add_task_to_section` で個別に移動する。
-
-### 4-4. Untitled section の delete 試行 → 拒否時 rename
-
-```
-mcp__asana__asana_delete_section
-  section_id: 1214289977522743
-```
-
-成功 → 完了。失敗 (権限不足など) → 以下の rename にフォールバック:
-
-```
-mcp__asana__asana_update_section
-  section_id: 1214289977522743
-  name: "[deprecated] Untitled"
-```
-
-### 4-5. asana-task-map.md と Spec-41 §4.3 の TBD を実際の gid で置換
-
-Phase 4-1 で取得した Active Sprint section の gid を、以下 2 ファイルに反映:
-
-- `pm-orchestrator-runner/docs/plans/asana-task-map.md` (Sections 表 row 0 の `TBD` を置換 + 「除去対象」節を「除去済み」に書き換える or 削除)
-- `pm-orchestrator-runner/docs/spec/41_ASANA_PROGRESS_HOOK.md` (§4.3 表の Active Sprint 行の `TBD` を置換)
-
-完了後、再度 commit + push (`feature/fix-post-refactor-regressions` ブランチ)。
-
-### 完了の定義
-
-- Active Sprint section が project 1214289977522742 に存在し gid を取得済み
-- Epic 1214330853906421 が Phase B 設計基盤に在籍 (Untitled から外れている)
-- Untitled section が delete 済み or `[deprecated] Untitled` に rename 済み
-- asana-task-map.md と Spec-41 §4.3 の TBD が実 gid で置換済み
+PAT を `ASANA_ACCESS_TOKEN` env に設定済みであれば、`mcp__asana__asana_create_section` / `asana_add_task_to_section` / `asana_delete_section` / `asana_update_section` がそのまま利用可能。env 未設定環境では Bash + curl でも同等。手動 UI 操作は不要。
 

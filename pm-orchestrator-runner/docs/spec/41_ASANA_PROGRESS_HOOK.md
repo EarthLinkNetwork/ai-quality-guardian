@@ -96,7 +96,7 @@ session JSON が真実の source であり、work_log frontmatter は人間が g
 
 | Phase | Section gid |
 |-------|-------------|
-| Active Sprint | `TBD` (Phase 4 実機作成後に asana-task-map.md と本表を更新) |
+| Active Sprint | `1214370576492665` |
 | Phase A: 即時対応 | `1214338125692623` |
 | Phase B: 設計基盤 | `1214344784396324` |
 | Phase C: 主要機能実装 | `1214338125749479` |
