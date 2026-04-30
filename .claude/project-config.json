@@ -18,10 +18,11 @@
     "autoResolve": false
   },
   "taskTracker": {
-    "provider": "none",
-    "projectId": "",
+    "provider": "asana",
+    "projectId": "1214289977522742",
+    "workspaceId": "81767308277002",
     "defaultList": "",
-    "mcpServerName": ""
+    "mcpServerName": "asana"
   },
   "monitor": {
     "enabled": true,

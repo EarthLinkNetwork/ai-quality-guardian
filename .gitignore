@@ -29,3 +29,7 @@ Thumbs.db
 # Test coverage output
 .nyc_output/
 coverage/
+
+# Claude Code local-only files (per-machine state, not for commit)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
