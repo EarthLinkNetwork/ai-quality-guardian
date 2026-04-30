@@ -51,7 +51,7 @@ describe('API Key Onboarding E2E', () => {
     options: { timeout?: number; input?: string } = {}
   ): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
     return new Promise((resolve) => {
-      const cliPath = path.join(__dirname, '../../dist/cli/index.js');
+      const cliPath = path.join(process.cwd(), 'dist/cli/index.js');
       const timeout = options.timeout || 5000;
 
       const child = spawn('node', [cliPath, ...args], {

@@ -25,7 +25,7 @@ import { spawn, ChildProcess, execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import assert from 'node:assert/strict';
-const PROJECT_ROOT = path.resolve(__dirname, '../..');
+const PROJECT_ROOT = process.cwd();
 const TMP_DIR = path.join(PROJECT_ROOT, '.tmp/relay-live-e2e-two-web');
 const POLL_INTERVAL_MS = 5000;
 const MAX_WAIT_MS = 300000; // 5 minutes per task

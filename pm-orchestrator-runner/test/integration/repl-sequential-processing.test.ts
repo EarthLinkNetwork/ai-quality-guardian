@@ -168,7 +168,7 @@ async function runREPLWithInput(
   input: string
 ): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
   return new Promise((resolve) => {
-    const cliPath = path.join(__dirname, '../../dist/cli/index.js');
+    const cliPath = path.join(process.cwd(), 'dist/cli/index.js');
 
     const child = spawn('node', [cliPath, 'repl', '--project', projectDir], {
       stdio: ['pipe', 'pipe', 'pipe'],

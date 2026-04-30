@@ -451,8 +451,7 @@ developブランチに直接コミットしようとしています。
 
 以下のルールファイルを参照して判定します：
 
-- `.claude/rules/git-rules.md` - Git操作の詳細ルール
-- `.claude/rules/irreversible-operation-rules.md` - 不可逆な操作の事前確認
+- `docs/QUALITY_GUARDIAN.md` - Git操作の詳細ルール / MUST Rule 3 (不可逆な操作の事前確認)
 
 ## 使用するツール
 

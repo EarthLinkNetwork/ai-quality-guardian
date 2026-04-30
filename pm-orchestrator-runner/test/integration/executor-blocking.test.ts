@@ -596,7 +596,7 @@ async function runREPLWithInput(
   options: { timeout?: number } = {}
 ): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
   return new Promise((resolve) => {
-    const cliPath = path.join(__dirname, '../../dist/cli/index.js');
+    const cliPath = path.join(process.cwd(), 'dist/cli/index.js');
     const timeoutMs = options.timeout || 25000;
 
     const child = spawn('node', [cliPath, 'repl', '--project', projectDir, '--non-interactive', '--exit-on-eof'], {

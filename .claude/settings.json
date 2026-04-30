@@ -1,12 +1,4 @@
 {
-  "customCommands": {
-    "pm": {
-      "description": "PM Orchestratorを起動してタスクを管理",
-      "steps": [
-        {"run": "/pm $ARGUMENTS"}
-      ]
-    }
-  },
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -19,10 +11,23 @@
       }
     ]
   },
+  "customCommands": {
+    "pm": {
+      "description": "PM Orchestratorを起動してタスクを管理",
+      "steps": [
+        {
+          "run": "/pm $ARGUMENTS"
+        }
+      ]
+    }
+  },
   "skills": {
     "directory": ".claude/skills",
     "fallbackDirectory": ".claude/agents",
     "enableFallback": true,
     "priority": "skills-first"
+  },
+  "enabledPlugins": {
+    "claude-mem@thedotmack": true
   }
 }

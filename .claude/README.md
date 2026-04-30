@@ -67,26 +67,24 @@
 
 ---
 
-### Layer 3: 詳細ルール（.claude/rules/）
+### Layer 3: 詳細ルール（docs/）
 
 **責務:** 各MUST Ruleの詳細仕様・過去の問題例・対策を記載
 
-#### 主要ルールファイル
+#### 主要ドキュメント
 
-| ファイル | 対応MUST Rule | 内容 |
+| ドキュメント | 対応MUST Rule | 内容 |
 |---------|--------------|------|
-| `user-instruction-rules.md` | MUST Rule 1 | ユーザー指示の厳守の詳細 |
-| `test-rules.md` | MUST Rule 2 | テスト必須、Test First原則 |
-| `irreversible-operation-rules.md` | MUST Rule 3 | 不可逆な操作の事前確認 |
-| `git-rules.md` | Git操作詳細 | 重要ブランチ保護、危険な操作 |
-| `error-handling-rules.md` | MUST Rule 5 | エラー時の対策実施 |
+| `docs/QUALITY_GUARDIAN.md` | MUST Rule 1, 2, 3, 5, 18 等 | ユーザー指示厳守 / テスト必須 / 不可逆操作確認 / Git操作 / エラー対策 |
+| `docs/WORKFLOW.md` | MUST Rule 17, 19 | 標準工程厳守 / 設計書First原則 |
+| `docs/PROJECT_SPEC.md` | プロジェクト固有 | プロジェクト固有のルール・命名規則 |
 
 **メリット:**
 - 詳細な仕様・過去の問題例を集約
 - サブエージェントが必要時に参照
-- Main AIの負担にならない
+- Main AIの負担にならない（auto-load 対象外）
 
-**ディレクトリ:** `.claude/rules/`
+**ディレクトリ:** `docs/`（旧 `.claude/rules/` から移行済み・2026-04-30）
 
 ---
 
@@ -359,7 +357,7 @@ rule-advisor:
 
 ### 新しい詳細ルールの追加
 
-1. `.claude/rules/` に新しいルールファイルを作成
+1. 既存の `docs/QUALITY_GUARDIAN.md` / `docs/WORKFLOW.md` / `docs/PROJECT_SPEC.md` のいずれか適切なドキュメントに追記
 2. 以下の構成で記述：
    - ルールの説明
    - 厳守事項

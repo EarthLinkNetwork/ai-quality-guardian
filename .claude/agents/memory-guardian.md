@@ -2154,9 +2154,8 @@ AI: [ログ出力例を提示]
 
 ## 詳細ルールの参照
 
-- `.claude/rules/user-instruction-rules.md` - MUST Rule 1の詳細
-- `.claude/rules/workflow-adherence-rules.md` - MUST Rule 17の詳細（過去の実行履歴・標準工程の厳守）
-- `.claude/rules/documentation-rules.md` - MUST Rule 18の詳細（重要な理解の即座の文書化義務）
+- `docs/QUALITY_GUARDIAN.md` - MUST Rule 1 (ユーザー指示の厳守) / MUST Rule 18 (重要な理解の即座の文書化義務)
+- `docs/WORKFLOW.md` - MUST Rule 17 (過去の実行履歴・標準工程の厳守)
 
 ## Main AIへの指示
 
@@ -2704,5 +2703,5 @@ AIの誤った提案:
 
 ## 詳細ルールの参照
 
-- `.claude/rules/design-first-rules.md` - MUST Rule 19の詳細
-- `.claude/rules/user-instruction-rules.md` - MUST Rule 1の詳細
+- `docs/WORKFLOW.md` - MUST Rule 19 (設計書First原則)
+- `docs/QUALITY_GUARDIAN.md` - MUST Rule 1 (ユーザー指示の厳守)

@@ -3017,6 +3017,10 @@
     }
 
   </style>
+
+  <!-- README Markdown rendering (vendored; see scripts/copy-vendor.cjs) -->
+  <script src="/vendor/marked.umd.js"></script>
+  <script src="/vendor/purify.min.js"></script>
 </head>
 <body>
   <div id="toast-container" class="toast-container"></div>
@@ -3063,6 +3067,7 @@
         <a href="/hooks" data-nav="hooks" data-testid="nav-hooks"><span class="nav-icon">&#9889;</span><span class="nav-label">Hooks</span></a>
         <a href="/commands" data-nav="commands" data-testid="nav-commands"><span class="nav-icon">&#9654;</span><span class="nav-label">Commands</span></a>
         <a href="/agents" data-nav="agents" data-testid="nav-agents"><span class="nav-icon">&#129302;</span><span class="nav-label">Agents</span></a>
+        <a href="/skills" data-nav="skills" data-testid="nav-skills"><span class="nav-icon">&#9889;</span><span class="nav-label">Skills</span></a>
         <a href="/plugins" data-nav="plugins" data-testid="nav-plugins"><span class="nav-icon">&#129513;</span><span class="nav-label">Plugins</span></a>
         <a href="/mcp-servers" data-nav="mcp-servers" data-testid="nav-mcp-servers"><span class="nav-icon">&#128268;</span><span class="nav-label">MCP Servers</span></a>
         </div>
@@ -4058,6 +4063,7 @@
         '/hooks': 'hooks',
         '/commands': 'commands',
         '/agents': 'agents',
+        '/skills': 'skills',
         '/mcp-servers': 'mcp-servers',
         '/assistant': 'assistant',
         '/backup': 'backup',
@@ -6079,13 +6085,13 @@
             </div>
             <div class="form-group">
               <label for="settings-model" data-testid="settings-model-label">Model</label>
-              <select id="settings-model" data-testid="settings-model" class="settings-select">
-                <option value="claude-sonnet-4-20250514" ${globalSettings.llm?.model === 'claude-sonnet-4-20250514' ? 'selected' : ''}>Claude Sonnet 4</option>
-                <option value="claude-3-5-sonnet-20241022" ${globalSettings.llm?.model === 'claude-3-5-sonnet-20241022' ? 'selected' : ''}>Claude 3.5 Sonnet</option>
-                <option value="gpt-4o" ${globalSettings.llm?.model === 'gpt-4o' ? 'selected' : ''}>GPT-4o</option>
-                <option value="gpt-4-turbo" ${globalSettings.llm?.model === 'gpt-4-turbo' ? 'selected' : ''}>GPT-4 Turbo</option>
+              <select id="settings-model" data-testid="settings-model" class="settings-select" data-dynamic="true">
+                <option value="">Loading...</option>
               </select>
             </div>
+          </div>
+          <div class="settings-actions" style="margin-top: 8px;">
+            <button class="btn btn-primary" data-testid="settings-save-default-llm" onclick="saveDefaultLlmSettings()" style="font-size: 13px; padding: 6px 16px;">Save Default LLM</button>
           </div>
         </div>
 
@@ -6104,12 +6110,8 @@
             </div>
             <div class="form-group">
               <label for="settings-qd-model">Model</label>
-              <select id="settings-qd-model" class="settings-select">
-                <option value="" ${!settingsData.internalLlm?.model ? 'selected' : ''}>Default (auto per provider)</option>
-                <option value="gpt-4o-mini" ${settingsData.internalLlm?.model === 'gpt-4o-mini' ? 'selected' : ''}>gpt-4o-mini (OpenAI, cheapest)</option>
-                <option value="gpt-4o" ${settingsData.internalLlm?.model === 'gpt-4o' ? 'selected' : ''}>gpt-4o (OpenAI)</option>
-                <option value="claude-haiku-4-5-20251001" ${settingsData.internalLlm?.model === 'claude-haiku-4-5-20251001' ? 'selected' : ''}>Claude Haiku 4.5 (Anthropic, cheapest)</option>
-                <option value="claude-sonnet-4-20250514" ${settingsData.internalLlm?.model === 'claude-sonnet-4-20250514' ? 'selected' : ''}>Claude Sonnet 4 (Anthropic)</option>
+              <select id="settings-qd-model" class="settings-select" data-dynamic="true">
+                <option value="">Default (auto per provider)</option>
               </select>
             </div>
             <div class="form-group">
@@ -6137,17 +6139,99 @@
               <input type="number" id="settings-temperature" data-testid="settings-temperature" class="settings-input" value="${globalSettings.temperature}" min="0" max="2" step="0.1" />
             </div>
           </div>
+          <div class="settings-actions" style="margin-top: 8px;">
+            <button class="btn btn-primary" data-testid="settings-save-default-params" onclick="saveDefaultGenerationParams()" style="font-size: 13px; padding: 6px 16px;">Save Default Parameters</button>
+          </div>
         </div>
 
-        <!-- Save Buttons -->
+        <!-- Reset -->
         <div class="settings-actions">
-          <button class="btn btn-primary" onclick="saveGlobalSettings()">Save Global Settings</button>
           <button class="btn btn-secondary" onclick="resetSettings()">Reset to Defaults</button>
         </div>
       `;
 
       // Load Runner Controls status after rendering
       loadRunnerControlsStatus();
+
+      // Populate dynamic model dropdowns (cost + tier display).
+      // See spec/19_WEB_UI.md "Model Dropdown Cost / Tier Display".
+      populateModelDropdown('settings-model', globalSettings.llm?.provider, globalSettings.llm?.model);
+      populateModelDropdown('settings-qd-model', settingsData.internalLlm?.provider, settingsData.internalLlm?.model);
+    }
+
+    // ===================
+    // Model dropdown population (Batch 2)
+    // ===================
+    // Cache of /api/models response. Populated on first call.
+    let _modelRegistryCache = null;
+
+    async function fetchModelRegistry() {
+      if (_modelRegistryCache) return _modelRegistryCache;
+      try {
+        const res = await fetch('/api/models');
+        if (!res.ok) {
+          console.error('[populateModelDropdown] /api/models returned', res.status);
+          return { openai: [], anthropic: [] };
+        }
+        const body = await res.json();
+        _modelRegistryCache = body.models || { openai: [], anthropic: [] };
+        return _modelRegistryCache;
+      } catch (err) {
+        console.error('[populateModelDropdown] fetch failed', err);
+        return { openai: [], anthropic: [] };
+      }
+    }
+
+    /**
+     * Populate a <select> dropdown with models fetched from /api/models.
+     *
+     * Option text format (spec/19_WEB_UI.md, A-4):
+     *   "{displayName} ($X.XX/1M in, $Y.YY/1M out • {tier})"
+     *
+     * @param {string} selectId - Target <select> element id
+     * @param {string|undefined} provider - If set, filter to that provider ("openai"|"anthropic").
+     *                                      Falsy → include both.
+     * @param {string|undefined} selectedValue - Option value to mark as selected.
+     */
+    async function populateModelDropdown(selectId, provider, selectedValue) {
+      const sel = document.getElementById(selectId);
+      if (!sel) return;
+
+      const registry = await fetchModelRegistry();
+      const openaiModels = Array.isArray(registry.openai) ? registry.openai : [];
+      const anthropicModels = Array.isArray(registry.anthropic) ? registry.anthropic : [];
+
+      let models;
+      if (provider === 'openai') {
+        models = openaiModels;
+      } else if (provider === 'anthropic') {
+        models = anthropicModels;
+      } else {
+        models = [...openaiModels, ...anthropicModels];
+      }
+
+      // Preserve the first placeholder option (value="") if present; otherwise use "Select a model".
+      const firstOpt = sel.options[0];
+      const placeholderHtml = firstOpt && firstOpt.value === ''
+        ? `<option value="">${escapeHtml(firstOpt.text)}</option>`
+        : '';
+
+      const opts = models.map(m => {
+        const input = Number(m.inputPricePerMillion || 0).toFixed(2);
+        const output = Number(m.outputPricePerMillion || 0).toFixed(2);
+        const tier = m.tier || '';
+        const text = `${m.modelDisplayName} ($${input}/1M in, $${output}/1M out • ${tier})`;
+        const isSel = m.modelId === selectedValue ? ' selected' : '';
+        return `<option value="${escapeHtml(m.modelId)}"${isSel}>${escapeHtml(text)}</option>`;
+      }).join('');
+
+      sel.innerHTML = placeholderHtml + opts;
+
+      // If selectedValue exists among models, ensure it's selected even if
+      // the placeholder had value="" and matched first. Fallback to empty.
+      if (selectedValue && Array.from(sel.options).some(o => o.value === selectedValue)) {
+        sel.value = selectedValue;
+      }
     }
 
     // ===================
@@ -6209,11 +6293,8 @@
                 <label for="override-model">Override Model</label>
                 ${overrideBadge('model')}
               </div>
-              <select id="project-model" class="settings-select ${projectOverrides?.model === undefined ? 'inherited' : ''}" ${projectOverrides?.model === undefined ? 'disabled' : ''}>
-                <option value="claude-sonnet-4-20250514" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-sonnet-4-20250514' ? 'selected' : ''}>Claude Sonnet 4</option>
-                <option value="claude-3-5-sonnet-20241022" ${getEffectiveValue('model', globalSettings.llm?.model) === 'claude-3-5-sonnet-20241022' ? 'selected' : ''}>Claude 3.5 Sonnet</option>
-                <option value="gpt-4o" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-4o' ? 'selected' : ''}>GPT-4o</option>
-                <option value="gpt-4-turbo" ${getEffectiveValue('model', globalSettings.llm?.model) === 'gpt-4-turbo' ? 'selected' : ''}>GPT-4 Turbo</option>
+              <select id="project-model" class="settings-select ${projectOverrides?.model === undefined ? 'inherited' : ''}" ${projectOverrides?.model === undefined ? 'disabled' : ''} data-dynamic="true">
+                <option value="">Loading...</option>
               </select>
             </div>
           </div>
@@ -6248,6 +6329,12 @@
           <button class="btn btn-secondary" onclick="clearProjectOverrides()">Clear All Overrides</button>
         </div>
       `;
+
+      // Populate dynamic project-model dropdown (cost + tier display).
+      // See spec/19_WEB_UI.md "Model Dropdown Cost / Tier Display".
+      const effectiveProvider = getEffectiveValue('provider', globalSettings.llm?.provider);
+      const effectiveModel = getEffectiveValue('model', globalSettings.llm?.model);
+      populateModelDropdown('project-model', effectiveProvider, effectiveModel);
     }
 
     // ===================
@@ -6869,16 +6956,87 @@
 
     // ===================
     // ===================
-    // Project Detail README Loader
+    // Project Detail README Loader (marked + DOMPurify)
     // ===================
-    async function loadProjectReadme(projectId) {
+    //
+    // We use vendored marked (UMD) + DOMPurify (min) instead of a homegrown
+    // Markdown parser. They are loaded from /vendor/ via <script> tags in <head>.
+    // See spec/19_WEB_UI.md "README プレビュー仕様" for the contract.
+
+    /**
+     * Convert Markdown text to safe HTML.
+     * - marked.parse handles CommonMark + GFM-ish defaults (headings, lists,
+     *   code, links, blockquotes, hr, inline code, bold/italic).
+     * - DOMPurify strips javascript: / data: / vbscript: URLs and any
+     *   disallowed tags/attributes.
+     * - Links are forced to open in a new tab via DOMPurify hook.
+     */
+    function renderMarkdownToHtml(md) {
+      if (typeof md !== 'string') return '';
+      if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+        // Vendor scripts failed to load; fall back to escaped plain text so we
+        // never inject raw Markdown into the DOM.
+        return '<pre class="readme-code-block"><code>' + escapeHtml(md) + '</code></pre>';
+      }
+      try {
+        // marked v18 returns a string when called with a plain string and the
+        // default async=false setting. Configure once per call to keep the
+        // function pure and idempotent.
+        marked.setOptions({ gfm: true, breaks: false, async: false });
+        var rawHtml = marked.parse(md);
+
+        // Force every <a> link to open in a new tab safely.
+        if (!renderMarkdownToHtml._hookInstalled) {
+          DOMPurify.addHook('afterSanitizeAttributes', function (node) {
+            if (node.tagName === 'A') {
+              node.setAttribute('target', '_blank');
+              node.setAttribute('rel', 'noopener noreferrer');
+            }
+          });
+          renderMarkdownToHtml._hookInstalled = true;
+        }
+        return DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
+      } catch (err) {
+        return '<pre class="readme-code-block"><code>' + escapeHtml(md) + '</code></pre>';
+      }
+    }
+
+    /**
+     * Switch the active pane on the Project Detail page.
+     * paneKey: 'overview' | 'readme'
+     * Idempotent: safe to call repeatedly.
+     */
+    function setProjectDetailTab(paneKey, projectId) {
+      var tabs = document.querySelectorAll('.project-detail-tab');
+      tabs.forEach(function (btn) {
+        var match = btn.getAttribute('data-pane') === paneKey;
+        btn.classList.toggle('active', match);
+        btn.style.color = match ? '#2563eb' : '#6b7280';
+        btn.style.borderBottomColor = match ? '#2563eb' : 'transparent';
+      });
+      var panes = document.querySelectorAll('.project-detail-pane');
+      panes.forEach(function (p) {
+        p.style.display = (p.getAttribute('data-pane') === paneKey) ? 'block' : 'none';
+      });
+      // Lazy refresh README when its tab is opened (no-op if container missing)
+      if (paneKey === 'readme' && projectId) {
+        var c = document.getElementById('project-readme-content');
+        if (c && c.querySelector('[data-testid="project-readme-body"]') == null
+              && c.querySelector('[data-testid="project-readme-empty"]') == null) {
+          loadProjectReadme(projectId);
+        }
+      }
+    }
+    window.setProjectDetailTab = setProjectDetailTab;
+
+        async function loadProjectReadme(projectId) {
       const container = document.getElementById('project-readme-content');
       if (!container) return;
       container.innerHTML = '<div style="color:#9ca3af; font-size:0.85rem;">Loading README...</div>';
       try {
         const data = await api('/projects/' + encodeURIComponent(projectId) + '/readme');
         if (!data || !data.content) {
-          container.innerHTML = '<p style="color:#6b7280; font-size:0.85rem; margin:0;">No README file found in the project root.</p>';
+          container.innerHTML = '<p data-testid="project-readme-empty" style="color:#6b7280; font-size:0.85rem; margin:0;">No README file found in the project root.</p>';
           return;
         }
         const html = renderMarkdownToHtml(data.content);
@@ -6888,7 +7046,7 @@
       } catch (err) {
         const msg = err && err.message ? err.message : 'Error';
         if (/404|not.?found/i.test(msg)) {
-          container.innerHTML = '<p style="color:#6b7280; font-size:0.85rem; margin:0;">No README file found in the project root.</p>';
+          container.innerHTML = '<p data-testid="project-readme-empty" style="color:#6b7280; font-size:0.85rem; margin:0;">No README file found in the project root.</p>';
         } else {
           container.innerHTML = '<p style="color:#ef4444; font-size:0.85rem; margin:0;">Error loading README: ' + escapeHtml(msg) + '</p>';
         }
@@ -6896,7 +7054,7 @@
     }
 
     // ===================
-    // README Section (Markdown Preview)
+    // README Section (Markdown Preview - Settings page variant)
     // ===================
     async function renderReadmeSection(container) {
       container.innerHTML = '<div class="loading">Loading README...</div>';
@@ -6925,162 +7083,6 @@
       } catch (err) {
         container.innerHTML = `<div class="card"><p style="color:#ef4444;">Error loading README: ${escapeHtml(err.message)}</p></div>`;
       }
-    }
-
-    /**
-     * Convert Markdown text to safe HTML for preview.
-     * Handles: headings, bold, italic, inline code, fenced code blocks,
-     * ordered & unordered lists, blockquotes, horizontal rules, links, paragraphs.
-     */
-    function renderMarkdownToHtml(md) {
-      // Split into blocks so we can handle fenced code blocks specially
-      const lines = md.split('\n');
-      const out = [];
-      let i = 0;
-
-      while (i < lines.length) {
-        const line = lines[i];
-
-        // Fenced code block
-        if (/^```/.test(line)) {
-          const lang = line.slice(3).trim();
-          const codeLines = [];
-          i++;
-          while (i < lines.length && !/^```/.test(lines[i])) {
-            codeLines.push(lines[i]);
-            i++;
-          }
-          i++; // skip closing ```
-          const code = escapeHtml(codeLines.join('\n'));
-          out.push('<pre class="readme-code-block"><code' + (lang ? ' class="lang-' + escapeHtml(lang) + '"' : '') + '>' + code + '</code></pre>');
-          continue;
-        }
-
-        // Horizontal rule
-        if (/^[-*_]{3,}\s*$/.test(line)) {
-          out.push('<hr class="readme-hr">');
-          i++;
-          continue;
-        }
-
-        // Headings
-        const hm = line.match(/^(#{1,6})\s+(.+)/);
-        if (hm) {
-          const level = hm[1].length;
-          out.push('<h' + level + ' class="readme-h' + level + '">' + inlineMarkdown(hm[2]) + '</h' + level + '>');
-          i++;
-          continue;
-        }
-
-        // Blockquote
-        if (/^>\s?/.test(line)) {
-          const bqLines = [];
-          while (i < lines.length && /^>\s?/.test(lines[i])) {
-            bqLines.push(lines[i].replace(/^>\s?/, ''));
-            i++;
-          }
-          out.push('<blockquote class="readme-blockquote">' + inlineMarkdown(bqLines.join('<br>')) + '</blockquote>');
-          continue;
-        }
-
-        // Unordered list
-        if (/^[-*+]\s/.test(line)) {
-          const items = [];
-          while (i < lines.length && /^[-*+]\s/.test(lines[i])) {
-            items.push('<li>' + inlineMarkdown(lines[i].replace(/^[-*+]\s/, '')) + '</li>');
-            i++;
-          }
-          out.push('<ul class="readme-ul">' + items.join('') + '</ul>');
-          continue;
-        }
-
-        // Ordered list
-        if (/^\d+\.\s/.test(line)) {
-          const items = [];
-          while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
-            items.push('<li>' + inlineMarkdown(lines[i].replace(/^\d+\.\s/, '')) + '</li>');
-            i++;
-          }
-          out.push('<ol class="readme-ol">' + items.join('') + '</ol>');
-          continue;
-        }
-
-        // Blank line → paragraph break
-        if (line.trim() === '') {
-          i++;
-          continue;
-        }
-
-        // Paragraph: gather consecutive non-special lines
-        const paraLines = [];
-        while (
-          i < lines.length &&
-          lines[i].trim() !== '' &&
-          !/^```/.test(lines[i]) &&
-          !/^#{1,6}\s/.test(lines[i]) &&
-          !/^[-*+]\s/.test(lines[i]) &&
-          !/^\d+\.\s/.test(lines[i]) &&
-          !/^>\s?/.test(lines[i]) &&
-          !/^[-*_]{3,}\s*$/.test(lines[i])
-        ) {
-          paraLines.push(lines[i]);
-          i++;
-        }
-        if (paraLines.length) {
-          out.push('<p class="readme-p">' + inlineMarkdown(paraLines.join(' ')) + '</p>');
-        }
-      }
-
-      return out.join('\n');
-    }
-
-    /**
-     * Render inline Markdown: bold, italic, inline code, links, images.
-     * Input is NOT yet HTML-escaped; we escape as we go.
-     */
-    /**
-     * Sanitize a URL to prevent XSS via javascript:, data:, vbscript: protocols.
-     * Returns '#' for unsafe URLs. Allows http(s):, mailto:, relative, and anchor URLs.
-     */
-    function sanitizeMarkdownUrl(url) {
-      if (!url) return '#';
-      var trimmed = String(url).trim();
-      // Decode common HTML entities that may have been produced by escapeHtml earlier
-      var decoded = trimmed
-        .replace(/&amp;/g, '&')
-        .replace(/&#x2F;/gi, '/')
-        .replace(/&#47;/g, '/');
-      // Block dangerous protocols (case-insensitive, allow leading whitespace/control chars)
-      if (/^[\s\x00-\x1f]*(javascript|data|vbscript|file):/i.test(decoded)) {
-        return '#';
-      }
-      return trimmed;
-    }
-
-    function inlineMarkdown(text) {
-      // Escape HTML first (except we'll inject tags below)
-      let s = escapeHtml(text);
-      // Bold+italic
-      s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-      // Bold
-      s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
-      // Italic
-      s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
-      s = s.replace(/_(.+?)_/g, '<em>$1</em>');
-      // Inline code (escaped backtick: &#96;)
-      s = s.replace(/&#96;(.+?)&#96;/g, '<code class="readme-inline-code">$1</code>');
-      // Strikethrough
-      s = s.replace(/~~(.+?)~~/g, '<del>$1</del>');
-      // Image (before link so ![...](...) matches first)
-      s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_, alt, src) {
-        return '<img src="' + sanitizeMarkdownUrl(src) + '" alt="' + alt + '" style="max-width:100%;border-radius:4px;">';
-      });
-      // Link
-      s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, label, href) {
-        return '<a href="' + sanitizeMarkdownUrl(href) + '" target="_blank" rel="noopener noreferrer" class="readme-link">' + label + '</a>';
-      });
-      return s;
     }
 
     // ===================
@@ -7279,16 +7281,17 @@
       );
     }
 
-    // Save Global settings (no projectId)
-    async function saveGlobalSettings() {
+    // Save Default LLM Configuration (Provider + Model only)
+    // Batch 1: split from legacy saveGlobalSettings() so that each settings
+    // card owns its own save action. See spec/19_WEB_UI.md
+    // "Settings ページ: カード別セーブ構造".
+    async function saveDefaultLlmSettings() {
       const provider = document.getElementById('settings-provider')?.value;
       const model = document.getElementById('settings-model')?.value;
-      const maxTokens = parseInt(document.getElementById('settings-max-tokens')?.value) || 4096;
-      const temperature = parseFloat(document.getElementById('settings-temperature')?.value) || 0.7;
 
       showConfirmDialog(
-        'Save Global Settings?',
-        'This will update the global LLM configuration for all projects.',
+        'Save Default LLM?',
+        'This will update the default LLM provider and model for all projects.',
         'Save',
         async function() {
           try {
@@ -7296,16 +7299,50 @@
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                llm: { provider, model },
-                preferences: { autoChunking: true, costWarningEnabled: true, costWarningThreshold: 0.5 }
+                llm: { provider, model }
               })
             });
             const data = await response.json();
             if (data.success) {
-              showToast('Global settings saved successfully', 'success');
+              showToast('Default LLM saved successfully', 'success');
               renderSettings();
             } else {
-              showToast(data.message || 'Failed to save settings', 'error');
+              showToast(data.message || 'Failed to save default LLM', 'error');
+            }
+          } catch (error) {
+            showToast(error.message, 'error');
+          }
+        },
+        { danger: false }
+      );
+    }
+
+    // Save Default Generation Parameters (Max Tokens, Temperature)
+    // Batch 1: sibling of saveDefaultLlmSettings(). Persists generation
+    // parameters under preferences via PUT /api/settings/project.
+    async function saveDefaultGenerationParams() {
+      const maxTokens = parseInt(document.getElementById('settings-max-tokens')?.value) || 4096;
+      const temperature = parseFloat(document.getElementById('settings-temperature')?.value) || 0.7;
+
+      showConfirmDialog(
+        'Save Default Parameters?',
+        'This will update the default generation parameters for all projects.',
+        'Save',
+        async function() {
+          try {
+            const response = await fetch('/api/settings/project', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                preferences: { maxTokens, temperature }
+              })
+            });
+            const data = await response.json();
+            if (data.success) {
+              showToast('Default parameters saved successfully', 'success');
+              renderSettings();
+            } else {
+              showToast(data.message || 'Failed to save default parameters', 'error');
             }
           } catch (error) {
             showToast(error.message, 'error');
@@ -8429,6 +8466,21 @@
             </div>
           </div>
 
+          <!-- Project Detail tabs (Overview / README) — added per spec/19_WEB_UI.md -->
+          <div class="project-detail-tabs" data-testid="project-detail-tabs"
+               style="display:flex; gap:4px; border-bottom:2px solid #e5e7eb; margin-bottom:16px;">
+            <button type="button" class="project-detail-tab active" data-pane="overview"
+                    data-testid="project-detail-tab-overview"
+                    onclick="setProjectDetailTab('overview', '${escapeHtml(projectId)}')"
+                    style="padding:8px 16px; border:none; background:none; cursor:pointer; font-weight:500; font-size:0.88rem; color:#2563eb; border-bottom:2px solid #2563eb; margin-bottom:-2px;">Overview</button>
+            <button type="button" class="project-detail-tab" data-pane="readme"
+                    data-testid="project-detail-tab-readme"
+                    onclick="setProjectDetailTab('readme', '${escapeHtml(projectId)}')"
+                    style="padding:8px 16px; border:none; background:none; cursor:pointer; font-weight:500; font-size:0.88rem; color:#6b7280; border-bottom:2px solid transparent; margin-bottom:-2px;">README</button>
+          </div>
+
+          <div class="project-detail-pane" data-pane="overview" data-testid="project-detail-pane-overview" style="display:block;">
+
           <div class="card" data-testid="project-details-card">
             <h3>Project Details</h3>
             <div class="detail-grid">
@@ -8507,16 +8559,6 @@
           </div>
 
           ${projectActionsHtml}
-
-          <div class="card" data-testid="project-readme-card" id="project-readme-card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-              <h3 style="margin:0;">&#128214; README</h3>
-              <button class="btn btn-secondary" style="font-size:0.75rem; padding:4px 10px;" data-testid="project-readme-refresh-btn" onclick="loadProjectReadme('${escapeHtml(projectId)}')">Refresh</button>
-            </div>
-            <div id="project-readme-content" data-testid="project-readme-content" style="min-height:40px;">
-              <div style="color:#9ca3af; font-size:0.85rem;">Loading README...</div>
-            </div>
-          </div>
 
           <div>
             <h3 style="margin-bottom:12px;">Task Groups (${projectTaskGroups.length})</h3>
@@ -8613,6 +8655,20 @@
 
           ${project.projectType === 'runner-dev' ? '<div id="web-dev-mode-section"></div>' : ''}
           ${project.projectType === 'runner-dev' ? '<div id="dev-console-section"></div>' : ''}
+
+          </div><!-- /pane:overview -->
+
+          <div class="project-detail-pane" data-pane="readme" data-testid="project-detail-pane-readme" style="display:none;">
+            <div class="card" data-testid="project-readme-card" id="project-readme-card">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h3 style="margin:0;">&#128214; README</h3>
+                <button class="btn btn-secondary" style="font-size:0.75rem; padding:4px 10px;" data-testid="project-readme-refresh-btn" onclick="loadProjectReadme('${escapeHtml(projectId)}')">Refresh</button>
+              </div>
+              <div id="project-readme-content" data-testid="project-readme-content" style="min-height:40px;">
+                <div style="color:#9ca3af; font-size:0.85rem;">Loading README...</div>
+              </div>
+            </div>
+          </div><!-- /pane:readme -->
         `;
 
         // Load self-hosting status for runner-dev projects
@@ -10829,6 +10885,9 @@
       if (currentPath === '/agents' && agentPageState.isDirty) {
         agentGuardUnsaved(doSwitch); return;
       }
+      if (currentPath === '/skills' && skillPageState.isDirty) {
+        skillGuardUnsaved(doSwitch); return;
+      }
       doSwitch();
     }
 
@@ -10847,11 +10906,14 @@
       if (currentPath === '/agents' && agentPageState.isDirty) {
         agentGuardUnsaved(doSwitch); return;
       }
+      if (currentPath === '/skills' && skillPageState.isDirty) {
+        skillGuardUnsaved(doSwitch); return;
+      }
       doSwitch();
     }
 
     function reloadCurrentClaudeCodePage() {
-      var claudeCodePages = ['/hooks', '/commands', '/agents', '/plugins', '/mcp-servers', '/ai-generate'];
+      var claudeCodePages = ['/hooks', '/commands', '/agents', '/skills', '/plugins', '/mcp-servers', '/ai-generate'];
       if (claudeCodePages.indexOf(currentPath) >= 0) {
         router();
       }
@@ -11177,14 +11239,13 @@
 
     function renderAgentsContent() {
       var scope = agentPageState.scope;
-      var files = agentPageState.files;
-      var agents = files.filter(function(f) { return f.type === 'agent'; });
-      var skills = files.filter(function(f) { return f.type === 'skill'; });
+      // Task B Q1=α: Agents page shows agents only. Skills moved to /skills.
+      var files = (agentPageState.files || []).filter(function(f) { return f.type === 'agent'; });
+      var agents = files;
 
-      // List items grouped by type
+      // List items (agents only)
       var listItems = '';
       if (agents.length > 0) {
-        listItems += '<div style="padding:6px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;color:#6b7280;background:#f9fafb;">Agents (' + agents.length + ')</div>';
         agents.forEach(function(f) {
           var isActive = agentPageState.selected && agentPageState.selected.name === f.name && agentPageState.selected.type === 'agent';
           listItems += '<div class="pane-list-item' + (isActive ? ' active' : '') + '" data-testid="agent-item-' + escapeHtml(f.name) + '" onclick="selectAgent(\'' + escapeHtml(f.name) + '\',\'agent\')">' +
@@ -11192,20 +11253,11 @@
             '<div class="item-meta"><span class="scope-pill project" style="font-size:0.65rem;">agent</span></div></div></div>';
         });
       }
-      if (skills.length > 0) {
-        listItems += '<div style="padding:6px 14px;font-size:0.7rem;font-weight:700;text-transform:uppercase;color:#6b7280;background:#f9fafb;">Skills (' + skills.length + ')</div>';
-        skills.forEach(function(f) {
-          var isActive = agentPageState.selected && agentPageState.selected.name === f.name && agentPageState.selected.type === 'skill';
-          listItems += '<div class="pane-list-item' + (isActive ? ' active' : '') + '" data-testid="skill-item-' + escapeHtml(f.name) + '" onclick="selectAgent(\'' + escapeHtml(f.name) + '\',\'skill\')">' +
-            '<div><div class="item-name">' + escapeHtml(f.name) + '</div>' +
-            '<div class="item-meta"><span class="scope-pill global" style="font-size:0.65rem;">skill</span></div></div></div>';
-        });
-      }
       if (files.length === 0) {
         listItems = '<div data-testid="agent-empty-state" style="padding:32px 20px;text-align:center;color:#9ca3af;">' +
-          '<div style="font-size:2rem;margin-bottom:8px;">🤖</div>' +
-          '<div style="font-size:0.9rem;font-weight:600;margin-bottom:4px;">No agents or skills yet</div>' +
-          '<div style="font-size:0.8rem;margin-bottom:12px;">Agents and skills are .md files that define specialized AI behaviors.</div>' +
+          '<div style="font-size:2rem;margin-bottom:8px;">&#129302;</div>' +
+          '<div style="font-size:0.9rem;font-weight:600;margin-bottom:4px;">No agents yet</div>' +
+          '<div style="font-size:0.8rem;margin-bottom:12px;">Agents are .md files in .claude/agents/ that define specialized AI behaviors.</div>' +
           '<button class="btn btn-primary btn-sm" onclick="startNewAgent()">+ Create First Agent</button></div>';
       }
 
@@ -11215,12 +11267,10 @@
       // Editor
       var editorContent = '';
       if (agentPageState.isNew) {
-        editorContent = '<div class="pane-editor-header"><h3>New ' + (agentPageState.newType === 'skill' ? 'Skill' : 'Agent') + '</h3></div>' +
+        // Task B Q1=α: Agents page creates agents only (type selector removed).
+        agentPageState.newType = 'agent';
+        editorContent = '<div class="pane-editor-header"><h3>New Agent</h3></div>' +
           '<div class="pane-editor-body">' +
-          '<div class="hook-field"><label>Type</label>' +
-          '<select id="agent-new-type" data-testid="agent-new-type" onchange="agentPageState.newType=this.value">' +
-          '<option value="agent"' + (agentPageState.newType === 'agent' ? ' selected' : '') + '>Agent (.claude/agents/)</option>' +
-          '<option value="skill"' + (agentPageState.newType === 'skill' ? ' selected' : '') + '>Skill (.claude/skills/)</option></select></div>' +
           '<div class="hook-field"><label>Name (filename without .md)</label>' +
           '<input type="text" id="agent-new-name" data-testid="agent-new-name" placeholder="my-agent" value="' + escapeHtml(agentPageState.newName) + '" /></div>' +
           '<div id="agent-name-error" style="color:#ef4444;font-size:0.8rem;margin-top:-8px;display:none;" data-testid="agent-name-error"></div>' +
@@ -11230,7 +11280,7 @@
             return '<label class="perm-item"><input type="checkbox" value="' + t + '" /> ' + t + '</label>';
           }).join('') + '</div></div>' +
           '<div class="hook-field"><label>Content (Markdown)</label>' +
-          '<textarea id="agent-editor" data-testid="agent-editor" style="min-height:250px;" oninput="agentPageState.isDirty=true">---\nskill: new-' + (agentPageState.newType === 'skill' ? 'skill' : 'agent') + '\nversion: 1.0.0\ndescription: Description here\ntools:\n  - Read\n  - Grep\n---\n\n# Agent Name\n\nDescribe what this agent does.</textarea></div>' +
+          '<textarea id="agent-editor" data-testid="agent-editor" style="min-height:250px;" oninput="agentPageState.isDirty=true">---\nskill: new-agent\nversion: 1.0.0\ndescription: Description here\ntools:\n  - Read\n  - Grep\n---\n\n# Agent Name\n\nDescribe what this agent does.</textarea></div>' +
           '<div style="display:flex;gap:8px;margin-top:12px;">' +
           '<button class="btn btn-primary" data-testid="agent-create-btn" onclick="saveNewAgent()">Create</button>' +
           '<button class="btn btn-secondary" onclick="cancelNewAgent()">Cancel</button></div></div>';
@@ -11264,14 +11314,14 @@
       } else {
         editorContent = '<div class="pane-editor-header"><h3>Editor</h3></div>' +
           '<div class="pane-editor-body"><div class="pane-editor-empty" data-testid="agent-editor-placeholder">' +
-          '<div style="font-size:2rem;margin-bottom:8px;">🤖</div>' +
-          'Select an agent or skill from the list, or click <strong>+ New</strong> to create one.</div></div>';
+          '<div style="font-size:2rem;margin-bottom:8px;">&#129302;</div>' +
+          'Select an agent from the list, or click <strong>+ New</strong> to create one.</div></div>';
       }
 
       app.innerHTML =
-        '<div class="page-header"><h2>Agents &amp; Skills</h2>' +
+        '<div class="page-header"><h2>Agents</h2>' +
         '<span class="scope-path" style="font-size:0.78rem;color:#6b7280;margin-left:auto;">' +
-        'agents: ' + escapeHtml(agentPageState.agentsDir) + ' | skills: ' + escapeHtml(agentPageState.skillsDir) + '</span></div>' +
+        'agents: ' + escapeHtml(agentPageState.agentsDir) + '</span></div>' +
         '<div class="two-pane" data-testid="agent-two-pane"><div class="pane-list">' +
         '<div class="pane-list-header"><h3>Files (' + files.length + ')</h3>' +
         '<button class="btn btn-sm" data-testid="agent-new-btn" onclick="startNewAgent()">+ New</button></div>' +
@@ -11455,6 +11505,317 @@
             agentPageState.savedContent = '';
             agentPageState.isDirty = false;
             renderAgentsPage();
+          } else { showToast('Failed: ' + (data.error || '') + ' - ' + (data.message || 'Unknown error'), 'error'); }
+        } catch (error) { showToast('API error: ' + error.message, 'error'); }
+      }, { danger: true });
+    }
+
+    // =========================================================================
+    // Skills Page (Task B Q1=α: independent from Agents)
+    // Uses the shared /api/claude-files/agents/:scope backend (Q2=c)
+    // but filters to type === 'skill' only.
+    // =========================================================================
+    let skillPageState = {
+      scope: 'global',
+      projectPath: '',
+      files: [],
+      skillsDir: '',
+      selected: null,
+      editorContent: '',
+      savedContent: '',
+      isNew: false,
+      newName: '',
+      isDirty: false,
+    };
+
+    function skillGuardUnsaved(callback) {
+      if (!skillPageState.isDirty) { callback(); return; }
+      showConfirmDialog('Unsaved Changes', 'You have unsaved changes. Discard them?', 'Discard', function() {
+        skillPageState.isDirty = false;
+        callback();
+      }, { danger: true });
+    }
+
+    async function renderSkillsPage() {
+      app.innerHTML = '<div class="loading">Loading Skills...</div>';
+      try {
+        await loadProjectListCached();
+        var scope = getContextScope();
+        skillPageState.scope = scope;
+        skillPageState.projectPath = claudeCodeContext.projectPath;
+        var aPp = getContextProjectParam();
+        var res = await fetch('/api/claude-files/agents/' + scope + aPp);
+        var data = await res.json();
+        // Task B Q1=α: Skills page shows skills only (filter shared API).
+        skillPageState.files = (data.files || []).filter(function(f) { return f.type === 'skill'; });
+        skillPageState.skillsDir = data.skillsDir || '';
+        if (skillPageState.selected) {
+          var found = skillPageState.files.find(function(f) {
+            return f.name === skillPageState.selected.name;
+          });
+          if (!found) {
+            skillPageState.selected = null;
+            skillPageState.editorContent = '';
+          }
+        }
+        renderSkillsContent();
+      } catch (error) {
+        app.innerHTML = '<div class="card"><h2>Error Loading Skills</h2><p>' + escapeHtml(error.message) + '</p><button class="btn btn-primary" onclick="renderSkillsPage()" style="margin-top:16px;">Retry</button></div>';
+      }
+    }
+
+    function renderSkillsContent() {
+      var files = skillPageState.files;
+
+      var listItems = '';
+      if (files.length > 0) {
+        files.forEach(function(f) {
+          var isActive = skillPageState.selected && skillPageState.selected.name === f.name;
+          listItems += '<div class="pane-list-item' + (isActive ? ' active' : '') + '" data-testid="skill-item-' + escapeHtml(f.name) + '" onclick="selectSkill(\'' + escapeHtml(f.name) + '\')">' +
+            '<div><div class="item-name">' + escapeHtml(f.name) + '</div>' +
+            '<div class="item-meta"><span class="scope-pill global" style="font-size:0.65rem;">skill</span></div></div></div>';
+        });
+      }
+      if (files.length === 0) {
+        listItems = '<div data-testid="skill-empty-state" style="padding:32px 20px;text-align:center;color:#9ca3af;">' +
+          '<div style="font-size:2rem;margin-bottom:8px;">&#9889;</div>' +
+          '<div style="font-size:0.9rem;font-weight:600;margin-bottom:4px;">No skills yet</div>' +
+          '<div style="font-size:0.8rem;margin-bottom:12px;">Skills are .md files in .claude/skills/ that define reusable AI capabilities.</div>' +
+          '<button class="btn btn-primary btn-sm" onclick="startNewSkill()">+ Create First Skill</button></div>';
+      }
+
+      var knownTools = ['Bash','Read','Write','Edit','Glob','Grep','WebFetch','WebSearch','Task','TodoRead','TodoWrite','NotebookEdit'];
+
+      var editorContent = '';
+      if (skillPageState.isNew) {
+        editorContent = '<div class="pane-editor-header"><h3>New Skill</h3></div>' +
+          '<div class="pane-editor-body">' +
+          '<div class="hook-field"><label>Name (filename without .md)</label>' +
+          '<input type="text" id="skill-new-name" data-testid="skill-new-name" placeholder="my-skill" value="' + escapeHtml(skillPageState.newName) + '" /></div>' +
+          '<div id="skill-name-error" style="color:#ef4444;font-size:0.8rem;margin-top:-8px;display:none;" data-testid="skill-name-error"></div>' +
+          '<div class="hook-field"><label>Tools (select allowed tools)</label>' +
+          '<div class="permissions-grid" id="skill-tools-new">' +
+          knownTools.map(function(t) {
+            return '<label class="perm-item"><input type="checkbox" value="' + t + '" /> ' + t + '</label>';
+          }).join('') + '</div></div>' +
+          '<div class="hook-field"><label>Content (Markdown)</label>' +
+          '<textarea id="skill-editor" data-testid="skill-editor" style="min-height:250px;" oninput="skillPageState.isDirty=true">---\nskill: new-skill\nversion: 1.0.0\ndescription: Description here\ntools:\n  - Read\n  - Grep\n---\n\n# Skill Name\n\nDescribe what this skill does.</textarea></div>' +
+          '<div style="display:flex;gap:8px;margin-top:12px;">' +
+          '<button class="btn btn-primary" data-testid="skill-create-btn" onclick="saveNewSkill()">Create</button>' +
+          '<button class="btn btn-secondary" onclick="cancelNewSkill()">Cancel</button></div></div>';
+      } else if (skillPageState.selected) {
+        var sel = skillPageState.selected;
+        var currentTools = [];
+        var toolsMatch = skillPageState.editorContent.match(/tools:\s*\n((?:\s+-\s+\S+\n?)*)/);
+        if (toolsMatch) {
+          var lines = toolsMatch[1].split('\n');
+          lines.forEach(function(line) {
+            var m = line.match(/^\s+-\s+(\S+)/);
+            if (m) currentTools.push(m[1]);
+          });
+        }
+        editorContent = '<div class="pane-editor-header"><h3>' + escapeHtml(sel.name) + ' <span style="font-size:0.75rem;color:#6b7280;">(Skill)</span></h3>' +
+          '<button class="btn btn-sm btn-danger" data-testid="skill-delete-btn" onclick="deleteSkill(\'' + escapeHtml(sel.name) + '\')">Delete</button></div>' +
+          '<div class="pane-editor-body">' +
+          '<div class="hook-field"><label>Tools</label>' +
+          '<div class="permissions-grid" id="skill-tools-edit">' +
+          knownTools.map(function(t) {
+            var checked = currentTools.indexOf(t) >= 0 ? ' checked' : '';
+            return '<label class="perm-item"><input type="checkbox" value="' + t + '"' + checked + ' onchange="syncSkillTools()" /> ' + t + '</label>';
+          }).join('') + '</div></div>' +
+          '<div class="hook-field"><label>Content (Markdown)</label>' +
+          '<textarea id="skill-editor" data-testid="skill-editor" style="min-height:300px;" oninput="skillPageState.isDirty=true">' + escapeHtml(skillPageState.editorContent) + '</textarea></div>' +
+          '<div style="display:flex;gap:8px;margin-top:12px;">' +
+          '<button class="btn btn-primary" data-testid="skill-save-btn" onclick="saveSkill(\'' + escapeHtml(sel.name) + '\')">Save</button></div></div>';
+      } else {
+        editorContent = '<div class="pane-editor-header"><h3>Editor</h3></div>' +
+          '<div class="pane-editor-body"><div class="pane-editor-empty" data-testid="skill-editor-placeholder">' +
+          '<div style="font-size:2rem;margin-bottom:8px;">&#9889;</div>' +
+          'Select a skill from the list, or click <strong>+ New</strong> to create one.</div></div>';
+      }
+
+      app.innerHTML =
+        '<div class="page-header"><h2>Skills</h2>' +
+        '<span class="scope-path" style="font-size:0.78rem;color:#6b7280;margin-left:auto;">' +
+        'skills: ' + escapeHtml(skillPageState.skillsDir) + '</span></div>' +
+        '<div data-testid="skills-template-help" style="margin:8px 0 12px;padding:10px 12px;background:#f3f4f6;border-left:3px solid #6b7280;border-radius:4px;font-size:0.8rem;color:#374151;line-height:1.5;">' +
+        '<strong>About this page:</strong> Manually edit existing skill files. ' +
+        'To create a new skill from a natural-language prompt, use ' +
+        '<a href="/ai-generate" onclick="navigate(\'/ai-generate\');return false;" style="color:#2563eb;text-decoration:underline;">AI Generate</a> ' +
+        '(LLM-powered, model selectable, costs API tokens). ' +
+        'The CLI/API endpoint <code>/api/skills/generate</code> generates a fixed Template scaffold ' +
+        '(programmatic project scan, deterministic output, no AI cost).' +
+        '</div>' +
+        '<div class="two-pane" data-testid="skill-two-pane"><div class="pane-list">' +
+        '<div class="pane-list-header"><h3>Files (' + files.length + ')</h3>' +
+        '<button class="btn btn-sm" data-testid="skill-new-btn" onclick="startNewSkill()">+ New</button></div>' +
+        '<div class="pane-list-items" data-testid="skill-list">' + listItems + '</div></div>' +
+        '<div class="pane-editor" data-testid="skill-editor-pane">' + editorContent + '</div></div>';
+    }
+
+    function switchSkillScope(scope) {
+      skillGuardUnsaved(function() {
+        skillPageState.scope = scope;
+        skillPageState.selected = null;
+        skillPageState.editorContent = '';
+        skillPageState.savedContent = '';
+        skillPageState.isNew = false;
+        skillPageState.isDirty = false;
+        renderSkillsPage();
+      });
+    }
+
+    function switchSkillProject(projectPath) {
+      skillGuardUnsaved(function() {
+        skillPageState.projectPath = projectPath;
+        skillPageState.selected = null;
+        skillPageState.editorContent = '';
+        skillPageState.savedContent = '';
+        skillPageState.isNew = false;
+        skillPageState.isDirty = false;
+        renderSkillsPage();
+      });
+    }
+
+    async function selectSkill(name) {
+      if (skillPageState.selected && skillPageState.selected.name === name) return;
+      skillGuardUnsaved(async function() {
+        skillPageState.isNew = false;
+        skillPageState.selected = { name: name, type: 'skill' };
+        skillPageState.isDirty = false;
+        try {
+          var aPp = skillPageState.scope === 'project' ? projectPathParam(skillPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/agents/' + skillPageState.scope + '/skill/' + encodeURIComponent(name) + aPp);
+          var data = await res.json();
+          skillPageState.editorContent = data.content || '';
+          skillPageState.savedContent = skillPageState.editorContent;
+        } catch (error) {
+          showToast('Failed to load: ' + error.message, 'error');
+          skillPageState.editorContent = '';
+          skillPageState.savedContent = '';
+        }
+        renderSkillsContent();
+      });
+    }
+
+    function startNewSkill() {
+      skillGuardUnsaved(function() {
+        skillPageState.isNew = true;
+        skillPageState.selected = null;
+        skillPageState.newName = '';
+        skillPageState.isDirty = false;
+        renderSkillsContent();
+      });
+    }
+
+    function cancelNewSkill() {
+      skillPageState.isNew = false;
+      skillPageState.isDirty = false;
+      renderSkillsContent();
+    }
+
+    function syncSkillTools() {
+      var editorEl = document.getElementById('skill-editor');
+      var toolsContainer = document.getElementById('skill-tools-edit');
+      if (!editorEl || !toolsContainer) return;
+
+      var checked = [];
+      toolsContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb) { checked.push(cb.value); });
+      var toolsYaml = checked.map(function(t) { return '  - ' + t; }).join('\n');
+
+      var content = editorEl.value;
+      var replaced = content.replace(/tools:\s*\n((?:\s+-\s+\S+\n?)*)/, 'tools:\n' + toolsYaml + '\n');
+      if (replaced === content && content.includes('---')) {
+        var parts = content.split('---');
+        if (parts.length >= 3) {
+          parts[1] = parts[1].trimEnd() + '\ntools:\n' + toolsYaml + '\n';
+          replaced = parts.join('---');
+        }
+      }
+      editorEl.value = replaced;
+    }
+
+    function saveNewSkill() {
+      var nameInput = document.getElementById('skill-new-name');
+      var editorEl = document.getElementById('skill-editor');
+      var errorEl = document.getElementById('skill-name-error');
+      var name = nameInput ? nameInput.value.trim() : '';
+      var content = editorEl ? editorEl.value : '';
+      if (!name) {
+        if (errorEl) { errorEl.textContent = 'Name is required.'; errorEl.style.display = 'block'; }
+        showToast('Please enter a name', 'warning'); return;
+      }
+      if (!isValidFilenameClient(name)) {
+        if (errorEl) { errorEl.textContent = 'Invalid name. Must start with a letter or number. Only letters, numbers, dash, underscore, dot allowed.'; errorEl.style.display = 'block'; }
+        showToast('Invalid filename: must start with letter/number, only [a-z0-9._-]', 'warning'); return;
+      }
+      if (errorEl) { errorEl.style.display = 'none'; }
+
+      var toolsContainer = document.getElementById('skill-tools-new');
+      if (toolsContainer) {
+        var checked = [];
+        toolsContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb) { checked.push(cb.value); });
+        if (checked.length > 0) {
+          var toolsYaml = checked.map(function(t) { return '  - ' + t; }).join('\n');
+          content = content.replace(/tools:\s*\n((?:\s+-\s+\S+\n?)*)/, 'tools:\n' + toolsYaml + '\n');
+        }
+      }
+
+      showConfirmDialog('Create skill?', 'Create ' + name + '.md', 'Create', async function() {
+        try {
+          var aPp = skillPageState.scope === 'project' ? projectPathParam(skillPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/agents/' + skillPageState.scope + '/skill/' + encodeURIComponent(name) + aPp, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: content }),
+          });
+          var data = await res.json();
+          if (data.success) {
+            showToast('skill created: ' + name, 'success');
+            skillPageState.isNew = false;
+            skillPageState.selected = { name: name, type: 'skill' };
+            skillPageState.editorContent = content;
+            skillPageState.savedContent = content;
+            skillPageState.isDirty = false;
+            renderSkillsPage();
+          } else { showToast('Failed: ' + (data.error || '') + ' - ' + (data.message || 'Unknown error'), 'error'); }
+        } catch (error) { showToast('API error: ' + error.message, 'error'); }
+      }, { danger: false });
+    }
+
+    function saveSkill(name) {
+      var editorEl = document.getElementById('skill-editor');
+      var content = editorEl ? editorEl.value : '';
+      showConfirmDialog('Save skill?', 'Save ' + name + '.md', 'Save', async function() {
+        try {
+          var aPp = skillPageState.scope === 'project' ? projectPathParam(skillPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/agents/' + skillPageState.scope + '/skill/' + encodeURIComponent(name) + aPp, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: content }),
+          });
+          var data = await res.json();
+          if (data.success) {
+            showToast('skill saved: ' + name, 'success');
+            skillPageState.editorContent = content;
+            skillPageState.savedContent = content;
+            skillPageState.isDirty = false;
+          } else { showToast('Failed: ' + (data.error || '') + ' - ' + (data.message || 'Unknown error'), 'error'); }
+        } catch (error) { showToast('API error: ' + error.message, 'error'); }
+      }, { danger: false });
+    }
+
+    function deleteSkill(name) {
+      showConfirmDialog('Delete skill?', 'Delete ' + name + '.md? This cannot be undone.', 'Delete', async function() {
+        try {
+          var aPp = skillPageState.scope === 'project' ? projectPathParam(skillPageState.projectPath) : '';
+          var res = await fetch('/api/claude-files/agents/' + skillPageState.scope + '/skill/' + encodeURIComponent(name) + aPp, { method: 'DELETE' });
+          var data = await res.json();
+          if (data.success) {
+            showToast('skill deleted: ' + name, 'success');
+            skillPageState.selected = null;
+            skillPageState.editorContent = '';
+            skillPageState.savedContent = '';
+            skillPageState.isDirty = false;
+            renderSkillsPage();
           } else { showToast('Failed: ' + (data.error || '') + ' - ' + (data.message || 'Unknown error'), 'error'); }
         } catch (error) { showToast('API error: ' + error.message, 'error'); }
       }, { danger: true });
@@ -12367,10 +12728,40 @@
     function renderProposeTab() {
       var container = document.getElementById('assistant-tab-content');
       if (!container) return;
+      // Read persisted AI Generate model override
+      var storedProvider = '';
+      var storedModel = '';
+      // Batch 5: persisted planKind (auto / spec-first-tdd / plugin-bundle).
+      // Spec: spec/37_AI_GENERATE.md §10.5
+      var storedPlanKind = 'auto';
+      try {
+        storedProvider = localStorage.getItem('pm-runner-ai-generate-provider') || '';
+        storedModel = localStorage.getItem('pm-runner-ai-generate-model') || '';
+        storedPlanKind = localStorage.getItem('pm-runner-ai-generate-plan-kind') || 'auto';
+      } catch (_e) { /* ignore storage errors */ }
+      var providerOpts =
+        '<option value="openai"' + (storedProvider === 'openai' || storedProvider === '' ? ' selected' : '') + '>openai</option>' +
+        '<option value="anthropic"' + (storedProvider === 'anthropic' ? ' selected' : '') + '>anthropic</option>';
       container.innerHTML = `
         <div class="assistant-layout">
           <div class="assistant-chat">
             <div id="repo-profile-panel" data-testid="repo-profile-panel" style="margin-bottom:12px;"></div>
+            <div id="ai-generate-model-bar" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:0.82rem;">
+              <label style="color:#6b7280;">Model:</label>
+              <select id="ai-generate-provider" data-testid="ai-generate-provider" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;">
+                ${providerOpts}
+              </select>
+              <select id="ai-generate-model" data-testid="ai-generate-model" data-dynamic="true" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;min-width:260px;">
+                <option value="">Select a model</option>
+              </select>
+              <span style="color:#9ca3af;font-size:0.75rem;">(overrides default for AI Generate only)</span>
+              <label style="color:#6b7280;margin-left:12px;">Plan:</label>
+              <select id="ai-generate-plan-kind" data-testid="ai-generate-plan-kind" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;">
+                <option value="auto"${storedPlanKind === 'auto' ? ' selected' : ''}>auto</option>
+                <option value="spec-first-tdd"${storedPlanKind === 'spec-first-tdd' ? ' selected' : ''}>spec-first-tdd</option>
+                <option value="plugin-bundle"${storedPlanKind === 'plugin-bundle' ? ' selected' : ''}>plugin-bundle</option>
+              </select>
+            </div>
             <div class="assistant-chat-messages" id="assistant-messages">
               <div class="assistant-msg system">
                 Describe what you want to set up. I'll generate hooks, commands, agents, and other Claude Code configurations for you.
@@ -12391,6 +12782,35 @@
       `;
       // Load repo profile
       assistantLoadRepoProfile();
+      // Populate AI Generate model dropdown based on stored provider (default: openai)
+      var initialProvider = storedProvider || 'openai';
+      populateModelDropdown('ai-generate-model', initialProvider, storedModel);
+      // Wire provider change: persist + repopulate model dropdown for that provider
+      var providerSel = document.getElementById('ai-generate-provider');
+      if (providerSel) {
+        providerSel.addEventListener('change', function() {
+          var p = providerSel.value;
+          try { localStorage.setItem('pm-runner-ai-generate-provider', p); } catch (_e) {}
+          // Reset model choice when provider changes
+          try { localStorage.setItem('pm-runner-ai-generate-model', ''); } catch (_e) {}
+          populateModelDropdown('ai-generate-model', p, '');
+        });
+      }
+      // Wire model change: persist selection
+      var modelSel = document.getElementById('ai-generate-model');
+      if (modelSel) {
+        modelSel.addEventListener('change', function() {
+          try { localStorage.setItem('pm-runner-ai-generate-model', modelSel.value || ''); } catch (_e) {}
+        });
+      }
+      // Batch 5: wire planKind change → persist in localStorage.
+      // Spec: spec/37_AI_GENERATE.md §10.5
+      var planKindSel = document.getElementById('ai-generate-plan-kind');
+      if (planKindSel) {
+        planKindSel.addEventListener('change', function() {
+          try { localStorage.setItem('pm-runner-ai-generate-plan-kind', planKindSel.value || 'auto'); } catch (_e) {}
+        });
+      }
       // Re-render existing messages
       assistantRenderMessages();
       if (assistantState.planSet) {
@@ -12533,6 +12953,26 @@
       var scope = document.getElementById('assistant-scope');
       var scopeVal = scope ? scope.value : 'project';
 
+      // Read AI Generate model override (persisted in localStorage by renderProposeTab)
+      var aiGenProviderEl = document.getElementById('ai-generate-provider');
+      var aiGenModelEl = document.getElementById('ai-generate-model');
+      var providerVal = aiGenProviderEl ? aiGenProviderEl.value : '';
+      var modelVal = aiGenModelEl ? aiGenModelEl.value : '';
+      // Batch 5: read planKind from selector (or fall back to localStorage).
+      // Spec: spec/37_AI_GENERATE.md §10.5
+      var aiGenPlanKindEl = document.getElementById('ai-generate-plan-kind');
+      var planKindVal = aiGenPlanKindEl ? aiGenPlanKindEl.value : '';
+      if (!planKindVal) {
+        try { planKindVal = localStorage.getItem('pm-runner-ai-generate-plan-kind') || 'auto'; }
+        catch (_e) { planKindVal = 'auto'; }
+      }
+      // Persist current selection (belt-and-suspenders; change events also persist)
+      try {
+        if (providerVal) localStorage.setItem('pm-runner-ai-generate-provider', providerVal);
+        if (modelVal) localStorage.setItem('pm-runner-ai-generate-model', modelVal);
+        if (planKindVal) localStorage.setItem('pm-runner-ai-generate-plan-kind', planKindVal);
+      } catch (_e) { /* ignore storage errors */ }
+
       assistantState.messages.push({ role: 'user', text: prompt });
       assistantState.loading = true;
       assistantRenderMessages();
@@ -12540,7 +12980,21 @@
       try {
         var useMock = window.location.search.includes('mock=true');
         var url = '/api/assistant/propose' + (useMock ? '?mock=true' : '');
-        var proposeBody = { prompt: prompt, scope: scopeVal };
+        // Build request body with explicit provider:/model: keys (only forward
+        // the override when BOTH are set; partial overrides are rejected by
+        // the server). Spec: spec/37_AI_GENERATE.md §5.3 POST Body Extension.
+        var hasOverride = !!(providerVal && modelVal);
+        var proposeBody = {
+          prompt: prompt,
+          scope: scopeVal,
+          provider: hasOverride ? providerVal : undefined,
+          model: hasOverride ? modelVal : undefined,
+          planKind: planKindVal || 'auto',
+        };
+        if (!hasOverride) {
+          delete proposeBody.provider;
+          delete proposeBody.model;
+        }
         if (assistantState.repoProfile) proposeBody.repoProfile = assistantState.repoProfile;
         var resp = await fetch(url, {
           method: 'POST',
@@ -12797,6 +13251,7 @@
           var page = '';
           if (f.includes('/commands/')) page = '/commands';
           else if (f.includes('/agents/')) page = '/agents';
+          else if (f.includes('/skills/')) page = '/skills';
           else if (f.includes('/hooks/')) page = '/hooks';
           html += '<li>' + escapeHtml(f);
           if (page) html += ' <a href="' + page + '" onclick="event.preventDefault();navigate(\'' + page + '\');" style="color:#2563eb;font-size:0.8rem;" data-testid="open-created-link">Open</a>';
@@ -13420,6 +13875,8 @@
         renderCommandsPage();
       } else if (path === '/agents') {
         renderAgentsPage();
+      } else if (path === '/skills') {
+        renderSkillsPage();
       } else if (path === '/mcp-servers') {
         renderMcpServersPage();
       } else if (path === '/backup') {

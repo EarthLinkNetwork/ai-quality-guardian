@@ -38,7 +38,7 @@ describe('Non-Blocking Task Input (Integration)', function() {
     sendInput: (input: string) => void;
     close: () => Promise<{ stdout: string; stderr: string; exitCode: number }>;
   } {
-    const cliPath = path.resolve(__dirname, '../../dist/cli/index.js');
+    const cliPath = path.resolve(process.cwd(), 'dist/cli/index.js');
     const proc = spawn('node', [cliPath, 'repl', '--project', projectDir], {
       env: { ...process.env, NO_COLOR: '1' },
     });

@@ -19,6 +19,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { createApp } from '../../../src/web/server';
 import { initNoDynamo, resetNoDynamo, resetNoDynamoExtended } from '../../../src/web/dal/no-dynamo';
+import { resetDAL } from '../../../src/web/dal/dal-factory';
 
 describe('Chat Input Enhancements', () => {
   let app: Express;
@@ -66,6 +67,7 @@ describe('Chat Input Enhancements', () => {
   after(() => {
     resetNoDynamo();
     resetNoDynamoExtended();
+    resetDAL();
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
     } catch {

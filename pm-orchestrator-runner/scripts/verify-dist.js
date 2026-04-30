@@ -104,10 +104,11 @@ if (fs.existsSync(srcHtml)) {
   }
 }
 
-// Check 8: All 15 page renderer functions exist
+// Check 8: All page renderer functions exist
 const pageRenderers = [
   'renderDashboard', 'renderProjectList', 'renderTaskGroupList', 'renderActivity',
   'renderAssistantPage', 'renderHooksPage', 'renderCommandsPage', 'renderAgentsPage',
+  'renderSkillsPage',
   'renderPluginsPage', 'renderMcpServersPage', 'renderBackupPage',
   'renderRecoveryPage', 'renderPRReviewsPage', 'renderLogsPage', 'renderSettingsPage',
   'renderProcessesPage',

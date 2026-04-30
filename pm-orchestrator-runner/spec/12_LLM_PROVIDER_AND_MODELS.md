@@ -51,6 +51,18 @@ Runner は `claude-code` provider 選択時、モデル名を保持しない（n
 | `o1`                  | o1                    | $15.00            | $60.00             | 200K      |
 | `o1-mini`             | o1 Mini               | $3.00             | $12.00             | 128K      |
 | `o1-preview`          | o1 Preview            | $15.00            | $60.00             | 128K      |
+| `gpt-5.4`             | GPT-5.4               | $2.50             | $15.00             | TBD       |
+| `gpt-5.4-mini`        | GPT-5.4 Mini          | $0.75             | $4.50              | TBD       |
+| `gpt-5.4-pro`         | GPT-5.4 Pro           | $30.00            | $180.00            | TBD       |
+| `gpt-4.1`             | GPT-4.1               | $2.00             | $8.00              | TBD       |
+| `gpt-4.1-mini`        | GPT-4.1 Mini          | $0.40             | $1.60              | TBD       |
+| `o3`                  | o3                    | $2.00             | $8.00              | TBD       |
+| `o4-mini`             | o4 Mini               | $1.10             | $4.40              | TBD       |
+
+> **Batch 2 fix (2026-04-25)**: `gpt-5`, `gpt-5.1`, `o3-mini` were removed
+> from this table and from `OPENAI_MODELS`. They appear in OpenAI's
+> `/v1/models` enumeration but have no published API price (likely
+> retired / preview-only). Re-add when official pricing is published.
 
 #### anthropic
 
@@ -63,6 +75,10 @@ Runner は `claude-code` provider 選択時、モデル名を保持しない（n
 | `claude-3-opus-20240229`      | Claude 3 Opus       | $15.00            | $75.00             | 200K      |
 | `claude-3-sonnet-20240229`    | Claude 3 Sonnet     | $3.00             | $15.00             | 200K      |
 | `claude-3-haiku-20240307`     | Claude 3 Haiku      | $0.25             | $1.25              | 200K      |
+| `claude-opus-4-7`             | Claude Opus 4.7     | $5.00             | $25.00             | TBD       |
+| `claude-sonnet-4-6`           | Claude Sonnet 4.6   | $3.00             | $15.00             | TBD       |
+| `claude-haiku-4-5`            | Claude Haiku 4.5    | $1.00             | $5.00              | TBD       |
+| `claude-haiku-4-5-20251001`   | Claude Haiku 4.5 (2025-10-01) | $1.00   | $5.00              | TBD       |
 
 ### 2.2 料金情報の出典
 
@@ -74,6 +90,42 @@ Runner は `claude-code` provider 選択時、モデル名を保持しない（n
 - 料金情報はハードコードされた静的データとして保持する
 - Runner は料金の正確性を保証しない（参考情報として表示）
 - 最新の正確な料金は各 Provider の公式サイトを参照すること
+
+### 2.4 Model Registry Refresh History (Task E, 2026-04-24)
+
+Additive-only refresh. No existing model IDs were removed.
+
+- OpenAI additions verified live via `GET https://api.openai.com/v1/models`
+  on 2026-04-24. All 12 candidate IDs responded PRESENT. The 10 rows
+  added above correspond to those candidates minus `gpt-4o` /
+  `gpt-4o-mini` which were already present in the registry.
+- Anthropic additions: three un-dated aliases (`claude-opus-4-7`,
+  `claude-sonnet-4-6`, `claude-haiku-4-5`) plus
+  `claude-haiku-4-5-20251001` to resolve prior drift
+  (that ID was referenced by `internalLlm.defaults.anthropic`, the
+  Web UI dropdown, and `src/utils/question-detector.ts` without being
+  in this registry).
+- Pricing for all Task E additions is `TBD`. Actual pricing
+  verification is **intentionally deferred** to the follow-up cleanup
+  task below.
+
+### 2.5 TODO: Legacy Cleanup
+
+The following legacy OpenAI model IDs are marked `@deprecated` in
+`src/models/repl/model-registry.ts` via JSDoc but have **not been
+removed** (additive-only refresh rule):
+
+- `gpt-3.5-turbo`
+- `o1-preview`
+- `gpt-4-turbo`
+- `o1`
+- `o1-mini`
+
+Cleanup is tracked in `docs/BACKLOG.md` → "Legacy Model Cleanup
+(Task E follow-up)". A forget-proof test
+(`test/unit/legacy-backlog.test.ts`) asserts that the backlog entry
+cannot be silently deleted without failing CI.
+
 
 ---
 
@@ -253,3 +305,60 @@ function validateApiKey(providerId: string): ValidationResult {
 - Property 24: API Key Secrecy (spec/06_CORRECTNESS_PROPERTIES.md)
 - ReplState Data Model (spec/05_DATA_MODELS.md)
 - /provider, /models Commands (spec/10_REPL_UX.md)
+
+---
+
+## 6. JSON Output Parse Strategy (AI Generate / `/api/assistant/propose`)
+
+本節は LLM 応答から JSON プロポーザルを安全に抽出するための実装規則を定義する。
+
+### 6.1 抽出パイプライン
+
+`parseProposalResponse` は以下の順序で JSON を抽出すること:
+
+1. **Markdown コードブック剥がし (限定適用)**: 応答全体が ` ```json ... ``` ` または ` ``` ... ``` ` で **完全に包まれている** 場合のみ、外側の fence を剥がす。応答中に「埋め込まれた」 fence (例: 生成された script の本文に含まれる ` ```bash ... ``` `) は剥がしてはならない。
+2. **bracket-balanced 抽出**: 最初の `{` から始まり、対応する閉じ `}` までを切り出す。文字列リテラル内の `{`/`}` および `\"` のエスケープを正しくスキップする。
+3. **truncated JSON 修復 (fallback)**: 抽出が `null`、または `JSON.parse` が失敗した場合、`repairTruncatedJson` を呼び出して未閉のブラケットを補完する。
+4. **失敗時のサーバ側ログ**: パース失敗時はフルレスポンスを `console.error` に出力する。クライアントへは先頭 200 文字のみを返却する（漏洩・ペイロード肥大の防止）。
+
+> **Phase 1-fix V2 リグレッション教訓**: ステップ 1 で greedy 正規表現 `/```...```/` を入力全体に当てると、`content` フィールド内に埋め込まれた fenced code (LLM が `script` artifact を生成すると頻出) を誤マッチして JSON 本体を破壊する。必ず「先頭が ``` のときだけ、`^```...```$` で 1 回だけマッチ」させること。テスト: `assistant-json-parse.test.ts` "does not strip code fences embedded inside JSON string values"。
+
+### 6.2 禁止事項
+
+- **greedy regex `/\{[\s\S]*\}/` の使用は禁止**。最初の `{` と最後の `}` の間にある全ての中間 `}` を含む文字列をキャプチャするため、prose 後に `}` が含まれる入力で誤抽出する。
+
+### 6.3 Structured Output (OpenAI)
+
+OpenAI provider 使用時は `response_format: { type: "json_schema", json_schema: { strict: true, ... } }` を必ず指定すること。スキーマ定義 (`PROPOSAL_RESPONSE_JSON_SCHEMA`) は OpenAI strict mode の以下の要件を **すべて** 満たすこと:
+
+- ルートに `choices` 配列を必須化
+- `choices[].artifacts[].kind` は VALID_KINDS と完全一致 (`command`, `agent`, `skill`, `script`, `hook`, `claudeMdPatch`, `settingsJsonPatch`)
+- **`additionalProperties: false` を全オブジェクトノードに指定** (strict mode 必須)
+- **`required` 配列は `properties` の全キーを網羅すること**。optional フィールドも省略不可。代わりに型を nullable union (例: `{ "type": ["string", "null"] }`) で表現し、LLM は未使用フィールドに `null` を出す
+- **open object (`additionalProperties: true` の object) は使用禁止**。動的キーが必要な箇所 (artifact の `patch` フィールド等) は **JSON-encoded string** として宣言し (`{ "type": ["string", "null"] }`), サーバ側で `JSON.parse` する
+
+#### 6.3.1 patch フィールドのエンコード規約
+
+`artifact.patch` は OpenAI strict mode との両立のため **JSON 文字列としてエンコード** する:
+
+- LLM への指示 (system prompt) で「patch は JSON 文字列として出力。未使用なら null」と明記
+- 受信側 (`normalizeArtifactPatch`) は string なら `JSON.parse`, object ならそのまま、null/undefined は undefined に正規化
+- 後方互換: Anthropic prompt-based 経路で object literal が来た場合も正しく処理する
+
+#### 6.3.2 Anthropic provider
+
+Anthropic provider はネイティブの `response_format` をサポートしないため、prompt-based JSON 出力 + bracket-balanced 抽出の組み合わせを用いる。`patch` は object literal でも JSON 文字列でも受け付ける (上記 6.3.1)。
+
+### 6.4 maxTokens 既定値
+
+| Provider    | maxTokens (output) | 理由                                                |
+| ----------- | ------------------ | --------------------------------------------------- |
+| `openai`    | 16384              | gpt-4o family の output 上限。truncation を最小化。 |
+| `anthropic` | 8192               | claude 3.x default。全モデルで安全。                |
+
+これより低い値を AI Generate ルートで使用してはならない (truncation の主因)。
+
+### 6.5 関連実装
+
+- `src/web/routes/assistant.ts`: `extractBalancedJson`, `parseProposalResponse`, `repairTruncatedJson`, `buildOpenAIResponseFormat`, `PROPOSAL_RESPONSE_JSON_SCHEMA`
+- `src/mediation/llm-client.ts`: `chat({ responseFormat })` パラメータ

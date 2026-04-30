@@ -39,7 +39,7 @@ describe('Self-Heal Integration Tests (Tier A: Deterministic)', () => {
     evidenceDir = path.join(tempDir, 'evidence');
 
     // Copy fixture to temp directory
-    fixtureDir = path.resolve(__dirname, '../../fixtures/e2e-tiny-cli');
+    fixtureDir = path.resolve(process.cwd(), 'fixtures/e2e-tiny-cli');
 
     // Check if fixture exists
     if (!fs.existsSync(fixtureDir)) {

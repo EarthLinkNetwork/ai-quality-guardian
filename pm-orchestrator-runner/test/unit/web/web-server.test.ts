@@ -17,6 +17,7 @@ import request from 'supertest';
 import { Express } from 'express';
 import { createApp } from '../../../src/web/server';
 import { QueueItem, QueueItemStatus, ClaimResult, TaskGroupSummary, TaskGroupStatus } from '../../../src/queue';
+import { resetDAL } from '../../../src/web/dal/dal-factory';
 
 /**
  * Mock QueueStore for Web Server testing
@@ -231,6 +232,7 @@ describe('Web Server', () => {
   const testSessionId = 'test-session-123';
 
   beforeEach(() => {
+    resetDAL();
     store = new MockQueueStore();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     app = createApp({ queueStore: store as any, sessionId: testSessionId, namespace: 'test-namespace', projectRoot: '/tmp/test' });
@@ -564,6 +566,7 @@ describe('Web Server', () => {
         'POST /api/runner/restart',
         'POST /api/runner/stop',
         'POST /api/tasks/:task_id/reply',
+        'POST /api/system/processes/:pid/kill',
       ];
 
       const writeApis = routes.filter((r: string) => r.startsWith('POST /api/'));
@@ -923,5 +926,93 @@ describe('Web Server', () => {
 
       assert.ok(response.text.includes('PM Orchestrator Runner'));
     });
+  });
+
+  describe('Auth bypass for public paths (mount-aware)', () => {
+    let authedApp: Express;
+
+    beforeEach(() => {
+      // Minimal stub ApiKeyManager: any request with auth enabled and no
+      // x-api-key header should hit createApiKeyAuth and be rejected.
+      // For the bypass test we deliberately omit the header to verify the
+      // public-path bypass returns 200 *without* delegating to authMiddleware.
+      const stubApiKeyManager = {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        validateApiKey: async (_key: string) => null,
+      };
+      authedApp = createApp({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        queueStore: store as any,
+        sessionId: testSessionId,
+        namespace: 'test-namespace',
+        projectRoot: '/tmp/test',
+        authConfig: {
+          enabled: true,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          apiKeyManager: stubApiKeyManager as any,
+        },
+      });
+    });
+
+    it('GET /api/health bypasses auth and returns 200 without x-api-key', async () => {
+      const response = await request(authedApp)
+        .get('/api/health')
+        .expect(200);
+
+      assert.equal(response.body.status, 'ok');
+      assert.ok(response.body.timestamp, 'timestamp should be present');
+    });
+  });
+
+  /**
+   * SPA routes (Phase 1-fix regression):
+   *
+   * The Web UI is a single-page application served from src/web/public/index.html.
+   * Every left-menu navigable URL must return that index.html so the client-side
+   * router can take over. The /ai-generate route was missing in commit 194c0d1,
+   * causing the menu link to render an Express 404 instead of the SPA shell.
+   *
+   * This block locks down the full set of menu routes in one place so a future
+   * "I added a menu but forgot the server route" regression fails at unit test
+   * time, not in the user's browser.
+   */
+  describe('SPA routes (left-menu navigation)', () => {
+    const spaPaths = [
+      '/',
+      '/dashboard',
+      '/projects',
+      '/task-groups',
+      '/activity',
+      '/processes',
+      '/settings',
+      '/commands',
+      '/agents',
+      '/skills',
+      '/hooks',
+      '/mcp-servers',
+      '/plugins',
+      '/backup',
+      '/assistant',
+      '/ai-generate',
+    ];
+
+    for (const p of spaPaths) {
+      it(`GET ${p} returns 200 with HTML (SPA shell)`, async () => {
+        const response = await request(app).get(p);
+        // Some routes may 401 if auth middleware wraps them; SPA routes must be
+        // public so the login screen itself can render. Accept 200 only.
+        assert.equal(
+          response.status,
+          200,
+          `expected 200 for SPA route ${p}, got ${response.status}`
+        );
+        // Body must look like HTML (the SPA shell), not JSON.
+        const ct = String(response.headers['content-type'] || '');
+        assert.ok(
+          ct.includes('text/html'),
+          `expected text/html content-type for ${p}, got "${ct}"`
+        );
+      });
+    }
   });
 });

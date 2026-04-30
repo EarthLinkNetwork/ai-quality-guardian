@@ -22,6 +22,120 @@ import {
   GoldenEvalResult,
   GoldenEvalReport,
 } from "../dal/types";
+import { OPENAI_MODELS, ANTHROPIC_MODELS } from "../../models/repl/model-registry";
+
+// === AI Generate (Batch 3) ===
+// New defaults — see spec/37_AI_GENERATE.md §3 "Default Models".
+// Replaces the previous basic-tier defaults (gpt-4o-mini, claude-3-haiku-20240307)
+// based on user feedback that AI Generate output quality was insufficient.
+const AI_GENERATE_DEFAULT_MODELS: Record<"openai" | "anthropic", string> = {
+  openai: "gpt-4o",
+  anthropic: "claude-sonnet-4-20250514",
+};
+
+/**
+ * Returns the AI Generate fallback default model for a provider.
+ * Used when neither the request body nor the user's `defaultModels` config
+ * supplies a model.
+ *
+ * Spec: spec/37_AI_GENERATE.md §3 "Default Models"
+ */
+export function resolveDefaultModel(provider: "openai" | "anthropic"): string {
+  return AI_GENERATE_DEFAULT_MODELS[provider];
+}
+
+/**
+ * AI Generate workflow plan kind (Batch 5).
+ *   - "auto"           : default. Existing single-artifact behaviour.
+ *   - "spec-first-tdd" : spec → RED test → impl, with applySteps that
+ *                        verify GREEN via npm test.
+ *   - "plugin-bundle"  : multi-artifact PluginDefinition-style bundle.
+ *
+ * Spec: spec/37_AI_GENERATE.md §10
+ */
+export type PlanKind = "auto" | "spec-first-tdd" | "plugin-bundle";
+
+const VALID_PLAN_KINDS: ReadonlySet<string> = new Set(["auto", "spec-first-tdd", "plugin-bundle"]);
+
+/**
+ * Validate the optional `planKind` body field on POST /api/assistant/propose.
+ *
+ * Behaviour:
+ *   - undefined / null / "" → "auto" (backward compat).
+ *   - one of the 3 valid values → that value.
+ *   - anything else → error (caller returns HTTP 400 VALIDATION_ERROR).
+ *
+ * Spec: spec/37_AI_GENERATE.md §10.4
+ */
+export function validatePlanKind(
+  rawPlanKind: unknown
+): { ok: true; planKind: PlanKind } | { ok: false; error: string } {
+  if (rawPlanKind === undefined || rawPlanKind === null || rawPlanKind === "") {
+    return { ok: true, planKind: "auto" };
+  }
+  if (typeof rawPlanKind !== "string") {
+    return { ok: false, error: `invalid planKind: not a string (got ${typeof rawPlanKind})` };
+  }
+  if (!VALID_PLAN_KINDS.has(rawPlanKind)) {
+    return {
+      ok: false,
+      error: `invalid planKind "${rawPlanKind}"; expected one of "auto", "spec-first-tdd", "plugin-bundle"`,
+    };
+  }
+  return { ok: true, planKind: rawPlanKind as PlanKind };
+}
+
+/**
+ * Validate an optional {provider, model} override on POST /api/assistant/propose.
+ *
+ * Behavior:
+ *   - Both undefined/null → returns the new defaults (provider="openai", model="gpt-4o").
+ *   - Both supplied      → registry-validated; returns ok with the pair, or error.
+ *   - Provider only      → registry-validated provider, model = default for that provider.
+ *   - Model only         → rejected (ambiguous; cannot infer provider).
+ *
+ * Spec: spec/37_AI_GENERATE.md §5.3 "POST Body Extension"
+ */
+export function validateModelOverride(
+  rawProvider: unknown,
+  rawModel: unknown
+):
+  | { ok: true; provider: "openai" | "anthropic"; model: string }
+  | { ok: false; error: string } {
+  const providerProvided = rawProvider !== undefined && rawProvider !== null && rawProvider !== "";
+  const modelProvided = rawModel !== undefined && rawModel !== null && rawModel !== "";
+
+  // Case 1: nothing supplied → defaults.
+  if (!providerProvided && !modelProvided) {
+    return { ok: true, provider: "openai", model: resolveDefaultModel("openai") };
+  }
+
+  // Case 2: model only → reject (provider is required to disambiguate).
+  if (!providerProvided && modelProvided) {
+    return { ok: false, error: "model supplied without provider; both fields are required" };
+  }
+
+  // Provider must be openai or anthropic.
+  if (rawProvider !== "openai" && rawProvider !== "anthropic") {
+    return { ok: false, error: `invalid provider "${String(rawProvider)}"; expected "openai" or "anthropic"` };
+  }
+  const provider = rawProvider as "openai" | "anthropic";
+
+  // Case 3: provider only → use default model for provider.
+  if (!modelProvided) {
+    return { ok: true, provider, model: resolveDefaultModel(provider) };
+  }
+
+  // Case 4: both supplied → validate model exists in that provider's registry.
+  if (typeof rawModel !== "string") {
+    return { ok: false, error: `invalid model: not a string` };
+  }
+  const registry = provider === "openai" ? OPENAI_MODELS : ANTHROPIC_MODELS;
+  if (!registry.some((m) => m.id === rawModel)) {
+    return { ok: false, error: `invalid model "${rawModel}" for provider "${provider}"` };
+  }
+  return { ok: true, provider, model: rawModel };
+}
 
 export interface AssistantRoutesConfig {
   projectRoot: string;
@@ -37,7 +151,7 @@ export function createAssistantRoutes(config: AssistantRoutesConfig): Router {
   // POST /api/assistant/propose
   router.post("/propose", async (req: Request, res: Response) => {
     try {
-      const { prompt, scope } = req.body;
+      const { prompt, scope, provider, model } = req.body;
       if (!prompt || typeof prompt !== "string") {
         return res
           .status(400)
@@ -45,14 +159,52 @@ export function createAssistantRoutes(config: AssistantRoutesConfig): Router {
       }
       const effectiveScope = scope || "project";
 
+      // Batch 3: validate optional {provider, model} override.
+      // Spec: spec/37_AI_GENERATE.md §5.3
+      const overrideResult = validateModelOverride(provider, model);
+      if (!overrideResult.ok) {
+        return res
+          .status(400)
+          .json({ error: "VALIDATION_ERROR", message: overrideResult.error });
+      }
+
+      // Batch 5: validate optional planKind ("auto" | "spec-first-tdd" | "plugin-bundle").
+      // Spec: spec/37_AI_GENERATE.md §10.4
+      const planKindResult = validatePlanKind(req.body.planKind);
+      if (!planKindResult.ok) {
+        return res
+          .status(400)
+          .json({ error: "VALIDATION_ERROR", message: planKindResult.error });
+      }
+      const selectedPlanKind = planKindResult.planKind;
+
       // Mock mode for E2E tests
       if (req.query.mock === "true") {
         const mockPlan = createMockProposal(prompt, effectiveScope);
-        return res.json(mockPlan);
+        // Echo the resolved override in meta for debugging / E2E assertions.
+        return res.json({
+          ...mockPlan,
+          meta: {
+            selectedProvider: overrideResult.provider,
+            selectedModel: overrideResult.model,
+            selectedPlanKind,
+          },
+        });
       }
 
-      // Real LLM call (inject repoProfile if available)
-      const plan = await generateProposal(prompt, effectiveScope, projectRoot, req.body.repoProfile);
+      // Real LLM call (inject repoProfile if available, plus override if supplied).
+      const overrideForGenerate =
+        provider !== undefined || model !== undefined
+          ? { provider: overrideResult.provider, model: overrideResult.model }
+          : undefined;
+      const plan = await generateProposal(
+        prompt,
+        effectiveScope,
+        projectRoot,
+        req.body.repoProfile,
+        overrideForGenerate,
+        selectedPlanKind
+      );
       return res.json(plan);
     } catch (err: unknown) {
       const message =
@@ -633,7 +785,9 @@ async function generateProposal(
   prompt: string,
   scope: string,
   _projectRoot: string,
-  repoProfile?: Record<string, unknown>
+  repoProfile?: Record<string, unknown>,
+  override?: { provider: "openai" | "anthropic"; model: string },
+  planKind: PlanKind = "auto"
 ): Promise<ProposalPlanSet> {
   const { LLMClient } = await import("../../mediation/llm-client");
   const { loadGlobalConfig, getApiKey } = await import(
@@ -641,28 +795,40 @@ async function generateProposal(
   );
 
   const config = loadGlobalConfig();
-  const provider = (config.defaultProvider || "openai") as "openai" | "anthropic";
-  const apiKey = getApiKey(provider);
 
+  // Batch 3 resolve order:
+  //   1. Explicit override from request body (already validated against registry).
+  //   2. config.defaultProvider / config.defaultModels (Settings page defaults).
+  //   3. AI Generate fallback defaults (gpt-4o / claude-sonnet-4-20250514).
+  // Spec: spec/37_AI_GENERATE.md §3.2
+  const provider: "openai" | "anthropic" = override?.provider
+    ?? ((config.defaultProvider || "openai") as "openai" | "anthropic");
+
+  const apiKey = getApiKey(provider);
   if (!apiKey) {
     throw new Error(
       `API key not configured for provider: ${provider}. Please set it in Settings.`
     );
   }
 
-  const model =
-    config.defaultModels?.[provider] ||
-    (provider === "openai" ? "gpt-4o-mini" : "claude-3-haiku-20240307");
+  const model = override?.model
+    ?? config.defaultModels?.[provider]
+    ?? resolveDefaultModel(provider);
+
+  // Per-provider maxTokens (Fix A3: avoid mid-response truncation on OpenAI)
+  // - OpenAI: 16384 (gpt-4o family supports up to 16384 output tokens)
+  // - Anthropic: 8192 (claude 3.x default; safe across models)
+  const maxTokens = provider === "openai" ? 16384 : 8192;
 
   const client = new LLMClient({
     provider,
     model,
     apiKey,
     temperature: 0.7,
-    maxTokens: 8192,
+    maxTokens,
   });
 
-  const systemPrompt = buildSystemPrompt(scope);
+  const systemPrompt = buildSystemPrompt(scope, planKind);
 
   // Inject repo profile context if available
   let userContent = prompt;
@@ -670,9 +836,12 @@ async function generateProposal(
     userContent = `[Project Context]\n${JSON.stringify(repoProfile, null, 2)}\n\n[User Request]\n${prompt}`;
   }
 
-  // Use JSON mode for OpenAI to guarantee valid JSON output
+  // Fix A4: Structured output for OpenAI (response_format: json_schema strict)
+  // Forces the model to emit JSON conforming to PROPOSAL_RESPONSE_JSON_SCHEMA,
+  // eliminating most parse failures at the source.
+  // Anthropic does not support response_format; we keep the prompt-based JSON path.
   const chatOptions = provider === "openai"
-    ? { responseFormat: { type: "json_object" } }
+    ? { responseFormat: buildOpenAIResponseFormat() }
     : undefined;
 
   const response = await client.chat([
@@ -682,54 +851,512 @@ async function generateProposal(
 
   // Extract JSON from response
   const planSet = parseProposalResponse(response.content, prompt);
-  return planSet;
+  // Batch 3: surface the resolved provider/model in meta so the UI / E2E tests
+  // can confirm the override took effect.
+  return {
+    ...planSet,
+    meta: {
+      selectedProvider: provider,
+      selectedModel: model,
+      selectedPlanKind: planKind,
+    },
+  } as ProposalPlanSet & { meta: { selectedProvider: string; selectedModel: string; selectedPlanKind: PlanKind } };
 }
 
-function buildSystemPrompt(scope: string): string {
-  return `You are a Claude Code configuration assistant. Given a user's request, generate a structured plan with artifacts.
+/**
+ * Build the system prompt for AI Generate.
+ *
+ * Batch 3: Expanded from ~50 lines to a 6-section structure (Role / Output Format /
+ * Artifact Kinds / Quality Guidelines / Examples / Constraints) to address user
+ * feedback that generated skills/agents had low quality.
+ *
+ * Spec: spec/37_AI_GENERATE.md §4 "System Prompt Structure"
+ */
+export function buildSystemPrompt(scope: string, planKind: PlanKind = "auto"): string {
+  const baseDir =
+    scope === "global"
+      ? "~/.claude/"
+      : ".claude/ (project root)";
 
-IMPORTANT: You must respond with ONLY a valid JSON object (no markdown, no explanation). The JSON must follow this exact schema:
+  // Batch 5: planKind-driven appendix that adds Example C / Example D and
+  // amends Quality Guideline #8 without altering the legacy auto output.
+  // Spec: spec/37_AI_GENERATE.md §10.5
+  const planKindAppendix = buildPlanKindAppendix(scope, planKind);
+
+  return `### Role
+
+You are an expert Claude Code configuration author. Your job is to read a user's
+natural-language request and produce production-quality configuration artifacts
+(skills, agents, slash commands, hooks, scripts, CLAUDE.md patches, settings.json
+patches) that another developer can install with one click and immediately use.
+
+You write artifacts the same way a senior Claude Code user would: terse where
+terseness wins, explicit where ambiguity would burn the user, always grounded
+in real Claude Code conventions (never invented APIs, never imaginary CLI flags).
+
+### Output Format
+
+Respond with **ONLY** a single valid JSON object — no markdown fences, no prose,
+no explanation outside the JSON. The schema is exactly:
 
 {
   "choices": [
     {
-      "title": "Short title for this plan",
-      "summary": "Brief description of what this plan does",
+      "title": "Short, action-oriented title (~40 chars)",
+      "summary": "1–2 sentence description of what this plan delivers and why",
       "scope": "${scope}",
       "artifacts": [
         {
           "kind": "command|hook|agent|skill|script|claudeMdPatch|settingsJsonPatch",
-          "name": "artifact-name",
-          "targetPathHint": ".claude/commands/artifact-name.md",
-          "content": "Full file content here"
+          "name": "kebab-case-artifact-name",
+          "targetPathHint": ".claude/commands/kebab-case-artifact-name.md",
+          "content": "Full UTF-8 file content (or null for patch-only artifacts)",
+          "patch": null,
+          "dependsOn": null
         }
       ],
-      "applySteps": ["Step 1: ...", "Step 2: ..."],
-      "rollbackSteps": ["Step 1: ..."],
-      "riskNotes": ["Note about potential risks"],
+      "applySteps": ["Human-readable install step 1", "..."],
+      "rollbackSteps": ["Human-readable uninstall step 1", "..."],
+      "riskNotes": ["What could go wrong if this is misapplied"],
       "questions": []
     }
   ]
 }
 
-Artifact kinds:
-- "command": Creates .claude/commands/{name}.md
-- "hook": Creates hook configuration in settings
-- "agent": Creates .claude/agents/{name}.md
-- "skill": Creates .claude/skills/{name}.md
-- "script": Creates .claude/hooks/{name}.sh (executable)
-- "claudeMdPatch": Patch to append to .claude/CLAUDE.md
-- "settingsJsonPatch": JSON patch for .claude/settings.json
+OpenAI strict-mode requirements (apply ALWAYS, even on Anthropic):
+- Every artifact MUST include all six keys: kind, name, targetPathHint, content,
+  patch, dependsOn. Use null for fields that do not apply (do not omit keys).
+- For settingsJsonPatch, "patch" is a STRING containing JSON (e.g.
+  "{\\"hooks\\":{\\"UserPromptSubmit\\":[{\\"command\\":\\"echo hi\\"}]}}").
+  The server JSON.parses it on receipt. Do not nest a raw object.
+- For claudeMdPatch, put the markdown to append in "content"; "patch" is null.
+- For all other kinds, "content" is the raw file body and "patch" is null.
 
-Generate 1-2 choices (plans). Each choice should be a complete, self-contained solution.
-Scope "${scope}" means files go to ${scope === "global" ? "~/.claude/" : ".claude/ (project root)"}.`;
+Generate **1 or 2 choices** (plans). When you give 2, they should represent a
+real trade-off (e.g. minimal vs. comprehensive), not near-duplicates.
+
+Files target ${baseDir} (scope = "${scope}").
+
+### Artifact Kind Guidelines
+
+- **skill** → .claude/skills/{name}.md
+  Front-matter (YAML) preferred. Section structure: purpose, when-to-use,
+  inputs, output format, examples. Skills are loaded by Claude on-demand based
+  on trigger phrases the user describes, so the description field MUST be
+  specific and discriminating ("invoked when the user asks to convert a CSV to
+  parquet" — not "data utility skill").
+
+- **agent** → .claude/agents/{name}.md
+  Define role, capabilities, allowed tools, and a short SOP. Agents are sub-
+  process orchestrators; keep them focused on one concern (rule-checker,
+  implementer, qa, reporter, etc.). Use existing agent names from the project
+  if they fit; do not invent overlapping ones.
+
+- **command** → .claude/commands/{name}.md
+  Markdown body becomes the slash command prompt. Start with a one-line
+  summary, then list usage, arguments, and the literal instructions Claude
+  should follow. Keep under ~80 lines unless the workflow is genuinely complex.
+
+- **hook** → entry inside settings.json under hooks.{Event}[]
+  Ship as a settingsJsonPatch artifact whose "patch" string contains the
+  hooks object. Reference any companion shell script via
+  \`hooks/{script-name}.sh\`.
+
+- **script** → .claude/hooks/{name}.sh (chmod +x)
+  Bash-only. Begin with \`#!/usr/bin/env bash\` and \`set -euo pipefail\`.
+  No interactive prompts; no curl into untrusted URLs.
+
+- **claudeMdPatch** → appended to .claude/CLAUDE.md
+  Use h2/h3 headings; do NOT redefine the entire file. Patches are plain
+  Markdown text that will be concatenated.
+
+- **settingsJsonPatch** → shallow-merged into .claude/settings.json
+  Only emit the keys you intend to change. The server merges at the top level.
+
+### Quality Guidelines
+
+1. **Respect project conventions.** If the user supplies a [Project Context]
+   block, prefer the package manager, test framework, lint config, and naming
+   style described there. Do not introduce a new tool just because it is
+   trendy.
+2. **Be concrete.** Include at least one fully-formed example invocation,
+   command line, or input/output sample inside the artifact body. Avoid
+   placeholder phrases like "// implementation here" or "TODO".
+3. **Do not invent flags or APIs.** Do not hallucinate Claude Code SDK
+   methods, slash command flags, or hook event names. If unsure, omit the
+   feature rather than guess. Never make up CLI arguments.
+4. **No secrets.** Do not embed API keys, tokens, OAuth secrets, or
+   credentials in any artifact content. Reference environment variables
+   instead (e.g. \`\${OPENAI_API_KEY}\`).
+5. **Avoid name collisions.** Pick distinctive kebab-case names. Prefer
+   "git-pr-summary-bot" over "helper" or "agent".
+6. **Make it idempotent.** Apply steps should be safe to re-run; rollback
+   steps should fully undo the install.
+7. **Match scope.** All targetPathHint values must start with
+   ${scope === "global" ? "\"~/.claude/\"" : "\".claude/\""}; never use absolute system paths.
+8. **Right-size the plan.** Smaller, focused artifacts beat one mega-file.
+   Split a workflow across two artifacts if their concerns are distinct.
+
+### Examples
+
+Example A — User Prompt:
+"Add a slash command /lint that runs eslint and pretty-prints the results."
+
+Example A — Output JSON (abbreviated):
+{
+  "choices": [
+    {
+      "title": "Slash command: /lint with eslint",
+      "summary": "Adds a /lint slash command that runs ESLint via the project's package manager and surfaces the top issues.",
+      "scope": "${scope}",
+      "artifacts": [
+        {
+          "kind": "command",
+          "name": "lint",
+          "targetPathHint": ".claude/commands/lint.md",
+          "content": "# /lint — Run ESLint\\n\\nRun the project's ESLint and summarize the top 10 issues.\\n\\n## Steps\\n1. Detect the package manager (pnpm/npm/yarn).\\n2. Run \\\`<pm> run lint\\\`.\\n3. Parse the output and list file:line — rule — message.\\n4. Suggest the single highest-impact fix.",
+          "patch": null,
+          "dependsOn": null
+        }
+      ],
+      "applySteps": ["Create .claude/commands/lint.md"],
+      "rollbackSteps": ["Delete .claude/commands/lint.md"],
+      "riskNotes": ["Assumes a 'lint' npm script exists; otherwise the command will explain how to add one."],
+      "questions": []
+    }
+  ]
+}
+
+Example B — User Prompt:
+"Create a skill that triggers when the user asks to format a CSV into a markdown table."
+
+Example B — Output JSON (abbreviated):
+{
+  "choices": [
+    {
+      "title": "Skill: csv-to-markdown-table",
+      "summary": "Skill invoked when the user asks to convert CSV input into a Markdown table, preserving header alignment.",
+      "scope": "${scope}",
+      "artifacts": [
+        {
+          "kind": "skill",
+          "name": "csv-to-markdown-table",
+          "targetPathHint": ".claude/skills/csv-to-markdown-table.md",
+          "content": "---\\nname: csv-to-markdown-table\\ndescription: Use when the user provides CSV data (raw text or file path) and asks to format it as a Markdown table.\\n---\\n\\n## Steps\\n1. Detect delimiter (',' or '\\\\t').\\n2. Treat the first row as header.\\n3. Compute column widths and emit \\\`| col | col |\\\` with alignment row.\\n4. Show a 5-row preview if input is long.\\n\\n## Example Input\\nname,age\\nAlice,30\\nBob,25\\n\\n## Example Output\\n| name  | age |\\n| ----- | --- |\\n| Alice | 30  |\\n| Bob   | 25  |",
+          "patch": null,
+          "dependsOn": null
+        }
+      ],
+      "applySteps": ["Create .claude/skills/csv-to-markdown-table.md"],
+      "rollbackSteps": ["Delete .claude/skills/csv-to-markdown-table.md"],
+      "riskNotes": ["Skill assumes well-formed CSV; malformed input will produce a misaligned table."],
+      "questions": []
+    }
+  ]
+}
+
+### Constraints
+
+- Never invent or fabricate Claude Code APIs, slash command flags, hook event
+  names, or SDK methods. If a capability is uncertain, leave it out.
+- Do not use absolute paths or paths containing "..". All targetPathHint
+  values must be relative to ${baseDir}.
+- Do not embed secrets, credentials, API keys, or OAuth tokens in any
+  artifact content. Reference environment variables instead.
+- Do not produce file extensions outside the allowed set per kind:
+  command/agent/skill → .md, script/hook → .sh.
+- Do not generate dangerous extensions: .exe, .bat, .cmd, .com, .ps1, .msi,
+  .dll, .so, .dylib are rejected by the validator.
+- Output must be a single JSON object that conforms to the schema above. No
+  trailing prose, no leading markdown fence, no commentary.
+${planKindAppendix}`;
+}
+
+/**
+ * Build the planKind-specific appendix appended after the Constraints section.
+ * For `auto` this returns the empty string so backward-compat output is byte-identical.
+ *
+ * Spec: spec/37_AI_GENERATE.md §10.5
+ */
+function buildPlanKindAppendix(scope: string, planKind: PlanKind): string {
+  if (planKind === "auto") return "";
+
+  if (planKind === "spec-first-tdd") {
+    // Example C — spec → RED test → impl. Quality Guideline #8 amendment.
+    return `
+
+### Plan Kind: spec-first-tdd
+
+You have been called with planKind="spec-first-tdd". Return EXACTLY one choice
+whose artifacts include at least one \`spec\` artifact, at least one \`test\`
+artifact, and at least one implementation artifact (\`skill\` or \`script\` or
+\`agent\` or \`command\`). Add "Run npm test and verify GREEN" as one of the
+applySteps so the operator finishes the TDD loop.
+
+Quality Guideline #8 (spec-first-tdd amendment): When planKind=spec-first-tdd,
+return exactly one choice with at least one spec, one test, and one
+implementation artifact, and include 'Run npm test and verify GREEN' as an
+applySteps entry.
+
+### Example C — spec-first-tdd
+
+Example C — User Prompt:
+"Create a spec-first TDD workflow for a CSV-to-JSON converter skill."
+
+Example C — Output JSON (abbreviated):
+{
+  "choices": [
+    {
+      "title": "TDD: csv-to-json converter skill",
+      "summary": "Spec, RED test and implementation skill for converting a CSV string to a JSON array, delivered as a spec-first TDD trio.",
+      "scope": "${scope}",
+      "artifacts": [
+        {
+          "kind": "spec",
+          "name": "csv-to-json-converter",
+          "targetPathHint": "spec/csv-to-json-converter.md",
+          "content": "# csv-to-json-converter\n\n## Requirements\n- Accept a CSV string with a header row.\n- Return a JSON array of objects keyed by header.\n\n## Acceptance Criteria\n- Empty CSV → [].\n- Single header + 1 row → array of length 1.\n- Quoted fields containing commas are preserved.\n",
+          "patch": null,
+          "dependsOn": null
+        },
+        {
+          "kind": "test",
+          "name": "csv-to-json-converter.test",
+          "targetPathHint": "test/unit/csv-to-json-converter.test.ts",
+          "content": "import { strict as assert } from 'assert';\nimport { csvToJson } from '../../src/skills/csv-to-json-converter';\n\ndescribe('csv-to-json-converter', () => {\n  it('returns [] for empty input', () => {\n    assert.deepEqual(csvToJson(''), []);\n  });\n  it('parses header + 1 row', () => {\n    assert.deepEqual(csvToJson('a,b\\n1,2'), [{a:'1',b:'2'}]);\n  });\n});\n",
+          "patch": null,
+          "dependsOn": null
+        },
+        {
+          "kind": "skill",
+          "name": "csv-to-json-converter",
+          "targetPathHint": ".claude/skills/csv-to-json-converter.md",
+          "content": "---\nname: csv-to-json-converter\ndescription: Use when the user provides a CSV string and asks for a JSON array.\n---\n\n## Steps\n1. Split on newline; treat row 1 as header.\n2. Map each subsequent row to an object keyed by header.\n3. Preserve quoted fields containing commas.\n",
+          "patch": null,
+          "dependsOn": null
+        }
+      ],
+      "applySteps": [
+        "Create spec/csv-to-json-converter.md",
+        "Create test/unit/csv-to-json-converter.test.ts",
+        "Create .claude/skills/csv-to-json-converter.md",
+        "Run npm test and verify GREEN"
+      ],
+      "rollbackSteps": [
+        "Delete spec/csv-to-json-converter.md",
+        "Delete test/unit/csv-to-json-converter.test.ts",
+        "Delete .claude/skills/csv-to-json-converter.md"
+      ],
+      "riskNotes": ["TDD trio assumes a TypeScript/Mocha project; adjust extension if not."],
+      "questions": []
+    }
+  ]
+}
+`;
+  }
+
+  // plugin-bundle
+  return `
+
+### Plan Kind: plugin-bundle
+
+You have been called with planKind="plugin-bundle". Group ALL artifacts into a
+single PluginDefinition-compatible bundle (one choice, multiple artifacts) and
+use applySteps to describe an \`pm-orchestrator install\`-style installation
+(e.g. "npm pack && pm-orchestrator install <tarball>"). Prefer artifact paths
+under .claude/ so they map cleanly into a bundle manifest.
+
+Quality Guideline #8 (plugin-bundle amendment): When planKind=plugin-bundle,
+group all artifacts into a single PluginDefinition-compatible bundle and use
+applySteps to describe \`pm-orchestrator install\`-style installation.
+
+### Example D — plugin-bundle
+
+Example D — User Prompt:
+"Pack a hello-world skill plus a slash command into a distributable plugin bundle."
+
+Example D — Output JSON (abbreviated):
+{
+  "choices": [
+    {
+      "title": "Plugin bundle: hello-world (skill + command)",
+      "summary": "PluginDefinition-style bundle with one skill and one slash command, installable via npm pack + pm-orchestrator install.",
+      "scope": "${scope}",
+      "artifacts": [
+        {
+          "kind": "skill",
+          "name": "hello-world",
+          "targetPathHint": ".claude/skills/hello-world.md",
+          "content": "---\nname: hello-world\ndescription: Say hello in the style requested by the user.\n---\n\n## Steps\n1. Greet the user using the requested style.\n",
+          "patch": null,
+          "dependsOn": null
+        },
+        {
+          "kind": "command",
+          "name": "hello",
+          "targetPathHint": ".claude/commands/hello.md",
+          "content": "# /hello — Say hello\n\nGreets the user; defaults to a friendly tone.\n",
+          "patch": null,
+          "dependsOn": null
+        }
+      ],
+      "applySteps": [
+        "npm pack to create the plugin tarball",
+        "pm-orchestrator install <tarball> to place all artifacts under .claude/"
+      ],
+      "rollbackSteps": [
+        "Delete .claude/skills/hello-world.md",
+        "Delete .claude/commands/hello.md"
+      ],
+      "riskNotes": ["Bundle layout assumes pm-orchestrator install copies relative paths verbatim."],
+      "questions": []
+    }
+  ]
+}
+`;
+}
+
+/**
+ * Fix A5: log the full LLM response (server-side only) on parse failure
+ * so we can diagnose the underlying cause without leaking large payloads to clients.
+ * Uses console.error because the project does not currently have a structured logger
+ * imported in this module (other modules use console.* directly).
+ */
+function logFullLlmResponseOnFailure(stage: string, fullResponse: string): void {
+  // Print on a separate line to keep stdout/stderr greppable.
+  // eslint-disable-next-line no-console
+  console.error(
+    `[assistant.parseProposalResponse] LLM_PARSE_FAILURE stage=${stage} length=${fullResponse.length}`
+  );
+  // eslint-disable-next-line no-console
+  console.error(`[assistant.parseProposalResponse] full_response=${fullResponse}`);
+}
+
+/**
+ * Fix A1: Bracket-balanced JSON object extractor.
+ *
+ * Returns the substring of `s` from the first '{' to its matching '}',
+ * correctly skipping braces that appear inside JSON string literals
+ * (with escape handling). Returns null if no balanced object exists
+ * (e.g. truncated input where depth never returns to 0).
+ *
+ * This replaces the greedy regex `/\{[\s\S]*\}/` which mishandles
+ * prose containing stray '}' characters after the actual JSON.
+ */
+export function extractBalancedJson(s: string): string | null {
+  const start = s.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\" && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0) return s.substring(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * Fix A4: OpenAI structured output schema for AI Generate proposals.
+ *
+ * Mirrors the runtime validation rules in VALID_KINDS / ALLOWED_EXTENSIONS
+ * so that strict mode rejects any artifact that the validator would later refuse.
+ * NOTE: kept as `any` because the OpenAI JSON-Schema dialect uses some keys
+ * that are not in the standard TS JSON-Schema typings (additionalProperties: false
+ * is required at every level under strict mode).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const PROPOSAL_RESPONSE_JSON_SCHEMA: any = {
+  type: "object",
+  additionalProperties: false,
+  required: ["choices"],
+  properties: {
+    choices: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "summary", "scope", "artifacts", "applySteps", "rollbackSteps", "riskNotes", "questions"],
+        properties: {
+          title: { type: "string" },
+          summary: { type: "string" },
+          scope: { type: "string", enum: ["global", "project", "local"] },
+          artifacts: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              // Phase 1-fix V2: OpenAI strict-mode requires `required` to list
+              // EVERY property key. Optional fields are represented as nullable
+              // unions (type: ["<t>", "null"]) and the model emits `null` for
+              // unused fields. The runtime normalizer (parseProposalResponse /
+              // normalizeArtifactPatch) treats null and undefined identically.
+              required: ["kind", "name", "targetPathHint", "content", "patch", "dependsOn"],
+              properties: {
+                kind: {
+                  type: "string",
+                  enum: ["command", "agent", "skill", "script", "hook", "spec", "test", "claudeMdPatch", "settingsJsonPatch"],
+                },
+                name: { type: "string" },
+                targetPathHint: { type: ["string", "null"] },
+                content: { type: ["string", "null"] },
+                // Phase 1-fix: declared as nullable JSON-encoded string. The consumer
+                // (normalizeArtifactPatch) JSON.parses it back to an object. This is
+                // the only OpenAI strict-mode-compatible way to represent an open
+                // object: nested objects with additionalProperties:true are rejected.
+                patch: {
+                  type: ["string", "null"],
+                  description: "JSON-encoded patch object. Must be valid JSON (e.g. for settingsJsonPatch this is the merge-patch object stringified). Use null when not applicable.",
+                },
+                dependsOn: {
+                  type: ["array", "null"],
+                  items: { type: "string" },
+                },
+              },
+            },
+          },
+          applySteps: { type: "array", items: { type: "string" } },
+          rollbackSteps: { type: "array", items: { type: "string" } },
+          riskNotes: { type: "array", items: { type: "string" } },
+          questions: { type: "array", items: { type: "string" } },
+        },
+      },
+    },
+  },
+};
+
+/**
+ * Fix A4: builds the OpenAI `response_format` parameter for json_schema strict mode.
+ */
+export function buildOpenAIResponseFormat(): {
+  type: "json_schema";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  json_schema: { name: string; strict: boolean; schema: any };
+} {
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: "AIGenerateProposal",
+      strict: true,
+      schema: PROPOSAL_RESPONSE_JSON_SCHEMA,
+    },
+  };
 }
 
 /**
  * Attempt to repair truncated JSON from LLM output that was cut off mid-response.
  * Closes unclosed brackets/braces and truncates at the last complete element.
  */
-function repairTruncatedJson(input: string): string | null {
+export function repairTruncatedJson(input: string): string | null {
   // Must start with { to be a JSON object
   const trimmed = input.trim();
   if (!trimmed.startsWith("{")) return null;
@@ -804,52 +1431,66 @@ function repairTruncatedJson(input: string): string | null {
   }
 }
 
-function parseProposalResponse(
+export function parseProposalResponse(
   rawResponse: string,
   originalPrompt: string
 ): ProposalPlanSet {
   const planSetId = `plan_${randomUUID()}`;
 
-  // Try to extract JSON from various formats
+  // Step 1: strip optional markdown code-block fence.
+  // Phase 1-fix V2: only strip when the ENTIRE trimmed response is wrapped in
+  // fences. The previous greedy regex (now removed) matched the first ``` and
+  // the next ``` anywhere in the body, which destroyed valid JSON whose
+  // `content` fields contained embedded code fences (e.g. a script artifact
+  // with a bash sample). Detected by R4 regression test and a real OpenAI
+  // proposal request that returned a script artifact containing ```bash...```.
   let jsonStr = rawResponse;
-
-  // Try markdown code block
-  const codeBlockMatch = rawResponse.match(
-    /```(?:json)?\s*\n?([\s\S]*?)\n?```/
-  );
-  if (codeBlockMatch) {
-    jsonStr = codeBlockMatch[1];
+  const trimmedRaw = rawResponse.trim();
+  if (trimmedRaw.startsWith("```")) {
+    // Strip the very first fence line (e.g. "```json") and the trailing fence.
+    // Use multi-line regex so we don't gobble across the whole document.
+    const fencedMatch = trimmedRaw.match(/^```(?:json)?\s*\n([\s\S]*?)\n?```\s*$/);
+    if (fencedMatch) {
+      jsonStr = fencedMatch[1];
+    }
   }
 
-  // Try to find JSON object
-  const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    // Attempt to repair truncated JSON (LLM output cut off mid-response)
+  // Step 2 (Fix A1): bracket-balanced extraction.
+  // The previous greedy regex /\{[\s\S]*\}/ would capture from the FIRST {
+  // to the LAST }, which is invalid when prose after the JSON contains a stray '}'.
+  // The balanced extractor stops at the matching closing brace.
+  let extracted = extractBalancedJson(jsonStr);
+
+  // Step 3 (Fix A2): always try repair if extraction failed OR parse fails.
+  if (!extracted) {
     const repaired = repairTruncatedJson(jsonStr);
     if (!repaired) {
+      logFullLlmResponseOnFailure("no_balanced_json_found", rawResponse);
       const preview = rawResponse.substring(0, 200);
       throw new Error(`LLM response does not contain valid JSON. Preview: ${preview}`);
     }
-    jsonStr = repaired;
+    extracted = repaired;
   }
 
-  const finalJsonStr = jsonMatch ? jsonMatch[0] : jsonStr;
+  const finalJsonStr = extracted;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let parsed: any;
   try {
     parsed = JSON.parse(finalJsonStr);
   } catch {
-    // Try to repair truncated JSON from a partial match
+    // Even after balanced extraction, parse may fail (e.g. trailing comma); try repair.
     const repaired = repairTruncatedJson(finalJsonStr);
     if (repaired) {
       try {
         parsed = JSON.parse(repaired);
       } catch {
+        logFullLlmResponseOnFailure("malformed_json_after_repair", rawResponse);
         const preview = finalJsonStr.substring(0, 200);
         throw new Error(`LLM response contains malformed JSON. Preview: ${preview}`);
       }
     } else {
+      logFullLlmResponseOnFailure("malformed_json_no_repair", rawResponse);
       const preview = finalJsonStr.substring(0, 200);
       throw new Error(`LLM response contains malformed JSON. Preview: ${preview}`);
     }
@@ -873,7 +1514,7 @@ function parseProposalResponse(
         name: (a.name as string) || "unnamed",
         targetPathHint: (a.targetPathHint as string) || "",
         content: a.content as string | undefined,
-        patch: a.patch as Record<string, unknown> | undefined,
+        patch: normalizeArtifactPatch(a.patch, a.name as string | undefined),
         dependsOn: (a.dependsOn as string[]) || [],
       })),
       applySteps: (c.applySteps as string[]) || [],
@@ -891,19 +1532,69 @@ function parseProposalResponse(
   };
 }
 
+
+/**
+ * Phase 1-fix: normalize artifact.patch.
+ *
+ * OpenAI strict-mode forced us to declare patch as `type: "string"` in the
+ * JSON schema (open objects are rejected). Anthropic's prompt-based path may
+ * still emit an object literal, so we accept both:
+ *   - string -> JSON.parse  (canonical OpenAI strict-mode path)
+ *   - object -> pass through (Anthropic / legacy compatibility)
+ *   - undefined / null -> undefined
+ *
+ * Throws a descriptive error on invalid JSON so the proposal fails fast with
+ * an actionable message instead of crashing later inside applyJsonPatch.
+ */
+export function normalizeArtifactPatch(
+  raw: unknown,
+  artifactName?: string
+): Record<string, unknown> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (trimmed === "") return undefined;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error(
+          `artifact.patch must JSON-decode to an object, got ${Array.isArray(parsed) ? "array" : typeof parsed}`
+        );
+      }
+      return parsed as Record<string, unknown>;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Invalid JSON in artifact.patch${artifactName ? ` (artifact "${artifactName}")` : ""}: ${msg}`
+      );
+    }
+  }
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  throw new Error(
+    `artifact.patch has unsupported type "${typeof raw}"; expected JSON string or object`
+  );
+}
+
 // === Plan Validation (dry-run safety checks) ===
 
 const VALID_KINDS = new Set([
   "command", "agent", "skill", "script", "hook",
+  "spec", "test",
   "claudeMdPatch", "settingsJsonPatch",
 ]);
 
+// Batch 5 (spec-first-tdd planKind): spec=.md, test=.ts/.js.
+// Spec: spec/37_AI_GENERATE.md §10.3.
 const ALLOWED_EXTENSIONS: Record<string, string[]> = {
   command: [".md"],
   agent: [".md"],
   skill: [".md"],
   script: [".sh"],
   hook: [".sh"],
+  spec: [".md"],
+  test: [".ts", ".js"],
 };
 
 function validateChoice(choice: ProposalChoice): string[] {

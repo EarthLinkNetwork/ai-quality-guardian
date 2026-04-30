@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "build": "tsc && cp -r src/web/public dist/web/",
-    "postbuild": "rm -rf dist/web/public && cp -r src/web/public dist/web/public && cp src/web/routes/golden-set.json dist/web/routes/golden-set.json 2>/dev/null; node scripts/generate-build-meta.js && node scripts/verify-dist.js",
+    "postbuild": "node scripts/copy-vendor.cjs && rm -rf dist/web/public && cp -r src/web/public dist/web/public && cp src/web/routes/golden-set.json dist/web/routes/golden-set.json 2>/dev/null; node scripts/generate-build-meta.js && node scripts/verify-dist.js",
     "test": "mocha --require ts-node/register 'test/**/*.test.ts'",
     "test:unit": "mocha --require ts-node/register 'test/unit/**/*.test.ts'",
     "test:property": "mocha --require ts-node/register 'test/property/**/*.test.ts'",
@@ -52,7 +52,8 @@
     "gate:browser": "ts-node diagnostics/browser-ui.check.ts",
     "test:playwright": "npx playwright test",
     "test:playwright:headed": "npx playwright test --headed",
-    "test:playwright:self-update": "npx playwright test --config playwright.selfupdate.config.ts"
+    "test:playwright:self-update": "npx playwright test --config playwright.selfupdate.config.ts",
+    "test:e2e:llm": "mocha --require ts-node/register 'test/e2e/ai-generate-plan-kind-smoke.test.ts'"
   },
   "keywords": [
     "pm-orchestrator",
@@ -92,8 +93,10 @@
     "@earthlink/power-utils": "^2.0.0",
     "@types/js-yaml": "^4.0.9",
     "commander": "^12.0.0",
+    "dompurify": "^3.4.1",
     "express": "^5.2.1",
     "js-yaml": "^4.1.1",
+    "marked": "^18.0.2",
     "minimatch": "^9.0.0",
     "openai": "^6.22.0",
     "ts-pattern": "^5.9.0",

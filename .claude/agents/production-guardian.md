@@ -141,8 +141,7 @@ node scripts/verify-fhir-sampling.ts ← 異なる ✗
 
 以下のルールファイルを参照して判定します：
 
-- `.claude/rules/irreversible-operation-rules.md` - 不可逆な操作の事前確認
-- `.claude/rules/test-rules.md` - Test First原則
+- `docs/QUALITY_GUARDIAN.md` - MUST Rule 3 (不可逆な操作の事前確認) / MUST Rule 2 (Test First原則)
 
 ## 使用するツール
 

@@ -92,7 +92,12 @@ const PUBLIC_PATHS = [
  */
 export function createPublicPathBypass(authMiddleware: ReturnType<typeof createApiKeyAuth>) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    if (PUBLIC_PATHS.includes(req.path)) {
+    // When this middleware is mounted via app.use('/api', ...), Express
+    // strips the mount prefix from req.path. Reconstruct the full path
+    // from baseUrl + path so PUBLIC_PATHS entries (e.g. '/api/health')
+    // match correctly regardless of mount point.
+    const fullPath = (req.baseUrl || '') + req.path;
+    if (PUBLIC_PATHS.includes(fullPath)) {
       req.userId = 'anonymous';
       return next();
     }
