@@ -239,8 +239,7 @@ AIの説明: 「環境の特性」「インスタンス特性」
 
 ## 詳細ルールの参照
 
-- `.claude/rules/verification-rules.md` - 検証結果報告の詳細ルール（新規作成予定）
-- `.claude/rules/error-handling-rules.md` - MUST Rule 5の詳細
+- `docs/QUALITY_GUARDIAN.md` - MUST Rule 5 (エラー時の対策実施) / 検証結果報告
 
 ## Main AIへの指示
 

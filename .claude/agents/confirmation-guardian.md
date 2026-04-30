@@ -152,7 +152,7 @@ Main AIが間違えた操作をした後、
 
 以下のルールファイルを参照して判定します：
 
-- `.claude/rules/user-instruction-rules.md` - ユーザー指示の厳守
+- `docs/QUALITY_GUARDIAN.md` - MUST Rule 1: ユーザー指示の厳守
 
 ## 使用するツール
 

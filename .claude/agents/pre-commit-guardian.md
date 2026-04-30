@@ -157,9 +157,7 @@ git diff --cached
 
 以下のルールファイルを参照して判定します：
 
-- `.claude/rules/test-rules.md` - テスト必須ルール
-- `.claude/rules/git-rules.md` - Git操作ルール
-- `.claude/rules/user-instruction-rules.md` - ユーザー指示の厳守
+- `docs/QUALITY_GUARDIAN.md` - MUST Rule 2 (テスト必須) / Git操作ルール / MUST Rule 1 (ユーザー指示の厳守)
 
 ## 使用するツール
 
